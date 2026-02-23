@@ -68,3 +68,6 @@ scenario-outputs/**/transcript.json
 .architect-loop/*counter*
 !.architect-loop/.gitkeep
 !.architect-loop/README.md
+
+# MkDocs build output
+site/
