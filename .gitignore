@@ -27,6 +27,7 @@ logs/
 !README.md
 !TODO.md
 !requirements.txt
+!shared/corp_tools/system_prompt_base.txt
 
 # Triage loop state (keep history, ignore transient logs)
 !.triage-loop/triaged_files.txt
