@@ -1,0 +1,217 @@
+import type { ApiRecord } from "./types.js";
+
+export class SessionExpiredError extends Error {
+  constructor() {
+    super("Your API key is no longer valid. Run 'corp setup' to re-authenticate.");
+    this.name = "SessionExpiredError";
+  }
+}
+
+export async function provisionWorkspace(
+  apiUrl: string,
+  name?: string
+): Promise<ApiRecord> {
+  const url = `${apiUrl.replace(/\/+$/, "")}/v1/workspaces/provision`;
+  const body: Record<string, string> = {};
+  if (name) body.name = name;
+  const resp = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!resp.ok) throw new Error(`Provision failed: ${resp.status} ${resp.statusText}`);
+  return resp.json() as Promise<ApiRecord>;
+}
+
+export class CorpAPIClient {
+  readonly apiUrl: string;
+  readonly apiKey: string;
+  readonly workspaceId: string;
+
+  constructor(apiUrl: string, apiKey: string, workspaceId: string) {
+    this.apiUrl = apiUrl.replace(/\/+$/, "");
+    this.apiKey = apiKey;
+    this.workspaceId = workspaceId;
+  }
+
+  private headers(): Record<string, string> {
+    return {
+      Authorization: `Bearer ${this.apiKey}`,
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    };
+  }
+
+  private async request(method: string, path: string, body?: unknown, params?: Record<string, string>): Promise<Response> {
+    let url = `${this.apiUrl}${path}`;
+    if (params) {
+      const qs = new URLSearchParams(params).toString();
+      if (qs) url += `?${qs}`;
+    }
+    const opts: RequestInit = { method, headers: this.headers() };
+    if (body !== undefined) opts.body = JSON.stringify(body);
+    return fetch(url, opts);
+  }
+
+  private async get(path: string, params?: Record<string, string>): Promise<unknown> {
+    const resp = await this.request("GET", path, undefined, params);
+    if (resp.status === 401) throw new SessionExpiredError();
+    if (!resp.ok) throw new Error(`${resp.status} ${resp.statusText}`);
+    return resp.json();
+  }
+
+  private async post(path: string, body?: unknown): Promise<unknown> {
+    const resp = await this.request("POST", path, body);
+    if (resp.status === 401) throw new SessionExpiredError();
+    if (!resp.ok) throw new Error(`${resp.status} ${resp.statusText}`);
+    return resp.json();
+  }
+
+  private async patch(path: string, body?: unknown): Promise<unknown> {
+    const resp = await this.request("PATCH", path, body);
+    if (resp.status === 401) throw new SessionExpiredError();
+    if (!resp.ok) throw new Error(`${resp.status} ${resp.statusText}`);
+    return resp.json();
+  }
+
+  private async del(path: string): Promise<void> {
+    const resp = await this.request("DELETE", path);
+    if (resp.status === 401) throw new SessionExpiredError();
+    if (!resp.ok) throw new Error(`${resp.status} ${resp.statusText}`);
+  }
+
+  // --- Workspace ---
+  getStatus() { return this.get(`/v1/workspaces/${this.workspaceId}/status`) as Promise<ApiRecord>; }
+
+  // --- Obligations ---
+  getObligations(tier?: string) {
+    const params: Record<string, string> = {};
+    if (tier) params.tier = tier;
+    return this.get("/v1/obligations/summary", params) as Promise<ApiRecord>;
+  }
+
+  // --- Digests ---
+  listDigests() { return this.get("/v1/digests") as Promise<ApiRecord[]>; }
+  triggerDigest() { return this.post("/v1/digests/trigger") as Promise<ApiRecord>; }
+  getDigest(key: string) { return this.get(`/v1/digests/${key}`) as Promise<ApiRecord>; }
+
+  // --- Entities ---
+  listEntities() { return this.get(`/v1/workspaces/${this.workspaceId}/entities`) as Promise<ApiRecord[]>; }
+
+  // --- Contacts ---
+  listContacts() { return this.get(`/v1/workspaces/${this.workspaceId}/contacts`) as Promise<ApiRecord[]>; }
+  getContact(id: string) { return this.get(`/v1/contacts/${id}`) as Promise<ApiRecord>; }
+  getContactProfile(id: string) { return this.get(`/v1/contacts/${id}/profile`) as Promise<ApiRecord>; }
+  createContact(data: ApiRecord) { return this.post(`/v1/workspaces/${this.workspaceId}/contacts`, data) as Promise<ApiRecord>; }
+  updateContact(id: string, data: ApiRecord) { return this.patch(`/v1/contacts/${id}`, data) as Promise<ApiRecord>; }
+  getNotificationPrefs(contactId: string) { return this.get(`/v1/contacts/${contactId}/notification-prefs`) as Promise<ApiRecord>; }
+  updateNotificationPrefs(contactId: string, prefs: ApiRecord) { return this.patch(`/v1/contacts/${contactId}/notification-prefs`, prefs) as Promise<ApiRecord>; }
+
+  // --- Cap Table ---
+  getCapTable(entityId: string) { return this.get(`/v1/entities/${entityId}/cap-table`) as Promise<ApiRecord>; }
+  getSafeNotes(entityId: string) { return this.get(`/v1/entities/${entityId}/safe-notes`) as Promise<ApiRecord[]>; }
+  getShareTransfers(entityId: string) { return this.get(`/v1/entities/${entityId}/share-transfers`) as Promise<ApiRecord[]>; }
+  getValuations(entityId: string) { return this.get(`/v1/entities/${entityId}/valuations`) as Promise<ApiRecord[]>; }
+  getCurrent409a(entityId: string) { return this.get(`/v1/entities/${entityId}/current-409a`) as Promise<ApiRecord>; }
+  issueEquity(data: ApiRecord) { return this.post("/v1/equity/grants", data) as Promise<ApiRecord>; }
+  issueSafe(data: ApiRecord) { return this.post("/v1/safe-notes", data) as Promise<ApiRecord>; }
+  transferShares(data: ApiRecord) { return this.post("/v1/share-transfers", data) as Promise<ApiRecord>; }
+  calculateDistribution(data: ApiRecord) { return this.post("/v1/distributions", data) as Promise<ApiRecord>; }
+
+  // --- Governance ---
+  listGovernanceBodies(entityId: string) { return this.get(`/v1/entities/${entityId}/governance-bodies`) as Promise<ApiRecord[]>; }
+  getGovernanceSeats(bodyId: string) { return this.get(`/v1/governance-bodies/${bodyId}/seats`) as Promise<ApiRecord[]>; }
+  listMeetings(bodyId: string) { return this.get(`/v1/governance-bodies/${bodyId}/meetings`) as Promise<ApiRecord[]>; }
+  getMeetingResolutions(meetingId: string) { return this.get(`/v1/meetings/${meetingId}/resolutions`) as Promise<ApiRecord[]>; }
+  conveneMeeting(data: ApiRecord) { return this.post("/v1/meetings", data) as Promise<ApiRecord>; }
+  castVote(meetingId: string, itemId: string, data: ApiRecord) { return this.post(`/v1/meetings/${meetingId}/agenda-items/${itemId}/vote`, data) as Promise<ApiRecord>; }
+
+  // --- Documents ---
+  getEntityDocuments(entityId: string) { return this.get(`/v1/formations/${entityId}/documents`) as Promise<ApiRecord[]>; }
+  generateContract(data: ApiRecord) { return this.post("/v1/contracts", data) as Promise<ApiRecord>; }
+  getSigningLink(documentId: string): ApiRecord {
+    return {
+      document_id: documentId,
+      signing_url: `https://humans.thecorporation.ai/sign/${documentId}`,
+    };
+  }
+
+  // --- Finance ---
+  createInvoice(data: ApiRecord) { return this.post("/v1/invoices", data) as Promise<ApiRecord>; }
+  runPayroll(data: ApiRecord) { return this.post("/v1/payroll/runs", data) as Promise<ApiRecord>; }
+  submitPayment(data: ApiRecord) { return this.post("/v1/payments", data) as Promise<ApiRecord>; }
+  openBankAccount(data: ApiRecord) { return this.post("/v1/bank-accounts", data) as Promise<ApiRecord>; }
+  classifyContractor(data: ApiRecord) { return this.post("/v1/contractors/classify", data) as Promise<ApiRecord>; }
+  reconcileLedger(data: ApiRecord) { return this.post("/v1/ledger/reconcile", data) as Promise<ApiRecord>; }
+
+  // --- Tax ---
+  fileTaxDocument(data: ApiRecord) { return this.post("/v1/tax/filings", data) as Promise<ApiRecord>; }
+  trackDeadline(data: ApiRecord) { return this.post("/v1/deadlines", data) as Promise<ApiRecord>; }
+
+  // --- Billing ---
+  getBillingStatus() { return this.get("/v1/billing/status", { workspace_id: this.workspaceId }) as Promise<ApiRecord>; }
+  getBillingPlans() {
+    return (this.get("/v1/billing/plans") as Promise<unknown>).then((data) => {
+      if (typeof data === "object" && data !== null && "plans" in data) {
+        return (data as { plans: ApiRecord[] }).plans;
+      }
+      return data as ApiRecord[];
+    });
+  }
+  createBillingPortal() { return this.post("/v1/billing/portal", { workspace_id: this.workspaceId }) as Promise<ApiRecord>; }
+  createBillingCheckout(tier: string, entityId?: string) {
+    const body: ApiRecord = { tier };
+    if (entityId) body.entity_id = entityId;
+    return this.post("/v1/billing/checkout", body) as Promise<ApiRecord>;
+  }
+
+  // --- Formations ---
+  getFormation(id: string) { return this.get(`/v1/formations/${id}`) as Promise<ApiRecord>; }
+  getFormationDocuments(id: string) { return this.get(`/v1/formations/${id}/documents`) as Promise<ApiRecord[]>; }
+  createFormation(data: ApiRecord) { return this.post("/v1/formations", data) as Promise<ApiRecord>; }
+
+  // --- Human obligations ---
+  getHumanObligations() { return this.get(`/v1/workspaces/${this.workspaceId}/human-obligations`) as Promise<ApiRecord[]>; }
+  getSignerToken(obligationId: string) { return this.post(`/v1/human-obligations/${obligationId}/signer-token`) as Promise<ApiRecord>; }
+
+  // --- Demo ---
+  seedDemo(name: string) { return this.post("/v1/demo/seed", { name, workspace_id: this.workspaceId }) as Promise<ApiRecord>; }
+
+  // --- Entities writes ---
+  convertEntity(entityId: string, data: ApiRecord) { return this.post(`/v1/entities/${entityId}/convert`, data) as Promise<ApiRecord>; }
+  dissolveEntity(entityId: string, data: ApiRecord) { return this.post(`/v1/entities/${entityId}/dissolve`, data) as Promise<ApiRecord>; }
+
+  // --- Agents ---
+  listAgents() { return this.get("/v1/agents") as Promise<ApiRecord[]>; }
+  getAgent(id: string) { return this.get(`/v1/agents/${id}`) as Promise<ApiRecord>; }
+  createAgent(data: ApiRecord) { return this.post("/v1/agents", data) as Promise<ApiRecord>; }
+  updateAgent(id: string, data: ApiRecord) { return this.patch(`/v1/agents/${id}`, data) as Promise<ApiRecord>; }
+  deleteAgent(id: string) { return this.del(`/v1/agents/${id}`); }
+  sendAgentMessage(id: string, body: string) { return this.post(`/v1/agents/${id}/messages`, { body }) as Promise<ApiRecord>; }
+  listAgentExecutions(id: string) { return this.get(`/v1/agents/${id}/executions`) as Promise<ApiRecord[]>; }
+  getAgentUsage(id: string) { return this.get(`/v1/agents/${id}/usage`) as Promise<ApiRecord>; }
+  addAgentSkill(id: string, data: ApiRecord) { return this.post(`/v1/agents/${id}/skills`, data) as Promise<ApiRecord>; }
+  listSupportedModels() { return this.get("/v1/models") as Promise<ApiRecord[]>; }
+
+  // --- Approvals ---
+  listPendingApprovals() { return this.get("/v1/approvals/pending") as Promise<ApiRecord[]>; }
+  respondApproval(id: string, decision: string, message = "") { return this.patch(`/v1/approvals/${id}`, { decision, message }) as Promise<ApiRecord>; }
+
+  // --- API Keys ---
+  listApiKeys() { return this.get("/v1/api-keys", { workspace_id: this.workspaceId }) as Promise<ApiRecord[]>; }
+
+  // --- Obligations ---
+  assignObligation(obligationId: string, contactId: string) {
+    return this.patch(`/v1/obligations/${obligationId}/assign`, { contact_id: contactId }) as Promise<ApiRecord>;
+  }
+
+  // --- Config ---
+  getConfig() { return this.get("/v1/config") as Promise<ApiRecord>; }
+
+  // --- Link/Claim ---
+  async createLink(): Promise<ApiRecord> {
+    const resp = await this.request("POST", "/v1/workspaces/link");
+    if (!resp.ok) throw new Error(`${resp.status} ${resp.statusText}`);
+    return resp.json() as Promise<ApiRecord>;
+  }
+}
