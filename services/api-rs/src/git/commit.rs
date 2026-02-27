@@ -10,6 +10,7 @@ use std::collections::HashMap;
 
 use super::error::GitStorageError;
 use super::repo::CorpRepo;
+use super::signing::{CommitContext, build_signed_message};
 
 /// A file to write in a commit. Path is relative to repo root.
 pub struct FileWrite {
@@ -43,11 +44,16 @@ impl FileWrite {
 /// Builds a new tree by overlaying file writes onto the existing tree at the
 /// ref's HEAD. The ref must already exist (created during repo init or via
 /// branch creation).
+///
+/// When `ctx` is provided, the commit message is augmented with an actor
+/// trailer. If the context also includes a signer, the commit is
+/// cryptographically signed with an SSH Ed25519 key.
 pub fn commit_files(
     repo: &CorpRepo,
     refname: &str,
     message: &str,
     files: &[FileWrite],
+    ctx: Option<&CommitContext<'_>>,
 ) -> Result<Oid, GitStorageError> {
     let git = repo.inner();
     let full_ref = CorpRepo::normalize_ref(refname);
@@ -64,14 +70,43 @@ pub fn commit_files(
     let new_tree = git.find_tree(new_tree_oid)?;
     let sig = CorpRepo::signature()?;
 
-    let commit_oid = git.commit(
-        Some(&full_ref),
-        &sig,
-        &sig,
-        message,
-        &new_tree,
-        &[&parent_commit],
-    )?;
+    // Build final message (with actor trailer when ctx is present).
+    let final_message = match ctx {
+        Some(c) => build_signed_message(message, c.actor, c.signer),
+        None => message.to_owned(),
+    };
+
+    let commit_oid = match ctx.and_then(|c| c.signer) {
+        Some(signer) => {
+            // Create the commit buffer without writing, sign it, then write signed.
+            let commit_buf = git.commit_create_buffer(
+                &sig,
+                &sig,
+                &final_message,
+                &new_tree,
+                &[&parent_commit],
+            )?;
+            let commit_str = std::str::from_utf8(&commit_buf).map_err(|e| {
+                GitStorageError::SigningError(format!("commit buffer not UTF-8: {e}"))
+            })?;
+            let signature = signer.sign_commit(commit_str)?;
+            let signed_oid =
+                git.commit_signed(commit_str, &signature, Some("gpgsig"))?;
+            // Update ref to point to the signed commit.
+            git.reference(&full_ref, signed_oid, true, "signed commit")?;
+            signed_oid
+        }
+        None => {
+            git.commit(
+                Some(&full_ref),
+                &sig,
+                &sig,
+                &final_message,
+                &new_tree,
+                &[&parent_commit],
+            )?
+        }
+    };
 
     tracing::debug!(
         ref_ = %full_ref,

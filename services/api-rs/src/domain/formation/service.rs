@@ -120,13 +120,14 @@ pub fn create_entity(
 
     // Initialize the entity repo with all files in one atomic commit
     let repo_path = layout.entity_repo_path(workspace_id, entity_id);
-    let repo = crate::git::repo::CorpRepo::init(&repo_path)
+    let repo = crate::git::repo::CorpRepo::init(&repo_path, None)
         .map_err(|e| FormationError::Storage(format!("failed to init repo: {e}")))?;
     crate::git::commit::commit_files(
         &repo,
         "main",
         &format!("Form entity: {}", entity.legal_name()),
         &files,
+        None,
     )
     .map_err(|e| FormationError::Storage(format!("failed to commit: {e}")))?;
 
@@ -141,6 +142,7 @@ pub fn create_entity(
         "main",
         "Advance to documents_generated",
         &[entity_file],
+        None,
     )
     .map_err(|e| FormationError::Storage(format!("failed to commit status: {e}")))?;
 

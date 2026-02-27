@@ -1,5 +1,5 @@
 # ── Builder ────────────────────────────────────────────────────────────────
-FROM rust:1.85-slim AS builder
+FROM rust:slim AS builder
 
 RUN apt-get update && apt-get install -y libssl-dev pkg-config && rm -rf /var/lib/apt/lists/*
 

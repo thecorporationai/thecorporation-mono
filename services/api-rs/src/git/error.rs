@@ -36,6 +36,10 @@ pub enum GitStorageError {
     #[error("git error: {0}")]
     Git(String),
 
+    /// Commit signing failed.
+    #[error("signing error: {0}")]
+    SigningError(String),
+
     /// Filesystem I/O error.
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),

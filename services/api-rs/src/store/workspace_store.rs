@@ -33,7 +33,7 @@ impl<'a> WorkspaceStore<'a> {
         name: &str,
     ) -> Result<Self, GitStorageError> {
         let path = layout.workspace_repo_path(workspace_id);
-        let repo = CorpRepo::init(&path)?;
+        let repo = CorpRepo::init(&path, None)?;
 
         let record = WorkspaceRecord {
             workspace_id,
@@ -42,7 +42,7 @@ impl<'a> WorkspaceStore<'a> {
         };
 
         let files = vec![FileWrite::json("workspace.json", &record)?];
-        commit_files(&repo, "main", "Initialize workspace", &files)?;
+        commit_files(&repo, "main", "Initialize workspace", &files, None)?;
 
         Ok(Self {
             repo,
@@ -78,7 +78,7 @@ impl<'a> WorkspaceStore<'a> {
         message: &str,
     ) -> Result<(), GitStorageError> {
         let files = vec![FileWrite::json(path, value)?];
-        commit_files(&self.repo, "main", message, &files)?;
+        commit_files(&self.repo, "main", message, &files, None)?;
         Ok(())
     }
 
@@ -108,6 +108,7 @@ impl<'a> WorkspaceStore<'a> {
             "main",
             &format!("Revoke API key {key_id}"),
             &files,
+            None,
         )?;
         Ok(())
     }

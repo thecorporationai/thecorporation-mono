@@ -11,6 +11,7 @@ use std::collections::BTreeMap;
 
 use super::error::GitStorageError;
 use super::repo::CorpRepo;
+use super::signing::{CommitContext, build_signed_message};
 
 /// Result of a merge operation.
 #[derive(Debug)]
@@ -31,6 +32,7 @@ pub fn merge_branch(
     repo: &CorpRepo,
     source_branch: &str,
     target_branch: &str,
+    ctx: Option<&CommitContext<'_>>,
 ) -> Result<MergeResult, GitStorageError> {
     let source_oid = repo.resolve_ref(source_branch)?;
     let target_oid = repo.resolve_ref(target_branch)?;
@@ -53,7 +55,7 @@ pub fn merge_branch(
         }
 
         // Branches have diverged — attempt three-way merge.
-        return merge_three_way(repo, source_oid, target_oid, target_branch);
+        return merge_three_way(repo, source_oid, target_oid, target_branch, ctx);
     }
 
     // Fast-forward: update the target ref to point to source's HEAD.
@@ -86,6 +88,7 @@ fn merge_three_way(
     source_oid: Oid,
     target_oid: Oid,
     target_branch: &str,
+    ctx: Option<&CommitContext<'_>>,
 ) -> Result<MergeResult, GitStorageError> {
     let git = repo.inner();
 
@@ -169,15 +172,42 @@ fn merge_three_way(
     // Create merge commit with two parents.
     let sig = CorpRepo::signature()?;
     let target_full = CorpRepo::normalize_ref(target_branch);
+    let base_message = format!("merge into {target_branch}");
 
-    let commit_oid = git.commit(
-        Some(&target_full),
-        &sig,
-        &sig,
-        &format!("merge into {target_branch}"),
-        &merged_tree,
-        &[&target_commit, &source_commit],
-    )?;
+    let final_message = match ctx {
+        Some(c) => build_signed_message(&base_message, c.actor, c.signer),
+        None => base_message,
+    };
+
+    let commit_oid = match ctx.and_then(|c| c.signer) {
+        Some(signer) => {
+            let commit_buf = git.commit_create_buffer(
+                &sig,
+                &sig,
+                &final_message,
+                &merged_tree,
+                &[&target_commit, &source_commit],
+            )?;
+            let commit_str = std::str::from_utf8(&commit_buf).map_err(|e| {
+                GitStorageError::SigningError(format!("commit buffer not UTF-8: {e}"))
+            })?;
+            let signature = signer.sign_commit(commit_str)?;
+            let signed_oid =
+                git.commit_signed(commit_str, &signature, Some("gpgsig"))?;
+            git.reference(&target_full, signed_oid, true, "signed merge commit")?;
+            signed_oid
+        }
+        None => {
+            git.commit(
+                Some(&target_full),
+                &sig,
+                &sig,
+                &final_message,
+                &merged_tree,
+                &[&target_commit, &source_commit],
+            )?
+        }
+    };
 
     tracing::debug!(
         target = %target_branch,
@@ -363,7 +393,7 @@ mod tests {
     /// Helper: init a repo and return (repo, tmp_dir).
     fn setup_repo() -> (CorpRepo, TempDir) {
         let tmp = TempDir::new().unwrap();
-        let repo = CorpRepo::init(tmp.path().join("test.git").as_path()).unwrap();
+        let repo = CorpRepo::init(tmp.path().join("test.git").as_path(), None).unwrap();
         (repo, tmp)
     }
 
@@ -380,11 +410,12 @@ mod tests {
             "feature",
             "add data",
             &[FileWrite::raw("data.json", b"{\"a\": 1}".to_vec())],
+            None,
         )
         .unwrap();
 
         // Merge feature into main — should fast-forward.
-        let result = merge_branch(&repo, "feature", "main").unwrap();
+        let result = merge_branch(&repo, "feature", "main", None).unwrap();
         assert!(matches!(result, MergeResult::FastForward { .. }));
     }
 
@@ -406,6 +437,7 @@ mod tests {
                 }))
                 .unwrap(),
             )],
+            None,
         )
         .unwrap();
 
@@ -426,6 +458,7 @@ mod tests {
                 }))
                 .unwrap(),
             )],
+            None,
         )
         .unwrap();
 
@@ -443,11 +476,12 @@ mod tests {
                 }))
                 .unwrap(),
             )],
+            None,
         )
         .unwrap();
 
         // Merge feature into main.
-        let result = merge_branch(&repo, "feature", "main").unwrap();
+        let result = merge_branch(&repo, "feature", "main", None).unwrap();
         assert!(matches!(result, MergeResult::ThreeWayMerge { .. }));
 
         // Read merged result.
@@ -470,6 +504,7 @@ mod tests {
             "main",
             "add a",
             &[FileWrite::raw("a.json", b"{\"x\": 1}".to_vec())],
+            None,
         )
         .unwrap();
 
@@ -479,10 +514,11 @@ mod tests {
             "feature",
             "add b",
             &[FileWrite::raw("b.json", b"{\"y\": 2}".to_vec())],
+            None,
         )
         .unwrap();
 
-        let result = merge_branch(&repo, "feature", "main").unwrap();
+        let result = merge_branch(&repo, "feature", "main", None).unwrap();
         assert!(matches!(result, MergeResult::ThreeWayMerge { .. }));
 
         // Both files should exist on main.
@@ -506,6 +542,7 @@ mod tests {
                 }))
                 .unwrap(),
             )],
+            None,
         )
         .unwrap();
 
@@ -523,6 +560,7 @@ mod tests {
                 }))
                 .unwrap(),
             )],
+            None,
         )
         .unwrap();
 
@@ -538,11 +576,12 @@ mod tests {
                 }))
                 .unwrap(),
             )],
+            None,
         )
         .unwrap();
 
         // Merge feature into main — source (feature/theirs) wins.
-        let result = merge_branch(&repo, "feature", "main").unwrap();
+        let result = merge_branch(&repo, "feature", "main", None).unwrap();
         assert!(matches!(result, MergeResult::ThreeWayMerge { .. }));
 
         let merged: Value = repo.read_json("main", "corp.json").unwrap();
@@ -559,6 +598,7 @@ mod tests {
             "main",
             "base",
             &[FileWrite::raw("readme.txt", b"hello world".to_vec())],
+            None,
         )
         .unwrap();
 
@@ -570,6 +610,7 @@ mod tests {
             "main",
             "update main",
             &[FileWrite::raw("readme.txt", b"hello from main".to_vec())],
+            None,
         )
         .unwrap();
 
@@ -578,10 +619,11 @@ mod tests {
             "feature",
             "update feature",
             &[FileWrite::raw("readme.txt", b"hello from feature".to_vec())],
+            None,
         )
         .unwrap();
 
-        let result = merge_branch(&repo, "feature", "main");
+        let result = merge_branch(&repo, "feature", "main", None);
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert!(
@@ -606,6 +648,7 @@ mod tests {
                 }))
                 .unwrap(),
             )],
+            None,
         )
         .unwrap();
 
@@ -624,6 +667,7 @@ mod tests {
                 }))
                 .unwrap(),
             )],
+            None,
         )
         .unwrap();
 
@@ -640,10 +684,11 @@ mod tests {
                 }))
                 .unwrap(),
             )],
+            None,
         )
         .unwrap();
 
-        let result = merge_branch(&repo, "feature", "main").unwrap();
+        let result = merge_branch(&repo, "feature", "main", None).unwrap();
         assert!(matches!(result, MergeResult::ThreeWayMerge { .. }));
 
         let merged: Value = repo.read_json("main", "data.json").unwrap();
@@ -669,6 +714,7 @@ mod tests {
                 }))
                 .unwrap(),
             )],
+            None,
         )
         .unwrap();
 
@@ -687,6 +733,7 @@ mod tests {
                 }))
                 .unwrap(),
             )],
+            None,
         )
         .unwrap();
 
@@ -702,10 +749,11 @@ mod tests {
                 }))
                 .unwrap(),
             )],
+            None,
         )
         .unwrap();
 
-        let result = merge_branch(&repo, "feature", "main").unwrap();
+        let result = merge_branch(&repo, "feature", "main", None).unwrap();
         assert!(matches!(result, MergeResult::ThreeWayMerge { .. }));
 
         let merged: Value = repo.read_json("main", "data.json").unwrap();

@@ -1,12 +1,13 @@
 import { requireConfig } from "../config.js";
 import { CorpAPIClient } from "../api-client.js";
 import { printError, printStatusPanel } from "../output.js";
+import { withSpinner } from "../spinner.js";
 
 export async function statusCommand(): Promise<void> {
   const cfg = requireConfig("api_url", "api_key", "workspace_id");
   const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
   try {
-    const data = await client.getStatus();
+    const data = await withSpinner("Loading", () => client.getStatus());
     printStatusPanel(data);
   } catch (err) {
     printError(`Failed to fetch status: ${err}`);

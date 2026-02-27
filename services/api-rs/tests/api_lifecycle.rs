@@ -20,6 +20,7 @@ fn build_app(tmp: &TempDir) -> Router {
     let state = api_rs::routes::AppState {
         layout,
         jwt_secret: Arc::from(b"test-secret-for-integration-tests".as_slice()),
+        commit_signer: None,
     };
 
     Router::new()

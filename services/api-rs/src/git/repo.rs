@@ -8,6 +8,7 @@ use serde::de::DeserializeOwned;
 use std::path::{Path, PathBuf};
 
 use super::error::GitStorageError;
+use super::signing::{CommitContext, build_signed_message};
 
 /// A corporate git repository. All repos are bare.
 pub struct CorpRepo {
@@ -22,7 +23,10 @@ impl CorpRepo {
     ///
     /// Creates an initial empty commit on `refs/heads/main` so that callers
     /// never have to deal with an unborn HEAD.
-    pub fn init(path: &Path) -> Result<Self, GitStorageError> {
+    ///
+    /// When `ctx` is provided, the initial commit is signed and includes
+    /// an actor trailer.
+    pub fn init(path: &Path, ctx: Option<&CommitContext<'_>>) -> Result<Self, GitStorageError> {
         if path.exists() {
             return Err(GitStorageError::Git(format!(
                 "path already exists: {}",
@@ -42,14 +46,40 @@ impl CorpRepo {
             let empty_tree = repo.find_tree(empty_tree_oid)?;
 
             let sig = Self::signature()?;
-            repo.commit(
-                Some("refs/heads/main"),
-                &sig,
-                &sig,
-                "initial commit",
-                &empty_tree,
-                &[], // no parents
-            )?
+            let message = match ctx {
+                Some(c) => build_signed_message("initial commit", c.actor, c.signer),
+                None => "initial commit".to_owned(),
+            };
+
+            match ctx.and_then(|c| c.signer) {
+                Some(signer) => {
+                    let commit_buf = repo.commit_create_buffer(
+                        &sig,
+                        &sig,
+                        &message,
+                        &empty_tree,
+                        &[],
+                    )?;
+                    let commit_str = std::str::from_utf8(&commit_buf).map_err(|e| {
+                        GitStorageError::SigningError(format!("commit buffer not UTF-8: {e}"))
+                    })?;
+                    let signature = signer.sign_commit(commit_str)?;
+                    let signed_oid =
+                        repo.commit_signed(commit_str, &signature, Some("gpgsig"))?;
+                    repo.reference("refs/heads/main", signed_oid, true, "initial signed commit")?;
+                    signed_oid
+                }
+                None => {
+                    repo.commit(
+                        Some("refs/heads/main"),
+                        &sig,
+                        &sig,
+                        &message,
+                        &empty_tree,
+                        &[],
+                    )?
+                }
+            }
         };
 
         // Point HEAD at main so `head()` works.

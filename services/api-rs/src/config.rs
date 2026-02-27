@@ -25,6 +25,11 @@ pub struct Config {
 
     #[serde(default)]
     pub stripe_webhook_secret: Option<String>,
+
+    /// PEM-encoded Ed25519 private key for signing git commits.
+    /// When absent, commits are unsigned (backward-compatible).
+    #[serde(default)]
+    pub commit_signing_key: Option<String>,
 }
 
 fn default_data_dir() -> PathBuf {

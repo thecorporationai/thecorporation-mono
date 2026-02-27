@@ -235,7 +235,7 @@ async fn merge_branch(
             )
             .map_err(|e| AppError::Internal(e.to_string()))?;
 
-            crate::git::merge::merge_branch(store.repo(), &source, &target)
+            crate::git::merge::merge_branch(store.repo(), &source, &target, None)
                 .map_err(AppError::from)
         }
     })

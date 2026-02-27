@@ -1,13 +1,14 @@
 import { requireConfig, resolveEntityId } from "../config.js";
 import { CorpAPIClient } from "../api-client.js";
 import { printEntitiesTable, printError, printSuccess, printJson } from "../output.js";
+import { withSpinner } from "../spinner.js";
 import chalk from "chalk";
 
 export async function entitiesCommand(opts: { json?: boolean }): Promise<void> {
   const cfg = requireConfig("api_url", "api_key", "workspace_id");
   const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
   try {
-    const entities = await client.listEntities();
+    const entities = await withSpinner("Loading", () => client.listEntities(), opts.json);
     if (opts.json) {
       printJson(entities);
     } else if (entities.length === 0) {
