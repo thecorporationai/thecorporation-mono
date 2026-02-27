@@ -1,0 +1,17 @@
+{
+  "name": "@thecorporation/server-linux-arm64-gnu",
+  "version": "0.1.0",
+  "description": "Linux arm64 binary for the Corporation API server",
+  "os": ["linux"],
+  "cpu": ["arm64"],
+  "files": ["bin/"],
+  "publishConfig": {
+    "access": "public"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/thecorporation/thecorporation.git",
+    "directory": "packages/server/npm/linux-arm64-gnu"
+  }
+}

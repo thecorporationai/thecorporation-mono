@@ -1,0 +1,17 @@
+{
+  "name": "@thecorporation/server-win32-x64-msvc",
+  "version": "0.1.0",
+  "description": "Windows x64 binary for the Corporation API server",
+  "os": ["win32"],
+  "cpu": ["x64"],
+  "files": ["bin/"],
+  "publishConfig": {
+    "access": "public"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/thecorporation/thecorporation.git",
+    "directory": "packages/server/npm/win32-x64-msvc"
+  }
+}

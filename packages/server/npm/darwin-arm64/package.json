@@ -1,0 +1,17 @@
+{
+  "name": "@thecorporation/server-darwin-arm64",
+  "version": "0.1.0",
+  "description": "macOS arm64 (Apple Silicon) binary for the Corporation API server",
+  "os": ["darwin"],
+  "cpu": ["arm64"],
+  "files": ["bin/"],
+  "publishConfig": {
+    "access": "public"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/thecorporation/thecorporation.git",
+    "directory": "packages/server/npm/darwin-arm64"
+  }
+}
