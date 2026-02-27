@@ -17,7 +17,7 @@ Add to `claude_desktop_config.json`:
   "mcpServers": {
     "thecorporation": {
       "command": "uvx",
-      "args": ["--from", "git+https://github.com/yourusername/thecorporation#subdirectory=mcp-server", "thecorporation"]
+      "args": ["--from", "git+https://github.com/thecorporationai/thecorporation-mono#subdirectory=mcp-server", "thecorporation"]
     }
   }
 }

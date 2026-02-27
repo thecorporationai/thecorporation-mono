@@ -5,7 +5,7 @@
   "description": "Agent-native corporate operations — form LLCs, manage equity, run payroll, generate contracts, file taxes. 12 MCP tools, zero corporate law expertise required.",
   "version": "0.1.0",
   "repository": {
-    "url": "https://github.com/thecorporation/thecorporation",
+    "url": "https://github.com/thecorporationai/thecorporation-mono",
     "source": "github"
   },
   "packages": [

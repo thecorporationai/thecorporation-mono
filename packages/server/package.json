@@ -39,7 +39,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/thecorporation/thecorporation.git",
+    "url": "https://github.com/thecorporationai/thecorporation-mono.git",
     "directory": "packages/server"
   },
   "homepage": "https://thecorporation.ai"
