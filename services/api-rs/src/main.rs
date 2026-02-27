@@ -1,3 +1,6 @@
+#![allow(dead_code)]
+#![allow(clippy::inconsistent_digit_grouping)]
+
 use axum::{Json, Router, routing::get};
 use serde_json::{Value, json};
 use std::net::SocketAddr;
@@ -5,18 +8,12 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tracing_subscriber::EnvFilter;
 
-#[allow(dead_code)]
 mod config;
-#[allow(dead_code)]
 mod domain;
-#[allow(dead_code)]
 mod error;
-#[allow(dead_code)]
 mod git;
 mod openapi;
-#[allow(dead_code)]
 mod routes;
-#[allow(dead_code)]
 mod store;
 
 async fn health() -> Json<Value> {

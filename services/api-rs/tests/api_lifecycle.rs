@@ -43,6 +43,7 @@ fn build_app(tmp: &TempDir) -> Router {
         .merge(api_rs::routes::agents::agent_routes())
         .merge(api_rs::routes::billing::billing_routes())
         .merge(api_rs::routes::admin::admin_routes())
+        .merge(api_rs::routes::webhooks::webhook_routes())
         .with_state(state)
 }
 
@@ -229,7 +230,7 @@ async fn test_formation_lifecycle() {
     )
     .await;
     assert_eq!(status, StatusCode::OK, "get document: {body}");
-    assert!(body["signatures"].as_array().unwrap().len() > 0);
+    assert!(!body["signatures"].as_array().unwrap().is_empty());
     assert_eq!(body["entity_id"], entity_id);
 
     // NOTE: The formation FSM requires intermediate transitions
@@ -1132,7 +1133,7 @@ async fn test_full_cross_domain_lifecycle() {
     let we_query = format!("workspace_id={ws_id}&entity_id={entity_id}");
 
     // Create a contact (employee)
-    let (status, contact) = post_json(
+    let (status, _contact) = post_json(
         &app,
         "/v1/contacts",
         json!({
@@ -1252,6 +1253,582 @@ async fn test_full_cross_domain_lifecycle() {
     .await;
     assert_eq!(s, StatusCode::OK);
     assert!(!obligations.as_array().unwrap().is_empty());
+}
+
+// ── Helper: PATCH JSON ───────────────────────────────────────────────
+
+async fn patch_json(app: &Router, path: &str, body: Value) -> (StatusCode, Value) {
+    let req = Request::builder()
+        .method(Method::PATCH)
+        .uri(path)
+        .header("content-type", "application/json")
+        .body(Body::from(serde_json::to_vec(&body).unwrap()))
+        .unwrap();
+    let response = app.clone().oneshot(req).await.unwrap();
+    let status = response.status();
+    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let value: Value = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
+    (status, value)
+}
+
+// ── 14. Webhook lifecycle ───────────────────────────────────────────
+
+#[tokio::test]
+async fn test_webhook_lifecycle() {
+    let tmp = TempDir::new().unwrap();
+    let app = build_app(&tmp);
+
+    // 1. Stripe webhook
+    let (status, body) = post_json(
+        &app,
+        "/v1/webhooks/stripe",
+        json!({
+            "id": "evt_test_123",
+            "type": "payment_intent.succeeded",
+            "data": { "object": { "amount": 5000 } }
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "stripe webhook: {body}");
+    assert_eq!(body["received"], true);
+    assert_eq!(body["event_id"], "evt_test_123");
+
+    // 2. Stripe billing webhook
+    let (status, body) = post_json(
+        &app,
+        "/v1/webhooks/stripe-billing",
+        json!({
+            "id": "evt_billing_456",
+            "type": "invoice.paid",
+            "data": { "object": { "subscription": "sub_123" } }
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "stripe billing webhook: {body}");
+    assert_eq!(body["received"], true);
+    assert_eq!(body["event_id"], "evt_billing_456");
+
+    // 3. Webhook with missing optional fields
+    let (status, body) = post_json(
+        &app,
+        "/v1/webhooks/stripe",
+        json!({}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "empty webhook: {body}");
+    assert_eq!(body["received"], true);
+    assert!(body["event_id"].is_null());
+}
+
+// ── 15. Auth & workspace provisioning lifecycle ─────────────────────
+
+#[tokio::test]
+async fn test_auth_workspace_lifecycle() {
+    let tmp = TempDir::new().unwrap();
+    let app = build_app(&tmp);
+
+    // 1. Provision a workspace
+    let (status, body) = post_json(
+        &app,
+        "/v1/workspaces/provision",
+        json!({
+            "name": "Test Workspace",
+            "owner_email": "admin@test.com"
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "provision workspace: {body}");
+    let ws_id = body["workspace_id"].as_str().unwrap();
+    assert_eq!(body["name"], "Test Workspace");
+    assert!(body["api_key"].as_str().unwrap().starts_with("sk_"));
+    let api_key = body["api_key"].as_str().unwrap().to_owned();
+    let _key_id = body["api_key_id"].as_str().unwrap();
+
+    // 2. Create another API key in that workspace
+    let (status, body) = post_json(
+        &app,
+        "/v1/api-keys",
+        json!({
+            "workspace_id": ws_id,
+            "name": "secondary-key",
+            "scopes": ["all"]
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "create api key: {body}");
+    assert!(body["raw_key"].as_str().unwrap().starts_with("sk_"));
+    assert_eq!(body["name"], "secondary-key");
+    let second_key_id = body["key_id"].as_str().unwrap().to_owned();
+
+    // 3. List API keys
+    let (status, body) = get_json(
+        &app,
+        &format!("/v1/api-keys/{ws_id}"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "list api keys: {body}");
+    let keys = body.as_array().unwrap();
+    assert_eq!(keys.len(), 2, "should have 2 keys");
+
+    // 4. Token exchange
+    let (status, body) = post_json(
+        &app,
+        "/v1/auth/token-exchange",
+        json!({
+            "api_key": api_key,
+            "workspace_id": ws_id,
+            "ttl_seconds": 1800
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "token exchange: {body}");
+    assert!(body["access_token"].as_str().is_some());
+    assert_eq!(body["token_type"], "Bearer");
+    assert_eq!(body["expires_in"], 1800);
+
+    // 5. Empty workspace name should fail
+    let (status, _body) = post_json(
+        &app,
+        "/v1/workspaces/provision",
+        json!({ "name": "" }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "empty name should fail");
+
+    // 6. Verify we can list the workspace via admin
+    let (status, body) = get_json(&app, "/v1/admin/workspaces").await;
+    assert_eq!(status, StatusCode::OK, "list workspaces: {body}");
+    let workspaces = body.as_array().unwrap();
+    assert_eq!(workspaces.len(), 1);
+    assert_eq!(workspaces[0]["name"], "Test Workspace");
+
+    // Store second_key_id to suppress warning
+    let _ = second_key_id;
+}
+
+// ── 16. Agent management lifecycle ──────────────────────────────────
+
+#[tokio::test]
+async fn test_agent_lifecycle() {
+    let tmp = TempDir::new().unwrap();
+    let app = build_app(&tmp);
+
+    // 1. Provision workspace first (agents live in workspace repos)
+    let (status, ws_body) = post_json(
+        &app,
+        "/v1/workspaces/provision",
+        json!({ "name": "Agent Workspace" }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED);
+    let ws_id = ws_body["workspace_id"].as_str().unwrap();
+
+    // 2. Create an agent
+    let (status, body) = post_json(
+        &app,
+        "/v1/agents",
+        json!({
+            "workspace_id": ws_id,
+            "name": "CFO Agent",
+            "system_prompt": "You are a helpful CFO assistant.",
+            "model": "claude-sonnet-4-6"
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "create agent: {body}");
+    let agent_id = body["agent_id"].as_str().unwrap();
+    assert_eq!(body["name"], "CFO Agent");
+    assert_eq!(body["status"], "active");
+    assert_eq!(body["model"], "claude-sonnet-4-6");
+
+    // 3. List agents
+    let (status, body) = get_json(
+        &app,
+        &format!("/v1/agents?workspace_id={ws_id}"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "list agents: {body}");
+    let agents = body.as_array().unwrap();
+    assert_eq!(agents.len(), 1);
+    assert_eq!(agents[0]["name"], "CFO Agent");
+
+    // 4. Update agent
+    let (status, body) = patch_json(
+        &app,
+        &format!("/v1/agents/{agent_id}"),
+        json!({
+            "workspace_id": ws_id,
+            "name": "Updated CFO Agent",
+            "webhook_url": "https://hooks.example.com/agent"
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "update agent: {body}");
+    assert_eq!(body["name"], "Updated CFO Agent");
+    assert_eq!(body["webhook_url"], "https://hooks.example.com/agent");
+
+    // 5. Add skill to agent
+    let (status, body) = post_json(
+        &app,
+        &format!("/v1/agents/{agent_id}/skills"),
+        json!({
+            "workspace_id": ws_id,
+            "name": "financial_analysis",
+            "description": "Analyze financial statements"
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "add skill: {body}");
+    let skills = body["skills"].as_array().unwrap();
+    assert_eq!(skills.len(), 1);
+    assert_eq!(skills[0]["name"], "financial_analysis");
+
+    // 6. Send message to agent
+    let (status, body) = post_json(
+        &app,
+        &format!("/v1/agents/{agent_id}/messages"),
+        json!({
+            "workspace_id": ws_id,
+            "message": "What is the current runway?"
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "send message: {body}");
+    assert_eq!(body["status"], "queued");
+}
+
+// ── 17. Compliance lifecycle ────────────────────────────────────────
+
+#[tokio::test]
+async fn test_compliance_lifecycle() {
+    let tmp = TempDir::new().unwrap();
+    let app = build_app(&tmp);
+    let (ws_id, entity_id) = create_entity(&app).await;
+
+    // 1. File tax document
+    let (status, body) = post_json(
+        &app,
+        "/v1/tax/filings",
+        json!({
+            "entity_id": entity_id,
+            "document_type": "form_1120",
+            "tax_year": 2025,
+            "workspace_id": ws_id,
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "file tax doc: {body}");
+    assert!(body["filing_id"].as_str().is_some());
+    assert_eq!(body["document_type"], "form_1120");
+    assert_eq!(body["tax_year"], 2025);
+    assert_eq!(body["status"], "pending");
+
+    // 2. Create deadline
+    let (status, body) = post_json(
+        &app,
+        "/v1/deadlines",
+        json!({
+            "entity_id": entity_id,
+            "deadline_type": "tax_filing",
+            "due_date": "2026-04-15",
+            "description": "Annual corporate tax filing due",
+            "recurrence": "annual",
+            "workspace_id": ws_id,
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "create deadline: {body}");
+    assert!(body["deadline_id"].as_str().is_some());
+    assert_eq!(body["deadline_type"], "tax_filing");
+    assert_eq!(body["due_date"], "2026-04-15");
+    assert_eq!(body["recurrence"], "annual");
+
+    // 3. Classify contractor
+    let (status, body) = post_json(
+        &app,
+        "/v1/contractors/classify",
+        json!({
+            "entity_id": entity_id,
+            "contractor_name": "Jane Consultant",
+            "state": "CA",
+            "factors": { "works_for_others": true, "sets_own_hours": true },
+            "workspace_id": ws_id,
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "classify contractor: {body}");
+    assert!(body["classification_id"].as_str().is_some());
+    assert_eq!(body["contractor_name"], "Jane Consultant");
+    assert_eq!(body["state"], "CA");
+    // Should have a risk level and classification result
+    assert!(body["risk_level"].as_str().is_some());
+    assert!(body["classification"].as_str().is_some());
+}
+
+// ── 18. Billing lifecycle ───────────────────────────────────────────
+
+#[tokio::test]
+async fn test_billing_lifecycle() {
+    let tmp = TempDir::new().unwrap();
+    let app = build_app(&tmp);
+
+    // 1. List plans (no workspace needed)
+    let (status, body) = get_json(&app, "/v1/billing/plans").await;
+    assert_eq!(status, StatusCode::OK, "list plans: {body}");
+    let plans = body.as_array().unwrap();
+    assert!(plans.len() >= 3, "should have at least 3 plans");
+    assert!(plans.iter().any(|p| p["plan_id"] == "free"));
+    assert!(plans.iter().any(|p| p["plan_id"] == "pro"));
+    assert!(plans.iter().any(|p| p["plan_id"] == "enterprise"));
+
+    // 2. Provision workspace for billing tests
+    let (status, ws_body) = post_json(
+        &app,
+        "/v1/workspaces/provision",
+        json!({ "name": "Billing Test WS" }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED);
+    let ws_id = ws_body["workspace_id"].as_str().unwrap();
+
+    // 3. Checkout (creates subscription stub)
+    let (status, body) = post_json(
+        &app,
+        "/v1/billing/checkout",
+        json!({
+            "workspace_id": ws_id,
+            "plan_id": "pro",
+            "success_url": "https://example.com/success",
+            "cancel_url": "https://example.com/cancel"
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "checkout: {body}");
+    assert!(body["checkout_url"].as_str().is_some());
+    assert!(body["session_id"].as_str().is_some());
+    assert_eq!(body["plan_id"], "pro");
+
+    // 4. Billing status
+    let (status, body) = get_json(
+        &app,
+        &format!("/v1/billing/status?workspace_id={ws_id}"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "billing status: {body}");
+    assert_eq!(body["plan"], "pro");
+
+    // 5. Create subscription
+    let (status, body) = post_json(
+        &app,
+        "/v1/subscriptions",
+        json!({
+            "workspace_id": ws_id,
+            "plan": "enterprise"
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "create subscription: {body}");
+    let sub_id = body["subscription_id"].as_str().unwrap();
+    assert_eq!(body["plan"], "enterprise");
+    assert_eq!(body["status"], "active");
+
+    // 6. Get subscription
+    let (status, body) = get_json(
+        &app,
+        &format!("/v1/subscriptions/{sub_id}?workspace_id={ws_id}"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "get subscription: {body}");
+    assert_eq!(body["subscription_id"], sub_id);
+    assert_eq!(body["plan"], "enterprise");
+
+    // 7. Tick subscriptions
+    let (status, body) = post_json(
+        &app,
+        "/v1/subscriptions/tick",
+        json!({ "workspace_id": ws_id }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "tick subscriptions: {body}");
+    assert!(body["workspaces_processed"].as_i64().is_some());
+
+    // 8. Portal
+    let (status, body) = post_json(
+        &app,
+        "/v1/billing/portal",
+        json!({
+            "workspace_id": ws_id,
+            "return_url": "https://example.com/return"
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "portal: {body}");
+    assert!(body["portal_url"].as_str().is_some());
+}
+
+// ── 19. Admin endpoints ─────────────────────────────────────────────
+
+#[tokio::test]
+async fn test_admin_endpoints() {
+    let tmp = TempDir::new().unwrap();
+    let app = build_app(&tmp);
+
+    // 1. System health
+    let (status, body) = get_json(&app, "/v1/admin/system-health").await;
+    assert_eq!(status, StatusCode::OK, "system health: {body}");
+    assert_eq!(body["status"], "healthy");
+    assert!(body["version"].as_str().is_some());
+
+    // 2. List workspaces (empty initially)
+    let (status, body) = get_json(&app, "/v1/admin/workspaces").await;
+    assert_eq!(status, StatusCode::OK, "list workspaces empty: {body}");
+    assert_eq!(body.as_array().unwrap().len(), 0);
+
+    // 3. Provision a workspace + create an entity
+    let (status, ws_body) = post_json(
+        &app,
+        "/v1/workspaces/provision",
+        json!({ "name": "Admin Test WS" }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED);
+    let ws_id = ws_body["workspace_id"].as_str().unwrap();
+
+    // Create entity in this workspace
+    let (status, entity_body) = post_json(
+        &app,
+        "/v1/formations",
+        json!({
+            "entity_type": "llc",
+            "legal_name": "Admin Test LLC",
+            "jurisdiction": "Wyoming",
+            "members": [{
+                "name": "Owner",
+                "investor_type": "natural_person",
+                "email": "owner@test.com",
+                "ownership_pct": 100.0,
+                "share_count": 1000,
+                "role": "member"
+            }],
+            "authorized_shares": 1000000,
+            "par_value": "0.001",
+            "workspace_id": ws_id,
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "create entity: {entity_body}");
+
+    // 4. List workspaces (now has 1)
+    let (status, body) = get_json(&app, "/v1/admin/workspaces").await;
+    assert_eq!(status, StatusCode::OK, "list workspaces: {body}");
+    assert_eq!(body.as_array().unwrap().len(), 1);
+    assert_eq!(body[0]["name"], "Admin Test WS");
+
+    // 5. Workspace status by path
+    let (status, body) = get_json(
+        &app,
+        &format!("/v1/workspaces/{ws_id}/status"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "ws status by path: {body}");
+
+    // 6. Workspace entities by path
+    let (status, body) = get_json(
+        &app,
+        &format!("/v1/workspaces/{ws_id}/entities"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "ws entities by path: {body}");
+    let entities = body.as_array().unwrap();
+    assert_eq!(entities.len(), 1);
+
+    // 7. Audit events
+    let (status, body) = get_json(&app, "/v1/admin/audit-events").await;
+    assert_eq!(status, StatusCode::OK, "audit events: {body}");
+    // Should have events from workspace provisioning and entity creation
+    assert!(!body.as_array().unwrap().is_empty());
+
+    // 8. Config
+    let (status, body) = get_json(&app, "/v1/config").await;
+    assert_eq!(status, StatusCode::OK, "config: {body}");
+
+    // 9. Demo seed
+    let (status, body) = post_json(
+        &app,
+        "/v1/demo/seed",
+        json!({ "workspace_id": ws_id }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "demo seed: {body}");
+
+    // 10. Digests
+    let (status, body) = get_json(&app, "/v1/digests").await;
+    assert_eq!(status, StatusCode::OK, "list digests: {body}");
+
+    // 11. JWKS
+    let (status, body) = get_json(&app, "/v1/jwks").await;
+    assert_eq!(status, StatusCode::OK, "jwks: {body}");
+    assert!(body["keys"].as_array().is_some());
+}
+
+// ── 20. Branch prune endpoint ───────────────────────────────────────
+
+#[tokio::test]
+async fn test_branch_prune() {
+    let tmp = TempDir::new().unwrap();
+    let app = build_app(&tmp);
+    let (ws_id, entity_id) = create_entity(&app).await;
+    let we_query = format!("workspace_id={ws_id}&entity_id={entity_id}");
+
+    // 1. Create a branch
+    let (status, body) = post_json(
+        &app,
+        &format!("/v1/branches?{we_query}"),
+        json!({ "name": "feature/prune-test", "from": "main" }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "create branch: {body}");
+
+    // 2. Verify it exists
+    let (status, body) = get_json(
+        &app,
+        &format!("/v1/branches?{we_query}"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let branches: Vec<&Value> = body
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|b| b["name"] == "feature/prune-test")
+        .collect();
+    assert_eq!(branches.len(), 1);
+
+    // 3. Prune (POST alternative to DELETE)
+    let (status, _) = post_json(
+        &app,
+        &format!("/v1/branches/feature%2Fprune-test/prune?{we_query}"),
+        json!({}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT, "prune branch");
+
+    // 4. Verify it's gone
+    let (status, body) = get_json(
+        &app,
+        &format!("/v1/branches?{we_query}"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let branches: Vec<&Value> = body
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|b| b["name"] == "feature/prune-test")
+        .collect();
+    assert_eq!(branches.len(), 0);
 }
 
 // ── OpenAPI ──────────────────────────────────────────────────────────

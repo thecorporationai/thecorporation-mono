@@ -175,7 +175,6 @@ impl<'a> EntityStore<'a> {
     }
 
     /// Get the layout reference.
-    #[allow(dead_code)]
     pub fn layout(&self) -> &RepoLayout {
         self.layout
     }
