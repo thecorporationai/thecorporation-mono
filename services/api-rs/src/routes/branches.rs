@@ -254,6 +254,11 @@ async fn merge_branch(
             strategy: "already_up_to_date".to_owned(),
             commit: None,
         },
+        MergeResult::ThreeWayMerge { new_oid } => MergeBranchResponse {
+            merged: true,
+            strategy: "three_way".to_owned(),
+            commit: Some(new_oid.to_string()),
+        },
     };
 
     Ok(Json(response))

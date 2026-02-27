@@ -1831,6 +1831,70 @@ async fn test_branch_prune() {
     assert_eq!(branches.len(), 0);
 }
 
+// ── Three-way merge ──────────────────────────────────────────────────
+
+#[tokio::test]
+async fn test_three_way_merge_via_api() {
+    let tmp = TempDir::new().unwrap();
+    let app = build_app(&tmp);
+    let (ws_id, entity_id) = create_entity(&app).await;
+    let we_query = format!("workspace_id={ws_id}&entity_id={entity_id}");
+
+    // 1. Create a feature branch.
+    let (status, body) = post_json(
+        &app,
+        &format!("/v1/branches?{we_query}"),
+        json!({ "name": "feature/diverge", "from": "main" }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "create branch: {body}");
+
+    // 2. Make divergent commits using the store layer directly.
+    //    This simulates two agents editing different files concurrently.
+    {
+        let layout = api_rs::store::RepoLayout::new(tmp.path().to_path_buf());
+        let ws: uuid::Uuid = ws_id.parse().unwrap();
+        let eid: uuid::Uuid = entity_id.parse().unwrap();
+        let store = api_rs::store::entity_store::EntityStore::open(&layout, ws.into(), eid.into()).unwrap();
+
+        // Commit a new file on main.
+        store
+            .commit(
+                "main",
+                "add config on main",
+                vec![api_rs::git::commit::FileWrite::raw(
+                    "config.json".to_owned(),
+                    serde_json::to_vec_pretty(&json!({"setting": "on_main"})).unwrap(),
+                )],
+            )
+            .unwrap();
+
+        // Commit a different new file on feature branch.
+        store
+            .commit(
+                "feature/diverge",
+                "add metadata on feature",
+                vec![api_rs::git::commit::FileWrite::raw(
+                    "metadata.json".to_owned(),
+                    serde_json::to_vec_pretty(&json!({"source": "feature"})).unwrap(),
+                )],
+            )
+            .unwrap();
+    }
+
+    // 3. Merge feature branch into main via the API.
+    let (status, body) = post_json(
+        &app,
+        &format!("/v1/branches/feature%2Fdiverge/merge?{we_query}"),
+        json!({ "into": "main" }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "three-way merge: {body}");
+    assert_eq!(body["merged"], true);
+    assert_eq!(body["strategy"], "three_way");
+    assert!(body["commit"].as_str().is_some(), "commit OID present");
+}
+
 // ── OpenAPI ──────────────────────────────────────────────────────────
 
 #[tokio::test]
