@@ -19,6 +19,9 @@ serde_json = "1"
 # Git storage (replaces PostgreSQL) — no SSH/HTTPS needed, local bare repos only
 git2 = { version = "0.20", default-features = false }
 
+# Commit signing — Ed25519 SSH signatures for cryptographic provenance
+ssh-key = { version = "0.6", features = ["ed25519", "crypto"] }
+
 # Types
 uuid = { version = "1", features = ["v4", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
@@ -50,9 +53,6 @@ dotenvy = "0.15"
 
 # OpenAPI — spec is built programmatically in src/openapi.rs
 # utoipa annotations can be added incrementally for full schema generation
-
-# Glob pattern matching (for stakeholder projection rules)
-glob-match = "0.2"
 
 [dev-dependencies]
 proptest = "1"

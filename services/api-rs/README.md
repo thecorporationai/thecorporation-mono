@@ -115,8 +115,6 @@ tax/
   filings/{filing_id}.json          # Tax filings
 deadlines/{deadline_id}.json        # Compliance deadlines
 contractors/{classification_id}.json # Contractor classifications
-.corp/
-  access-manifest.json              # Stakeholder projection rules
 ```
 
 ### Storage Is Local-Only
@@ -162,7 +160,9 @@ GET /v1/openapi.json
 
 The API supports two authentication methods:
 
-1. **API Keys** — created via `POST /v1/api-keys`. Keys are scoped and workspace-bound. Pass as `Authorization: Bearer {api_key}`.
+1. **API Keys** — created via `POST /v1/api-keys`. Keys are workspace-bound and support optional contact and entity scoping. Pass as `Authorization: Bearer {api_key}`.
+   - `contact_id` — scope the key to a specific contact (e.g., an investor). `null` = workspace-wide.
+   - `entity_ids` — restrict the key to specific entities. `null` = all entities.
 2. **JWT Tokens** — obtained via `POST /v1/auth/token-exchange` (exchange an API key for a short-lived JWT). Pass as `Authorization: Bearer {jwt}`.
 
 Provisioning a new workspace (`POST /v1/workspaces/provision`) returns both a `workspace_id` and an initial API key.
@@ -288,13 +288,12 @@ src/
   error.rs             # AppError → HTTP status code mapping
   openapi.rs           # OpenAPI 3.1 spec generation
   git/
-    mod.rs             # Git module (repo, commit, merge, branch, signing, projection)
+    mod.rs             # Git module (repo, commit, merge, branch, signing)
     repo.rs            # CorpRepo — bare git repository wrapper
     commit.rs          # Atomic multi-file commits with tree overlay
     merge.rs           # Three-way merge with JSON-aware conflict resolution
     branch.rs          # Branch create/list/delete
     signing.rs         # Ed25519 SSH commit signing and actor trailers
-    projection.rs      # Stakeholder projection engine (access-manifest-based filtering)
     error.rs           # GitStorageError types
   store/
     mod.rs             # RepoLayout — on-disk path management
@@ -326,7 +325,6 @@ src/
     compliance.rs      # Compliance endpoints
     billing.rs         # Billing endpoints
     admin.rs           # Admin endpoints
-    projection.rs      # Projection endpoints
     webhooks.rs        # Stripe webhook endpoints
 ```
 

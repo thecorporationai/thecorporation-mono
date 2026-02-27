@@ -9,13 +9,13 @@ pub mod equity;
 pub mod execution;
 pub mod formation;
 pub mod governance;
-pub mod projection;
 pub mod treasury;
 pub mod webhooks;
 
 use std::sync::Arc;
 
 use crate::domain::ids::{EntityId, WorkspaceId};
+use crate::git::signing::CommitSigner;
 use crate::store::RepoLayout;
 
 /// Query params requiring both workspace and entity identification.
@@ -32,4 +32,7 @@ pub struct AppState {
     /// Shared secret used to sign and verify JWTs.
     /// Loaded once from `JWT_SECRET` env var at startup.
     pub jwt_secret: Arc<[u8]>,
+    /// Optional Ed25519 signer for cryptographic commit provenance.
+    /// When present, all git commits are signed with this key.
+    pub commit_signer: Option<Arc<CommitSigner>>,
 }

@@ -16,7 +16,7 @@ use crate::domain::auth::{
     claims::{encode_token, Claims},
     scopes::{Scope, ScopeSet},
 };
-use crate::domain::ids::{ApiKeyId, WorkspaceId};
+use crate::domain::ids::{ApiKeyId, ContactId, EntityId, WorkspaceId};
 use crate::error::AppError;
 use crate::store::workspace_store::WorkspaceStore;
 
@@ -35,6 +35,12 @@ pub struct CreateApiKeyRequest {
     pub name: String,
     #[serde(default = "default_scopes")]
     pub scopes: Vec<Scope>,
+    /// Scope this key to a specific contact. `null` = workspace-wide.
+    #[serde(default)]
+    pub contact_id: Option<ContactId>,
+    /// Restrict this key to specific entities. `null` = all entities.
+    #[serde(default)]
+    pub entity_ids: Option<Vec<EntityId>>,
 }
 
 fn default_scopes() -> Vec<Scope> {
@@ -69,6 +75,10 @@ pub struct ApiKeyResponse {
     pub workspace_id: WorkspaceId,
     pub name: String,
     pub scopes: Vec<Scope>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub contact_id: Option<ContactId>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub entity_ids: Option<Vec<EntityId>>,
     pub created_at: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub raw_key: Option<String>,
@@ -103,7 +113,7 @@ async fn provision_workspace(
 
             // Generate the first API key
             let scopes = ScopeSet::from_vec(vec![Scope::All]);
-            let (raw_key, record) = generate_api_key(workspace_id, "default".to_owned(), scopes, None)
+            let (raw_key, record) = generate_api_key(workspace_id, "default".to_owned(), scopes, None, None, None)
                 .map_err(|e| AppError::Internal(format!("generate key: {e}")))?;
 
             let key_id = record.key_id();
@@ -145,12 +155,14 @@ async fn create_api_key(
         let layout = state.layout.clone();
         let name = req.name;
         let scopes = req.scopes;
+        let contact_id = req.contact_id;
+        let entity_ids = req.entity_ids;
         move || {
             let ws_store = WorkspaceStore::open(&layout, workspace_id)
                 .map_err(|e| AppError::NotFound(format!("workspace not found: {e}")))?;
 
             let scope_set = ScopeSet::from_vec(scopes.clone());
-            let (raw_key, record) = generate_api_key(workspace_id, name, scope_set, None)
+            let (raw_key, record) = generate_api_key(workspace_id, name, scope_set, None, contact_id, entity_ids)
                 .map_err(|e| AppError::Internal(format!("generate key: {e}")))?;
 
             let key_id = record.key_id();
@@ -173,6 +185,8 @@ async fn create_api_key(
             workspace_id: record.workspace_id(),
             name: record.name().to_owned(),
             scopes: record.scopes().to_vec(),
+            contact_id: record.contact_id(),
+            entity_ids: record.entity_ids().map(|ids| ids.to_vec()),
             created_at: record.created_at().to_rfc3339(),
             raw_key: Some(raw_key),
         }),
@@ -202,6 +216,8 @@ async fn list_api_keys(
                             workspace_id: record.workspace_id(),
                             name: record.name().to_owned(),
                             scopes: record.scopes().to_vec(),
+                            contact_id: record.contact_id(),
+                            entity_ids: record.entity_ids().map(|ids| ids.to_vec()),
                             created_at: record.created_at().to_rfc3339(),
                             raw_key: None,
                         });
@@ -272,12 +288,14 @@ async fn rotate_api_key(
                 .write_json(&old_path, &revoked, &format!("Revoke old key {key_id} for rotation"))
                 .map_err(|e| AppError::Internal(format!("commit: {e}")))?;
 
-            // Generate new key with same scopes
+            // Generate new key with same scopes and contact/entity restrictions
             let (raw_key, new_record) = generate_api_key(
                 workspace_id,
                 old_record.name().to_owned(),
                 old_record.scopes().clone(),
                 None,
+                old_record.contact_id(),
+                old_record.entity_ids().map(|ids| ids.to_vec()),
             )
             .map_err(|e| AppError::Internal(format!("generate key: {e}")))?;
 
@@ -299,6 +317,8 @@ async fn rotate_api_key(
         workspace_id: new_record.workspace_id(),
         name: new_record.name().to_owned(),
         scopes: new_record.scopes().to_vec(),
+        contact_id: new_record.contact_id(),
+        entity_ids: new_record.entity_ids().map(|ids| ids.to_vec()),
         created_at: new_record.created_at().to_rfc3339(),
         raw_key: Some(raw_key),
     }))

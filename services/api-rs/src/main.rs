@@ -48,7 +48,35 @@ async fn main() {
         }
     };
 
-    let state = routes::AppState { layout, jwt_secret };
+    let commit_signer = match std::env::var("COMMIT_SIGNING_KEY") {
+        Ok(pem) if !pem.is_empty() => {
+            // Replace literal \n with actual newlines (env vars often encode PEM this way)
+            let pem = pem.replace("\\n", "\n");
+            match git::signing::CommitSigner::from_pem(&pem) {
+                Ok(signer) => {
+                    tracing::info!(
+                        fingerprint = %signer.public_key_fingerprint(),
+                        "commit signing enabled"
+                    );
+                    Some(Arc::new(signer))
+                }
+                Err(e) => {
+                    tracing::error!("failed to load COMMIT_SIGNING_KEY: {e}");
+                    panic!("COMMIT_SIGNING_KEY is set but invalid: {e}");
+                }
+            }
+        }
+        _ => {
+            tracing::info!("COMMIT_SIGNING_KEY not set — commits will be unsigned");
+            None
+        }
+    };
+
+    let state = routes::AppState {
+        layout,
+        jwt_secret,
+        commit_signer,
+    };
 
     let app = Router::new()
         .route("/health", get(health))
@@ -60,7 +88,6 @@ async fn main() {
         .merge(routes::contacts::contacts_routes())
         .merge(routes::execution::execution_routes())
         .merge(routes::branches::branch_routes())
-        .merge(routes::projection::projection_routes())
         .merge(routes::compliance::compliance_routes())
         .merge(routes::auth::auth_routes())
         .merge(routes::agents::agent_routes())

@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 
 use super::error::AuthError;
 use super::scopes::ScopeSet;
-use crate::domain::ids::{ApiKeyId, WorkspaceId};
+use crate::domain::ids::{ApiKeyId, ContactId, EntityId, WorkspaceId};
 
 /// Prefix for all API keys.
 const API_KEY_PREFIX: &str = "sk_";
@@ -25,6 +25,12 @@ pub struct ApiKeyRecord {
     name: String,
     key_hash: String,
     scopes: ScopeSet,
+    /// When set, this key is scoped to a specific contact. `None` = workspace-wide key.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    contact_id: Option<ContactId>,
+    /// When set, restricts the key to specific entities. `None` = all entities.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    entity_ids: Option<Vec<EntityId>>,
     created_at: DateTime<Utc>,
     expires_at: Option<DateTime<Utc>>,
     revoked_at: Option<DateTime<Utc>>,
@@ -82,6 +88,14 @@ impl ApiKeyRecord {
     pub fn revoked_at(&self) -> Option<DateTime<Utc>> {
         self.revoked_at
     }
+
+    pub fn contact_id(&self) -> Option<ContactId> {
+        self.contact_id
+    }
+
+    pub fn entity_ids(&self) -> Option<&[EntityId]> {
+        self.entity_ids.as_deref()
+    }
 }
 
 /// Generate a new API key, returning the raw key string and the storable record.
@@ -93,6 +107,8 @@ pub fn generate_api_key(
     name: String,
     scopes: ScopeSet,
     expires_at: Option<DateTime<Utc>>,
+    contact_id: Option<ContactId>,
+    entity_ids: Option<Vec<EntityId>>,
 ) -> Result<(String, ApiKeyRecord), AuthError> {
     let mut rng = rand::thread_rng();
     let random_bytes: Vec<u8> = (0..KEY_RANDOM_BYTES).map(|_| rng.r#gen()).collect();
@@ -106,6 +122,8 @@ pub fn generate_api_key(
         name,
         key_hash,
         scopes,
+        contact_id,
+        entity_ids,
         created_at: Utc::now(),
         expires_at,
         revoked_at: None,
@@ -143,7 +161,7 @@ mod tests {
         let ws = WorkspaceId::new();
         let scopes = ScopeSet::from_vec(vec![Scope::All]);
         let (raw, _record) =
-            generate_api_key(ws, "test-key".into(), scopes, None).expect("generate key");
+            generate_api_key(ws, "test-key".into(), scopes, None, None, None).expect("generate key");
         assert!(raw.starts_with("sk_"));
     }
 
@@ -152,7 +170,7 @@ mod tests {
         let ws = WorkspaceId::new();
         let scopes = ScopeSet::from_vec(vec![Scope::All]);
         let (raw, _record) =
-            generate_api_key(ws, "test-key".into(), scopes, None).expect("generate key");
+            generate_api_key(ws, "test-key".into(), scopes, None, None, None).expect("generate key");
         // "sk_" (3) + 64 hex chars = 67
         assert_eq!(raw.len(), 3 + KEY_RANDOM_BYTES * 2);
     }
@@ -162,7 +180,7 @@ mod tests {
         let ws = WorkspaceId::new();
         let scopes = ScopeSet::from_vec(vec![Scope::FormationCreate]);
         let (raw, record) =
-            generate_api_key(ws, "test-key".into(), scopes, None).expect("generate key");
+            generate_api_key(ws, "test-key".into(), scopes, None, None, None).expect("generate key");
         let ok = verify_api_key(&raw, record.key_hash()).expect("verify key");
         assert!(ok);
     }
@@ -172,7 +190,7 @@ mod tests {
         let ws = WorkspaceId::new();
         let scopes = ScopeSet::from_vec(vec![Scope::FormationCreate]);
         let (_raw, record) =
-            generate_api_key(ws, "test-key".into(), scopes, None).expect("generate key");
+            generate_api_key(ws, "test-key".into(), scopes, None, None, None).expect("generate key");
         let ok = verify_api_key("sk_wrong", record.key_hash()).expect("verify key");
         assert!(!ok);
     }
@@ -182,7 +200,7 @@ mod tests {
         let ws = WorkspaceId::new();
         let scopes = ScopeSet::from_vec(vec![Scope::All]);
         let (_raw, record) =
-            generate_api_key(ws, "test-key".into(), scopes, None).expect("generate key");
+            generate_api_key(ws, "test-key".into(), scopes, None, None, None).expect("generate key");
         assert!(record.is_valid());
     }
 
@@ -191,7 +209,7 @@ mod tests {
         let ws = WorkspaceId::new();
         let scopes = ScopeSet::from_vec(vec![Scope::All]);
         let (_raw, mut record) =
-            generate_api_key(ws, "test-key".into(), scopes, None).expect("generate key");
+            generate_api_key(ws, "test-key".into(), scopes, None, None, None).expect("generate key");
         record.revoke();
         assert!(!record.is_valid());
     }
@@ -202,7 +220,7 @@ mod tests {
         let scopes = ScopeSet::from_vec(vec![Scope::All]);
         let past = Utc::now() - chrono::Duration::hours(1);
         let (_raw, record) =
-            generate_api_key(ws, "test-key".into(), scopes, Some(past)).expect("generate key");
+            generate_api_key(ws, "test-key".into(), scopes, Some(past), None, None).expect("generate key");
         assert!(!record.is_valid());
     }
 
@@ -211,7 +229,7 @@ mod tests {
         let ws = WorkspaceId::new();
         let scopes = ScopeSet::from_vec(vec![Scope::Admin]);
         let (_raw, record) =
-            generate_api_key(ws, "my-key".into(), scopes, None).expect("generate key");
+            generate_api_key(ws, "my-key".into(), scopes, None, None, None).expect("generate key");
         assert_eq!(record.workspace_id(), ws);
         assert_eq!(record.name(), "my-key");
         assert!(record.scopes().has(Scope::Admin));

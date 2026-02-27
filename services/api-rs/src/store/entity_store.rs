@@ -70,9 +70,9 @@ impl<'a> EntityStore<'a> {
         entity: &Entity,
     ) -> Result<Self, GitStorageError> {
         let path = layout.entity_repo_path(workspace_id, entity_id);
-        let repo = CorpRepo::init(&path)?;
+        let repo = CorpRepo::init(&path, None)?;
         let files = vec![FileWrite::json("corp.json", entity)?];
-        commit_files(&repo, "main", "Initialize entity", &files)?;
+        commit_files(&repo, "main", "Initialize entity", &files, None)?;
         Ok(Self { repo, layout })
     }
 
@@ -100,7 +100,7 @@ impl<'a> EntityStore<'a> {
         message: &str,
     ) -> Result<(), GitStorageError> {
         let files = vec![FileWrite::json("corp.json", entity)?];
-        commit_files(&self.repo, branch, message, &files)?;
+        commit_files(&self.repo, branch, message, &files, None)?;
         Ok(())
     }
 
@@ -123,7 +123,7 @@ impl<'a> EntityStore<'a> {
     ) -> Result<(), GitStorageError> {
         let path = format!("formation/{}.json", doc.document_id());
         let files = vec![FileWrite::json(path, doc)?];
-        commit_files(&self.repo, branch, message, &files)?;
+        commit_files(&self.repo, branch, message, &files, None)?;
         Ok(())
     }
 
@@ -134,7 +134,7 @@ impl<'a> EntityStore<'a> {
         message: &str,
         files: Vec<FileWrite>,
     ) -> Result<(), GitStorageError> {
-        commit_files(&self.repo, branch, message, &files)?;
+        commit_files(&self.repo, branch, message, &files, None)?;
         Ok(())
     }
 
@@ -611,32 +611,6 @@ impl<'a> EntityStore<'a> {
         self.list_ids_in_dir(branch, "treasury/reconciliations")
     }
 
-    // ── Access Manifest ────────────────────────────────────────────
-
-    /// Read the access manifest, returning a default empty one if not found.
-    pub fn read_access_manifest(
-        &self,
-        branch: &str,
-    ) -> Result<crate::git::projection::AccessManifest, GitStorageError> {
-        match self.repo.read_json(branch, ".corp/access-manifest.json") {
-            Ok(manifest) => Ok(manifest),
-            Err(GitStorageError::NotFound(_)) => Ok(crate::git::projection::AccessManifest::new()),
-            Err(e) => Err(e),
-        }
-    }
-
-    /// Write the access manifest.
-    pub fn write_access_manifest(
-        &self,
-        branch: &str,
-        manifest: &crate::git::projection::AccessManifest,
-        message: &str,
-    ) -> Result<(), GitStorageError> {
-        let files = vec![FileWrite::json(".corp/access-manifest.json", manifest)?];
-        commit_files(&self.repo, branch, message, &files)?;
-        Ok(())
-    }
-
     // ── Generic helpers ──────────────────────────────────────────────
 
     /// Read any deserializable JSON from a path.
@@ -657,7 +631,7 @@ impl<'a> EntityStore<'a> {
         message: &str,
     ) -> Result<(), GitStorageError> {
         let files = vec![FileWrite::json(path, value)?];
-        commit_files(&self.repo, branch, message, &files)?;
+        commit_files(&self.repo, branch, message, &files, None)?;
         Ok(())
     }
 
