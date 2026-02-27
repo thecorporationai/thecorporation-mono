@@ -43,6 +43,7 @@ celerybeat-schedule
 backend/celerybeat-schedule
 backend/data/*
 !backend/data/.gitkeep
+services/api/data/
 
 # Dependencies
 node_modules/
@@ -69,6 +70,13 @@ scenario-outputs/**/transcript.json
 .architect-loop/*counter*
 !.architect-loop/.gitkeep
 !.architect-loop/README.md
+
+# Rust
+target/
+*.rs.bk
+
+# TypeScript / Node build outputs
+dist/
 
 # MkDocs build output
 site/

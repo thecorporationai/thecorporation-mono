@@ -1,6 +1,7 @@
 import type { CorpAPIClient } from "./api-client.js";
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { join } from "node:path";
+import { GENERATED_TOOL_DEFINITIONS } from "./tool-defs.generated.js";
 
 export interface ToolContext {
   dataDir: string;
@@ -30,6 +31,13 @@ const TOOL_HANDLERS: Record<string, ToolHandler> = {
     }
     const members = (args.members ?? []) as Record<string, unknown>[];
     if (!members.length) return { error: "Members are required." };
+    // Normalize: ensure investor_type defaults, convert ownership_pct > 1 to 0-1 scale
+    for (const m of members) {
+      if (!m.investor_type) m.investor_type = "natural_person";
+      if (typeof m.ownership_pct === "number" && (m.ownership_pct as number) > 1) {
+        m.ownership_pct = (m.ownership_pct as number) / 100;
+      }
+    }
     const result = await client.createFormation({
       entity_type: entityType, legal_name: args.entity_name, jurisdiction,
       members, workspace_id: client.workspaceId,
@@ -139,154 +147,9 @@ const TOOL_HANDLERS: Record<string, ToolHandler> = {
   add_agent_skill: async (args, client) => client.addAgentSkill(args.agent_id as string, args),
 };
 
-function def(
-  name: string,
-  description: string,
-  properties: Record<string, unknown>,
-  required?: string[],
-): Record<string, unknown> {
-  return {
-    type: "function",
-    function: {
-      name,
-      description,
-      parameters: { type: "object", properties, required: required ?? [] },
-    },
-  };
-}
-
-export const TOOL_DEFINITIONS: Record<string, unknown>[] = [
-  // Read tools
-  def("get_workspace_status", "Get workspace status summary", {}),
-  def("list_entities", "List all entities in the workspace", {}),
-  def("get_cap_table", "Get cap table for an entity", { entity_id: { type: "string" } }, ["entity_id"]),
-  def("list_documents", "List documents for an entity", { entity_id: { type: "string" } }, ["entity_id"]),
-  def("list_safe_notes", "List SAFE notes for an entity", { entity_id: { type: "string" } }, ["entity_id"]),
-  def("list_agents", "List all agents in the workspace", {}),
-  def("get_checklist", "Get the user's onboarding checklist", {}),
-  def("get_document_link", "Get a download link for a document", { document_id: { type: "string" } }, ["document_id"]),
-  def("get_signing_link", "Get a signing link for a document", { document_id: { type: "string" } }, ["document_id"]),
-  def("list_obligations", "List obligations with urgency tiers", {
-    tier: { type: "string", description: "Filter by urgency tier" },
-  }),
-  def("get_billing_status", "Get billing status and plans", {}),
-
-  // Write tools
-  def("form_entity", "Form a new business entity", {
-    entity_type: { type: "string" }, entity_name: { type: "string" },
-    jurisdiction: { type: "string" },
-    members: { type: "array", items: { type: "object", properties: {
-      name: { type: "string" }, email: { type: "string" }, role: { type: "string" },
-      investor_type: { type: "string" }, ownership_pct: { type: "number" }, share_count: { type: "integer" },
-    }, required: ["name", "email", "role"] } },
-  }, ["entity_type", "entity_name", "jurisdiction", "members"]),
-
-  def("issue_equity", "Issue an equity grant", {
-    entity_id: { type: "string" }, grant_type: { type: "string" }, shares: { type: "integer" },
-    recipient_name: { type: "string" },
-  }, ["entity_id", "grant_type", "shares", "recipient_name"]),
-
-  def("issue_safe", "Issue a SAFE note", {
-    entity_id: { type: "string" }, investor_name: { type: "string" },
-    principal_amount_cents: { type: "integer" }, safe_type: { type: "string" }, valuation_cap_cents: { type: "integer" },
-  }, ["entity_id", "investor_name", "principal_amount_cents", "safe_type", "valuation_cap_cents"]),
-
-  def("transfer_shares", "Transfer shares between holders", {
-    entity_id: { type: "string" }, from_holder: { type: "string" }, to_holder: { type: "string" },
-    shares: { type: "integer" }, transfer_type: { type: "string" },
-  }, ["entity_id", "from_holder", "to_holder", "shares"]),
-
-  def("calculate_distribution", "Calculate a distribution", {
-    entity_id: { type: "string" }, total_amount_cents: { type: "integer" }, distribution_type: { type: "string" },
-  }, ["entity_id", "total_amount_cents"]),
-
-  def("create_invoice", "Create an invoice", {
-    entity_id: { type: "string" }, customer_name: { type: "string" }, amount_cents: { type: "integer" },
-    due_date: { type: "string" }, description: { type: "string" },
-  }, ["entity_id", "customer_name", "amount_cents", "due_date"]),
-
-  def("run_payroll", "Run payroll", {
-    entity_id: { type: "string" }, pay_period_start: { type: "string" }, pay_period_end: { type: "string" },
-  }, ["entity_id", "pay_period_start", "pay_period_end"]),
-
-  def("submit_payment", "Submit a payment", {
-    entity_id: { type: "string" }, amount_cents: { type: "integer" }, recipient: { type: "string" },
-  }, ["entity_id", "amount_cents", "recipient"]),
-
-  def("open_bank_account", "Open a business bank account", {
-    entity_id: { type: "string" }, institution_name: { type: "string" },
-  }, ["entity_id"]),
-
-  def("generate_contract", "Generate a contract from a template", {
-    entity_id: { type: "string" }, template_type: { type: "string" }, parameters: { type: "object" },
-  }, ["entity_id", "template_type"]),
-
-  def("file_tax_document", "File a tax document", {
-    entity_id: { type: "string" }, document_type: { type: "string" }, tax_year: { type: "integer" },
-  }, ["entity_id", "document_type", "tax_year"]),
-
-  def("track_deadline", "Track a compliance deadline", {
-    entity_id: { type: "string" }, deadline_type: { type: "string" }, due_date: { type: "string" }, description: { type: "string" },
-  }, ["entity_id", "deadline_type", "due_date", "description"]),
-
-  def("classify_contractor", "Classify contractor risk", {
-    entity_id: { type: "string" }, contractor_name: { type: "string" }, state: { type: "string" },
-    hours_per_week: { type: "integer" }, exclusive_client: { type: "boolean" },
-    duration_months: { type: "integer" }, provides_tools: { type: "boolean" },
-  }, ["entity_id", "contractor_name", "state", "hours_per_week"]),
-
-  def("reconcile_ledger", "Reconcile an entity's ledger", {
-    entity_id: { type: "string" }, start_date: { type: "string" }, end_date: { type: "string" },
-  }, ["entity_id", "start_date", "end_date"]),
-
-  def("convene_meeting", "Convene a governance meeting", {
-    entity_id: { type: "string" }, governance_body_id: { type: "string" }, meeting_type: { type: "string" },
-    title: { type: "string" }, scheduled_date: { type: "string" },
-  }, ["entity_id", "governance_body_id", "meeting_type", "title", "scheduled_date"]),
-
-  def("cast_vote", "Cast a vote on an agenda item", {
-    meeting_id: { type: "string" }, agenda_item_id: { type: "string" }, voter_id: { type: "string" },
-    vote: { type: "string", description: "for, against, abstain, or recusal" },
-  }, ["meeting_id", "agenda_item_id", "voter_id", "vote"]),
-
-  def("schedule_meeting", "Schedule a board or member meeting", {
-    body_id: { type: "string" }, meeting_type: { type: "string" }, title: { type: "string" },
-    proposed_date: { type: "string" },
-    agenda_items: { type: "array", items: { type: "string" } },
-  }, ["body_id", "meeting_type", "title", "proposed_date"]),
-
-  def("get_signer_link", "Generate a signing link for a human obligation", {
-    obligation_id: { type: "string" },
-  }, ["obligation_id"]),
-
-  def("update_checklist", "Update the user's onboarding checklist", {
-    checklist: { type: "string" },
-  }, ["checklist"]),
-
-  def("convert_entity", "Convert entity type", {
-    entity_id: { type: "string" }, new_entity_type: { type: "string" },
-  }, ["entity_id", "new_entity_type"]),
-
-  def("dissolve_entity", "Dissolve an entity", {
-    entity_id: { type: "string" }, reason: { type: "string" },
-  }, ["entity_id", "reason"]),
-
-  def("create_agent", "Create a new agent", {
-    name: { type: "string" }, system_prompt: { type: "string" }, model: { type: "string" },
-  }, ["name", "system_prompt"]),
-
-  def("send_agent_message", "Send a message to an agent", {
-    agent_id: { type: "string" }, body: { type: "string" },
-  }, ["agent_id", "body"]),
-
-  def("update_agent", "Update an agent", {
-    agent_id: { type: "string" }, status: { type: "string" },
-  }, ["agent_id"]),
-
-  def("add_agent_skill", "Add a skill to an agent", {
-    agent_id: { type: "string" }, skill_name: { type: "string" }, description: { type: "string" },
-  }, ["agent_id", "skill_name", "description"]),
-];
+// Tool definitions are generated from the backend OpenAPI spec.
+// Regenerate: make generate-tools
+export const TOOL_DEFINITIONS: Record<string, unknown>[] = GENERATED_TOOL_DEFINITIONS;
 
 const READ_ONLY_TOOLS = new Set([
   "get_workspace_status", "list_entities", "get_cap_table", "list_documents",

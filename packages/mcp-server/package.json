@@ -1,0 +1,28 @@
+{
+  "name": "@thecorporation/mcp-server",
+  "version": "0.1.0",
+  "description": "MCP server for agent-native corporate operations",
+  "type": "module",
+  "main": "./dist/index.js",
+  "bin": {
+    "thecorporation": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.0",
+    "@thecorporation/corp-tools": "file:../corp-tools",
+    "zod": "^3.24.0"
+  },
+  "devDependencies": {
+    "tsup": "^8.4.0",
+    "typescript": "^5.8.0",
+    "@types/node": "^22.0.0"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "license": "Apache-2.0"
+}
