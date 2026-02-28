@@ -3301,6 +3301,218 @@ async fn test_three_way_merge_via_api() {
     assert!(body["commit"].as_str().is_some(), "commit OID present");
 }
 
+#[tokio::test]
+async fn test_packet_routes_and_escalation_evidence_resolution() {
+    let tmp = TempDir::new().unwrap();
+    let app = build_app(&tmp);
+    let (ws_id, entity_id_str, token) = create_entity(&app).await;
+    let entity_id: EntityId = entity_id_str.parse().unwrap();
+
+    let (status, intent_body) = post_json(
+        &app,
+        "/v1/execution/intents",
+        json!({
+            "entity_id": entity_id_str,
+            "intent_type": "equity.transfer.execute",
+            "description": "Execute transfer",
+            "metadata": {}
+        }),
+        &token,
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "create intent failed: {intent_body}"
+    );
+    let intent_id: IntentId = intent_body["intent_id"].as_str().unwrap().parse().unwrap();
+
+    let packet_id = api_rs::domain::ids::PacketId::new();
+    let obligation_id = api_rs::domain::ids::ObligationId::new();
+    let incident_id = api_rs::domain::ids::IncidentId::new();
+    let escalation_id = api_rs::domain::ids::ComplianceEscalationId::new();
+    let deadline_id = api_rs::domain::ids::DeadlineId::new();
+
+    let packet = api_rs::domain::execution::transaction_packet::TransactionPacket::new(
+        packet_id,
+        entity_id,
+        intent_id,
+        api_rs::domain::execution::transaction_packet::WorkflowType::Transfer,
+        "wf-seed".to_owned(),
+        vec![api_rs::domain::execution::transaction_packet::PacketItem {
+            item_id: "transfer-agreement".to_owned(),
+            title: "Stock Transfer Agreement".to_owned(),
+            document_path: "docs/stock-transfer-agreement.md".to_owned(),
+            required: true,
+        }],
+        vec!["ceo".to_owned()],
+    );
+    let obligation = api_rs::domain::execution::obligation::Obligation::new(
+        obligation_id,
+        entity_id,
+        None,
+        api_rs::domain::execution::types::ObligationType::from("compliance_escalation_d_plus_1"),
+        api_rs::domain::execution::types::AssigneeType::Human,
+        None,
+        "Resolve missed filing escalation".to_owned(),
+        None,
+    );
+    let incident = api_rs::domain::governance::incident::GovernanceIncident::new(
+        incident_id,
+        entity_id,
+        api_rs::domain::governance::incident::IncidentSeverity::High,
+        "Missed filing".to_owned(),
+        "State filing deadline was missed".to_owned(),
+    );
+    let escalation = api_rs::domain::formation::escalation::ComplianceEscalation::new(
+        escalation_id,
+        entity_id,
+        deadline_id,
+        "D+1".to_owned(),
+        "Missed deadline: incident + board escalation".to_owned(),
+        "board".to_owned(),
+        Some(obligation_id),
+        Some(incident_id),
+    );
+
+    let layout = api_rs::store::RepoLayout::new(tmp.path().to_path_buf());
+    let store = EntityStore::open(&layout, ws_id, entity_id).unwrap();
+    store
+        .commit(
+            "main",
+            "seed packet + escalation for lifecycle test",
+            vec![
+                api_rs::git::commit::FileWrite::json(
+                    format!("execution/packets/{}.json", packet_id),
+                    &packet,
+                )
+                .unwrap(),
+                api_rs::git::commit::FileWrite::json(
+                    format!("execution/obligations/{}.json", obligation_id),
+                    &obligation,
+                )
+                .unwrap(),
+                api_rs::git::commit::FileWrite::json(
+                    format!("governance/incidents/{}.json", incident_id),
+                    &incident,
+                )
+                .unwrap(),
+                api_rs::git::commit::FileWrite::json(
+                    format!("compliance/escalations/{}.json", escalation_id),
+                    &escalation,
+                )
+                .unwrap(),
+            ],
+        )
+        .unwrap();
+
+    let (status, packet_resp) = get_json(
+        &app,
+        &format!("/v1/execution/packets/{packet_id}?entity_id={entity_id_str}"),
+        &token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "get packet failed: {packet_resp}");
+    assert_eq!(packet_resp["packet_id"], packet_id.to_string());
+    assert_eq!(packet_resp["workflow_type"], "transfer");
+
+    let (status, list_resp) = get_json(
+        &app,
+        &format!("/v1/entities/{entity_id_str}/packets"),
+        &token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "list packets failed: {list_resp}");
+    assert!(
+        list_resp.as_array().is_some_and(|arr| {
+            arr.iter()
+                .any(|v| v["packet_id"].as_str() == Some(&packet_id.to_string()))
+        }),
+        "expected seeded packet in list response: {list_resp}"
+    );
+
+    let (status, resolve_resp) = post_json(
+        &app,
+        &format!("/v1/compliance/escalations/{escalation_id}/resolve-with-evidence"),
+        json!({
+            "entity_id": entity_id_str,
+            "packet_id": packet_id,
+            "filing_reference": "DE-2026-0001",
+            "evidence_type": "state_receipt",
+            "notes": "uploaded filing receipt",
+            "resolve_obligation": true,
+            "resolve_incident": true
+        }),
+        &token,
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "resolve escalation with evidence failed: {resolve_resp}"
+    );
+    assert_eq!(resolve_resp["escalation"]["status"], "resolved");
+    assert_eq!(resolve_resp["obligation_resolved"], true);
+    assert_eq!(resolve_resp["incident_resolved"], true);
+
+    let evidence_link_id: api_rs::domain::ids::ComplianceEvidenceLinkId =
+        resolve_resp["evidence_link_id"]
+            .as_str()
+            .unwrap()
+            .parse()
+            .unwrap();
+
+    let store = EntityStore::open(&layout, ws_id, entity_id).unwrap();
+    let stored_packet = store
+        .read::<api_rs::domain::execution::transaction_packet::TransactionPacket>("main", packet_id)
+        .unwrap();
+    assert!(
+        stored_packet
+            .evidence_refs()
+            .iter()
+            .any(|r| r == &format!("escalation:{escalation_id}"))
+    );
+    assert!(
+        stored_packet
+            .evidence_refs()
+            .iter()
+            .any(|r| r == &format!("evidence_link:{evidence_link_id}"))
+    );
+
+    let stored_obligation = store
+        .read::<api_rs::domain::execution::obligation::Obligation>("main", obligation_id)
+        .unwrap();
+    assert_eq!(
+        stored_obligation.status(),
+        api_rs::domain::execution::types::ObligationStatus::Fulfilled
+    );
+
+    let stored_incident = store
+        .read::<api_rs::domain::governance::incident::GovernanceIncident>("main", incident_id)
+        .unwrap();
+    assert_eq!(
+        stored_incident.status(),
+        api_rs::domain::governance::incident::IncidentStatus::Resolved
+    );
+
+    let stored_escalation = store
+        .read::<api_rs::domain::formation::escalation::ComplianceEscalation>("main", escalation_id)
+        .unwrap();
+    assert_eq!(
+        stored_escalation.status(),
+        api_rs::domain::formation::escalation::EscalationStatus::Resolved
+    );
+
+    let stored_link = store
+        .read::<api_rs::domain::formation::evidence_link::ComplianceEvidenceLink>(
+            "main",
+            evidence_link_id,
+        )
+        .unwrap();
+    assert_eq!(stored_link.escalation_id(), escalation_id);
+    assert_eq!(stored_link.packet_id(), Some(packet_id));
+}
+
 // ── OpenAPI ──────────────────────────────────────────────────────────
 
 #[tokio::test]

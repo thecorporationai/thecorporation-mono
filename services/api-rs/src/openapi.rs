@@ -293,6 +293,272 @@ fn add_equity_paths(paths: &mut Map<String, Value>) {
     );
     add_path(
         paths,
+        "/v1/equity/transfer-workflows",
+        "post",
+        op(
+            "equity",
+            "create_transfer_workflow",
+            "Create transfer workflow",
+        ),
+    );
+    add_path(
+        paths,
+        "/v1/equity/transfer-workflows/{workflow_id}",
+        "get",
+        op("equity", "get_transfer_workflow", "Get transfer workflow"),
+    );
+    add_path(
+        paths,
+        "/v1/equity/transfer-workflows/{workflow_id}/generate-docs",
+        "post",
+        op(
+            "equity",
+            "generate_transfer_workflow_docs",
+            "Generate transfer workflow docs",
+        ),
+    );
+    add_path(
+        paths,
+        "/v1/equity/transfer-workflows/{workflow_id}/submit-review",
+        "post",
+        op(
+            "equity",
+            "submit_transfer_workflow_for_review",
+            "Submit transfer workflow for review",
+        ),
+    );
+    add_path(
+        paths,
+        "/v1/equity/transfer-workflows/{workflow_id}/record-review",
+        "post",
+        op(
+            "equity",
+            "record_transfer_workflow_review",
+            "Record transfer workflow review",
+        ),
+    );
+    add_path(
+        paths,
+        "/v1/equity/transfer-workflows/{workflow_id}/record-rofr",
+        "post",
+        op(
+            "equity",
+            "record_transfer_workflow_rofr",
+            "Record transfer workflow ROFR",
+        ),
+    );
+    add_path(
+        paths,
+        "/v1/equity/transfer-workflows/{workflow_id}/record-board-approval",
+        "post",
+        op(
+            "equity",
+            "record_transfer_workflow_board_approval",
+            "Record transfer workflow board approval",
+        ),
+    );
+    add_path(
+        paths,
+        "/v1/equity/transfer-workflows/{workflow_id}/record-execution",
+        "post",
+        op(
+            "equity",
+            "record_transfer_workflow_execution",
+            "Record transfer workflow execution",
+        ),
+    );
+    add_path(
+        paths,
+        "/v1/equity/transfer-workflows/{workflow_id}/prepare-execution",
+        "post",
+        op(
+            "equity",
+            "prepare_transfer_workflow_execution",
+            "Bind execution prerequisites for transfer workflow",
+        ),
+    );
+    add_path(
+        paths,
+        "/v1/equity/transfer-workflows/{workflow_id}/compile-packet",
+        "post",
+        op(
+            "equity",
+            "compile_transfer_workflow_packet",
+            "Compile transfer transaction packet",
+        ),
+    );
+    add_path(
+        paths,
+        "/v1/equity/transfer-workflows/{workflow_id}/start-signatures",
+        "post",
+        op(
+            "equity",
+            "start_transfer_workflow_signatures",
+            "Start transfer workflow signature collection",
+        ),
+    );
+    add_path(
+        paths,
+        "/v1/equity/transfer-workflows/{workflow_id}/record-signature",
+        "post",
+        op(
+            "equity",
+            "record_transfer_workflow_signature",
+            "Record transfer workflow signature",
+        ),
+    );
+    add_path(
+        paths,
+        "/v1/equity/transfer-workflows/{workflow_id}/finalize",
+        "post",
+        op(
+            "equity",
+            "finalize_transfer_workflow",
+            "Finalize transfer workflow execution",
+        ),
+    );
+    add_path(
+        paths,
+        "/v1/equity/fundraising-workflows",
+        "post",
+        op(
+            "equity",
+            "create_fundraising_workflow",
+            "Create fundraising workflow",
+        ),
+    );
+    add_path(
+        paths,
+        "/v1/equity/fundraising-workflows/{workflow_id}",
+        "get",
+        op(
+            "equity",
+            "get_fundraising_workflow",
+            "Get fundraising workflow",
+        ),
+    );
+    add_path(
+        paths,
+        "/v1/equity/fundraising-workflows/{workflow_id}/apply-terms",
+        "post",
+        op(
+            "equity",
+            "apply_fundraising_workflow_terms",
+            "Apply fundraising workflow terms",
+        ),
+    );
+    add_path(
+        paths,
+        "/v1/equity/fundraising-workflows/{workflow_id}/generate-board-packet",
+        "post",
+        op(
+            "equity",
+            "generate_fundraising_board_packet",
+            "Generate fundraising board packet",
+        ),
+    );
+    add_path(
+        paths,
+        "/v1/equity/fundraising-workflows/{workflow_id}/record-board-approval",
+        "post",
+        op(
+            "equity",
+            "record_fundraising_workflow_board_approval",
+            "Record fundraising workflow board approval",
+        ),
+    );
+    add_path(
+        paths,
+        "/v1/equity/fundraising-workflows/{workflow_id}/record-investor-acceptance",
+        "post",
+        op(
+            "equity",
+            "record_fundraising_workflow_acceptance",
+            "Record fundraising workflow investor acceptance",
+        ),
+    );
+    add_path(
+        paths,
+        "/v1/equity/fundraising-workflows/{workflow_id}/generate-closing-packet",
+        "post",
+        op(
+            "equity",
+            "generate_fundraising_closing_packet",
+            "Generate fundraising closing packet",
+        ),
+    );
+    add_path(
+        paths,
+        "/v1/equity/fundraising-workflows/{workflow_id}/record-close",
+        "post",
+        op(
+            "equity",
+            "record_fundraising_workflow_close",
+            "Record fundraising workflow close",
+        ),
+    );
+    add_path(
+        paths,
+        "/v1/equity/fundraising-workflows/{workflow_id}/prepare-execution",
+        "post",
+        op(
+            "equity",
+            "prepare_fundraising_workflow_execution",
+            "Bind execution prerequisites for fundraising workflow",
+        ),
+    );
+    add_path(
+        paths,
+        "/v1/equity/fundraising-workflows/{workflow_id}/compile-packet",
+        "post",
+        op(
+            "equity",
+            "compile_fundraising_workflow_packet",
+            "Compile fundraising transaction packet",
+        ),
+    );
+    add_path(
+        paths,
+        "/v1/equity/fundraising-workflows/{workflow_id}/start-signatures",
+        "post",
+        op(
+            "equity",
+            "start_fundraising_workflow_signatures",
+            "Start fundraising workflow signature collection",
+        ),
+    );
+    add_path(
+        paths,
+        "/v1/equity/fundraising-workflows/{workflow_id}/record-signature",
+        "post",
+        op(
+            "equity",
+            "record_fundraising_workflow_signature",
+            "Record fundraising workflow signature",
+        ),
+    );
+    add_path(
+        paths,
+        "/v1/equity/fundraising-workflows/{workflow_id}/finalize",
+        "post",
+        op(
+            "equity",
+            "finalize_fundraising_workflow",
+            "Finalize fundraising workflow execution",
+        ),
+    );
+    add_path(
+        paths,
+        "/v1/equity/workflows/{workflow_type}/{workflow_id}/status",
+        "get",
+        op(
+            "equity",
+            "get_workflow_status",
+            "Get workflow orchestration status",
+        ),
+    );
+    add_path(
+        paths,
         "/v1/equity/conversions/preview",
         "post",
         op("equity", "preview_conversion", "Preview conversion"),
@@ -347,6 +613,45 @@ fn add_equity_paths(paths: &mut Map<String, Value>) {
 }
 
 fn add_governance_paths(paths: &mut Map<String, Value>) {
+    add_path(
+        paths,
+        "/v1/governance/mode",
+        "get",
+        op("governance", "get_governance_mode", "Get governance mode"),
+    );
+    add_path(
+        paths,
+        "/v1/governance/mode",
+        "post",
+        op("governance", "set_governance_mode", "Set governance mode"),
+    );
+    add_path(
+        paths,
+        "/v1/governance/incidents",
+        "post",
+        op(
+            "governance",
+            "create_incident",
+            "Create governance incident",
+        ),
+    );
+    add_path(
+        paths,
+        "/v1/entities/{entity_id}/governance/incidents",
+        "get",
+        op("governance", "list_incidents", "List governance incidents"),
+    );
+    add_path(
+        paths,
+        "/v1/governance/incidents/{incident_id}/resolve",
+        "post",
+        op(
+            "governance",
+            "resolve_incident",
+            "Resolve governance incident",
+        ),
+    );
+
     add_path(
         paths,
         "/v1/governance-bodies",
@@ -467,9 +772,25 @@ fn add_governance_paths(paths: &mut Map<String, Value>) {
     );
     add_path(
         paths,
+        "/v1/meetings/{meeting_id}/agenda-items/{item_id}/finalize",
+        "post",
+        op("governance", "finalize_agenda_item", "Finalize agenda item"),
+    );
+    add_path(
+        paths,
         "/v1/meetings/{meeting_id}/agenda-items/{item_id}/resolution",
         "post",
         op("governance", "compute_resolution", "Compute resolution"),
+    );
+    add_path(
+        paths,
+        "/v1/meetings/{meeting_id}/resolutions/{resolution_id}/attach-document",
+        "post",
+        op(
+            "governance",
+            "attach_resolution_document",
+            "Attach document to resolution",
+        ),
     );
     add_path(
         paths,
@@ -798,6 +1119,46 @@ fn add_execution_paths(paths: &mut Map<String, Value>) {
     );
     add_path(
         paths,
+        "/v1/intents/{intent_id}/bind-approval-artifact",
+        "post",
+        op(
+            "execution",
+            "bind_approval_artifact_to_intent",
+            "Bind approval artifact to intent",
+        ),
+    );
+    add_path(
+        paths,
+        "/v1/intents/{intent_id}/bind-document-request",
+        "post",
+        op(
+            "execution",
+            "bind_document_request_to_intent",
+            "Bind document request to intent",
+        ),
+    );
+    add_path(
+        paths,
+        "/v1/execution/approval-artifacts",
+        "post",
+        op(
+            "execution",
+            "create_approval_artifact",
+            "Create approval artifact",
+        ),
+    );
+    add_path(
+        paths,
+        "/v1/entities/{entity_id}/approval-artifacts",
+        "get",
+        op(
+            "execution",
+            "list_approval_artifacts",
+            "List approval artifacts",
+        ),
+    );
+    add_path(
+        paths,
         "/v1/execution/obligations",
         "post",
         op("execution", "create_obligation", "Create obligation"),
@@ -846,6 +1207,22 @@ fn add_execution_paths(paths: &mut Map<String, Value>) {
             "execution",
             "list_receipts_by_intent",
             "List receipts by intent",
+        ),
+    );
+    add_path(
+        paths,
+        "/v1/execution/packets/{packet_id}",
+        "get",
+        op("execution", "get_packet", "Get transaction packet"),
+    );
+    add_path(
+        paths,
+        "/v1/entities/{entity_id}/packets",
+        "get",
+        op(
+            "execution",
+            "list_entity_packets",
+            "List entity transaction packets",
         ),
     );
     add_path(
@@ -1107,6 +1484,36 @@ fn add_compliance_paths(paths: &mut Map<String, Value>) {
         "/v1/contractors/classify",
         "post",
         op("compliance", "classify_contractor", "Classify contractor"),
+    );
+    add_path(
+        paths,
+        "/v1/compliance/escalations/scan",
+        "post",
+        op(
+            "compliance",
+            "scan_compliance_escalations",
+            "Scan compliance escalations",
+        ),
+    );
+    add_path(
+        paths,
+        "/v1/entities/{entity_id}/compliance/escalations",
+        "get",
+        op(
+            "compliance",
+            "list_entity_escalations",
+            "List compliance escalations",
+        ),
+    );
+    add_path(
+        paths,
+        "/v1/compliance/escalations/{escalation_id}/resolve-with-evidence",
+        "post",
+        op(
+            "compliance",
+            "resolve_escalation_with_evidence",
+            "Resolve compliance escalation and attach evidence",
+        ),
     );
 }
 
