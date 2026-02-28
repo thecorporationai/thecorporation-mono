@@ -5,6 +5,8 @@ pub mod deadline;
 pub mod document;
 pub mod entity;
 pub mod error;
+pub mod escalation;
+pub mod evidence_link;
 pub mod filing;
 pub mod service;
 pub mod tax_filing;

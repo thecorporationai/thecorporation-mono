@@ -98,6 +98,16 @@ define_id!(ValuationId);
 define_id!(TransferId);
 define_id!(RepurchaseRightId);
 define_id!(InvestorLedgerEntryId);
+define_id!(HolderId);
+define_id!(LegalEntityId);
+define_id!(ControlLinkId);
+define_id!(InstrumentId);
+define_id!(PositionId);
+define_id!(EquityRoundId);
+define_id!(EquityRuleSetId);
+define_id!(ConversionExecutionId);
+define_id!(TransferWorkflowId);
+define_id!(FundraisingWorkflowId);
 
 // ── Governance ─────────────────────────────────────────────────────────
 define_id!(GovernanceBodyId);
@@ -106,6 +116,7 @@ define_id!(MeetingId);
 define_id!(AgendaItemId);
 define_id!(VoteId);
 define_id!(ResolutionId);
+define_id!(IncidentId);
 
 // ── Contacts & Obligations ─────────────────────────────────────────────
 define_id!(ContactId);
@@ -114,6 +125,9 @@ define_id!(DocumentRequestId);
 
 // ── Execution ──────────────────────────────────────────────────────────
 define_id!(IntentId);
+define_id!(ApprovalArtifactId);
+define_id!(PacketId);
+define_id!(PacketSignatureId);
 // ExecutionId is re-exported from agent_types above.
 define_id!(ReceiptId);
 
@@ -121,6 +135,8 @@ define_id!(ReceiptId);
 define_id!(ContractId);
 define_id!(TaxFilingId);
 define_id!(DeadlineId);
+define_id!(ComplianceEscalationId);
+define_id!(ComplianceEvidenceLinkId);
 define_id!(ClassificationId);
 
 // ── Treasury: Payments, Payroll, Distributions ───────────────────────
@@ -167,14 +183,12 @@ mod tests {
         // Verify a representative sample of ID types roundtrip correctly.
         let workspace = WorkspaceId::new();
         let json = serde_json::to_string(&workspace).expect("serialize WorkspaceId");
-        let parsed: WorkspaceId =
-            serde_json::from_str(&json).expect("deserialize WorkspaceId");
+        let parsed: WorkspaceId = serde_json::from_str(&json).expect("deserialize WorkspaceId");
         assert_eq!(workspace, parsed);
 
         let grant = EquityGrantId::new();
         let json = serde_json::to_string(&grant).expect("serialize EquityGrantId");
-        let parsed: EquityGrantId =
-            serde_json::from_str(&json).expect("deserialize EquityGrantId");
+        let parsed: EquityGrantId = serde_json::from_str(&json).expect("deserialize EquityGrantId");
         assert_eq!(grant, parsed);
     }
 
