@@ -1,49 +1,77 @@
 //! Job queue operations using Redis lists.
 //!
-//! Implements the reliable-queue pattern:
-//! - Enqueue: RPUSH to main queue
-//! - Dequeue: BLPOP from main queue
-//! - Processing: RPUSH to per-worker processing list
-//! - Completion: LREM from processing list
+//! Uses BLMOVE for atomic pop-and-move to the processing list,
+//! eliminating the window where a job could be lost on crash.
 
+use agent_types::JobPayload;
 use deadpool_redis::Pool;
 use deadpool_redis::redis::AsyncCommands;
 
-use crate::domain::job::JobPayload;
 use crate::error::WorkerError;
 use super::keys;
 
-/// Push a job onto the queue.
-pub async fn enqueue_job(pool: &Pool, job: &JobPayload) -> Result<(), WorkerError> {
+/// Get the current queue length.
+pub async fn queue_len(pool: &Pool) -> Result<u64, WorkerError> {
+    let mut conn = pool.get().await?;
+    let len: u64 = conn.llen(keys::QUEUE_JOBS).await?;
+    Ok(len)
+}
+
+/// Push a job onto the queue, rejecting if the queue is at capacity.
+pub async fn enqueue_job(pool: &Pool, job: &JobPayload, max_depth: u64) -> Result<(), WorkerError> {
+    if max_depth > 0 {
+        let current = queue_len(pool).await?;
+        if current >= max_depth {
+            return Err(WorkerError::QueueFull { current, max: max_depth });
+        }
+    }
     let mut conn = pool.get().await?;
     let payload = serde_json::to_string(job)?;
     conn.rpush::<_, _, ()>(keys::QUEUE_JOBS, &payload).await?;
     Ok(())
 }
 
-/// Blocking pop a job from the queue.
+/// Atomically pop a job from the queue and push to the processing list.
+///
+/// Uses BLMOVE (Redis >= 6.2) so the job is always in exactly one list.
 /// Returns `None` if the timeout expires with no job.
-pub async fn dequeue_job(pool: &Pool, timeout_secs: f64) -> Result<Option<(String, JobPayload)>, WorkerError> {
+pub async fn dequeue_to_processing(
+    pool: &Pool,
+    worker_id: &str,
+    timeout_secs: f64,
+) -> Result<Option<(String, JobPayload)>, WorkerError> {
     let mut conn = pool.get().await?;
-    let result: Option<(String, String)> = deadpool_redis::redis::cmd("BLPOP")
+    let processing = keys::queue_processing(worker_id);
+    let result: Option<String> = deadpool_redis::redis::cmd("BLMOVE")
         .arg(keys::QUEUE_JOBS)
+        .arg(&processing)
+        .arg("LEFT")
+        .arg("RIGHT")
         .arg(timeout_secs)
         .query_async(&mut *conn)
         .await?;
 
     match result {
-        Some((_key, payload)) => {
-            let job: JobPayload = serde_json::from_str(&payload)?;
-            Ok(Some((payload, job)))
+        Some(raw) => {
+            let job: JobPayload = serde_json::from_str(&raw)?;
+            Ok(Some((raw, job)))
         }
         None => Ok(None),
     }
 }
 
-/// Move a job to the per-worker processing list (for crash recovery).
-pub async fn mark_processing(pool: &Pool, worker_id: &str, raw_payload: &str) -> Result<(), WorkerError> {
+/// Move a rejected job from processing back to the queue.
+///
+/// Uses a pipeline to send both commands in one round trip.
+pub async fn reject_to_queue(pool: &Pool, worker_id: &str, raw_payload: &str) -> Result<(), WorkerError> {
     let mut conn = pool.get().await?;
-    conn.rpush::<_, _, ()>(&keys::queue_processing(worker_id), raw_payload).await?;
+    let processing = keys::queue_processing(worker_id);
+    deadpool_redis::redis::cmd("RPUSH")
+        .arg(keys::QUEUE_JOBS)
+        .arg(raw_payload)
+        .query_async::<()>(&mut *conn)
+        .await?;
+    conn.lrem::<_, _, ()>(&processing, 1, raw_payload).await?;
     Ok(())
 }
 

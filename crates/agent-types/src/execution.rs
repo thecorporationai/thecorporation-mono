@@ -1,7 +1,9 @@
-//! Execution state and result.
+//! Execution state and result types.
 
-use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use std::fmt;
+
+use crate::enums::ParseEnumError;
 
 /// Status of an agent execution.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -32,6 +34,27 @@ impl ExecutionStatus {
     }
 }
 
+impl fmt::Display for ExecutionStatus {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl std::str::FromStr for ExecutionStatus {
+    type Err = ParseEnumError;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "queued" => Ok(Self::Queued),
+            "running" => Ok(Self::Running),
+            "completed" => Ok(Self::Completed),
+            "failed" => Ok(Self::Failed),
+            "timeout" => Ok(Self::Timeout),
+            "cancelled" => Ok(Self::Cancelled),
+            _ => Err(ParseEnumError { type_name: "ExecutionStatus", value: s.to_owned() }),
+        }
+    }
+}
+
 /// Result collected from a finished execution container.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExecutionResult {
@@ -53,24 +76,6 @@ pub struct ExecutionResult {
     pub duration_seconds: f64,
 }
 
-/// Full execution record.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Execution {
-    pub id: String,
-    pub agent_id: String,
-    pub message_id: String,
-    pub status: ExecutionStatus,
-    #[serde(default)]
-    pub container_id: Option<String>,
-    #[serde(default)]
-    pub result: Option<ExecutionResult>,
-    #[serde(default)]
-    pub transcript: Vec<serde_json::Value>,
-    pub created_at: DateTime<Utc>,
-    #[serde(default)]
-    pub completed_at: Option<DateTime<Utc>>,
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -85,6 +90,13 @@ mod tests {
     }
 
     #[test]
+    fn status_fromstr() {
+        assert_eq!("queued".parse::<ExecutionStatus>().unwrap(), ExecutionStatus::Queued);
+        assert_eq!("failed".parse::<ExecutionStatus>().unwrap(), ExecutionStatus::Failed);
+        assert!("invalid".parse::<ExecutionStatus>().is_err());
+    }
+
+    #[test]
     fn is_terminal() {
         assert!(!ExecutionStatus::Queued.is_terminal());
         assert!(!ExecutionStatus::Running.is_terminal());
@@ -96,8 +108,7 @@ mod tests {
 
     #[test]
     fn execution_result_defaults() {
-        let json = r#"{}"#;
-        let result: ExecutionResult = serde_json::from_str(json).unwrap();
+        let result: ExecutionResult = serde_json::from_str("{}").unwrap();
         assert!(!result.success);
         assert_eq!(result.turns, 0);
         assert_eq!(result.input_tokens, 0);

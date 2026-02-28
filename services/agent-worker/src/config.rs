@@ -14,10 +14,6 @@ pub struct WorkerConfig {
     #[serde(default = "default_docker_host")]
     pub docker_host: String,
 
-    /// Fernet key for secret encryption (base64-encoded).
-    #[serde(default)]
-    pub fernet_key: Option<String>,
-
     /// Root path for agent workspace volumes on the host.
     #[serde(default = "default_workspace_root")]
     pub workspace_root: String,
@@ -42,6 +38,14 @@ pub struct WorkerConfig {
     #[serde(default)]
     pub max_concurrency: usize,
 
+    /// Maximum number of jobs allowed in the queue (0 = unlimited).
+    #[serde(default = "default_max_queue_depth")]
+    pub max_queue_depth: u64,
+
+    /// Maximum log entries kept in Redis per execution (older entries trimmed).
+    #[serde(default = "default_max_log_entries_redis")]
+    pub max_log_entries_redis: i64,
+
     /// Queue consumer poll interval in seconds.
     #[serde(default = "default_poll_seconds")]
     pub poll_seconds: f64,
@@ -62,7 +66,6 @@ pub struct ModelPricing {
 }
 
 fn default_docker_host() -> String {
-    // Prefer rootless Docker if available
     if let Ok(uid) = std::env::var("UID") {
         return format!("unix:///run/user/{uid}/docker.sock");
     }
@@ -77,21 +80,12 @@ fn default_runtime_image() -> String {
     "agents-runtime:pi".to_owned()
 }
 
-fn default_runtime_memory_mb() -> u64 {
-    512
-}
-
-fn default_runtime_cpu_limit() -> f64 {
-    0.5
-}
-
-fn default_runtime_timeout_seconds() -> u64 {
-    300
-}
-
-fn default_poll_seconds() -> f64 {
-    2.0
-}
+fn default_runtime_memory_mb() -> u64 { 512 }
+fn default_runtime_cpu_limit() -> f64 { 0.5 }
+fn default_runtime_timeout_seconds() -> u64 { 300 }
+fn default_max_queue_depth() -> u64 { 1000 }
+fn default_max_log_entries_redis() -> i64 { 1000 }
+fn default_poll_seconds() -> f64 { 2.0 }
 
 fn default_llm_proxy_url() -> String {
     "http://host.docker.internal:8000/v1/llm/proxy".to_owned()
@@ -111,15 +105,74 @@ impl WorkerConfig {
         envy::from_env()
     }
 
-    /// Unique identifier for this worker instance.
-    pub fn worker_id(&self) -> String {
-        uuid::Uuid::new_v4().to_string()
-    }
-
     /// Secrets proxy URL that containers will call back to.
     pub fn secrets_proxy_url(&self) -> String {
         format!("{}/v1/secrets", self.api_base_url)
             .replace("localhost", "host.docker.internal")
             .replace("127.0.0.1", "host.docker.internal")
+    }
+
+    /// Calculate cost in dollars for the given token usage.
+    ///
+    /// Returns `None` if the model is not in the pricing table.
+    /// Pricing values are cents per million tokens.
+    pub fn cost_for_model(&self, model: &str, input_tokens: u64, output_tokens: u64) -> Option<f64> {
+        let p = self.model_pricing.get(model)?;
+        // pricing is cents per million tokens → multiply then convert cents→dollars (/100) and per-million (/1_000_000)
+        Some((input_tokens as f64 * p.input as f64 + output_tokens as f64 * p.output as f64) / 100_000_000.0)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cost_for_model_known() {
+        let config = WorkerConfig {
+            redis_url: String::new(),
+            api_base_url: String::new(),
+            docker_host: String::new(),
+            workspace_root: String::new(),
+            runtime_image: String::new(),
+            runtime_memory_mb: 512,
+            runtime_cpu_limit: 0.5,
+            runtime_timeout_seconds: 300,
+            max_concurrency: 0,
+            max_queue_depth: 1000,
+            max_log_entries_redis: 1000,
+            poll_seconds: 2.0,
+            llm_proxy_url: String::new(),
+            model_pricing: default_model_pricing(),
+        };
+
+        // anthropic/claude-sonnet-4-6: input=300, output=1500 (cents per million)
+        // 1_000_000 input tokens → 300 cents = $3.00
+        // 500_000 output tokens → 750 cents = $7.50
+        // total = $10.50
+        let cost = config.cost_for_model("anthropic/claude-sonnet-4-6", 1_000_000, 500_000).unwrap();
+        assert!((cost - 10.50).abs() < 1e-9, "expected 10.50, got {cost}");
+    }
+
+    #[test]
+    fn cost_for_model_unknown() {
+        let config = WorkerConfig {
+            redis_url: String::new(),
+            api_base_url: String::new(),
+            docker_host: String::new(),
+            workspace_root: String::new(),
+            runtime_image: String::new(),
+            runtime_memory_mb: 512,
+            runtime_cpu_limit: 0.5,
+            runtime_timeout_seconds: 300,
+            max_concurrency: 0,
+            max_queue_depth: 1000,
+            max_log_entries_redis: 1000,
+            poll_seconds: 2.0,
+            llm_proxy_url: String::new(),
+            model_pricing: HashMap::new(),
+        };
+
+        assert!(config.cost_for_model("unknown/model", 1000, 1000).is_none());
     }
 }

@@ -1,9 +1,11 @@
-//! Newtype IDs — same pattern as api-rs to ensure type safety.
+//! Newtype IDs — prevent ID confusion at compile time.
 
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use uuid::Uuid;
 
+/// Generate a newtype wrapper around `Uuid` with Display, FromStr, Serialize, etc.
+#[macro_export]
 macro_rules! define_id {
     ($name:ident) => {
         #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -67,8 +69,8 @@ macro_rules! define_id {
 
 define_id!(AgentId);
 define_id!(WorkspaceId);
-define_id!(MessageId);
 define_id!(ExecutionId);
+define_id!(MessageId);
 
 #[cfg(test)]
 mod tests {
@@ -95,6 +97,6 @@ mod tests {
         let a = AgentId::new();
         let w = WorkspaceId::from_uuid(a.into_uuid());
         assert_eq!(a.into_uuid(), w.into_uuid());
-        // But AgentId != WorkspaceId at the type level.
+        // AgentId != WorkspaceId at the type level — won't compile if mixed.
     }
 }

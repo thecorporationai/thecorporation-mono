@@ -1,12 +1,14 @@
 //! Queue consumer loop — the heart of the worker.
 //!
-//! BLPOP from Redis queue, acquire per-agent lock, ack via RPC reply, dispatch lifecycle.
+//! BLMOVE from Redis queue to processing list, acquire per-agent lock,
+//! ack via RPC reply, dispatch lifecycle.
 
 use std::sync::Arc;
 
 use tokio::sync::Semaphore;
 use tokio_util::sync::CancellationToken;
 
+use agent_types::{RpcReply, RpcStatus};
 use crate::config::WorkerConfig;
 use crate::error::WorkerError;
 use crate::redis::{lock, queue, rpc};
@@ -15,6 +17,7 @@ use crate::redis::{lock, queue, rpc};
 pub async fn run(
     pool: deadpool_redis::Pool,
     docker: bollard::Docker,
+    http_client: reqwest::Client,
     config: Arc<WorkerConfig>,
     worker_id: String,
     shutdown: CancellationToken,
@@ -34,35 +37,30 @@ pub async fn run(
                 tracing::info!("consumer loop shutting down");
                 break;
             }
-            result = queue::dequeue_job(&pool, config.poll_seconds) => {
+            result = queue::dequeue_to_processing(&pool, &worker_id, config.poll_seconds) => {
                 let Some((raw_payload, job)) = result? else {
                     continue; // timeout, loop again
                 };
 
-                let agent_id_str = job.agent_id.to_string();
                 let job_id_str = job.job_id.to_string();
-                let exec_id_str = job.execution_id.to_string();
 
                 // Try to acquire per-agent lock
-                if !lock::acquire(&pool, &agent_id_str, &worker_id).await? {
-                    // Agent busy — re-enqueue and reject this RPC
-                    tracing::debug!(agent_id = %agent_id_str, "agent locked, re-enqueueing");
-                    queue::enqueue_job(&pool, &job).await?;
-                    rpc::send_reply(&pool, &job_id_str, &rpc::RpcReply {
-                        status: rpc::RpcStatus::Rejected,
-                        execution_id: exec_id_str,
+                if !lock::acquire(&pool, job.agent_id, &worker_id).await? {
+                    // Agent busy — move back to queue and reject this RPC
+                    tracing::debug!(agent_id = %job.agent_id, "agent locked, re-enqueueing");
+                    queue::reject_to_queue(&pool, &worker_id, &raw_payload).await?;
+                    rpc::send_reply(&pool, &job_id_str, &RpcReply {
+                        status: RpcStatus::Rejected,
+                        execution_id: job.execution_id,
                         message: Some("agent is busy".to_owned()),
                     }).await.ok();
                     continue;
                 }
 
-                // Move to processing list for crash recovery
-                queue::mark_processing(&pool, &worker_id, &raw_payload).await?;
-
                 // Ack the job immediately — worker has accepted it
-                rpc::send_reply(&pool, &job_id_str, &rpc::RpcReply {
-                    status: rpc::RpcStatus::Accepted,
-                    execution_id: exec_id_str,
+                rpc::send_reply(&pool, &job_id_str, &RpcReply {
+                    status: RpcStatus::Accepted,
+                    execution_id: job.execution_id,
                     message: None,
                 }).await.ok();
 
@@ -72,19 +70,21 @@ pub async fn run(
 
                 let pool = pool.clone();
                 let docker = docker.clone();
+                let http_client = http_client.clone();
                 let config = config.clone();
                 let worker_id = worker_id.clone();
 
                 tokio::spawn(async move {
                     let _permit = permit;
-                    let exec_id = job.execution_id.to_string();
-                    let agent_id = job.agent_id.to_string();
+                    let exec_id = job.execution_id;
+                    let agent_id = job.agent_id;
 
                     if let Err(e) = super::lifecycle::run(
                         job,
                         &raw_payload,
                         &pool,
                         &docker,
+                        &http_client,
                         &config,
                         &worker_id,
                     ).await {

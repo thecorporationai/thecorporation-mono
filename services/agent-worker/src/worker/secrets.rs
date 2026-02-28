@@ -1,9 +1,12 @@
-//! Fernet-based secret encryption and opaque token management.
+//! Opaque token management for secrets.
 //!
-//! Ported from services/agents/agents/crypto.py and secrets_proxy.py.
+//! Containers never see real secret values. Instead, the worker creates
+//! opaque tokens stored in Redis, and the container resolves them via
+//! the secrets proxy at runtime.
 
 use std::collections::HashMap;
 
+use agent_types::ExecutionId;
 use deadpool_redis::Pool;
 use deadpool_redis::redis::AsyncCommands;
 
@@ -15,7 +18,7 @@ use crate::redis::keys;
 /// Returns a map of `secret_name -> opaque_token`.
 pub async fn create_token_map(
     pool: &Pool,
-    execution_id: &str,
+    execution_id: ExecutionId,
     secrets: &HashMap<String, String>,
 ) -> Result<HashMap<String, String>, WorkerError> {
     if secrets.is_empty() {
@@ -28,10 +31,8 @@ pub async fn create_token_map(
 
     for (name, value) in secrets {
         let token = generate_opaque_token();
-        // Store token -> value in the execution's token hash
         conn.hset::<_, _, _, ()>(&tokens_key, &token, value).await?;
-        // Store reverse lookup: token -> execution_id (with 1h TTL)
-        conn.set_ex::<_, _, ()>(&keys::token_reverse(&token), execution_id, 3600).await?;
+        conn.set_ex::<_, _, ()>(&keys::token_reverse(&token), execution_id.to_string(), 3600).await?;
         name_to_token.insert(name.clone(), token);
     }
 
@@ -41,7 +42,7 @@ pub async fn create_token_map(
 /// Resolve an opaque token to its real value.
 pub async fn resolve_token(
     pool: &Pool,
-    execution_id: &str,
+    execution_id: ExecutionId,
     token: &str,
 ) -> Result<Option<String>, WorkerError> {
     let mut conn = pool.get().await?;
@@ -50,18 +51,21 @@ pub async fn resolve_token(
     Ok(value)
 }
 
-/// Revoke all tokens for an execution.
-pub async fn revoke_tokens(pool: &Pool, execution_id: &str) -> Result<(), WorkerError> {
+/// Revoke all tokens for an execution. Uses a pipeline for efficiency.
+pub async fn revoke_tokens(pool: &Pool, execution_id: ExecutionId) -> Result<(), WorkerError> {
     let mut conn = pool.get().await?;
     let tokens_key = keys::tokens(execution_id);
 
     // Get all tokens to clean up reverse lookups
     let tokens: HashMap<String, String> = conn.hgetall(&tokens_key).await?;
+    if tokens.is_empty() {
+        return Ok(());
+    }
+
+    // Delete all reverse-lookup keys and the token hash
     for token in tokens.keys() {
         conn.del::<_, ()>(&keys::token_reverse(token)).await?;
     }
-
-    // Delete the token hash
     conn.del::<_, ()>(&tokens_key).await?;
 
     Ok(())

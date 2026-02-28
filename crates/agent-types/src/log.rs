@@ -4,12 +4,15 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+use crate::enums::LogLevel;
+use crate::ids::ExecutionId;
+
 /// A log entry emitted during execution, streamed via Redis Pub/Sub.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LogEntry {
-    pub execution_id: String,
-    #[serde(default = "default_level")]
-    pub level: String,
+    pub execution_id: ExecutionId,
+    #[serde(default)]
+    pub level: LogLevel,
     pub event: String,
     #[serde(default)]
     pub data: HashMap<String, serde_json::Value>,
@@ -17,16 +20,12 @@ pub struct LogEntry {
     pub timestamp: Option<DateTime<Utc>>,
 }
 
-fn default_level() -> String {
-    "info".to_owned()
-}
-
 impl LogEntry {
     /// Create a "done" log entry signaling execution is complete.
-    pub fn done(execution_id: &str) -> Self {
+    pub fn done(execution_id: ExecutionId) -> Self {
         Self {
-            execution_id: execution_id.to_owned(),
-            level: "info".to_owned(),
+            execution_id,
+            level: LogLevel::Info,
             event: "done".to_owned(),
             data: HashMap::new(),
             timestamp: Some(Utc::now()),
@@ -34,12 +33,12 @@ impl LogEntry {
     }
 
     /// Create an "error" log entry.
-    pub fn error(execution_id: &str, message: &str) -> Self {
+    pub fn error(execution_id: ExecutionId, message: &str) -> Self {
         let mut data = HashMap::new();
         data.insert("message".to_owned(), serde_json::Value::String(message.to_owned()));
         Self {
-            execution_id: execution_id.to_owned(),
-            level: "error".to_owned(),
+            execution_id,
+            level: LogLevel::Error,
             event: "error".to_owned(),
             data,
             timestamp: Some(Utc::now()),
@@ -53,17 +52,18 @@ mod tests {
 
     #[test]
     fn done_entry() {
-        let entry = LogEntry::done("exec_123");
+        let entry = LogEntry::done(ExecutionId::new());
         assert_eq!(entry.event, "done");
-        assert_eq!(entry.level, "info");
+        assert_eq!(entry.level, LogLevel::Info);
         let json = serde_json::to_string(&entry).unwrap();
         assert!(json.contains("\"done\""));
     }
 
     #[test]
     fn error_entry() {
-        let entry = LogEntry::error("exec_123", "container crashed");
+        let entry = LogEntry::error(ExecutionId::new(), "container crashed");
         assert_eq!(entry.event, "error");
+        assert_eq!(entry.level, LogLevel::Error);
         assert_eq!(entry.data["message"], "container crashed");
     }
 }

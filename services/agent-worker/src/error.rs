@@ -1,3 +1,4 @@
+use agent_types::{AgentId, ExecutionId};
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -17,26 +18,29 @@ pub enum WorkerError {
     #[error("json error: {0}")]
     Json(#[from] serde_json::Error),
 
-    #[error("fernet error: {0}")]
-    Fernet(String),
-
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),
 
     #[error("lock not acquired for agent {0}")]
-    LockNotAcquired(String),
+    LockNotAcquired(AgentId),
 
     #[error("execution not found: {0}")]
-    ExecutionNotFound(String),
+    ExecutionNotFound(ExecutionId),
 
     #[error("agent not found: {0}")]
-    AgentNotFound(String),
+    AgentNotFound(AgentId),
 
     #[error("container failed: {0}")]
     ContainerFailed(String),
 
-    #[error("timeout: {0}")]
-    Timeout(String),
+    #[error("execution timed out: {0}")]
+    Timeout(ExecutionId),
+
+    #[error("queue full ({current}/{max})")]
+    QueueFull { current: u64, max: u64 },
+
+    #[error("git error: {0}")]
+    Git(String),
 
     #[error("{0}")]
     Internal(String),

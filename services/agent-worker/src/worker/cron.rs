@@ -1,21 +1,18 @@
 //! Cron scheduler — checks agent schedules and enqueues jobs.
 //!
 //! Runs as a background tokio task with a 60s tick.
-//! Fetches active agents with cron channels from api-rs,
-//! checks if any cron schedule matches the current minute,
-//! and enqueues jobs with Redis dedup.
+//! Uses SipHash for stable schedule hashing across Rust versions.
 
 use std::sync::Arc;
 
 use deadpool_redis::Pool;
-use deadpool_redis::redis::AsyncCommands;
+use siphasher::sip::SipHasher13;
 use tokio_util::sync::CancellationToken;
 
+use agent_types::{AgentId, ExecutionId, JobPayload, WorkspaceId};
 use crate::config::WorkerConfig;
-use crate::domain::ids::{AgentId, ExecutionId, MessageId, WorkspaceId};
-use crate::domain::job::JobPayload;
 use crate::error::WorkerError;
-use crate::redis::{keys, queue};
+use crate::redis::{keys, queue, state};
 
 /// Run the cron loop (60s tick) until cancelled.
 pub async fn run(
@@ -86,8 +83,8 @@ async fn tick(pool: &Pool, config: &WorkerConfig) -> Result<(), WorkerError> {
     let now = chrono::Utc::now();
 
     for agent in &agents {
-        let Some(agent_id) = &agent.agent_id else { continue };
-        let Some(workspace_id) = &agent.workspace_id else { continue };
+        let Some(agent_id_str) = &agent.agent_id else { continue };
+        let Some(workspace_id_str) = &agent.workspace_id else { continue };
 
         if agent.status.as_deref() != Some("active") {
             continue;
@@ -104,8 +101,12 @@ async fn tick(pool: &Pool, config: &WorkerConfig) -> Result<(), WorkerError> {
             }
 
             // Dedup: SET NX with 120s TTL
-            let schedule_hash = simple_hash(schedule);
-            let dedup_key = keys::cron_last_fire(agent_id, &schedule_hash);
+            let agent_uuid: AgentId = match agent_id_str.parse() {
+                Ok(id) => id,
+                Err(_) => continue,
+            };
+            let schedule_hash = stable_hash(schedule);
+            let dedup_key = keys::cron_last_fire(agent_uuid, &schedule_hash);
             let mut conn = pool.get().await?;
             let acquired: Option<String> = deadpool_redis::redis::cmd("SET")
                 .arg(&dedup_key)
@@ -120,30 +121,24 @@ async fn tick(pool: &Pool, config: &WorkerConfig) -> Result<(), WorkerError> {
                 continue; // Already fired this minute
             }
 
-            // Parse IDs
-            let agent_uuid: AgentId = match agent_id.parse() {
-                Ok(id) => id,
-                Err(_) => continue,
-            };
-            let ws_uuid: WorkspaceId = match workspace_id.parse() {
+            let ws_uuid: WorkspaceId = match workspace_id_str.parse() {
                 Ok(id) => id,
                 Err(_) => continue,
             };
 
-            let job = JobPayload::new(
-                ExecutionId::new(),
-                agent_uuid,
-                ws_uuid,
-                MessageId::new(), // Cron messages don't have a stored message
-            );
+            let execution_id = ExecutionId::new();
+            let job = JobPayload::cron(execution_id, agent_uuid, ws_uuid);
+
+            // Initialize execution state for cron jobs (api-rs does it for message jobs)
+            state::init_queued(pool, execution_id, agent_uuid, None).await?;
 
             tracing::info!(
-                agent_id,
+                agent_id = agent_id_str.as_str(),
                 schedule,
                 execution_id = %job.execution_id,
                 "cron: enqueueing job"
             );
-            queue::enqueue_job(pool, &job).await?;
+            queue::enqueue_job(pool, &job, config.max_queue_depth).await?;
         }
     }
 
@@ -154,7 +149,6 @@ async fn tick(pool: &Pool, config: &WorkerConfig) -> Result<(), WorkerError> {
 fn cron_matches_now(expr: &str, now: &chrono::DateTime<chrono::Utc>) -> bool {
     use chrono::{Datelike, Timelike};
 
-    // Parse simple cron: "minute hour day_of_month month day_of_week"
     let parts: Vec<&str> = expr.split_whitespace().collect();
     if parts.len() < 5 {
         return false;
@@ -175,15 +169,12 @@ fn field_matches(pattern: &str, value: u32) -> bool {
     if pattern == "*" {
         return true;
     }
-    // Handle */N step values
     if let Some(step) = pattern.strip_prefix("*/") {
         if let Ok(n) = step.parse::<u32>() {
             return n > 0 && value % n == 0;
         }
     }
-    // Handle comma-separated values
     for part in pattern.split(',') {
-        // Handle ranges (e.g., "1-5")
         if let Some((start, end)) = part.split_once('-') {
             if let (Ok(s), Ok(e)) = (start.parse::<u32>(), end.parse::<u32>()) {
                 if value >= s && value <= e {
@@ -199,10 +190,11 @@ fn field_matches(pattern: &str, value: u32) -> bool {
     false
 }
 
-fn simple_hash(s: &str) -> String {
-    use std::collections::hash_map::DefaultHasher;
+/// Stable hash using SipHash-1-3 with a fixed key.
+/// Unlike `DefaultHasher`, output is deterministic across Rust versions.
+fn stable_hash(s: &str) -> String {
     use std::hash::{Hash, Hasher};
-    let mut hasher = DefaultHasher::new();
+    let mut hasher = SipHasher13::new_with_keys(0xdead_beef_cafe_babe, 0x0123_4567_89ab_cdef);
     s.hash(&mut hasher);
     format!("{:x}", hasher.finish())
 }
@@ -228,8 +220,8 @@ mod tests {
     #[test]
     fn cron_step() {
         let now = chrono::Utc.with_ymd_and_hms(2026, 2, 28, 9, 30, 0).unwrap();
-        assert!(cron_matches_now("*/5 * * * *", &now));  // 30 % 5 == 0
-        assert!(!cron_matches_now("*/7 * * * *", &now));  // 30 % 7 != 0
+        assert!(cron_matches_now("*/5 * * * *", &now));
+        assert!(!cron_matches_now("*/7 * * * *", &now));
     }
 
     #[test]
@@ -256,5 +248,15 @@ mod tests {
     fn field_matches_exact() {
         assert!(field_matches("5", 5));
         assert!(!field_matches("5", 6));
+    }
+
+    #[test]
+    fn stable_hash_deterministic() {
+        let a = stable_hash("*/5 * * * *");
+        let b = stable_hash("*/5 * * * *");
+        assert_eq!(a, b);
+        // Different input → different hash
+        let c = stable_hash("*/10 * * * *");
+        assert_ne!(a, c);
     }
 }

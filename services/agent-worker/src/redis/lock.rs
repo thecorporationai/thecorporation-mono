@@ -1,5 +1,6 @@
 //! Distributed per-agent lock using Redis SET NX PX + Lua CAS release.
 
+use agent_types::AgentId;
 use deadpool_redis::Pool;
 use deadpool_redis::redis::Script;
 
@@ -29,7 +30,7 @@ end
 
 /// Attempt to acquire a per-agent lock.
 /// Returns `true` if the lock was acquired.
-pub async fn acquire(pool: &Pool, agent_id: &str, worker_id: &str) -> Result<bool, WorkerError> {
+pub async fn acquire(pool: &Pool, agent_id: AgentId, worker_id: &str) -> Result<bool, WorkerError> {
     let mut conn = pool.get().await?;
     let key = keys::lock_agent(agent_id);
     let result: Option<String> = deadpool_redis::redis::cmd("SET")
@@ -44,7 +45,7 @@ pub async fn acquire(pool: &Pool, agent_id: &str, worker_id: &str) -> Result<boo
 }
 
 /// Release the per-agent lock (only if we still own it).
-pub async fn release(pool: &Pool, agent_id: &str, worker_id: &str) -> Result<bool, WorkerError> {
+pub async fn release(pool: &Pool, agent_id: AgentId, worker_id: &str) -> Result<bool, WorkerError> {
     let mut conn = pool.get().await?;
     let key = keys::lock_agent(agent_id);
     let script = Script::new(RELEASE_SCRIPT);
@@ -57,8 +58,7 @@ pub async fn release(pool: &Pool, agent_id: &str, worker_id: &str) -> Result<boo
 }
 
 /// Renew the lock TTL (only if we still own it).
-/// Returns `true` if the renewal succeeded.
-pub async fn renew(pool: &Pool, agent_id: &str, worker_id: &str) -> Result<bool, WorkerError> {
+pub async fn renew(pool: &Pool, agent_id: AgentId, worker_id: &str) -> Result<bool, WorkerError> {
     let mut conn = pool.get().await?;
     let key = keys::lock_agent(agent_id);
     let script = Script::new(RENEW_SCRIPT);

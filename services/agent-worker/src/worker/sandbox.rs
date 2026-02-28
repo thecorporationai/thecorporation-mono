@@ -1,15 +1,12 @@
 //! Container configuration builder — hardened sandbox for Pi runtime.
-//!
-//! Ported from services/agents/agents/sandbox.py.
 
 use std::collections::HashMap;
 
 use bollard::container::{Config, CreateContainerOptions};
 use bollard::models::HostConfig;
 
+use agent_types::AgentDefinition;
 use crate::config::WorkerConfig;
-use crate::domain::agent::AgentDefinition;
-use crate::domain::message::InboundMessage;
 
 /// Seccomp profile: deny-list of dangerous syscalls.
 /// Default action is ALLOW; we block specific dangerous calls.
@@ -111,8 +108,10 @@ pub fn build_container_config(
         ..Default::default()
     };
 
+    // Safe container name: use char-level slicing to avoid UTF-8 panics
+    let name_suffix: String = execution_id.chars().take(12).collect();
     let create_options = CreateContainerOptions {
-        name: format!("aw-{}", &execution_id[..12.min(execution_id.len())]),
+        name: format!("aw-{name_suffix}"),
         platform: None,
     };
 

@@ -21,7 +21,8 @@ async fn main() -> anyhow::Result<()> {
     dotenvy::dotenv().ok();
 
     let config = Arc::new(WorkerConfig::from_env()?);
-    let worker_id = config.worker_id();
+    // Generate worker ID once at startup — stable for the process lifetime.
+    let worker_id = uuid::Uuid::new_v4().to_string();
     tracing::info!(worker_id = %worker_id, "agent-worker starting");
 
     let pool = redis_pool::create_pool(&config.redis_url)?;
@@ -29,6 +30,9 @@ async fn main() -> anyhow::Result<()> {
 
     let docker_client = docker::connect(&config.docker_host)?;
     tracing::info!("docker connected");
+
+    // Reusable HTTP client for connection pooling
+    let http_client = reqwest::Client::new();
 
     // Shutdown signal
     let shutdown = CancellationToken::new();
@@ -61,7 +65,7 @@ async fn main() -> anyhow::Result<()> {
     });
 
     // Run consumer loop (blocks until shutdown)
-    consumer::run(pool, docker_client, config, worker_id, shutdown).await?;
+    consumer::run(pool, docker_client, http_client, config, worker_id, shutdown).await?;
 
     tracing::info!("agent-worker stopped");
     Ok(())

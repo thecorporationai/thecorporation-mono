@@ -22,7 +22,6 @@ fn num_cpus() -> usize {
 }
 
 fn total_memory_mb() -> u64 {
-    // Read from /proc/meminfo on Linux
     if let Ok(content) = std::fs::read_to_string("/proc/meminfo") {
         for line in content.lines() {
             if line.starts_with("MemTotal:") {
@@ -33,6 +32,5 @@ fn total_memory_mb() -> u64 {
             }
         }
     }
-    // Fallback: assume 4GB
     4096
 }
