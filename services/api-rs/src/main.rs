@@ -3,11 +3,13 @@
 
 use axum::{Json, Router, routing::get};
 use serde_json::{Value, json};
+use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tracing_subscriber::EnvFilter;
 
+mod auth;
 mod config;
 mod domain;
 mod error;
@@ -111,12 +113,39 @@ async fn main() {
         }
     };
 
+    let max_queue_depth: u64 = std::env::var("MAX_QUEUE_DEPTH")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(1000);
+
+    // HTTP client for LLM proxy (5-min timeout for long LLM calls)
+    let http_client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(300))
+        .build()
+        .expect("failed to build HTTP client");
+
+    let llm_upstream_url = std::env::var("LLM_UPSTREAM_URL")
+        .unwrap_or_else(|_| "https://openrouter.ai/api/v1".to_owned());
+
+    let model_pricing = {
+        let mut m = HashMap::new();
+        m.insert("anthropic/claude-sonnet-4-6".to_owned(), routes::ModelPricing { input: 300, output: 1500 });
+        m.insert("anthropic/claude-haiku-4-5".to_owned(), routes::ModelPricing { input: 80, output: 400 });
+        m.insert("openai/gpt-4o".to_owned(), routes::ModelPricing { input: 250, output: 1000 });
+        m.insert("openai/gpt-4o-mini".to_owned(), routes::ModelPricing { input: 15, output: 60 });
+        m
+    };
+
     let state = routes::AppState {
         layout,
         jwt_secret,
         commit_signer,
         redis,
         secrets_fernet,
+        max_queue_depth,
+        http_client,
+        llm_upstream_url,
+        model_pricing,
     };
 
     let app = Router::new()
@@ -134,6 +163,7 @@ async fn main() {
         .merge(routes::agents::agent_routes())
         .merge(routes::agent_executions::execution_routes())
         .merge(routes::secrets_proxy::secrets_routes())
+        .merge(routes::llm_proxy::llm_proxy_routes())
         .merge(routes::secret_proxies::secret_proxy_routes())
         .merge(routes::billing::billing_routes())
         .merge(routes::admin::admin_routes())

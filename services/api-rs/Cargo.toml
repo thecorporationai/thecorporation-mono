@@ -22,6 +22,9 @@ git2 = { version = "0.20", default-features = false }
 # Commit signing — Ed25519 SSH signatures for cryptographic provenance
 ssh-key = { version = "0.6", features = ["ed25519", "crypto"] }
 
+# Shared agent types (IDs, enums, config structs)
+agent-types = { path = "../../crates/agent-types" }
+
 # Types
 uuid = { version = "1", features = ["v4", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
@@ -50,7 +53,7 @@ deadpool-redis = "0.18"
 # Encryption (secrets at rest)
 fernet = "0.2"
 
-# reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 
 # Config
 envy = "0.4"

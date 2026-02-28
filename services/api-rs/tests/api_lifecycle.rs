@@ -13,9 +13,24 @@ use std::sync::Arc;
 use tempfile::TempDir;
 use tower::ServiceExt; // oneshot
 
+use api_rs::domain::auth::claims::{encode_token, Claims};
+use api_rs::domain::auth::scopes::Scope;
+use api_rs::domain::ids::WorkspaceId;
+
 // ── Helpers ──────────────────────────────────────────────────────────────
 
+const TEST_SECRET: &[u8] = b"test-secret-for-integration-tests";
+
+fn make_token(ws_id: WorkspaceId) -> String {
+    let now = chrono::Utc::now().timestamp();
+    let claims = Claims::new(ws_id, None, vec![Scope::All], now, now + 3600);
+    encode_token(&claims, TEST_SECRET).expect("encode token")
+}
+
 fn build_app(tmp: &TempDir) -> Router {
+    // Ensure JWT_SECRET is set for the auth middleware
+    unsafe { std::env::set_var("JWT_SECRET", "test-secret-for-integration-tests") };
+
     let layout = Arc::new(api_rs::store::RepoLayout::new(tmp.path().to_path_buf()));
     let state = api_rs::routes::AppState {
         layout,
@@ -23,6 +38,10 @@ fn build_app(tmp: &TempDir) -> Router {
         commit_signer: None,
         redis: None,
         secrets_fernet: None,
+        max_queue_depth: 1000,
+        http_client: reqwest::Client::new(),
+        llm_upstream_url: "http://localhost:0".to_owned(),
+        model_pricing: std::collections::HashMap::new(),
     };
 
     Router::new()
@@ -50,11 +69,12 @@ fn build_app(tmp: &TempDir) -> Router {
         .with_state(state)
 }
 
-async fn post_json(app: &Router, path: &str, body: Value) -> (StatusCode, Value) {
+async fn post_json(app: &Router, path: &str, body: Value, token: &str) -> (StatusCode, Value) {
     let req = Request::builder()
         .method(Method::POST)
         .uri(path)
         .header("content-type", "application/json")
+        .header("authorization", format!("Bearer {token}"))
         .body(Body::from(serde_json::to_vec(&body).unwrap()))
         .unwrap();
     let response = app.clone().oneshot(req).await.unwrap();
@@ -66,10 +86,11 @@ async fn post_json(app: &Router, path: &str, body: Value) -> (StatusCode, Value)
     (status, value)
 }
 
-async fn get_json(app: &Router, path: &str) -> (StatusCode, Value) {
+async fn get_json(app: &Router, path: &str, token: &str) -> (StatusCode, Value) {
     let req = Request::builder()
         .method(Method::GET)
         .uri(path)
+        .header("authorization", format!("Bearer {token}"))
         .body(Body::empty())
         .unwrap();
     let response = app.clone().oneshot(req).await.unwrap();
@@ -81,20 +102,21 @@ async fn get_json(app: &Router, path: &str) -> (StatusCode, Value) {
     (status, value)
 }
 
-async fn delete_req(app: &Router, path: &str) -> StatusCode {
+async fn delete_req(app: &Router, path: &str, token: &str) -> StatusCode {
     let req = Request::builder()
         .method(Method::DELETE)
         .uri(path)
+        .header("authorization", format!("Bearer {token}"))
         .body(Body::empty())
         .unwrap();
     let response = app.clone().oneshot(req).await.unwrap();
     response.status()
 }
 
-/// Helper: create an entity and return (workspace_id_str, entity_id_str, app).
-/// The workspace_id is fixed so subsequent calls can reuse it.
-async fn create_entity(app: &Router) -> (String, String) {
-    let ws_id = uuid::Uuid::new_v4().to_string();
+/// Helper: create an entity and return (workspace_id, entity_id, token).
+async fn create_entity(app: &Router) -> (WorkspaceId, String, String) {
+    let ws_id = WorkspaceId::new();
+    let token = make_token(ws_id);
     let (status, body) = post_json(
         app,
         "/v1/formations",
@@ -122,13 +144,13 @@ async fn create_entity(app: &Router) -> (String, String) {
             ],
             "authorized_shares": 10000000,
             "par_value": "0.0001",
-            "workspace_id": ws_id,
         }),
+        &token,
     )
     .await;
     assert_eq!(status, StatusCode::OK, "create_formation failed: {body}");
     let entity_id = body["entity_id"].as_str().unwrap().to_owned();
-    (ws_id, entity_id)
+    (ws_id, entity_id, token)
 }
 
 // ── 1. Health check ──────────────────────────────────────────────────────
@@ -137,7 +159,8 @@ async fn create_entity(app: &Router) -> (String, String) {
 async fn test_health() {
     let tmp = TempDir::new().unwrap();
     let app = build_app(&tmp);
-    let (status, body) = get_json(&app, "/health").await;
+    let token = make_token(WorkspaceId::new());
+    let (status, body) = get_json(&app, "/health", &token).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["status"], "ok");
 }
@@ -150,7 +173,8 @@ async fn test_formation_lifecycle() {
     let app = build_app(&tmp);
 
     // 1. Create entity
-    let ws_id = uuid::Uuid::new_v4().to_string();
+    let ws_id = WorkspaceId::new();
+    let token = make_token(ws_id);
     let (status, body) = post_json(
         &app,
         "/v1/formations",
@@ -170,8 +194,8 @@ async fn test_formation_lifecycle() {
             ],
             "authorized_shares": 10000000,
             "par_value": "0.0001",
-            "workspace_id": ws_id,
         }),
+        &token,
     )
     .await;
     assert_eq!(status, StatusCode::OK, "create formation: {body}");
@@ -189,7 +213,8 @@ async fn test_formation_lifecycle() {
     // 2. GET formation status
     let (status, body) = get_json(
         &app,
-        &format!("/v1/formations/{entity_id}?workspace_id={ws_id}"),
+        &format!("/v1/formations/{entity_id}"),
+        &token,
     )
     .await;
     assert_eq!(status, StatusCode::OK, "get formation: {body}");
@@ -200,7 +225,8 @@ async fn test_formation_lifecycle() {
     // 3. List documents
     let (status, body) = get_json(
         &app,
-        &format!("/v1/formations/{entity_id}/documents?workspace_id={ws_id}"),
+        &format!("/v1/formations/{entity_id}/documents"),
+        &token,
     )
     .await;
     assert_eq!(status, StatusCode::OK, "list documents: {body}");
@@ -211,13 +237,14 @@ async fn test_formation_lifecycle() {
     for doc_id in &doc_ids {
         let (status, body) = post_json(
             &app,
-            &format!("/v1/documents/{doc_id}/sign?workspace_id={ws_id}&entity_id={entity_id}"),
+            &format!("/v1/documents/{doc_id}/sign?entity_id={entity_id}"),
             json!({
                 "signer_name": "Alice Founder",
                 "signer_role": "Incorporator",
                 "signer_email": "alice@formco.com",
                 "signature_text": "Alice Founder"
             }),
+            &token,
         )
         .await;
         assert_eq!(status, StatusCode::OK, "sign document {doc_id}: {body}");
@@ -229,7 +256,8 @@ async fn test_formation_lifecycle() {
     let doc_id = &doc_ids[0];
     let (status, body) = get_json(
         &app,
-        &format!("/v1/documents/{doc_id}?workspace_id={ws_id}&entity_id={entity_id}"),
+        &format!("/v1/documents/{doc_id}?entity_id={entity_id}"),
+        &token,
     )
     .await;
     assert_eq!(status, StatusCode::OK, "get document: {body}");
@@ -245,7 +273,8 @@ async fn test_formation_lifecycle() {
     // documents_generated and the API correctly reports it.
     let (status, body) = get_json(
         &app,
-        &format!("/v1/formations/{entity_id}?workspace_id={ws_id}"),
+        &format!("/v1/formations/{entity_id}"),
+        &token,
     )
     .await;
     assert_eq!(status, StatusCode::OK, "get formation post-signing: {body}");
@@ -258,12 +287,14 @@ async fn test_formation_lifecycle() {
 async fn test_equity_lifecycle() {
     let tmp = TempDir::new().unwrap();
     let app = build_app(&tmp);
-    let (ws_id, entity_id) = create_entity(&app).await;
+    let (ws_id, entity_id, token) = create_entity(&app).await;
+    let _ = ws_id;
 
     // 1. Get cap table — initial state (no share classes created by formation)
     let (status, body) = get_json(
         &app,
-        &format!("/v1/entities/{entity_id}/cap-table?workspace_id={ws_id}"),
+        &format!("/v1/entities/{entity_id}/cap-table"),
+        &token,
     )
     .await;
     assert_eq!(status, StatusCode::OK, "get cap table: {body}");
@@ -284,8 +315,8 @@ async fn test_equity_lifecycle() {
             "recipient_type": "natural_person",
             "grant_type": "common_stock",
             "share_class_id": share_class_id,
-            "workspace_id": ws_id,
         }),
+        &token,
     )
     .await;
     assert_eq!(status, StatusCode::OK, "create grant: {body}");
@@ -303,8 +334,8 @@ async fn test_equity_lifecycle() {
             "principal_amount_cents": 500000_i64,
             "safe_type": "post_money",
             "valuation_cap_cents": 10000000_i64,
-            "workspace_id": ws_id,
         }),
+        &token,
     )
     .await;
     assert_eq!(status, StatusCode::OK, "create SAFE: {body}");
@@ -315,7 +346,8 @@ async fn test_equity_lifecycle() {
     // 4. List SAFE notes
     let (status, body) = get_json(
         &app,
-        &format!("/v1/entities/{entity_id}/safe-notes?workspace_id={ws_id}"),
+        &format!("/v1/entities/{entity_id}/safe-notes"),
+        &token,
     )
     .await;
     assert_eq!(status, StatusCode::OK, "list SAFEs: {body}");
@@ -334,8 +366,8 @@ async fn test_equity_lifecycle() {
             "fmv_per_share_cents": 100_i64,
             "enterprise_value_cents": 5000000_i64,
             "effective_date": "2026-01-15",
-            "workspace_id": ws_id,
         }),
+        &token,
     )
     .await;
     assert_eq!(status, StatusCode::OK, "create valuation: {body}");
@@ -351,8 +383,8 @@ async fn test_equity_lifecycle() {
             "name": "Alice Seller",
             "email": "alice@test.com",
             "category": "employee",
-            "workspace_id": ws_id,
         }),
+        &token,
     )
     .await;
     assert_eq!(status, StatusCode::OK, "create from_contact: {from_contact}");
@@ -367,8 +399,8 @@ async fn test_equity_lifecycle() {
             "name": "Dave Buyer",
             "email": "dave@test.com",
             "category": "investor",
-            "workspace_id": ws_id,
         }),
+        &token,
     )
     .await;
     assert_eq!(status, StatusCode::OK, "create to_contact: {to_contact}");
@@ -386,8 +418,8 @@ async fn test_equity_lifecycle() {
             "transfer_type": "secondary_sale",
             "shares": 500,
             "price_per_share_cents": 100,
-            "workspace_id": ws_id,
         }),
+        &token,
     )
     .await;
     assert_eq!(status, StatusCode::OK, "create transfer: {body}");
@@ -395,13 +427,14 @@ async fn test_equity_lifecycle() {
     assert_eq!(body["status"], "draft");
 
     // 8. Walk transfer through FSM
-    let we_query = format!("workspace_id={ws_id}&entity_id={entity_id}");
+    let e_query = format!("entity_id={entity_id}");
 
     // submit-review
     let (status, body) = post_json(
         &app,
-        &format!("/v1/share-transfers/{transfer_id}/submit-review?{we_query}"),
+        &format!("/v1/share-transfers/{transfer_id}/submit-review?{e_query}"),
         json!({}),
+        &token,
     )
     .await;
     assert_eq!(status, StatusCode::OK, "submit-review: {body}");
@@ -410,8 +443,9 @@ async fn test_equity_lifecycle() {
     // bylaws-review
     let (status, body) = post_json(
         &app,
-        &format!("/v1/share-transfers/{transfer_id}/bylaws-review?{we_query}"),
+        &format!("/v1/share-transfers/{transfer_id}/bylaws-review?{e_query}"),
         json!({ "approved": true, "reviewer": "Legal Team" }),
+        &token,
     )
     .await;
     assert_eq!(status, StatusCode::OK, "bylaws-review: {body}");
@@ -420,8 +454,9 @@ async fn test_equity_lifecycle() {
     // rofr-decision (waive ROFR)
     let (status, body) = post_json(
         &app,
-        &format!("/v1/share-transfers/{transfer_id}/rofr-decision?{we_query}"),
+        &format!("/v1/share-transfers/{transfer_id}/rofr-decision?{e_query}"),
         json!({ "offered": true, "waived": true }),
+        &token,
     )
     .await;
     assert_eq!(status, StatusCode::OK, "rofr-decision: {body}");
@@ -431,8 +466,9 @@ async fn test_equity_lifecycle() {
     // approve
     let (status, body) = post_json(
         &app,
-        &format!("/v1/share-transfers/{transfer_id}/approve?{we_query}"),
+        &format!("/v1/share-transfers/{transfer_id}/approve?{e_query}"),
         json!({}),
+        &token,
     )
     .await;
     assert_eq!(status, StatusCode::OK, "approve: {body}");
@@ -441,8 +477,9 @@ async fn test_equity_lifecycle() {
     // execute
     let (status, body) = post_json(
         &app,
-        &format!("/v1/share-transfers/{transfer_id}/execute?{we_query}"),
+        &format!("/v1/share-transfers/{transfer_id}/execute?{e_query}"),
         json!({}),
+        &token,
     )
     .await;
     assert_eq!(status, StatusCode::OK, "execute transfer: {body}");
@@ -456,8 +493,8 @@ async fn test_equity_lifecycle() {
             "entity_id": entity_id,
             "round_name": "Seed Round",
             "pre_money_valuation_cents": 10000000_i64,
-            "workspace_id": ws_id,
         }),
+        &token,
     )
     .await;
     assert_eq!(status, StatusCode::OK, "create funding round: {body}");
@@ -471,7 +508,8 @@ async fn test_equity_lifecycle() {
 async fn test_governance_lifecycle() {
     let tmp = TempDir::new().unwrap();
     let app = build_app(&tmp);
-    let (ws_id, entity_id) = create_entity(&app).await;
+    let (ws_id, entity_id, token) = create_entity(&app).await;
+    let _ = ws_id;
 
     // 1. Create contacts for board members
     let (_, c1) = post_json(
@@ -482,8 +520,8 @@ async fn test_governance_lifecycle() {
             "contact_type": "individual",
             "name": "Director One",
             "category": "board_member",
-            "workspace_id": ws_id,
         }),
+        &token,
     )
     .await;
     let contact_id_1 = c1["contact_id"].as_str().unwrap().to_owned();
@@ -496,8 +534,8 @@ async fn test_governance_lifecycle() {
             "contact_type": "individual",
             "name": "Director Two",
             "category": "board_member",
-            "workspace_id": ws_id,
         }),
+        &token,
     )
     .await;
     let contact_id_2 = c2["contact_id"].as_str().unwrap().to_owned();
@@ -512,8 +550,8 @@ async fn test_governance_lifecycle() {
             "name": "Board of Directors",
             "quorum_rule": "majority",
             "voting_method": "per_capita",
-            "workspace_id": ws_id,
         }),
+        &token,
     )
     .await;
     assert_eq!(status, StatusCode::OK, "create governance body: {body}");
@@ -521,15 +559,16 @@ async fn test_governance_lifecycle() {
     assert_eq!(body["name"], "Board of Directors");
 
     // 3. Create seats
-    let body_q = format!("workspace_id={ws_id}&entity_id={entity_id}");
+    let e_query = format!("entity_id={entity_id}");
     let (status, seat1) = post_json(
         &app,
-        &format!("/v1/governance-bodies/{body_id}/seats?{body_q}"),
+        &format!("/v1/governance-bodies/{body_id}/seats?{e_query}"),
         json!({
             "holder_id": contact_id_1,
             "role": "chair",
             "voting_power": 1,
         }),
+        &token,
     )
     .await;
     assert_eq!(status, StatusCode::OK, "create seat 1: {seat1}");
@@ -537,12 +576,13 @@ async fn test_governance_lifecycle() {
 
     let (status, seat2) = post_json(
         &app,
-        &format!("/v1/governance-bodies/{body_id}/seats?{body_q}"),
+        &format!("/v1/governance-bodies/{body_id}/seats?{e_query}"),
         json!({
             "holder_id": contact_id_2,
             "role": "member",
             "voting_power": 1,
         }),
+        &token,
     )
     .await;
     assert_eq!(status, StatusCode::OK, "create seat 2: {seat2}");
@@ -561,8 +601,8 @@ async fn test_governance_lifecycle() {
             "location": "Virtual",
             "notice_days": 10,
             "agenda_item_titles": ["Approve budget", "Elect officers"],
-            "workspace_id": ws_id,
         }),
+        &token,
     )
     .await;
     assert_eq!(status, StatusCode::OK, "schedule meeting: {meeting_body}");
@@ -571,11 +611,11 @@ async fn test_governance_lifecycle() {
     assert_eq!(meeting_body["status"], "draft");
 
     // 5. Send notice
-    let meeting_q = format!("workspace_id={ws_id}&entity_id={entity_id}");
     let (status, body) = post_json(
         &app,
-        &format!("/v1/meetings/{meeting_id}/notice?{meeting_q}"),
+        &format!("/v1/meetings/{meeting_id}/notice?{e_query}"),
         json!({}),
+        &token,
     )
     .await;
     assert_eq!(status, StatusCode::OK, "send notice: {body}");
@@ -584,15 +624,16 @@ async fn test_governance_lifecycle() {
     // 6. Convene meeting (both directors present)
     let (status, body) = post_json(
         &app,
-        &format!("/v1/meetings/{meeting_id}/convene?{meeting_q}"),
+        &format!("/v1/meetings/{meeting_id}/convene?{e_query}"),
         json!({
             "present_seat_ids": [seat_id_1, seat_id_2],
         }),
+        &token,
     )
     .await;
     assert_eq!(status, StatusCode::OK, "convene meeting: {body}");
     assert_eq!(body["status"], "convened");
-    assert_eq!(body["quorum_met"], true);
+    assert_eq!(body["quorum_met"], "met");
 
     // Get agenda items by listing the meeting — we need agenda item IDs.
     // The agenda items were written into the git store. We need to find them.
@@ -615,8 +656,9 @@ async fn test_governance_lifecycle() {
     // 7. Adjourn meeting
     let (status, body) = post_json(
         &app,
-        &format!("/v1/meetings/{meeting_id}/adjourn?{meeting_q}"),
+        &format!("/v1/meetings/{meeting_id}/adjourn?{e_query}"),
         json!({}),
+        &token,
     )
     .await;
     assert_eq!(status, StatusCode::OK, "adjourn meeting: {body}");
@@ -629,8 +671,9 @@ async fn test_governance_lifecycle() {
 async fn test_treasury_lifecycle() {
     let tmp = TempDir::new().unwrap();
     let app = build_app(&tmp);
-    let (ws_id, entity_id) = create_entity(&app).await;
-    let we_query = format!("workspace_id={ws_id}&entity_id={entity_id}");
+    let (ws_id, entity_id, token) = create_entity(&app).await;
+    let _ = ws_id;
+    let e_query = format!("entity_id={entity_id}");
 
     // 1. Create GL accounts (Cash and Revenue)
     let (status, cash_acct) = post_json(
@@ -639,8 +682,8 @@ async fn test_treasury_lifecycle() {
         json!({
             "entity_id": entity_id,
             "account_code": "Cash",
-            "workspace_id": ws_id,
         }),
+        &token,
     )
     .await;
     assert_eq!(status, StatusCode::OK, "create cash account: {cash_acct}");
@@ -653,8 +696,8 @@ async fn test_treasury_lifecycle() {
         json!({
             "entity_id": entity_id,
             "account_code": "Revenue",
-            "workspace_id": ws_id,
         }),
+        &token,
     )
     .await;
     assert_eq!(status, StatusCode::OK, "create revenue account: {rev_acct}");
@@ -663,7 +706,8 @@ async fn test_treasury_lifecycle() {
     // 2. List accounts
     let (status, accounts) = get_json(
         &app,
-        &format!("/v1/entities/{entity_id}/accounts?workspace_id={ws_id}"),
+        &format!("/v1/entities/{entity_id}/accounts"),
+        &token,
     )
     .await;
     assert_eq!(status, StatusCode::OK, "list accounts: {accounts}");
@@ -681,8 +725,8 @@ async fn test_treasury_lifecycle() {
                 { "account_id": cash_id, "side": "debit", "amount_cents": 100000 },
                 { "account_id": rev_id, "side": "credit", "amount_cents": 100000 },
             ],
-            "workspace_id": ws_id,
         }),
+        &token,
     )
     .await;
     assert_eq!(status, StatusCode::OK, "create journal entry: {je}");
@@ -694,8 +738,9 @@ async fn test_treasury_lifecycle() {
     // 4. Post journal entry
     let (status, je) = post_json(
         &app,
-        &format!("/v1/journal-entries/{je_id}/post?{we_query}"),
+        &format!("/v1/journal-entries/{je_id}/post?{e_query}"),
         json!({}),
+        &token,
     )
     .await;
     assert_eq!(status, StatusCode::OK, "post journal entry: {je}");
@@ -711,8 +756,8 @@ async fn test_treasury_lifecycle() {
             "amount_cents": 250000,
             "description": "Consulting services - Jan 2026",
             "due_date": "2026-03-01",
-            "workspace_id": ws_id,
         }),
+        &token,
     )
     .await;
     assert_eq!(status, StatusCode::OK, "create invoice: {inv}");
@@ -722,8 +767,9 @@ async fn test_treasury_lifecycle() {
     // 6. Send invoice
     let (status, inv) = post_json(
         &app,
-        &format!("/v1/invoices/{inv_id}/send?{we_query}"),
+        &format!("/v1/invoices/{inv_id}/send?{e_query}"),
         json!({}),
+        &token,
     )
     .await;
     assert_eq!(status, StatusCode::OK, "send invoice: {inv}");
@@ -732,8 +778,9 @@ async fn test_treasury_lifecycle() {
     // 7. Mark invoice paid
     let (status, inv) = post_json(
         &app,
-        &format!("/v1/invoices/{inv_id}/mark-paid?{we_query}"),
+        &format!("/v1/invoices/{inv_id}/mark-paid?{e_query}"),
         json!({}),
+        &token,
     )
     .await;
     assert_eq!(status, StatusCode::OK, "mark invoice paid: {inv}");
@@ -747,8 +794,8 @@ async fn test_treasury_lifecycle() {
             "entity_id": entity_id,
             "bank_name": "First National Bank",
             "account_type": "checking",
-            "workspace_id": ws_id,
         }),
+        &token,
     )
     .await;
     assert_eq!(status, StatusCode::OK, "create bank account: {ba}");
@@ -758,8 +805,9 @@ async fn test_treasury_lifecycle() {
     // 9. Activate bank account
     let (status, ba) = post_json(
         &app,
-        &format!("/v1/bank-accounts/{ba_id}/activate?{we_query}"),
+        &format!("/v1/bank-accounts/{ba_id}/activate?{e_query}"),
         json!({}),
+        &token,
     )
     .await;
     assert_eq!(status, StatusCode::OK, "activate bank account: {ba}");
@@ -772,8 +820,9 @@ async fn test_treasury_lifecycle() {
 async fn test_execution_lifecycle() {
     let tmp = TempDir::new().unwrap();
     let app = build_app(&tmp);
-    let (ws_id, entity_id) = create_entity(&app).await;
-    let we_query = format!("workspace_id={ws_id}&entity_id={entity_id}");
+    let (ws_id, entity_id, token) = create_entity(&app).await;
+    let _ = ws_id;
+    let e_query = format!("entity_id={entity_id}");
 
     // 1. Create intent
     let (status, intent) = post_json(
@@ -784,8 +833,8 @@ async fn test_execution_lifecycle() {
             "intent_type": "hire_employee",
             "authority_tier": "tier_1",
             "description": "Hire new engineer",
-            "workspace_id": ws_id,
         }),
+        &token,
     )
     .await;
     assert_eq!(status, StatusCode::OK, "create intent: {intent}");
@@ -795,8 +844,9 @@ async fn test_execution_lifecycle() {
     // 2. Evaluate intent
     let (status, intent) = post_json(
         &app,
-        &format!("/v1/intents/{intent_id}/evaluate?{we_query}"),
+        &format!("/v1/intents/{intent_id}/evaluate?{e_query}"),
         json!({}),
+        &token,
     )
     .await;
     assert_eq!(status, StatusCode::OK, "evaluate intent: {intent}");
@@ -805,8 +855,9 @@ async fn test_execution_lifecycle() {
     // 3. Authorize intent
     let (status, intent) = post_json(
         &app,
-        &format!("/v1/intents/{intent_id}/authorize?{we_query}"),
+        &format!("/v1/intents/{intent_id}/authorize?{e_query}"),
         json!({}),
+        &token,
     )
     .await;
     assert_eq!(status, StatusCode::OK, "authorize intent: {intent}");
@@ -815,8 +866,9 @@ async fn test_execution_lifecycle() {
     // 4. Execute intent
     let (status, intent) = post_json(
         &app,
-        &format!("/v1/intents/{intent_id}/execute?{we_query}"),
+        &format!("/v1/intents/{intent_id}/execute?{e_query}"),
         json!({}),
+        &token,
     )
     .await;
     assert_eq!(status, StatusCode::OK, "execute intent: {intent}");
@@ -833,8 +885,8 @@ async fn test_execution_lifecycle() {
             "assignee_type": "internal",
             "description": "File Q1 tax return",
             "due_date": "2026-04-15",
-            "workspace_id": ws_id,
         }),
+        &token,
     )
     .await;
     assert_eq!(status, StatusCode::OK, "create obligation: {ob}");
@@ -844,8 +896,9 @@ async fn test_execution_lifecycle() {
     // 6. Fulfill obligation
     let (status, ob) = post_json(
         &app,
-        &format!("/v1/obligations/{ob_id}/fulfill?{we_query}"),
+        &format!("/v1/obligations/{ob_id}/fulfill?{e_query}"),
         json!({}),
+        &token,
     )
     .await;
     assert_eq!(status, StatusCode::OK, "fulfill obligation: {ob}");
@@ -858,7 +911,8 @@ async fn test_execution_lifecycle() {
 async fn test_contacts() {
     let tmp = TempDir::new().unwrap();
     let app = build_app(&tmp);
-    let (ws_id, entity_id) = create_entity(&app).await;
+    let (ws_id, entity_id, token) = create_entity(&app).await;
+    let _ = ws_id;
 
     // 1. Create contacts
     let (status, c1) = post_json(
@@ -870,8 +924,8 @@ async fn test_contacts() {
             "name": "Jane Attorney",
             "email": "jane@lawfirm.com",
             "category": "law_firm",
-            "workspace_id": ws_id,
         }),
+        &token,
     )
     .await;
     assert_eq!(status, StatusCode::OK, "create contact 1: {c1}");
@@ -887,8 +941,8 @@ async fn test_contacts() {
             "name": "Big Accounting LLP",
             "email": "info@bigacct.com",
             "category": "accounting_firm",
-            "workspace_id": ws_id,
         }),
+        &token,
     )
     .await;
     assert_eq!(status, StatusCode::OK, "create contact 2: {c2}");
@@ -896,7 +950,8 @@ async fn test_contacts() {
     // 2. List contacts
     let (status, contacts) = get_json(
         &app,
-        &format!("/v1/entities/{entity_id}/contacts?workspace_id={ws_id}"),
+        &format!("/v1/entities/{entity_id}/contacts"),
+        &token,
     )
     .await;
     assert_eq!(status, StatusCode::OK, "list contacts: {contacts}");
@@ -910,17 +965,19 @@ async fn test_contacts() {
 async fn test_branch_lifecycle() {
     let tmp = TempDir::new().unwrap();
     let app = build_app(&tmp);
-    let (ws_id, entity_id) = create_entity(&app).await;
-    let we_query = format!("workspace_id={ws_id}&entity_id={entity_id}");
+    let (ws_id, entity_id, token) = create_entity(&app).await;
+    let _ = ws_id;
+    let e_query = format!("entity_id={entity_id}");
 
     // 1. Create branch
     let (status, body) = post_json(
         &app,
-        &format!("/v1/branches?{we_query}"),
+        &format!("/v1/branches?{e_query}"),
         json!({
             "name": "feature/test-branch",
             "from": "main",
         }),
+        &token,
     )
     .await;
     assert_eq!(status, StatusCode::CREATED, "create branch: {body}");
@@ -928,7 +985,7 @@ async fn test_branch_lifecycle() {
     assert!(body["base_commit"].as_str().is_some());
 
     // 2. List branches
-    let (status, body) = get_json(&app, &format!("/v1/branches?{we_query}")).await;
+    let (status, body) = get_json(&app, &format!("/v1/branches?{e_query}"), &token).await;
     assert_eq!(status, StatusCode::OK, "list branches: {body}");
     let branches = body.as_array().unwrap();
     let branch_names: Vec<&str> = branches
@@ -941,8 +998,9 @@ async fn test_branch_lifecycle() {
     // 3. Merge branch to main
     let (status, body) = post_json(
         &app,
-        &format!("/v1/branches/feature%2Ftest-branch/merge?{we_query}"),
+        &format!("/v1/branches/feature%2Ftest-branch/merge?{e_query}"),
         json!({ "into": "main" }),
+        &token,
     )
     .await;
     assert_eq!(status, StatusCode::OK, "merge branch: {body}");
@@ -951,13 +1009,14 @@ async fn test_branch_lifecycle() {
     // 4. Delete branch
     let status = delete_req(
         &app,
-        &format!("/v1/branches/feature%2Ftest-branch?{we_query}"),
+        &format!("/v1/branches/feature%2Ftest-branch?{e_query}"),
+        &token,
     )
     .await;
     assert_eq!(status, StatusCode::NO_CONTENT, "delete branch");
 
     // 5. Verify branch is gone
-    let (status, body) = get_json(&app, &format!("/v1/branches?{we_query}")).await;
+    let (status, body) = get_json(&app, &format!("/v1/branches?{e_query}"), &token).await;
     assert_eq!(status, StatusCode::OK);
     let branch_names: Vec<&str> = body
         .as_array()
@@ -976,12 +1035,13 @@ async fn test_not_found_errors() {
     let app = build_app(&tmp);
 
     let fake_id = uuid::Uuid::new_v4().to_string();
-    let fake_ws = uuid::Uuid::new_v4().to_string();
+    let token = make_token(WorkspaceId::new());
 
     // GET formation for nonexistent entity
     let (status, body) = get_json(
         &app,
-        &format!("/v1/formations/{fake_id}?workspace_id={fake_ws}"),
+        &format!("/v1/formations/{fake_id}"),
+        &token,
     )
     .await;
     assert!(
@@ -992,7 +1052,8 @@ async fn test_not_found_errors() {
     // GET cap table for nonexistent entity
     let (status, body) = get_json(
         &app,
-        &format!("/v1/entities/{fake_id}/cap-table?workspace_id={fake_ws}"),
+        &format!("/v1/entities/{fake_id}/cap-table"),
+        &token,
     )
     .await;
     assert!(
@@ -1005,7 +1066,8 @@ async fn test_not_found_errors() {
 async fn test_unbalanced_journal_entry_rejected() {
     let tmp = TempDir::new().unwrap();
     let app = build_app(&tmp);
-    let (ws_id, entity_id) = create_entity(&app).await;
+    let (ws_id, entity_id, token) = create_entity(&app).await;
+    let _ = ws_id;
 
     // Create two accounts
     let (_, cash_acct) = post_json(
@@ -1014,8 +1076,8 @@ async fn test_unbalanced_journal_entry_rejected() {
         json!({
             "entity_id": entity_id,
             "account_code": "Cash",
-            "workspace_id": ws_id,
         }),
+        &token,
     )
     .await;
     let cash_id = cash_acct["account_id"].as_str().unwrap();
@@ -1026,8 +1088,8 @@ async fn test_unbalanced_journal_entry_rejected() {
         json!({
             "entity_id": entity_id,
             "account_code": "Revenue",
-            "workspace_id": ws_id,
         }),
+        &token,
     )
     .await;
     let rev_id = rev_acct["account_id"].as_str().unwrap();
@@ -1044,8 +1106,8 @@ async fn test_unbalanced_journal_entry_rejected() {
                 { "account_id": cash_id, "side": "debit", "amount_cents": 100000 },
                 { "account_id": rev_id, "side": "credit", "amount_cents": 50000 },
             ],
-            "workspace_id": ws_id,
         }),
+        &token,
     )
     .await;
     assert_eq!(
@@ -1059,8 +1121,9 @@ async fn test_unbalanced_journal_entry_rejected() {
 async fn test_invalid_transfer_fsm_transition() {
     let tmp = TempDir::new().unwrap();
     let app = build_app(&tmp);
-    let (ws_id, entity_id) = create_entity(&app).await;
-    let we_query = format!("workspace_id={ws_id}&entity_id={entity_id}");
+    let (ws_id, entity_id, token) = create_entity(&app).await;
+    let _ = ws_id;
+    let e_query = format!("entity_id={entity_id}");
 
     // Use a synthetic share class ID (formation doesn't create share classes)
     let sc_id = uuid::Uuid::new_v4().to_string();
@@ -1074,8 +1137,8 @@ async fn test_invalid_transfer_fsm_transition() {
             "contact_type": "individual",
             "name": "Seller",
             "category": "employee",
-            "workspace_id": ws_id,
         }),
+        &token,
     )
     .await;
     let from_id = from_c["contact_id"].as_str().unwrap();
@@ -1088,8 +1151,8 @@ async fn test_invalid_transfer_fsm_transition() {
             "contact_type": "individual",
             "name": "Buyer",
             "category": "investor",
-            "workspace_id": ws_id,
         }),
+        &token,
     )
     .await;
     let to_id = to_c["contact_id"].as_str().unwrap();
@@ -1105,8 +1168,8 @@ async fn test_invalid_transfer_fsm_transition() {
             "to_contact_id": to_id,
             "transfer_type": "secondary_sale",
             "shares": 100,
-            "workspace_id": ws_id,
         }),
+        &token,
     )
     .await;
     let transfer_id = transfer["transfer_id"].as_str().unwrap();
@@ -1114,8 +1177,9 @@ async fn test_invalid_transfer_fsm_transition() {
     // Try to execute a draft transfer (should fail — must go through review first)
     let (status, body) = post_json(
         &app,
-        &format!("/v1/share-transfers/{transfer_id}/execute?{we_query}"),
+        &format!("/v1/share-transfers/{transfer_id}/execute?{e_query}"),
         json!({}),
+        &token,
     )
     .await;
     assert_eq!(
@@ -1132,8 +1196,9 @@ async fn test_full_cross_domain_lifecycle() {
     // This test exercises formation + contacts + treasury + execution together
     let tmp = TempDir::new().unwrap();
     let app = build_app(&tmp);
-    let (ws_id, entity_id) = create_entity(&app).await;
-    let we_query = format!("workspace_id={ws_id}&entity_id={entity_id}");
+    let (ws_id, entity_id, token) = create_entity(&app).await;
+    let _ = ws_id;
+    let e_query = format!("entity_id={entity_id}");
 
     // Create a contact (employee)
     let (status, _contact) = post_json(
@@ -1145,8 +1210,8 @@ async fn test_full_cross_domain_lifecycle() {
             "name": "Eve Employee",
             "email": "eve@testcorp.com",
             "category": "employee",
-            "workspace_id": ws_id,
         }),
+        &token,
     )
     .await;
     assert_eq!(status, StatusCode::OK);
@@ -1158,8 +1223,8 @@ async fn test_full_cross_domain_lifecycle() {
         json!({
             "entity_id": entity_id,
             "account_code": "OperatingExpenses",
-            "workspace_id": ws_id,
         }),
+        &token,
     )
     .await;
     assert_eq!(status, StatusCode::OK);
@@ -1173,8 +1238,8 @@ async fn test_full_cross_domain_lifecycle() {
             "intent_type": "hire_employee",
             "authority_tier": "tier_1",
             "description": "Hire Eve as engineer",
-            "workspace_id": ws_id,
         }),
+        &token,
     )
     .await;
     assert_eq!(status, StatusCode::OK);
@@ -1183,24 +1248,27 @@ async fn test_full_cross_domain_lifecycle() {
     // Walk intent through FSM
     let (s, _) = post_json(
         &app,
-        &format!("/v1/intents/{intent_id}/evaluate?{we_query}"),
+        &format!("/v1/intents/{intent_id}/evaluate?{e_query}"),
         json!({}),
+        &token,
     )
     .await;
     assert_eq!(s, StatusCode::OK);
 
     let (s, _) = post_json(
         &app,
-        &format!("/v1/intents/{intent_id}/authorize?{we_query}"),
+        &format!("/v1/intents/{intent_id}/authorize?{e_query}"),
         json!({}),
+        &token,
     )
     .await;
     assert_eq!(s, StatusCode::OK);
 
     let (s, _) = post_json(
         &app,
-        &format!("/v1/intents/{intent_id}/execute?{we_query}"),
+        &format!("/v1/intents/{intent_id}/execute?{e_query}"),
         json!({}),
+        &token,
     )
     .await;
     assert_eq!(s, StatusCode::OK);
@@ -1216,8 +1284,8 @@ async fn test_full_cross_domain_lifecycle() {
             "assignee_type": "internal",
             "description": "Complete I-9 and W-4 forms",
             "due_date": "2026-03-01",
-            "workspace_id": ws_id,
         }),
+        &token,
     )
     .await;
     assert_eq!(status, StatusCode::OK);
@@ -1226,8 +1294,9 @@ async fn test_full_cross_domain_lifecycle() {
     // Fulfill obligation
     let (status, _) = post_json(
         &app,
-        &format!("/v1/obligations/{ob_id}/fulfill?{we_query}"),
+        &format!("/v1/obligations/{ob_id}/fulfill?{e_query}"),
         json!({}),
+        &token,
     )
     .await;
     assert_eq!(status, StatusCode::OK);
@@ -1235,7 +1304,8 @@ async fn test_full_cross_domain_lifecycle() {
     // Verify all entities visible via list endpoints
     let (s, contacts) = get_json(
         &app,
-        &format!("/v1/entities/{entity_id}/contacts?workspace_id={ws_id}"),
+        &format!("/v1/entities/{entity_id}/contacts"),
+        &token,
     )
     .await;
     assert_eq!(s, StatusCode::OK);
@@ -1243,7 +1313,8 @@ async fn test_full_cross_domain_lifecycle() {
 
     let (s, intents) = get_json(
         &app,
-        &format!("/v1/entities/{entity_id}/intents?workspace_id={ws_id}"),
+        &format!("/v1/entities/{entity_id}/intents"),
+        &token,
     )
     .await;
     assert_eq!(s, StatusCode::OK);
@@ -1251,7 +1322,8 @@ async fn test_full_cross_domain_lifecycle() {
 
     let (s, obligations) = get_json(
         &app,
-        &format!("/v1/entities/{entity_id}/obligations?workspace_id={ws_id}"),
+        &format!("/v1/entities/{entity_id}/obligations"),
+        &token,
     )
     .await;
     assert_eq!(s, StatusCode::OK);
@@ -1260,11 +1332,12 @@ async fn test_full_cross_domain_lifecycle() {
 
 // ── Helper: PATCH JSON ───────────────────────────────────────────────
 
-async fn patch_json(app: &Router, path: &str, body: Value) -> (StatusCode, Value) {
+async fn patch_json(app: &Router, path: &str, body: Value, token: &str) -> (StatusCode, Value) {
     let req = Request::builder()
         .method(Method::PATCH)
         .uri(path)
         .header("content-type", "application/json")
+        .header("authorization", format!("Bearer {token}"))
         .body(Body::from(serde_json::to_vec(&body).unwrap()))
         .unwrap();
     let response = app.clone().oneshot(req).await.unwrap();
@@ -1282,6 +1355,7 @@ async fn patch_json(app: &Router, path: &str, body: Value) -> (StatusCode, Value
 async fn test_webhook_lifecycle() {
     let tmp = TempDir::new().unwrap();
     let app = build_app(&tmp);
+    let token = make_token(WorkspaceId::new());
 
     // 1. Stripe webhook
     let (status, body) = post_json(
@@ -1292,6 +1366,7 @@ async fn test_webhook_lifecycle() {
             "type": "payment_intent.succeeded",
             "data": { "object": { "amount": 5000 } }
         }),
+        &token,
     )
     .await;
     assert_eq!(status, StatusCode::OK, "stripe webhook: {body}");
@@ -1307,6 +1382,7 @@ async fn test_webhook_lifecycle() {
             "type": "invoice.paid",
             "data": { "object": { "subscription": "sub_123" } }
         }),
+        &token,
     )
     .await;
     assert_eq!(status, StatusCode::OK, "stripe billing webhook: {body}");
@@ -1318,6 +1394,7 @@ async fn test_webhook_lifecycle() {
         &app,
         "/v1/webhooks/stripe",
         json!({}),
+        &token,
     )
     .await;
     assert_eq!(status, StatusCode::OK, "empty webhook: {body}");
@@ -1331,6 +1408,7 @@ async fn test_webhook_lifecycle() {
 async fn test_auth_workspace_lifecycle() {
     let tmp = TempDir::new().unwrap();
     let app = build_app(&tmp);
+    let token = make_token(WorkspaceId::new());
 
     // 1. Provision a workspace
     let (status, body) = post_json(
@@ -1340,24 +1418,30 @@ async fn test_auth_workspace_lifecycle() {
             "name": "Test Workspace",
             "owner_email": "admin@test.com"
         }),
+        &token,
     )
     .await;
     assert_eq!(status, StatusCode::CREATED, "provision workspace: {body}");
-    let ws_id = body["workspace_id"].as_str().unwrap();
+    let ws_id_str = body["workspace_id"].as_str().unwrap();
     assert_eq!(body["name"], "Test Workspace");
     assert!(body["api_key"].as_str().unwrap().starts_with("sk_"));
     let api_key = body["api_key"].as_str().unwrap().to_owned();
     let _key_id = body["api_key_id"].as_str().unwrap();
+
+    // Create a token for this specific workspace
+    let ws_id: WorkspaceId = ws_id_str.parse().unwrap();
+    let ws_token = make_token(ws_id);
 
     // 2. Create another API key in that workspace
     let (status, body) = post_json(
         &app,
         "/v1/api-keys",
         json!({
-            "workspace_id": ws_id,
+            "workspace_id": ws_id_str,
             "name": "secondary-key",
             "scopes": ["all"]
         }),
+        &ws_token,
     )
     .await;
     assert_eq!(status, StatusCode::CREATED, "create api key: {body}");
@@ -1368,7 +1452,8 @@ async fn test_auth_workspace_lifecycle() {
     // 3. List API keys
     let (status, body) = get_json(
         &app,
-        &format!("/v1/api-keys/{ws_id}"),
+        &format!("/v1/api-keys/{ws_id_str}"),
+        &ws_token,
     )
     .await;
     assert_eq!(status, StatusCode::OK, "list api keys: {body}");
@@ -1381,9 +1466,10 @@ async fn test_auth_workspace_lifecycle() {
         "/v1/auth/token-exchange",
         json!({
             "api_key": api_key,
-            "workspace_id": ws_id,
+            "workspace_id": ws_id_str,
             "ttl_seconds": 1800
         }),
+        &ws_token,
     )
     .await;
     assert_eq!(status, StatusCode::OK, "token exchange: {body}");
@@ -1396,12 +1482,13 @@ async fn test_auth_workspace_lifecycle() {
         &app,
         "/v1/workspaces/provision",
         json!({ "name": "" }),
+        &ws_token,
     )
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST, "empty name should fail");
 
     // 6. Verify we can list the workspace via admin
-    let (status, body) = get_json(&app, "/v1/admin/workspaces").await;
+    let (status, body) = get_json(&app, "/v1/admin/workspaces", &ws_token).await;
     assert_eq!(status, StatusCode::OK, "list workspaces: {body}");
     let workspaces = body.as_array().unwrap();
     assert_eq!(workspaces.len(), 1);
@@ -1419,25 +1506,31 @@ async fn test_agent_lifecycle() {
     let app = build_app(&tmp);
 
     // 1. Provision workspace first (agents live in workspace repos)
+    let token = make_token(WorkspaceId::new());
     let (status, ws_body) = post_json(
         &app,
         "/v1/workspaces/provision",
         json!({ "name": "Agent Workspace" }),
+        &token,
     )
     .await;
     assert_eq!(status, StatusCode::CREATED);
-    let ws_id = ws_body["workspace_id"].as_str().unwrap();
+    let ws_id_str = ws_body["workspace_id"].as_str().unwrap();
+
+    // Create a token for this specific workspace
+    let ws_id: WorkspaceId = ws_id_str.parse().unwrap();
+    let ws_token = make_token(ws_id);
 
     // 2. Create an agent
     let (status, body) = post_json(
         &app,
         "/v1/agents",
         json!({
-            "workspace_id": ws_id,
             "name": "CFO Agent",
             "system_prompt": "You are a helpful CFO assistant.",
             "model": "claude-sonnet-4-6"
         }),
+        &ws_token,
     )
     .await;
     assert_eq!(status, StatusCode::CREATED, "create agent: {body}");
@@ -1449,7 +1542,8 @@ async fn test_agent_lifecycle() {
     // 3. List agents
     let (status, body) = get_json(
         &app,
-        &format!("/v1/agents?workspace_id={ws_id}"),
+        "/v1/agents",
+        &ws_token,
     )
     .await;
     assert_eq!(status, StatusCode::OK, "list agents: {body}");
@@ -1462,10 +1556,10 @@ async fn test_agent_lifecycle() {
         &app,
         &format!("/v1/agents/{agent_id}"),
         json!({
-            "workspace_id": ws_id,
             "name": "Updated CFO Agent",
             "webhook_url": "https://hooks.example.com/agent"
         }),
+        &ws_token,
     )
     .await;
     assert_eq!(status, StatusCode::OK, "update agent: {body}");
@@ -1477,10 +1571,10 @@ async fn test_agent_lifecycle() {
         &app,
         &format!("/v1/agents/{agent_id}/skills"),
         json!({
-            "workspace_id": ws_id,
             "name": "financial_analysis",
             "description": "Analyze financial statements"
         }),
+        &ws_token,
     )
     .await;
     assert_eq!(status, StatusCode::OK, "add skill: {body}");
@@ -1493,9 +1587,9 @@ async fn test_agent_lifecycle() {
         &app,
         &format!("/v1/agents/{agent_id}/messages"),
         json!({
-            "workspace_id": ws_id,
             "message": "What is the current runway?"
         }),
+        &ws_token,
     )
     .await;
     assert_eq!(status, StatusCode::OK, "send message: {body}");
@@ -1508,7 +1602,8 @@ async fn test_agent_lifecycle() {
 async fn test_compliance_lifecycle() {
     let tmp = TempDir::new().unwrap();
     let app = build_app(&tmp);
-    let (ws_id, entity_id) = create_entity(&app).await;
+    let (ws_id, entity_id, token) = create_entity(&app).await;
+    let _ = ws_id;
 
     // 1. File tax document
     let (status, body) = post_json(
@@ -1518,8 +1613,8 @@ async fn test_compliance_lifecycle() {
             "entity_id": entity_id,
             "document_type": "form_1120",
             "tax_year": 2025,
-            "workspace_id": ws_id,
         }),
+        &token,
     )
     .await;
     assert_eq!(status, StatusCode::OK, "file tax doc: {body}");
@@ -1538,8 +1633,8 @@ async fn test_compliance_lifecycle() {
             "due_date": "2026-04-15",
             "description": "Annual corporate tax filing due",
             "recurrence": "annual",
-            "workspace_id": ws_id,
         }),
+        &token,
     )
     .await;
     assert_eq!(status, StatusCode::OK, "create deadline: {body}");
@@ -1557,8 +1652,8 @@ async fn test_compliance_lifecycle() {
             "contractor_name": "Jane Consultant",
             "state": "CA",
             "factors": { "works_for_others": true, "sets_own_hours": true },
-            "workspace_id": ws_id,
         }),
+        &token,
     )
     .await;
     assert_eq!(status, StatusCode::OK, "classify contractor: {body}");
@@ -1576,9 +1671,10 @@ async fn test_compliance_lifecycle() {
 async fn test_billing_lifecycle() {
     let tmp = TempDir::new().unwrap();
     let app = build_app(&tmp);
+    let token = make_token(WorkspaceId::new());
 
     // 1. List plans (no workspace needed)
-    let (status, body) = get_json(&app, "/v1/billing/plans").await;
+    let (status, body) = get_json(&app, "/v1/billing/plans", &token).await;
     assert_eq!(status, StatusCode::OK, "list plans: {body}");
     let plans = body.as_array().unwrap();
     assert!(plans.len() >= 3, "should have at least 3 plans");
@@ -1591,21 +1687,26 @@ async fn test_billing_lifecycle() {
         &app,
         "/v1/workspaces/provision",
         json!({ "name": "Billing Test WS" }),
+        &token,
     )
     .await;
     assert_eq!(status, StatusCode::CREATED);
-    let ws_id = ws_body["workspace_id"].as_str().unwrap();
+    let ws_id_str = ws_body["workspace_id"].as_str().unwrap();
+
+    // Create a token for this specific workspace
+    let ws_id: WorkspaceId = ws_id_str.parse().unwrap();
+    let ws_token = make_token(ws_id);
 
     // 3. Checkout (creates subscription stub)
     let (status, body) = post_json(
         &app,
         "/v1/billing/checkout",
         json!({
-            "workspace_id": ws_id,
             "plan_id": "pro",
             "success_url": "https://example.com/success",
             "cancel_url": "https://example.com/cancel"
         }),
+        &ws_token,
     )
     .await;
     assert_eq!(status, StatusCode::OK, "checkout: {body}");
@@ -1616,7 +1717,8 @@ async fn test_billing_lifecycle() {
     // 4. Billing status
     let (status, body) = get_json(
         &app,
-        &format!("/v1/billing/status?workspace_id={ws_id}"),
+        "/v1/billing/status",
+        &ws_token,
     )
     .await;
     assert_eq!(status, StatusCode::OK, "billing status: {body}");
@@ -1627,9 +1729,9 @@ async fn test_billing_lifecycle() {
         &app,
         "/v1/subscriptions",
         json!({
-            "workspace_id": ws_id,
             "plan": "enterprise"
         }),
+        &ws_token,
     )
     .await;
     assert_eq!(status, StatusCode::OK, "create subscription: {body}");
@@ -1640,7 +1742,8 @@ async fn test_billing_lifecycle() {
     // 6. Get subscription
     let (status, body) = get_json(
         &app,
-        &format!("/v1/subscriptions/{sub_id}?workspace_id={ws_id}"),
+        &format!("/v1/subscriptions/{sub_id}"),
+        &ws_token,
     )
     .await;
     assert_eq!(status, StatusCode::OK, "get subscription: {body}");
@@ -1651,7 +1754,8 @@ async fn test_billing_lifecycle() {
     let (status, body) = post_json(
         &app,
         "/v1/subscriptions/tick",
-        json!({ "workspace_id": ws_id }),
+        json!({}),
+        &ws_token,
     )
     .await;
     assert_eq!(status, StatusCode::OK, "tick subscriptions: {body}");
@@ -1662,9 +1766,9 @@ async fn test_billing_lifecycle() {
         &app,
         "/v1/billing/portal",
         json!({
-            "workspace_id": ws_id,
             "return_url": "https://example.com/return"
         }),
+        &ws_token,
     )
     .await;
     assert_eq!(status, StatusCode::OK, "portal: {body}");
@@ -1677,15 +1781,16 @@ async fn test_billing_lifecycle() {
 async fn test_admin_endpoints() {
     let tmp = TempDir::new().unwrap();
     let app = build_app(&tmp);
+    let token = make_token(WorkspaceId::new());
 
     // 1. System health
-    let (status, body) = get_json(&app, "/v1/admin/system-health").await;
+    let (status, body) = get_json(&app, "/v1/admin/system-health", &token).await;
     assert_eq!(status, StatusCode::OK, "system health: {body}");
     assert_eq!(body["status"], "healthy");
     assert!(body["version"].as_str().is_some());
 
     // 2. List workspaces (empty initially)
-    let (status, body) = get_json(&app, "/v1/admin/workspaces").await;
+    let (status, body) = get_json(&app, "/v1/admin/workspaces", &token).await;
     assert_eq!(status, StatusCode::OK, "list workspaces empty: {body}");
     assert_eq!(body.as_array().unwrap().len(), 0);
 
@@ -1694,10 +1799,15 @@ async fn test_admin_endpoints() {
         &app,
         "/v1/workspaces/provision",
         json!({ "name": "Admin Test WS" }),
+        &token,
     )
     .await;
     assert_eq!(status, StatusCode::CREATED);
-    let ws_id = ws_body["workspace_id"].as_str().unwrap();
+    let ws_id_str = ws_body["workspace_id"].as_str().unwrap();
+
+    // Create a token for this specific workspace
+    let ws_id: WorkspaceId = ws_id_str.parse().unwrap();
+    let ws_token = make_token(ws_id);
 
     // Create entity in this workspace
     let (status, entity_body) = post_json(
@@ -1717,14 +1827,14 @@ async fn test_admin_endpoints() {
             }],
             "authorized_shares": 1000000,
             "par_value": "0.001",
-            "workspace_id": ws_id,
         }),
+        &ws_token,
     )
     .await;
     assert_eq!(status, StatusCode::OK, "create entity: {entity_body}");
 
     // 4. List workspaces (now has 1)
-    let (status, body) = get_json(&app, "/v1/admin/workspaces").await;
+    let (status, body) = get_json(&app, "/v1/admin/workspaces", &ws_token).await;
     assert_eq!(status, StatusCode::OK, "list workspaces: {body}");
     assert_eq!(body.as_array().unwrap().len(), 1);
     assert_eq!(body[0]["name"], "Admin Test WS");
@@ -1732,7 +1842,8 @@ async fn test_admin_endpoints() {
     // 5. Workspace status by path
     let (status, body) = get_json(
         &app,
-        &format!("/v1/workspaces/{ws_id}/status"),
+        &format!("/v1/workspaces/{ws_id_str}/status"),
+        &ws_token,
     )
     .await;
     assert_eq!(status, StatusCode::OK, "ws status by path: {body}");
@@ -1740,7 +1851,8 @@ async fn test_admin_endpoints() {
     // 6. Workspace entities by path
     let (status, body) = get_json(
         &app,
-        &format!("/v1/workspaces/{ws_id}/entities"),
+        &format!("/v1/workspaces/{ws_id_str}/entities"),
+        &ws_token,
     )
     .await;
     assert_eq!(status, StatusCode::OK, "ws entities by path: {body}");
@@ -1748,30 +1860,31 @@ async fn test_admin_endpoints() {
     assert_eq!(entities.len(), 1);
 
     // 7. Audit events
-    let (status, body) = get_json(&app, "/v1/admin/audit-events").await;
+    let (status, body) = get_json(&app, "/v1/admin/audit-events", &ws_token).await;
     assert_eq!(status, StatusCode::OK, "audit events: {body}");
     // Should have events from workspace provisioning and entity creation
     assert!(!body.as_array().unwrap().is_empty());
 
     // 8. Config
-    let (status, body) = get_json(&app, "/v1/config").await;
+    let (status, body) = get_json(&app, "/v1/config", &ws_token).await;
     assert_eq!(status, StatusCode::OK, "config: {body}");
 
     // 9. Demo seed
     let (status, body) = post_json(
         &app,
         "/v1/demo/seed",
-        json!({ "workspace_id": ws_id }),
+        json!({}),
+        &ws_token,
     )
     .await;
     assert_eq!(status, StatusCode::OK, "demo seed: {body}");
 
     // 10. Digests
-    let (status, body) = get_json(&app, "/v1/digests").await;
+    let (status, body) = get_json(&app, "/v1/digests", &ws_token).await;
     assert_eq!(status, StatusCode::OK, "list digests: {body}");
 
     // 11. JWKS
-    let (status, body) = get_json(&app, "/v1/jwks").await;
+    let (status, body) = get_json(&app, "/v1/jwks", &ws_token).await;
     assert_eq!(status, StatusCode::OK, "jwks: {body}");
     assert!(body["keys"].as_array().is_some());
 }
@@ -1782,14 +1895,16 @@ async fn test_admin_endpoints() {
 async fn test_branch_prune() {
     let tmp = TempDir::new().unwrap();
     let app = build_app(&tmp);
-    let (ws_id, entity_id) = create_entity(&app).await;
-    let we_query = format!("workspace_id={ws_id}&entity_id={entity_id}");
+    let (ws_id, entity_id, token) = create_entity(&app).await;
+    let _ = ws_id;
+    let e_query = format!("entity_id={entity_id}");
 
     // 1. Create a branch
     let (status, body) = post_json(
         &app,
-        &format!("/v1/branches?{we_query}"),
+        &format!("/v1/branches?{e_query}"),
         json!({ "name": "feature/prune-test", "from": "main" }),
+        &token,
     )
     .await;
     assert_eq!(status, StatusCode::CREATED, "create branch: {body}");
@@ -1797,7 +1912,8 @@ async fn test_branch_prune() {
     // 2. Verify it exists
     let (status, body) = get_json(
         &app,
-        &format!("/v1/branches?{we_query}"),
+        &format!("/v1/branches?{e_query}"),
+        &token,
     )
     .await;
     assert_eq!(status, StatusCode::OK);
@@ -1812,8 +1928,9 @@ async fn test_branch_prune() {
     // 3. Prune (POST alternative to DELETE)
     let (status, _) = post_json(
         &app,
-        &format!("/v1/branches/feature%2Fprune-test/prune?{we_query}"),
+        &format!("/v1/branches/feature%2Fprune-test/prune?{e_query}"),
         json!({}),
+        &token,
     )
     .await;
     assert_eq!(status, StatusCode::NO_CONTENT, "prune branch");
@@ -1821,7 +1938,8 @@ async fn test_branch_prune() {
     // 4. Verify it's gone
     let (status, body) = get_json(
         &app,
-        &format!("/v1/branches?{we_query}"),
+        &format!("/v1/branches?{e_query}"),
+        &token,
     )
     .await;
     assert_eq!(status, StatusCode::OK);
@@ -1840,14 +1958,15 @@ async fn test_branch_prune() {
 async fn test_three_way_merge_via_api() {
     let tmp = TempDir::new().unwrap();
     let app = build_app(&tmp);
-    let (ws_id, entity_id) = create_entity(&app).await;
-    let we_query = format!("workspace_id={ws_id}&entity_id={entity_id}");
+    let (ws_id, entity_id, token) = create_entity(&app).await;
+    let e_query = format!("entity_id={entity_id}");
 
     // 1. Create a feature branch.
     let (status, body) = post_json(
         &app,
-        &format!("/v1/branches?{we_query}"),
+        &format!("/v1/branches?{e_query}"),
         json!({ "name": "feature/diverge", "from": "main" }),
+        &token,
     )
     .await;
     assert_eq!(status, StatusCode::CREATED, "create branch: {body}");
@@ -1856,7 +1975,7 @@ async fn test_three_way_merge_via_api() {
     //    This simulates two agents editing different files concurrently.
     {
         let layout = api_rs::store::RepoLayout::new(tmp.path().to_path_buf());
-        let ws: uuid::Uuid = ws_id.parse().unwrap();
+        let ws: uuid::Uuid = ws_id.into_uuid();
         let eid: uuid::Uuid = entity_id.parse().unwrap();
         let store = api_rs::store::entity_store::EntityStore::open(&layout, ws.into(), eid.into()).unwrap();
 
@@ -1888,8 +2007,9 @@ async fn test_three_way_merge_via_api() {
     // 3. Merge feature branch into main via the API.
     let (status, body) = post_json(
         &app,
-        &format!("/v1/branches/feature%2Fdiverge/merge?{we_query}"),
+        &format!("/v1/branches/feature%2Fdiverge/merge?{e_query}"),
         json!({ "into": "main" }),
+        &token,
     )
     .await;
     assert_eq!(status, StatusCode::OK, "three-way merge: {body}");
@@ -1904,8 +2024,9 @@ async fn test_three_way_merge_via_api() {
 async fn test_openapi_spec() {
     let tmp = TempDir::new().unwrap();
     let app = build_app(&tmp);
+    let token = make_token(WorkspaceId::new());
 
-    let (status, spec) = get_json(&app, "/v1/openapi.json").await;
+    let (status, spec) = get_json(&app, "/v1/openapi.json", &token).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(spec["openapi"], "3.1.0");
     assert_eq!(spec["info"]["title"], "The Corporation API");
