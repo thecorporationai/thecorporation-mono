@@ -6,12 +6,12 @@
 //! and accumulates per-model token counts + cost in Redis.
 
 use axum::{
+    Router,
     body::Body,
     extract::{Path, State},
     http::{HeaderMap, StatusCode},
     response::Response,
     routing::post,
-    Router,
 };
 use deadpool_redis::redis::AsyncCommands;
 use serde::Deserialize;
@@ -38,6 +38,11 @@ struct LlmUsage {
 /// Redis key for proxy-accumulated usage for an execution.
 fn usage_key(execution_id: &str) -> String {
     format!("aw:usage:{execution_id}")
+}
+
+fn monthly_budget_key(agent_id: &str) -> String {
+    let month = chrono::Utc::now().format("%Y-%m");
+    format!("aw:budget:agent:{agent_id}:{month}")
 }
 
 async fn proxy_handler(
@@ -72,11 +77,15 @@ async fn proxy_handler(
         .await
         .map_err(|e| AppError::Internal(format!("redis get: {e}")))?;
 
-    let execution_id = execution_id
-        .ok_or_else(|| AppError::Forbidden("invalid or expired token".to_owned()))?;
+    let execution_id =
+        execution_id.ok_or_else(|| AppError::Forbidden("invalid or expired token".to_owned()))?;
 
     // 3. Verify execution is still active
     let exec_key = format!("aw:exec:{execution_id}");
+    let agent_id: Option<String> = conn
+        .hget(&exec_key, "agent_id")
+        .await
+        .map_err(|e| AppError::Internal(format!("redis hget: {e}")))?;
     let status: Option<String> = conn
         .hget(&exec_key, "status")
         .await
@@ -84,7 +93,11 @@ async fn proxy_handler(
 
     match status.as_deref() {
         Some("queued") | Some("running") => {}
-        _ => return Err(AppError::Forbidden("execution is no longer active".to_owned())),
+        _ => {
+            return Err(AppError::Forbidden(
+                "execution is no longer active".to_owned(),
+            ));
+        }
     }
 
     // 4. Resolve token -> real API key
@@ -94,10 +107,19 @@ async fn proxy_handler(
         .await
         .map_err(|e| AppError::Internal(format!("redis hget: {e}")))?;
 
-    let api_key =
-        api_key.ok_or_else(|| AppError::Forbidden("token not found".to_owned()))?;
+    let api_key = api_key.ok_or_else(|| AppError::Forbidden("token not found".to_owned()))?;
 
-    // 5. Forward request to upstream
+    // 5. Forward request to upstream — validate path to prevent SSRF
+    if path.contains("..") || path.starts_with('/') {
+        return Err(AppError::BadRequest("invalid proxy path".to_owned()));
+    }
+    // Only allow known LLM API path prefixes
+    let allowed = path.starts_with("v1/") || path.starts_with("api/v1/");
+    if !allowed {
+        return Err(AppError::BadRequest(
+            "proxy path must start with v1/ or api/v1/".to_owned(),
+        ));
+    }
     let upstream_url = format!("{}/{path}", state.llm_upstream_url);
 
     let body_bytes = axum::body::to_bytes(body, 10 * 1024 * 1024)
@@ -119,7 +141,10 @@ async fn proxy_handler(
         .body(body_bytes.clone())
         .send()
         .await
-        .map_err(|e| AppError::Internal(format!("upstream request failed: {e}")))?;
+        .map_err(|e| {
+            tracing::warn!(error = %e, "upstream LLM request failed");
+            AppError::Internal("upstream request failed".to_owned())
+        })?;
 
     let resp_status = upstream_resp.status();
     let resp_headers = upstream_resp.headers().clone();
@@ -145,6 +170,16 @@ async fn proxy_handler(
                             / 100_000_000.0
                     })
                     .unwrap_or(0.0);
+                let cost_cents = state
+                    .model_pricing
+                    .get(&model)
+                    .map(|p| {
+                        ((usage.prompt_tokens as f64 * p.input as f64
+                            + usage.completion_tokens as f64 * p.output as f64)
+                            / 1_000_000.0)
+                            .round() as i64
+                    })
+                    .unwrap_or(0);
 
                 // Pipeline all Redis updates
                 let res: Result<(), _> = async {
@@ -152,12 +187,21 @@ async fn proxy_handler(
                     let completion_field = format!("model:{model}:completion_tokens");
                     let cost_field = format!("model:{model}:cost");
 
-                    conn.hincr::<_, _, _, i64>(&key, &prompt_field, usage.prompt_tokens).await?;
-                    conn.hincr::<_, _, _, i64>(&key, &completion_field, usage.completion_tokens).await?;
+                    conn.hincr::<_, _, _, i64>(&key, &prompt_field, usage.prompt_tokens)
+                        .await?;
+                    conn.hincr::<_, _, _, i64>(&key, &completion_field, usage.completion_tokens)
+                        .await?;
                     conn.hincr::<_, _, _, f64>(&key, &cost_field, cost).await?;
                     conn.hincr::<_, _, _, f64>(&key, "total_cost", cost).await?;
-                    conn.hincr::<_, _, _, i64>(&key, "request_count", 1i64).await?;
+                    conn.hincr::<_, _, _, i64>(&key, "request_count", 1i64)
+                        .await?;
                     conn.expire::<_, ()>(&key, USAGE_TTL_SECS).await?;
+                    if let Some(agent_id) = &agent_id {
+                        let budget_key = monthly_budget_key(agent_id);
+                        conn.incr::<_, _, i64>(&budget_key, cost_cents).await?;
+                        // Keep monthly counters available long enough for audits.
+                        conn.expire::<_, ()>(&budget_key, 120 * 24 * 3600).await?;
+                    }
                     Ok::<(), deadpool_redis::redis::RedisError>(())
                 }
                 .await;
@@ -170,21 +214,21 @@ async fn proxy_handler(
     }
 
     // 7. Return original response to container
-    let mut response = Response::builder().status(StatusCode::from_u16(resp_status.as_u16()).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR));
+    let mut response = Response::builder().status(
+        StatusCode::from_u16(resp_status.as_u16()).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
+    );
 
     // Forward content-type from upstream
     if let Some(ct) = resp_headers.get("content-type") {
         response = response.header("content-type", ct);
     }
 
-    Ok(response
-        .body(Body::from(resp_bytes))
-        .unwrap_or_else(|_| {
-            Response::builder()
-                .status(StatusCode::INTERNAL_SERVER_ERROR)
-                .body(Body::empty())
-                .unwrap()
-        }))
+    Ok(response.body(Body::from(resp_bytes)).unwrap_or_else(|_| {
+        Response::builder()
+            .status(StatusCode::INTERNAL_SERVER_ERROR)
+            .body(Body::empty())
+            .unwrap()
+    }))
 }
 
 pub fn llm_proxy_routes() -> Router<AppState> {

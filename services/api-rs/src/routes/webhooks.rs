@@ -3,12 +3,7 @@
 //! Endpoints for receiving external webhook events (Stripe, etc.).
 //! These accept POST payloads and store events in workspace repos.
 
-use axum::{
-    body::Bytes,
-    http::HeaderMap,
-    routing::post,
-    Json, Router,
-};
+use axum::{Json, Router, body::Bytes, http::HeaderMap, routing::post};
 use serde::{Deserialize, Serialize};
 
 use super::AppState;
@@ -79,7 +74,16 @@ fn verify_webhook_secret(headers: &HeaderMap, env_name: &str) -> Result<(), AppE
         .get("x-webhook-secret")
         .and_then(|v| v.to_str().ok())
         .ok_or_else(|| AppError::Unauthorized("missing webhook secret".to_owned()))?;
-    if provided != expected {
+    // Constant-time comparison to prevent timing attacks
+    let expected_bytes = expected.as_bytes();
+    let provided_bytes = provided.as_bytes();
+    if expected_bytes.len() != provided_bytes.len()
+        || expected_bytes
+            .iter()
+            .zip(provided_bytes.iter())
+            .fold(0u8, |acc, (a, b)| acc | (a ^ b))
+            != 0
+    {
         return Err(AppError::Unauthorized("invalid webhook secret".to_owned()));
     }
     Ok(())

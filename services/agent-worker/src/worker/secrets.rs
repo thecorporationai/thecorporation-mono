@@ -51,7 +51,7 @@ pub async fn resolve_token(
     Ok(value)
 }
 
-/// Revoke all tokens for an execution. Uses a pipeline for efficiency.
+/// Revoke all tokens for an execution atomically using a Redis pipeline.
 pub async fn revoke_tokens(pool: &Pool, execution_id: ExecutionId) -> Result<(), WorkerError> {
     let mut conn = pool.get().await?;
     let tokens_key = keys::tokens(execution_id);
@@ -62,11 +62,13 @@ pub async fn revoke_tokens(pool: &Pool, execution_id: ExecutionId) -> Result<(),
         return Ok(());
     }
 
-    // Delete all reverse-lookup keys and the token hash
+    // Delete all reverse-lookup keys and the token hash in a single pipeline
+    let mut pipe = deadpool_redis::redis::pipe();
     for token in tokens.keys() {
-        conn.del::<_, ()>(&keys::token_reverse(token)).await?;
+        pipe.del(keys::token_reverse(token)).ignore();
     }
-    conn.del::<_, ()>(&tokens_key).await?;
+    pipe.del(&tokens_key).ignore();
+    pipe.query_async::<()>(&mut *conn).await?;
 
     Ok(())
 }

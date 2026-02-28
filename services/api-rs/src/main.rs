@@ -1,7 +1,9 @@
 #![allow(dead_code)]
 #![allow(clippy::inconsistent_digit_grouping)]
 
-use axum::{Json, Router, routing::get};
+use axum::{Json, Router, middleware, routing::get};
+use axum::http::HeaderValue;
+use axum::response::Response;
 use clap::{Parser, Subcommand};
 use serde_json::{Value, json};
 use std::collections::HashMap;
@@ -77,7 +79,9 @@ async fn run_server(skip_validation: bool) {
         tracing::info!("validating stored data before startup…");
         let code = validate::run(data_dir.clone());
         if code != 0 {
-            panic!("data validation failed — fix the errors above or pass --skip-validation to bypass");
+            panic!(
+                "data validation failed — fix the errors above or pass --skip-validation to bypass"
+            );
         }
         tracing::info!("data validation passed");
     }
@@ -87,7 +91,9 @@ async fn run_server(skip_validation: bool) {
     let jwt_secret: Arc<[u8]> = match std::env::var("JWT_SECRET") {
         Ok(s) if s.len() >= 32 => Arc::from(s.into_bytes()),
         Ok(s) if !s.is_empty() => {
-            tracing::warn!("JWT_SECRET is shorter than 32 bytes — consider using a stronger secret");
+            tracing::warn!(
+                "JWT_SECRET is shorter than 32 bytes — consider using a stronger secret"
+            );
             Arc::from(s.into_bytes())
         }
         _ => {
@@ -145,7 +151,7 @@ async fn run_server(skip_validation: bool) {
         }
     };
 
-    // Optional Fernet key for encrypting secrets at rest in workspace repos
+    // Fernet key for encrypting secrets at rest in workspace repos
     let secrets_fernet = match std::env::var("SECRETS_MASTER_KEY") {
         Ok(key) if !key.is_empty() => match fernet::Fernet::new(&key) {
             Some(f) => {
@@ -153,13 +159,16 @@ async fn run_server(skip_validation: bool) {
                 Some(Arc::new(f))
             }
             None => {
-                tracing::error!("SECRETS_MASTER_KEY is not a valid Fernet key — secrets encryption disabled");
-                None
+                panic!("SECRETS_MASTER_KEY is not a valid Fernet key");
             }
         },
         _ => {
-            tracing::info!("SECRETS_MASTER_KEY not set — secrets encryption disabled");
-            None
+            if cfg!(debug_assertions) {
+                tracing::warn!("SECRETS_MASTER_KEY not set — secrets encryption disabled (dev only)");
+                None
+            } else {
+                panic!("SECRETS_MASTER_KEY must be set in release builds");
+            }
         }
     };
 
@@ -179,10 +188,34 @@ async fn run_server(skip_validation: bool) {
 
     let model_pricing = {
         let mut m = HashMap::new();
-        m.insert("anthropic/claude-sonnet-4-6".to_owned(), routes::ModelPricing { input: 300, output: 1500 });
-        m.insert("anthropic/claude-haiku-4-5".to_owned(), routes::ModelPricing { input: 80, output: 400 });
-        m.insert("openai/gpt-4o".to_owned(), routes::ModelPricing { input: 250, output: 1000 });
-        m.insert("openai/gpt-4o-mini".to_owned(), routes::ModelPricing { input: 15, output: 60 });
+        m.insert(
+            "anthropic/claude-sonnet-4-6".to_owned(),
+            routes::ModelPricing {
+                input: 300,
+                output: 1500,
+            },
+        );
+        m.insert(
+            "anthropic/claude-haiku-4-5".to_owned(),
+            routes::ModelPricing {
+                input: 80,
+                output: 400,
+            },
+        );
+        m.insert(
+            "openai/gpt-4o".to_owned(),
+            routes::ModelPricing {
+                input: 250,
+                output: 1000,
+            },
+        );
+        m.insert(
+            "openai/gpt-4o-mini".to_owned(),
+            routes::ModelPricing {
+                input: 15,
+                output: 60,
+            },
+        );
         m
     };
 
@@ -223,11 +256,25 @@ async fn run_server(skip_validation: bool) {
         .merge(routes::billing::billing_routes())
         .merge(routes::admin::admin_routes())
         .merge(routes::webhooks::webhook_routes())
-        .with_state(state);
+        .with_state(state)
+        .layer(middleware::map_response(security_headers));
 
     let addr = SocketAddr::from(([0, 0, 0, 0], 8000));
     tracing::info!("listening on {}", addr);
 
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
     axum::serve(listener, app).await.unwrap();
+}
+
+async fn security_headers(mut response: Response) -> Response {
+    let headers = response.headers_mut();
+    headers.insert("x-content-type-options", HeaderValue::from_static("nosniff"));
+    headers.insert("x-frame-options", HeaderValue::from_static("DENY"));
+    headers.insert(
+        "strict-transport-security",
+        HeaderValue::from_static("max-age=31536000; includeSubDomains"),
+    );
+    headers.insert("x-xss-protection", HeaderValue::from_static("0"));
+    headers.insert("referrer-policy", HeaderValue::from_static("strict-origin-when-cross-origin"));
+    response
 }

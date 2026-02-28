@@ -4,9 +4,9 @@
 //! and subscriptions. All data is read from git repos on disk.
 
 use axum::{
+    Json, Router,
     extract::{Path, State},
     routing::{get, post},
-    Json, Router,
 };
 use serde::{Deserialize, Serialize};
 
@@ -58,12 +58,10 @@ async fn list_workspaces(
 
             for ws_id in workspace_ids {
                 let name = match WorkspaceStore::open(&layout, ws_id) {
-                    Ok(ws_store) => {
-                        ws_store
-                            .read_workspace()
-                            .map(|r| r.name)
-                            .unwrap_or_else(|_| ws_id.to_string())
-                    }
+                    Ok(ws_store) => ws_store
+                        .read_workspace()
+                        .map(|r| r.name)
+                        .unwrap_or_else(|_| ws_id.to_string()),
                     Err(_) => ws_id.to_string(),
                 };
 
@@ -80,8 +78,7 @@ async fn list_workspaces(
         }
     })
     .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
-    ?;
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
 
     Ok(Json(summaries))
 }
@@ -123,8 +120,7 @@ async fn list_audit_events(
         }
     })
     .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
-    ?;
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
 
     Ok(Json(events))
 }
@@ -194,8 +190,7 @@ async fn workspace_status(
         }
     })
     .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
-    ?;
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
 
     Ok(Json(response))
 }
@@ -227,8 +222,7 @@ async fn list_workspace_entities(
         }
     })
     .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
-    ?;
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
 
     Ok(Json(entities))
 }
@@ -278,10 +272,7 @@ async fn demo_seed(
                     crate::domain::formation::types::EntityType::Corporation,
                     "Demo Startup Inc.",
                 ),
-                "llc" => (
-                    crate::domain::formation::types::EntityType::Llc,
-                    "Demo LLC",
-                ),
+                "llc" => (crate::domain::formation::types::EntityType::Llc, "Demo LLC"),
                 "restaurant" => (
                     crate::domain::formation::types::EntityType::Llc,
                     "Demo Restaurant LLC",
@@ -303,8 +294,13 @@ async fn demo_seed(
             )
             .map_err(|e| AppError::Internal(format!("create entity: {e}")))?;
 
-            crate::store::entity_store::EntityStore::init(&layout, workspace_id, entity_id, &entity)
-                .map_err(|e| AppError::Internal(format!("init entity: {e}")))?;
+            crate::store::entity_store::EntityStore::init(
+                &layout,
+                workspace_id,
+                entity_id,
+                &entity,
+            )
+            .map_err(|e| AppError::Internal(format!("init entity: {e}")))?;
 
             // Store a reference in the workspace
             ws_store
@@ -319,8 +315,7 @@ async fn demo_seed(
         }
     })
     .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
-    ?;
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
 
     Ok(Json(DemoSeedResponse {
         workspace_id,
@@ -356,7 +351,8 @@ async fn get_subscription(
                 Ok(sub) => Ok::<_, AppError>(sub),
                 Err(_) => {
                     // Create default free subscription
-                    let sub = Subscription::new(SubscriptionId::new(), workspace_id, "free".to_owned());
+                    let sub =
+                        Subscription::new(SubscriptionId::new(), workspace_id, "free".to_owned());
                     ws_store
                         .write_json("billing/subscription.json", &sub, "Init subscription")
                         .map_err(|e| AppError::Internal(format!("commit: {e}")))?;
@@ -366,8 +362,7 @@ async fn get_subscription(
         }
     })
     .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
-    ?;
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
 
     Ok(Json(SubscriptionResponse {
         workspace_id: sub.workspace_id(),
@@ -386,7 +381,7 @@ pub struct ConfigResponse {
     pub features: Vec<String>,
 }
 
-async fn get_config() -> Json<ConfigResponse> {
+async fn get_config(RequireAdmin(_auth): RequireAdmin) -> Json<ConfigResponse> {
     Json(ConfigResponse {
         version: env!("CARGO_PKG_VERSION").to_owned(),
         environment: std::env::var("CORP_ENV").unwrap_or_else(|_| "development".to_owned()),
@@ -444,8 +439,7 @@ async fn link_workspace(
         }
     })
     .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
-    ?;
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
 
     Ok(Json(WorkspaceLinkResponse {
         workspace_id,
@@ -482,8 +476,7 @@ async fn claim_workspace(
         }
     })
     .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
-    ?;
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
 
     Ok(Json(WorkspaceClaimResponse {
         workspace_id,
@@ -520,8 +513,7 @@ async fn workspace_status_by_path(
         }
     })
     .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
-    ?;
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
 
     Ok(Json(response))
 }
@@ -546,8 +538,7 @@ async fn workspace_entities_by_path(
         }
     })
     .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
-    ?;
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
 
     Ok(Json(entities))
 }
@@ -575,7 +566,9 @@ async fn workspace_contacts(
             let mut results = Vec::new();
 
             for entity_id in entity_ids {
-                if let Ok(store) = crate::store::entity_store::EntityStore::open(&layout, workspace_id, entity_id) {
+                if let Ok(store) =
+                    crate::store::entity_store::EntityStore::open(&layout, workspace_id, entity_id)
+                {
                     if let Ok(ids) = store.list_ids::<Contact>("main") {
                         for contact_id in ids {
                             results.push(WorkspaceContactSummary {
@@ -590,8 +583,7 @@ async fn workspace_contacts(
         }
     })
     .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
-    ?;
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
 
     Ok(Json(contacts))
 }
@@ -610,15 +602,11 @@ pub struct DigestTriggerResponse {
     pub digest_count: usize,
 }
 
-async fn list_digests(
-    RequireAdmin(_auth): RequireAdmin,
-) -> Json<Vec<DigestSummary>> {
+async fn list_digests(RequireAdmin(_auth): RequireAdmin) -> Json<Vec<DigestSummary>> {
     Json(vec![])
 }
 
-async fn trigger_digests(
-    RequireAdmin(_auth): RequireAdmin,
-) -> Json<DigestTriggerResponse> {
+async fn trigger_digests(RequireAdmin(_auth): RequireAdmin) -> Json<DigestTriggerResponse> {
     Json(DigestTriggerResponse {
         triggered: true,
         digest_count: 0,
@@ -629,7 +617,10 @@ async fn get_digest(
     RequireAdmin(_auth): RequireAdmin,
     Path(digest_key): Path<String>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    Err(AppError::NotFound(format!("digest {} not found", digest_key)))
+    Err(AppError::NotFound(format!(
+        "digest {} not found",
+        digest_key
+    )))
 }
 
 // ── Handlers: Service token / JWKS ──────────────────────────────────
@@ -641,9 +632,7 @@ pub struct ServiceTokenResponse {
     pub expires_in: u64,
 }
 
-async fn get_service_token(
-    RequireAdmin(_auth): RequireAdmin,
-) -> Json<ServiceTokenResponse> {
+async fn get_service_token(RequireAdmin(_auth): RequireAdmin) -> Json<ServiceTokenResponse> {
     let token = format!("svc_{}", uuid::Uuid::new_v4().simple());
     Json(ServiceTokenResponse {
         token,
@@ -657,7 +646,7 @@ pub struct JwksResponse {
     pub keys: Vec<serde_json::Value>,
 }
 
-async fn get_jwks() -> Json<JwksResponse> {
+async fn get_jwks(RequireAdmin(_auth): RequireAdmin) -> Json<JwksResponse> {
     Json(JwksResponse { keys: vec![] })
 }
 
@@ -676,9 +665,18 @@ pub fn admin_routes() -> Router<AppState> {
         .route("/v1/workspaces/link", post(link_workspace))
         .route("/v1/workspaces/claim", post(claim_workspace))
         // Workspace by path param (Python-compatible)
-        .route("/v1/workspaces/{workspace_id}/status", get(workspace_status_by_path))
-        .route("/v1/workspaces/{workspace_id}/entities", get(workspace_entities_by_path))
-        .route("/v1/workspaces/{workspace_id}/contacts", get(workspace_contacts))
+        .route(
+            "/v1/workspaces/{workspace_id}/status",
+            get(workspace_status_by_path),
+        )
+        .route(
+            "/v1/workspaces/{workspace_id}/entities",
+            get(workspace_entities_by_path),
+        )
+        .route(
+            "/v1/workspaces/{workspace_id}/contacts",
+            get(workspace_contacts),
+        )
         // Digests
         .route("/v1/digests", get(list_digests))
         .route("/v1/digests/trigger", post(trigger_digests))

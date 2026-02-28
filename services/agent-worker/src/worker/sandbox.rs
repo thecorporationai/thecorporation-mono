@@ -64,6 +64,7 @@ pub fn build_container_config(
         "HOME=/workspace".to_owned(),
         "TMPDIR=/tmp".to_owned(),
         "CORP_AUTO_APPROVE=1".to_owned(),
+        "CORP_HEADLESS_WRITE_POLICY=deny".to_owned(),
         "CORP_CONFIG_DIR=/workspace/.corp".to_owned(),
         "PI_CODING_AGENT_DIR=/workspace/.pi/agent".to_owned(),
         format!("CORP_LLM_PROXY_URL={}", worker_config.llm_proxy_url),
@@ -118,8 +119,29 @@ pub fn build_container_config(
     (create_options, container_config)
 }
 
+/// Validate that an agent_id is safe for use in filesystem paths.
+/// Rejects path traversal sequences, absolute paths, and non-alphanumeric chars
+/// (except hyphens which appear in UUIDs).
+fn validate_agent_id(agent_id: &str) -> Result<(), std::io::Error> {
+    if agent_id.is_empty()
+        || agent_id.contains("..")
+        || agent_id.contains('/')
+        || agent_id.contains('\\')
+        || agent_id.contains('\0')
+        || agent_id.starts_with('-')
+        || !agent_id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+    {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            format!("invalid agent_id: {agent_id}"),
+        ));
+    }
+    Ok(())
+}
+
 /// Ensure the workspace directory exists on the host.
 pub fn ensure_workspace_dir(workspace_root: &str, agent_id: &str) -> std::io::Result<()> {
+    validate_agent_id(agent_id)?;
     let path = format!("{workspace_root}/{agent_id}");
     std::fs::create_dir_all(&path)?;
     Ok(())

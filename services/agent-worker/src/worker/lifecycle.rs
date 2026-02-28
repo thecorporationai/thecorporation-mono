@@ -3,10 +3,11 @@
 use bollard::Docker;
 use bollard::container::LogsOptions;
 use deadpool_redis::Pool;
+use deadpool_redis::redis::AsyncCommands;
 use futures_util::StreamExt;
 
 use agent_types::{
-    AgentDefinition, AgentId, ExecutionId, ExecutionResult, InboundMessage, JobPayload, LogEntry,
+    AgentDefinition, AgentId, AgentStatus, ExecutionId, ExecutionResult, InboundMessage, JobPayload, LogEntry,
 };
 use crate::config::WorkerConfig;
 use crate::error::WorkerError;
@@ -42,9 +43,15 @@ pub async fn run(
     let result = run_inner(&job, pool, docker, http_client, config, worker_id).await;
 
     // ── Always cleanup ──────────────────────────────────────────────
-    lock::release(pool, agent_id, worker_id).await.ok();
-    queue::remove_from_processing(pool, worker_id, raw_payload).await.ok();
-    secrets::revoke_tokens(pool, execution_id).await.ok();
+    if let Err(e) = lock::release(pool, agent_id, worker_id).await {
+        tracing::warn!(execution_id = %execution_id, error = %e, "failed to release lock");
+    }
+    if let Err(e) = queue::remove_from_processing(pool, worker_id, raw_payload).await {
+        tracing::warn!(execution_id = %execution_id, error = %e, "failed to remove from processing queue");
+    }
+    if let Err(e) = secrets::revoke_tokens(pool, execution_id).await {
+        tracing::warn!(execution_id = %execution_id, error = %e, "failed to revoke tokens");
+    }
 
     let max_log = config.max_log_entries_redis;
 
@@ -127,6 +134,28 @@ async fn run_inner(
         .map_err(|_| WorkerError::AgentNotFound(agent_id))?
         .json()
         .await?;
+
+    if agent_def.status != AgentStatus::Active {
+        return Err(WorkerError::Internal(format!(
+            "agent {} is {}",
+            agent_id,
+            agent_def.status.as_str()
+        )));
+    }
+
+    let month = chrono::Utc::now().format("%Y-%m");
+    let budget_key = format!("aw:budget:agent:{agent_id}:{month}");
+    let spent_raw: Option<i64> = {
+        let mut conn = pool.get().await?;
+        conn.get(&budget_key).await?
+    };
+    let spent_cents = spent_raw.unwrap_or(0).max(0) as u64;
+    let budget_limit = agent_def.budget.max_monthly_cost_cents;
+    if spent_cents >= budget_limit {
+        return Err(WorkerError::Internal(format!(
+            "monthly budget exceeded ({spent_cents} >= {budget_limit} cents)"
+        )));
+    }
 
     // 2. Fetch message from api-rs (or synthesize for cron)
     let message: InboundMessage = match job {
@@ -248,8 +277,12 @@ async fn run_inner(
             // Timeout — kill container. Don't call set_failed here;
             // the outer `run` handles it via the returned error.
             tracing::warn!(execution_id = %execution_id, "execution timed out, killing container");
-            docker.kill_container::<String>(&container_id, None).await.ok();
-            docker.remove_container(&container_id, None).await.ok();
+            if let Err(e) = docker.kill_container::<String>(&container_id, None).await {
+                tracing::warn!(execution_id = %execution_id, error = %e, "failed to kill timed-out container");
+            }
+            if let Err(e) = docker.remove_container(&container_id, None).await {
+                tracing::warn!(execution_id = %execution_id, error = %e, "failed to remove timed-out container");
+            }
             return Err(WorkerError::Timeout(execution_id));
         }
     };
@@ -270,7 +303,9 @@ async fn run_inner(
         .collect();
 
     // 12. Remove container
-    docker.remove_container(&container_id, None).await.ok();
+    if let Err(e) = docker.remove_container(&container_id, None).await {
+        tracing::warn!(execution_id = %execution_id, container_id = %container_id, error = %e, "failed to remove container");
+    }
 
     // 13. Parse result
     let model = agent_def.model.clone();

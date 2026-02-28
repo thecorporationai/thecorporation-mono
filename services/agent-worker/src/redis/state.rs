@@ -60,7 +60,7 @@ pub async fn set_status(
     Ok(())
 }
 
-/// Set execution to running with container ID.
+/// Set execution to running with container ID (atomic pipeline).
 pub async fn set_running(
     pool: &Pool,
     execution_id: ExecutionId,
@@ -69,14 +69,17 @@ pub async fn set_running(
     let mut conn = pool.get().await?;
     let key = keys::exec_state(execution_id);
     let started_at = chrono::Utc::now().to_rfc3339();
-    conn.hset::<_, _, _, ()>(&key, "status", ExecutionStatus::Running.as_str()).await?;
-    conn.hset::<_, _, _, ()>(&key, "container_id", container_id).await?;
-    conn.hset::<_, _, _, ()>(&key, "started_at", &started_at).await?;
-    conn.expire::<_, ()>(&key, STATE_TTL_SECS as i64).await?;
+    deadpool_redis::redis::pipe()
+        .hset(&key, "status", ExecutionStatus::Running.as_str()).ignore()
+        .hset(&key, "container_id", container_id).ignore()
+        .hset(&key, "started_at", &started_at).ignore()
+        .expire(&key, STATE_TTL_SECS as i64).ignore()
+        .query_async::<()>(&mut *conn)
+        .await?;
     Ok(())
 }
 
-/// Mark execution as completed and store result.
+/// Mark execution as completed and store result (atomic pipeline).
 pub async fn set_completed(
     pool: &Pool,
     execution_id: ExecutionId,
@@ -88,17 +91,18 @@ pub async fn set_completed(
     let result_json = serde_json::to_string(result)?;
     let completed_at = chrono::Utc::now().to_rfc3339();
 
-    conn.hset::<_, _, _, ()>(&state_key, "status", ExecutionStatus::Completed.as_str()).await?;
-    conn.hset::<_, _, _, ()>(&state_key, "completed_at", &completed_at).await?;
-    conn.expire::<_, ()>(&state_key, STATE_TTL_SECS as i64).await?;
-
-    // Store result with 7-day TTL
-    conn.set_ex::<_, _, ()>(&result_key, &result_json, STATE_TTL_SECS).await?;
+    deadpool_redis::redis::pipe()
+        .hset(&state_key, "status", ExecutionStatus::Completed.as_str()).ignore()
+        .hset(&state_key, "completed_at", &completed_at).ignore()
+        .expire(&state_key, STATE_TTL_SECS as i64).ignore()
+        .set_ex(&result_key, &result_json, STATE_TTL_SECS).ignore()
+        .query_async::<()>(&mut *conn)
+        .await?;
 
     Ok(())
 }
 
-/// Mark execution as failed.
+/// Mark execution as failed (atomic pipeline).
 pub async fn set_failed(
     pool: &Pool,
     execution_id: ExecutionId,
@@ -107,10 +111,13 @@ pub async fn set_failed(
     let mut conn = pool.get().await?;
     let key = keys::exec_state(execution_id);
     let completed_at = chrono::Utc::now().to_rfc3339();
-    conn.hset::<_, _, _, ()>(&key, "status", ExecutionStatus::Failed.as_str()).await?;
-    conn.hset::<_, _, _, ()>(&key, "reason", reason).await?;
-    conn.hset::<_, _, _, ()>(&key, "completed_at", &completed_at).await?;
-    conn.expire::<_, ()>(&key, STATE_TTL_SECS as i64).await?;
+    deadpool_redis::redis::pipe()
+        .hset(&key, "status", ExecutionStatus::Failed.as_str()).ignore()
+        .hset(&key, "reason", reason).ignore()
+        .hset(&key, "completed_at", &completed_at).ignore()
+        .expire(&key, STATE_TTL_SECS as i64).ignore()
+        .query_async::<()>(&mut *conn)
+        .await?;
     Ok(())
 }
 
@@ -142,7 +149,7 @@ pub async fn get_result(
     }
 }
 
-/// Initialize execution state when enqueued.
+/// Initialize execution state when enqueued (atomic pipeline).
 pub async fn init_queued(
     pool: &Pool,
     execution_id: ExecutionId,
@@ -156,14 +163,17 @@ pub async fn init_queued(
     let agent_str = agent_id.to_string();
     let workspace_str = workspace_id.to_string();
 
-    conn.hset::<_, _, _, ()>(&key, "status", ExecutionStatus::Queued.as_str()).await?;
-    conn.hset::<_, _, _, ()>(&key, "agent_id", &agent_str).await?;
-    conn.hset::<_, _, _, ()>(&key, "workspace_id", &workspace_str).await?;
-    conn.hset::<_, _, _, ()>(&key, "created_at", &created_at).await?;
+    let mut pipe = deadpool_redis::redis::pipe();
+    pipe.hset(&key, "status", ExecutionStatus::Queued.as_str()).ignore()
+        .hset(&key, "agent_id", &agent_str).ignore()
+        .hset(&key, "workspace_id", &workspace_str).ignore()
+        .hset(&key, "created_at", &created_at).ignore();
     if let Some(mid) = message_id {
-        conn.hset::<_, _, _, ()>(&key, "message_id", mid.to_string()).await?;
+        pipe.hset(&key, "message_id", mid.to_string()).ignore();
     }
-    conn.expire::<_, ()>(&key, STATE_TTL_SECS as i64).await?;
+    pipe.expire(&key, STATE_TTL_SECS as i64).ignore()
+        .query_async::<()>(&mut *conn)
+        .await?;
 
     Ok(())
 }
