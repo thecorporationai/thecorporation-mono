@@ -20,6 +20,7 @@ pub fn openapi_spec() -> Value {
     add_agents_paths(&mut paths);
     add_compliance_paths(&mut paths);
     add_billing_paths(&mut paths);
+    add_services_paths(&mut paths);
     add_admin_paths(&mut paths);
     add_webhooks_paths(&mut paths);
 
@@ -43,6 +44,7 @@ pub fn openapi_spec() -> Value {
             { "name": "agents", "description": "Agent management" },
             { "name": "compliance", "description": "Tax filings and deadlines" },
             { "name": "billing", "description": "Billing and subscriptions" },
+            { "name": "services", "description": "Fulfillment service catalog and requests" },
             { "name": "admin", "description": "Administration and system health" }
         ]
     })
@@ -102,6 +104,46 @@ fn add_formation_paths(paths: &mut Map<String, Value>) {
             "formation",
             "mark_documents_signed",
             "Mark formation documents as fully signed",
+        ),
+    );
+    add_path(
+        paths,
+        "/v1/formations/{entity_id}/filing-attestation",
+        "post",
+        op(
+            "formation",
+            "record_filing_attestation",
+            "Record filing attestation by designated natural-person signer",
+        ),
+    );
+    add_path(
+        paths,
+        "/v1/formations/{entity_id}/registered-agent-consent-evidence",
+        "post",
+        op(
+            "formation",
+            "add_registered_agent_consent_evidence",
+            "Attach registered-agent consent evidence to filing",
+        ),
+    );
+    add_path(
+        paths,
+        "/v1/formations/{entity_id}/service-agreement/execute",
+        "post",
+        op(
+            "formation",
+            "execute_service_agreement",
+            "Record executed service agreement for autonomy precondition",
+        ),
+    );
+    add_path(
+        paths,
+        "/v1/formations/{entity_id}/gates",
+        "get",
+        op(
+            "formation",
+            "get_formation_gates",
+            "Get filing and service-agreement gate status",
         ),
     );
     add_path(
@@ -649,6 +691,46 @@ fn add_governance_paths(paths: &mut Map<String, Value>) {
             "governance",
             "resolve_incident",
             "Resolve governance incident",
+        ),
+    );
+    add_path(
+        paths,
+        "/v1/governance/delegation-schedule",
+        "get",
+        op(
+            "governance",
+            "get_delegation_schedule",
+            "Get current delegation schedule",
+        ),
+    );
+    add_path(
+        paths,
+        "/v1/governance/delegation-schedule/amend",
+        "post",
+        op(
+            "governance",
+            "amend_delegation_schedule",
+            "Amend delegation schedule",
+        ),
+    );
+    add_path(
+        paths,
+        "/v1/governance/delegation-schedule/reauthorize",
+        "post",
+        op(
+            "governance",
+            "reauthorize_delegation_schedule",
+            "Reauthorize delegation schedule",
+        ),
+    );
+    add_path(
+        paths,
+        "/v1/governance/delegation-schedule/history",
+        "get",
+        op(
+            "governance",
+            "list_delegation_schedule_history",
+            "List delegation schedule amendments",
         ),
     );
 
@@ -1562,6 +1644,75 @@ fn add_billing_paths(paths: &mut Map<String, Value>) {
     );
 }
 
+fn add_services_paths(paths: &mut Map<String, Value>) {
+    add_path(
+        paths,
+        "/v1/services/catalog",
+        "get",
+        op("services", "list_catalog", "List service catalog"),
+    );
+    add_path(
+        paths,
+        "/v1/services/catalog/{slug}",
+        "get",
+        op("services", "get_catalog_item", "Get catalog item by slug"),
+    );
+    add_path(
+        paths,
+        "/v1/services/requests",
+        "post",
+        op("services", "create_service_request", "Create service request"),
+    );
+    add_path(
+        paths,
+        "/v1/entities/{entity_id}/services/requests",
+        "get",
+        op("services", "list_service_requests", "List service requests for entity"),
+    );
+    add_path(
+        paths,
+        "/v1/entities/{entity_id}/services/requests/{request_id}",
+        "get",
+        op("services", "get_service_request", "Get service request"),
+    );
+    add_path(
+        paths,
+        "/v1/services/requests/{entity_id}/{request_id}/checkout",
+        "post",
+        op("services", "initiate_checkout", "Initiate Stripe checkout"),
+    );
+    add_path(
+        paths,
+        "/v1/services/requests/{entity_id}/{request_id}/begin-fulfillment",
+        "post",
+        op("services", "begin_fulfillment", "Begin fulfillment"),
+    );
+    add_path(
+        paths,
+        "/v1/services/requests/{entity_id}/{request_id}/fulfill",
+        "post",
+        op("services", "fulfill_service_request", "Fulfill service request"),
+    );
+    add_path(
+        paths,
+        "/v1/services/requests/{entity_id}/{request_id}/fail",
+        "post",
+        op("services", "fail_service_request", "Fail service request"),
+    );
+    add_path(
+        paths,
+        "/v1/services/pending",
+        "get",
+        op("services", "list_pending_fulfillment", "List pending fulfillment requests"),
+    );
+    add_path(
+        paths,
+        "/v1/services/webhooks/stripe",
+        "post",
+        op("services", "stripe_webhook", "Stripe webhook for service payments"),
+    );
+}
+
 fn add_admin_paths(paths: &mut Map<String, Value>) {
     add_path(
         paths,
@@ -1724,6 +1875,7 @@ mod tests {
 
         // Spot-check key endpoints exist
         assert!(paths.contains_key("/v1/formations"));
+        assert!(paths.contains_key("/v1/formations/{entity_id}/gates"));
         assert!(paths.contains_key("/v1/entities/{entity_id}/cap-table"));
         assert!(paths.contains_key("/v1/governance-bodies"));
         assert!(paths.contains_key("/v1/treasury/accounts"));

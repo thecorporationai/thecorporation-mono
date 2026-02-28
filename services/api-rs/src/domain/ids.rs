@@ -117,6 +117,7 @@ define_id!(AgendaItemId);
 define_id!(VoteId);
 define_id!(ResolutionId);
 define_id!(IncidentId);
+define_id!(ScheduleAmendmentId);
 
 // ── Contacts & Obligations ─────────────────────────────────────────────
 define_id!(ContactId);
@@ -143,6 +144,10 @@ define_id!(ClassificationId);
 define_id!(PayrollRunId);
 define_id!(DistributionId);
 define_id!(ReconciliationId);
+
+// ── Services (fulfillment marketplace) ─────────────────────────────────
+define_id!(ServiceItemId);
+define_id!(ServiceRequestId);
 
 // ── Auth & Workspace ───────────────────────────────────────────────────
 // AgentId, WorkspaceId, ExecutionId, MessageId come from the shared crate

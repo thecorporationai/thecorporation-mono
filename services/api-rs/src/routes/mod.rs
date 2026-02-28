@@ -9,10 +9,11 @@ pub mod contacts;
 pub mod equity;
 pub mod execution;
 pub mod formation;
-pub mod llm_proxy;
 pub mod governance;
+pub mod llm_proxy;
 pub mod secret_proxies;
 pub mod secrets_proxy;
+pub mod services;
 pub mod treasury;
 pub mod webhooks;
 

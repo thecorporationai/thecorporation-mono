@@ -1,9 +1,9 @@
 #![allow(dead_code)]
 #![allow(clippy::inconsistent_digit_grouping)]
 
-use axum::{Json, Router, middleware, routing::get};
 use axum::http::HeaderValue;
 use axum::response::Response;
+use axum::{Json, Router, middleware, routing::get};
 use clap::{Parser, Subcommand};
 use serde_json::{Value, json};
 use std::collections::HashMap;
@@ -164,7 +164,9 @@ async fn run_server(skip_validation: bool) {
         },
         _ => {
             if cfg!(debug_assertions) {
-                tracing::warn!("SECRETS_MASTER_KEY not set — secrets encryption disabled (dev only)");
+                tracing::warn!(
+                    "SECRETS_MASTER_KEY not set — secrets encryption disabled (dev only)"
+                );
                 None
             } else {
                 panic!("SECRETS_MASTER_KEY must be set in release builds");
@@ -254,6 +256,7 @@ async fn run_server(skip_validation: bool) {
         .merge(routes::llm_proxy::llm_proxy_routes())
         .merge(routes::secret_proxies::secret_proxy_routes())
         .merge(routes::billing::billing_routes())
+        .merge(routes::services::services_routes())
         .merge(routes::admin::admin_routes())
         .merge(routes::webhooks::webhook_routes())
         .with_state(state)
@@ -268,13 +271,19 @@ async fn run_server(skip_validation: bool) {
 
 async fn security_headers(mut response: Response) -> Response {
     let headers = response.headers_mut();
-    headers.insert("x-content-type-options", HeaderValue::from_static("nosniff"));
+    headers.insert(
+        "x-content-type-options",
+        HeaderValue::from_static("nosniff"),
+    );
     headers.insert("x-frame-options", HeaderValue::from_static("DENY"));
     headers.insert(
         "strict-transport-security",
         HeaderValue::from_static("max-age=31536000; includeSubDomains"),
     );
     headers.insert("x-xss-protection", HeaderValue::from_static("0"));
-    headers.insert("referrer-policy", HeaderValue::from_static("strict-origin-when-cross-origin"));
+    headers.insert(
+        "referrer-policy",
+        HeaderValue::from_static("strict-origin-when-cross-origin"),
+    );
     response
 }

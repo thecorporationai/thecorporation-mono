@@ -4,9 +4,9 @@
 //! to produce appropriate HTTP status codes. `anyhow::Error` is only used here
 //! at the boundary — never in domain code.
 
+use axum::Json;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
-use axum::Json;
 use serde_json::json;
 
 use crate::domain::agents::error::AgentError;
@@ -16,6 +16,7 @@ use crate::domain::equity::error::EquityError;
 use crate::domain::execution::error::ExecutionError;
 use crate::domain::formation::error::FormationError;
 use crate::domain::governance::error::GovernanceError;
+use crate::domain::services::error::ServiceError;
 use crate::domain::treasury::error::TreasuryError;
 use crate::git::error::GitStorageError;
 
@@ -109,12 +110,8 @@ impl From<GitStorageError> for AppError {
 impl From<AuthError> for AppError {
     fn from(e: AuthError) -> Self {
         match e {
-            AuthError::InvalidApiKey | AuthError::Unauthorized => {
-                Self::Unauthorized(e.to_string())
-            }
-            AuthError::ExpiredApiKey | AuthError::TokenExpired => {
-                Self::Unauthorized(e.to_string())
-            }
+            AuthError::InvalidApiKey | AuthError::Unauthorized => Self::Unauthorized(e.to_string()),
+            AuthError::ExpiredApiKey | AuthError::TokenExpired => Self::Unauthorized(e.to_string()),
             AuthError::InvalidToken(_) => Self::Unauthorized(e.to_string()),
             AuthError::InsufficientScopes(_) => Self::Forbidden(e.to_string()),
         }
@@ -195,6 +192,16 @@ impl From<AgentError> for AppError {
         match e {
             AgentError::AgentNotFound(_) => Self::NotFound(e.to_string()),
             AgentError::Validation(msg) => Self::UnprocessableEntity(msg),
+        }
+    }
+}
+
+impl From<ServiceError> for AppError {
+    fn from(e: ServiceError) -> Self {
+        match e {
+            ServiceError::ItemNotFound(_) => Self::NotFound(e.to_string()),
+            ServiceError::RequestNotFound(_) => Self::NotFound(e.to_string()),
+            ServiceError::InvalidTransition { .. } => Self::UnprocessableEntity(e.to_string()),
         }
     }
 }

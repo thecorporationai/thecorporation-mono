@@ -1,11 +1,7 @@
 //! Formation service — orchestrates entity creation and formation workflow.
 
 use crate::domain::formation::{
-    content::*,
-    document::Document,
-    entity::Entity,
-    filing::Filing,
-    tax_profile::TaxProfile,
+    content::*, document::Document, entity::Entity, filing::Filing, tax_profile::TaxProfile,
     types::*,
 };
 use crate::domain::ids::*;
@@ -14,11 +10,26 @@ use crate::git::commit::FileWrite;
 use super::error::FormationError;
 
 /// Result of creating a new entity through the formation workflow.
+#[derive(Debug)]
 pub struct FormationResult {
     pub entity: Entity,
     pub document_ids: Vec<DocumentId>,
     pub filing: Filing,
     pub tax_profile: TaxProfile,
+}
+
+fn member_role_label(role: Option<MemberRole>, entity_type: EntityType) -> String {
+    match role {
+        Some(MemberRole::Director) => "director".to_owned(),
+        Some(MemberRole::Officer) => "officer".to_owned(),
+        Some(MemberRole::Manager) => "manager".to_owned(),
+        Some(MemberRole::Member) => "member".to_owned(),
+        Some(MemberRole::Chair) => "chair".to_owned(),
+        None => match entity_type {
+            EntityType::Corporation => "incorporator".to_owned(),
+            EntityType::Llc => "organizer".to_owned(),
+        },
+    }
 }
 
 /// Create a new entity — initializes the git repo, generates documents,
@@ -62,7 +73,37 @@ pub fn create_entity(
         EntityType::Llc => FilingType::CertificateOfFormation,
         EntityType::Corporation => FilingType::CertificateOfIncorporation,
     };
-    let filing = Filing::new(FilingId::new(), entity_id, filing_type, jurisdiction.clone());
+
+    let designated_attestor = members
+        .iter()
+        .find(|member| member.investor_type == InvestorType::NaturalPerson)
+        .ok_or_else(|| {
+            FormationError::Validation(
+                "at least one natural_person member is required for filing attestation".to_owned(),
+            )
+        })?;
+    let designated_attestor_name = designated_attestor.name.trim().to_owned();
+    if designated_attestor_name.is_empty() {
+        return Err(FormationError::Validation(
+            "designated natural-person attestor name must not be empty".to_owned(),
+        ));
+    }
+    let designated_attestor_email = designated_attestor
+        .email
+        .as_ref()
+        .map(|email| email.trim().to_owned())
+        .filter(|email| !email.is_empty());
+    let designated_attestor_role = member_role_label(designated_attestor.role, entity_type);
+
+    let filing = Filing::new(
+        FilingId::new(),
+        entity_id,
+        filing_type,
+        jurisdiction.clone(),
+        designated_attestor_name,
+        designated_attestor_email,
+        designated_attestor_role,
+    );
 
     // Create tax profile.
     let classification = TaxProfile::classify(entity_type, members.len());
@@ -113,9 +154,7 @@ pub fn create_entity(
     );
     for doc in &documents {
         let path = format!("formation/{}.json", doc.document_id());
-        files.push(
-            FileWrite::json(path, doc).map_err(|e| FormationError::Storage(e.to_string()))?,
-        );
+        files.push(FileWrite::json(path, doc).map_err(|e| FormationError::Storage(e.to_string()))?);
     }
 
     // Initialize the entity repo with all files in one atomic commit
@@ -200,6 +239,21 @@ mod tests {
             share_count: Some(4_000_000),
             share_class: Some("COMMON".to_string()),
             role: Some(MemberRole::Member),
+        }
+    }
+
+    fn service_agent() -> MemberInput {
+        MemberInput {
+            name: "Formation Agent".to_string(),
+            investor_type: InvestorType::Agent,
+            email: Some("agent@example.com".to_string()),
+            agent_id: Some(AgentId::new()),
+            entity_id: None,
+            ownership_pct: None,
+            membership_units: None,
+            share_count: None,
+            share_class: None,
+            role: None,
         }
     }
 
@@ -325,6 +379,34 @@ mod tests {
     }
 
     #[test]
+    fn create_entity_requires_natural_person_attestor() {
+        let tmp = TempDir::new().unwrap();
+        let layout = RepoLayout::new(tmp.path().to_path_buf());
+        let workspace_id = WorkspaceId::new();
+
+        let result = create_entity(
+            &layout,
+            workspace_id,
+            "Agent Only Corp".to_string(),
+            EntityType::Corporation,
+            Jurisdiction::new("Delaware").unwrap(),
+            None,
+            None,
+            &[service_agent()],
+            Some(1_000_000),
+            Some("0.0001"),
+        );
+
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("natural_person member")
+        );
+    }
+
+    #[test]
     fn create_entity_rejects_empty_name() {
         let tmp = TempDir::new().unwrap();
         let layout = RepoLayout::new(tmp.path().to_path_buf());
@@ -369,8 +451,7 @@ mod tests {
         .unwrap();
 
         // Open via EntityStore and verify reads work
-        let store =
-            EntityStore::open(&layout, workspace_id, result.entity.entity_id()).unwrap();
+        let store = EntityStore::open(&layout, workspace_id, result.entity.entity_id()).unwrap();
 
         let entity = store.read_entity("main").unwrap();
         assert_eq!(entity.legal_name(), "Store Test LLC");

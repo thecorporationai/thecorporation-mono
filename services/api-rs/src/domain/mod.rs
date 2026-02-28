@@ -7,4 +7,5 @@ pub mod execution;
 pub mod formation;
 pub mod governance;
 pub mod ids;
+pub mod services;
 pub mod treasury;

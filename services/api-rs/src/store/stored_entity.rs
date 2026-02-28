@@ -44,8 +44,8 @@ use crate::domain::ids::{
     DeadlineId, DistributionId, EquityGrantId, EquityRoundId, EquityRuleSetId, FundingRoundId,
     FundraisingWorkflowId, GovernanceBodyId, GovernanceSeatId, HolderId, IncidentId, InstrumentId,
     IntentId, InvoiceId, JournalEntryId, LegalEntityId, MeetingId, ObligationId, PacketId,
-    PaymentId, PayrollRunId, PositionId, ReceiptId, ReconciliationId, SafeNoteId, ShareClassId,
-    TaxFilingId, TransferId, TransferWorkflowId, ValuationId,
+    PaymentId, PayrollRunId, PositionId, ReceiptId, ReconciliationId, SafeNoteId,
+    ScheduleAmendmentId, ShareClassId, TaxFilingId, TransferId, TransferWorkflowId, ValuationId,
 };
 
 impl StoredEntity for ShareClass {
@@ -163,6 +163,7 @@ impl StoredEntity for FundraisingWorkflow {
 // ── Governance ──────────────────────────────────────────────────────────
 
 use crate::domain::governance::body::GovernanceBody;
+use crate::domain::governance::delegation_schedule::ScheduleAmendment;
 use crate::domain::governance::incident::GovernanceIncident;
 use crate::domain::governance::meeting::Meeting;
 use crate::domain::governance::seat::GovernanceSeat;
@@ -195,6 +196,13 @@ impl StoredEntity for GovernanceIncident {
     type Id = IncidentId;
     fn storage_dir() -> &'static str {
         "governance/incidents"
+    }
+}
+
+impl StoredEntity for ScheduleAmendment {
+    type Id = ScheduleAmendmentId;
+    fn storage_dir() -> &'static str {
+        "governance/delegation-schedule/amendments"
     }
 }
 
@@ -376,5 +384,17 @@ impl StoredEntity for ComplianceEvidenceLink {
     type Id = ComplianceEvidenceLinkId;
     fn storage_dir() -> &'static str {
         "compliance/evidence-links"
+    }
+}
+
+// ── Services (fulfillment marketplace) ────────────────────────────────
+
+use crate::domain::ids::ServiceRequestId;
+use crate::domain::services::request::ServiceRequest;
+
+impl StoredEntity for ServiceRequest {
+    type Id = ServiceRequestId;
+    fn storage_dir() -> &'static str {
+        "services/requests"
     }
 }
