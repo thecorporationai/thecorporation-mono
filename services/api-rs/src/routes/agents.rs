@@ -3,10 +3,10 @@
 //! Endpoints for creating, listing, updating agents, adding skills, and messaging.
 
 use axum::{
+    Json, Router,
     extract::{Path, Query, State},
     http::StatusCode,
     routing::{get, patch, post},
-    Json, Router,
 };
 use serde::{Deserialize, Serialize};
 
@@ -20,10 +20,12 @@ use crate::domain::agents::{
         SandboxConfig, ToolSpec,
     },
 };
-use agent_types::{AgentDefinition, ChannelType, InboundMessage, JobPayload, RpcReply, RpcStatus};
+use crate::domain::auth::claims::{Claims, PrincipalType, encode_token};
+use crate::domain::auth::scopes::{Scope, ScopeSet};
 use crate::domain::ids::{AgentId, EntityId, ExecutionId, MessageId, WorkspaceId};
 use crate::error::AppError;
 use crate::store::workspace_store::WorkspaceStore;
+use agent_types::{AgentDefinition, ChannelType, InboundMessage, JobPayload, RpcReply, RpcStatus};
 
 // ── Request types ────────────────────────────────────────────────────
 
@@ -39,6 +41,8 @@ pub struct CreateAgentRequest {
     pub entity_id: Option<EntityId>,
     #[serde(default)]
     pub parent_agent_id: Option<AgentId>,
+    #[serde(default)]
+    pub scopes: Vec<Scope>,
 }
 
 #[derive(Deserialize)]
@@ -66,6 +70,8 @@ pub struct UpdateAgentRequest {
     pub sandbox: Option<SandboxConfig>,
     #[serde(default)]
     pub parent_agent_id: Option<AgentId>,
+    #[serde(default)]
+    pub scopes: Option<Vec<Scope>>,
 }
 
 #[derive(Deserialize)]
@@ -109,6 +115,7 @@ pub struct AgentResponse {
     pub parent_agent_id: Option<AgentId>,
     pub email_address: Option<String>,
     pub webhook_url: Option<String>,
+    pub scopes: Vec<Scope>,
     pub created_at: String,
 }
 
@@ -162,6 +169,7 @@ fn agent_to_response(a: &Agent) -> AgentResponse {
         parent_agent_id: a.parent_agent_id(),
         email_address: a.email_address().map(|s| s.to_owned()),
         webhook_url: a.webhook_url().map(|s| s.to_owned()),
+        scopes: a.scopes().to_vec(),
         created_at: a.created_at().to_rfc3339(),
     }
 }
@@ -175,16 +183,23 @@ fn agent_to_definition(a: &Agent) -> Result<AgentDefinition, AppError> {
             .map_err(|e| AppError::Internal(format!("invalid agent name: {e}")))?,
         status: a.status(),
         system_prompt: a.system_prompt().unwrap_or_default().to_owned(),
-        model: a.model().unwrap_or("anthropic/claude-sonnet-4-6").to_owned(),
+        model: a
+            .model()
+            .unwrap_or("anthropic/claude-sonnet-4-6")
+            .to_owned(),
         tools: a.tools().to_vec(),
-        skills: a.skills().iter().map(|s| agent_types::SkillSpec {
-            name: s.name.clone(),
-            description: s.description.clone(),
-            instructions: String::new(),
-            tools: Vec::new(),
-            mcp_server: None,
-            enabled: true,
-        }).collect(),
+        skills: a
+            .skills()
+            .iter()
+            .map(|s| agent_types::SkillSpec {
+                name: s.name.clone(),
+                description: s.description.clone(),
+                instructions: String::new(),
+                tools: Vec::new(),
+                mcp_server: None,
+                enabled: true,
+            })
+            .collect(),
         mcp_servers: a.mcp_servers().to_vec(),
         channels: a.channels().to_vec(),
         budget: a.budget().cloned().unwrap_or_default(),
@@ -195,6 +210,36 @@ fn agent_to_definition(a: &Agent) -> Result<AgentDefinition, AppError> {
         created_at: Some(a.created_at()),
         updated_at: Some(a.created_at()),
     })
+}
+
+fn budget_month_key(agent_id: AgentId) -> String {
+    let month = chrono::Utc::now().format("%Y-%m");
+    format!("aw:budget:agent:{agent_id}:{month}")
+}
+
+async fn enforce_monthly_budget(
+    redis: &deadpool_redis::Pool,
+    agent_id: AgentId,
+    budget_cents: u64,
+) -> Result<(), AppError> {
+    use deadpool_redis::redis::AsyncCommands;
+
+    let mut conn = redis
+        .get()
+        .await
+        .map_err(|e| AppError::Internal(format!("redis pool: {e}")))?;
+    let key = budget_month_key(agent_id);
+    let spent_raw: Option<i64> = conn
+        .get(&key)
+        .await
+        .map_err(|e| AppError::Internal(format!("redis get: {e}")))?;
+    let spent_cents = spent_raw.unwrap_or(0).max(0) as u64;
+    if spent_cents >= budget_cents {
+        return Err(AppError::Conflict(format!(
+            "Monthly budget exceeded ({spent_cents} >= {budget_cents} cents)"
+        )));
+    }
+    Ok(())
 }
 
 // ── Handlers ─────────────────────────────────────────────────────────
@@ -232,6 +277,9 @@ async fn create_agent(
                 req.entity_id,
             );
             agent.set_parent_agent_id(req.parent_agent_id);
+            if !req.scopes.is_empty() {
+                agent.set_scopes(ScopeSet::from_vec(req.scopes));
+            }
 
             let path = format!("agents/{}.json", agent_id);
             ws_store
@@ -242,8 +290,7 @@ async fn create_agent(
         }
     })
     .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
-    ?;
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
 
     Ok((StatusCode::CREATED, Json(agent_to_response(&agent))))
 }
@@ -274,8 +321,7 @@ async fn list_agents(
         }
     })
     .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
-    ?;
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
 
     Ok(Json(agents))
 }
@@ -333,6 +379,9 @@ async fn update_agent(
                 validate_parent(&ws_store, parent_id, Some(agent_id))?;
                 agent.set_parent_agent_id(Some(parent_id));
             }
+            if let Some(scopes) = req.scopes {
+                agent.set_scopes(ScopeSet::from_vec(scopes));
+            }
 
             ws_store
                 .write_json(&path, &agent, &format!("Update agent {agent_id}"))
@@ -342,8 +391,7 @@ async fn update_agent(
         }
     })
     .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
-    ?;
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
 
     Ok(Json(agent_to_response(&agent)))
 }
@@ -381,8 +429,7 @@ async fn add_agent_skill(
         }
     })
     .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
-    ?;
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
 
     Ok(Json(agent_to_response(&agent)))
 }
@@ -398,6 +445,38 @@ async fn send_agent_message(
     }
     let workspace_id = auth.workspace_id();
 
+    let (agent_status, budget_limit_cents) = tokio::task::spawn_blocking({
+        let layout = state.layout.clone();
+        move || {
+            let ws_store = WorkspaceStore::open(&layout, workspace_id)
+                .map_err(|e| AppError::NotFound(format!("workspace not found: {e}")))?;
+            let agent_path = format!("agents/{}.json", agent_id);
+            let agent: Agent = ws_store
+                .read_json(&agent_path)
+                .map_err(|_| AppError::NotFound(format!("agent {} not found", agent_id)))?;
+            let budget_limit_cents = agent
+                .budget()
+                .cloned()
+                .unwrap_or_default()
+                .max_monthly_cost_cents;
+            Ok::<_, AppError>((agent.status(), budget_limit_cents))
+        }
+    })
+    .await
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+
+    if agent_status != AgentStatus::Active {
+        return Err(AppError::Conflict(format!(
+            "agent {} is {}",
+            agent_id,
+            agent_status.as_str()
+        )));
+    }
+
+    if let Some(redis) = &state.redis {
+        enforce_monthly_budget(redis, agent_id, budget_limit_cents).await?;
+    }
+
     let msg = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         let message_text = req.message.clone();
@@ -412,6 +491,14 @@ async fn send_agent_message(
                 .read_json(&agent_path)
                 .map_err(|_| AppError::NotFound(format!("agent {} not found", agent_id)))?;
 
+            if _agent.status() != AgentStatus::Active {
+                return Err(AppError::Conflict(format!(
+                    "agent {} is {}",
+                    agent_id,
+                    _agent.status().as_str()
+                )));
+            }
+
             // Store the message
             let message_id = MessageId::new();
             let msg = crate::domain::agents::message::AgentMessage::new(
@@ -423,19 +510,30 @@ async fn send_agent_message(
 
             let msg_path = format!("agents/{}/messages/{}.json", agent_id, message_id);
             ws_store
-                .write_json(&msg_path, &msg, &format!("Message {message_id} to agent {agent_id}"))
+                .write_json(
+                    &msg_path,
+                    &msg,
+                    &format!("Message {message_id} to agent {agent_id}"),
+                )
                 .map_err(|e| AppError::Internal(format!("commit: {e}")))?;
 
             Ok::<_, AppError>(msg)
         }
     })
     .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
-    ?;
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
 
     // Enqueue to Redis for worker dispatch (if Redis is configured)
     let execution_id = if let Some(ref redis) = state.redis {
-        match enqueue_execution(redis, workspace_id, agent_id, msg.message_id(), state.max_queue_depth).await {
+        match enqueue_execution(
+            redis,
+            workspace_id,
+            agent_id,
+            msg.message_id(),
+            state.max_queue_depth,
+        )
+        .await
+        {
             Ok(exec_id) => Some(exec_id),
             Err(e @ AppError::ServiceUnavailable(_)) => return Err(e),
             Err(e) => {
@@ -450,7 +548,11 @@ async fn send_agent_message(
     Ok(Json(MessageResponse {
         agent_id,
         message_id: msg.message_id(),
-        status: if execution_id.is_some() { "accepted".to_owned() } else { msg.status().to_owned() },
+        status: if execution_id.is_some() {
+            "accepted".to_owned()
+        } else {
+            msg.status().to_owned()
+        },
         execution_id,
         message: format!("Message {} sent to agent {}", msg.message_id(), agent_id),
     }))
@@ -476,18 +578,19 @@ async fn get_agent_message_internal(
                 .map_err(|_| AppError::NotFound(format!("agent {} not found", agent_id)))?;
 
             let msg_path = format!("agents/{}/messages/{}.json", agent_id, message_id);
-            let msg: crate::domain::agents::message::AgentMessage = ws_store
-                .read_json(&msg_path)
-                .map_err(|_| AppError::NotFound(format!("message {} not found", message_id)))?;
+            let msg: crate::domain::agents::message::AgentMessage =
+                ws_store
+                    .read_json(&msg_path)
+                    .map_err(|_| AppError::NotFound(format!("message {} not found", message_id)))?;
 
             Ok::<_, AppError>(msg)
         }
     })
     .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
-    ?;
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
 
-    let channel_metadata = msg.metadata()
+    let channel_metadata = msg
+        .metadata()
         .as_object()
         .map(|obj| obj.iter().map(|(k, v)| (k.clone(), v.clone())).collect())
         .unwrap_or_default();
@@ -517,14 +620,18 @@ async fn enqueue_execution(
 
     // Check queue depth before enqueuing
     if max_queue_depth > 0 {
-        let mut conn = redis.get().await
+        let mut conn = redis
+            .get()
+            .await
             .map_err(|e| AppError::Internal(format!("redis pool: {e}")))?;
-        let current: u64 = conn.llen("aw:queue:jobs").await
+        let current: u64 = conn
+            .llen("aw:queue:jobs")
+            .await
             .map_err(|e| AppError::Internal(format!("redis llen: {e}")))?;
         if current >= max_queue_depth {
-            return Err(AppError::ServiceUnavailable(
-                format!("execution queue is full ({current}/{max_queue_depth})")
-            ));
+            return Err(AppError::ServiceUnavailable(format!(
+                "execution queue is full ({current}/{max_queue_depth})"
+            )));
         }
     }
 
@@ -536,26 +643,36 @@ async fn enqueue_execution(
         .map_err(|e| AppError::Internal(format!("serialize job: {e}")))?;
 
     // Init execution state
-    let mut conn = redis.get().await
+    let mut conn = redis
+        .get()
+        .await
         .map_err(|e| AppError::Internal(format!("redis pool: {e}")))?;
 
     let exec_key = format!("aw:exec:{execution_id}");
-    conn.hset_multiple::<_, _, _, ()>(&exec_key, &[
-        ("status", "queued"),
-        ("agent_id", &agent_id.to_string()),
-        ("workspace_id", &workspace_id.to_string()),
-        ("message_id", &message_id.to_string()),
-        ("created_at", &chrono::Utc::now().to_rfc3339()),
-    ]).await.map_err(|e| AppError::Internal(format!("redis hset: {e}")))?;
+    conn.hset_multiple::<_, _, _, ()>(
+        &exec_key,
+        &[
+            ("status", "queued"),
+            ("agent_id", &agent_id.to_string()),
+            ("workspace_id", &workspace_id.to_string()),
+            ("message_id", &message_id.to_string()),
+            ("created_at", &chrono::Utc::now().to_rfc3339()),
+        ],
+    )
+    .await
+    .map_err(|e| AppError::Internal(format!("redis hset: {e}")))?;
 
     // Enqueue job
-    conn.rpush::<_, _, ()>("aw:queue:jobs", &job_json).await
+    conn.rpush::<_, _, ()>("aw:queue:jobs", &job_json)
+        .await
         .map_err(|e| AppError::Internal(format!("redis rpush: {e}")))?;
 
     drop(conn);
 
     // Wait for worker acknowledgment (2s timeout)
-    let mut conn = redis.get().await
+    let mut conn = redis
+        .get()
+        .await
         .map_err(|e| AppError::Internal(format!("redis pool: {e}")))?;
 
     let result: Option<(String, String)> = deadpool_redis::redis::cmd("BLPOP")
@@ -646,8 +763,7 @@ async fn get_resolved_agent(
         }
     })
     .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
-    ?;
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
 
     Ok(Json(agent_to_response(&agent)))
 }
@@ -670,8 +786,7 @@ async fn get_resolved_agent_internal(
         }
     })
     .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
-    ?;
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
 
     Ok(Json(agent_to_definition(&agent)?))
 }
@@ -704,10 +819,14 @@ async fn list_active_agents_internal(
                     if agent.status() != AgentStatus::Active {
                         continue;
                     }
-                    let channels = agent.channels().iter().map(|ch| InternalChannelResponse {
-                        channel_type: ch.channel_type_str().to_owned(),
-                        schedule: ch.schedule().map(|s| s.as_str().to_owned()),
-                    }).collect::<Vec<_>>();
+                    let channels = agent
+                        .channels()
+                        .iter()
+                        .map(|ch| InternalChannelResponse {
+                            channel_type: ch.channel_type_str().to_owned(),
+                            schedule: ch.schedule().map(|s| s.as_str().to_owned()),
+                        })
+                        .collect::<Vec<_>>();
                     out.push(InternalCronAgentResponse {
                         agent_id: agent.agent_id().to_string(),
                         workspace_id: workspace_id.to_string(),
@@ -721,10 +840,78 @@ async fn list_active_agents_internal(
         }
     })
     .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
-    ?;
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
 
     Ok(Json(results))
+}
+
+// ── Agent token minting ──────────────────────────────────────────────
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MintAgentTokenRequest {
+    pub workspace_id: WorkspaceId,
+    pub agent_id: AgentId,
+    #[serde(default)]
+    pub ttl_seconds: Option<i64>,
+}
+
+#[derive(Serialize)]
+pub struct MintAgentTokenResponse {
+    pub access_token: String,
+    pub token_type: String,
+    pub expires_in: i64,
+    pub scopes: Vec<Scope>,
+}
+
+async fn mint_agent_token(
+    _worker: RequireInternalWorker,
+    State(state): State<AppState>,
+    Json(req): Json<MintAgentTokenRequest>,
+) -> Result<Json<MintAgentTokenResponse>, AppError> {
+    let ttl = req.ttl_seconds.unwrap_or(3600).clamp(1, 86400);
+
+    let agent = tokio::task::spawn_blocking({
+        let layout = state.layout.clone();
+        let workspace_id = req.workspace_id;
+        let agent_id = req.agent_id;
+        move || {
+            let ws_store = WorkspaceStore::open(&layout, workspace_id)
+                .map_err(|e| AppError::NotFound(format!("workspace not found: {e}")))?;
+
+            resolve::resolve_agent(&ws_store, agent_id)
+        }
+    })
+    .await
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+
+    if agent.scopes().is_empty() {
+        return Err(AppError::BadRequest(
+            "agent has no API scopes configured".to_owned(),
+        ));
+    }
+
+    let now = chrono::Utc::now().timestamp();
+    let claims = Claims::new(
+        req.workspace_id,
+        agent.entity_id(),
+        None,
+        None,
+        PrincipalType::Agent,
+        agent.scopes().to_vec(),
+        now,
+        now + ttl,
+    );
+
+    let token = encode_token(&claims, &state.jwt_secret)?;
+    let scopes = agent.scopes().to_vec();
+
+    Ok(Json(MintAgentTokenResponse {
+        access_token: token,
+        token_type: "Bearer".to_owned(),
+        expires_in: ttl,
+        scopes,
+    }))
 }
 
 // ── Router ───────────────────────────────────────────────────────────
@@ -736,7 +923,17 @@ pub fn agent_routes() -> Router<AppState> {
         .route("/v1/agents/{agent_id}/resolved", get(get_resolved_agent))
         .route("/v1/agents/{agent_id}/skills", post(add_agent_skill))
         .route("/v1/agents/{agent_id}/messages", post(send_agent_message))
-        .route("/v1/agents/{agent_id}/messages/{message_id}", get(get_agent_message_internal))
-        .route("/v1/internal/agents/{agent_id}/resolved", get(get_resolved_agent_internal))
-        .route("/v1/internal/agents/active", get(list_active_agents_internal))
+        .route(
+            "/v1/agents/{agent_id}/messages/{message_id}",
+            get(get_agent_message_internal),
+        )
+        .route(
+            "/v1/internal/agents/{agent_id}/resolved",
+            get(get_resolved_agent_internal),
+        )
+        .route(
+            "/v1/internal/agents/active",
+            get(list_active_agents_internal),
+        )
+        .route("/v1/internal/agent-token", post(mint_agent_token))
 }

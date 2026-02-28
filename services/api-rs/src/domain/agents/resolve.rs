@@ -123,6 +123,9 @@ pub fn merge_agents(parent: &Agent, child: &Agent) -> Agent {
         merged.set_sandbox(parent.sandbox().cloned());
     }
 
+    // scopes: union (child adds to parent, never subtracts)
+    merged.set_scopes(parent.scopes().union(child.scopes()));
+
     merged
 }
 
@@ -331,6 +334,26 @@ mod tests {
         let merged = merge_agents(&parent, &child);
         assert_eq!(merged.name(), "Child Agent");
         assert_eq!(merged.agent_id(), child.agent_id());
+    }
+
+    #[test]
+    fn merge_scopes_union() {
+        use crate::domain::auth::scopes::{Scope, ScopeSet};
+
+        let mut parent = make_agent("parent");
+        parent.set_scopes(ScopeSet::from_vec(vec![
+            Scope::FormationRead,
+            Scope::EquityRead,
+        ]));
+
+        let mut child = make_agent("child");
+        child.set_scopes(ScopeSet::from_vec(vec![Scope::EquityRead, Scope::Admin]));
+
+        let merged = merge_agents(&parent, &child);
+        assert!(merged.scopes().has(Scope::FormationRead));
+        assert!(merged.scopes().has(Scope::EquityRead));
+        assert!(merged.scopes().has(Scope::Admin));
+        assert!(!merged.scopes().has(Scope::TreasuryRead));
     }
 
     #[test]

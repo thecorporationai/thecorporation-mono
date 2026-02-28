@@ -1,6 +1,6 @@
 //! JWT claims model — encode and decode workspace-scoped tokens.
 
-use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation};
+use jsonwebtoken::{DecodingKey, EncodingKey, Header, Validation, decode, encode};
 use serde::{Deserialize, Serialize};
 
 use super::error::AuthError;
@@ -13,6 +13,7 @@ pub enum PrincipalType {
     #[default]
     User,
     InternalWorker,
+    Agent,
 }
 
 /// JWT claims payload.
@@ -258,16 +259,7 @@ mod tests {
     #[test]
     fn sub_matches_workspace_id() {
         let ws = WorkspaceId::new();
-        let claims = Claims::new(
-            ws,
-            None,
-            None,
-            None,
-            PrincipalType::User,
-            vec![],
-            100,
-            200,
-        );
+        let claims = Claims::new(ws, None, None, None, PrincipalType::User, vec![], 100, 200);
         assert_eq!(claims.sub(), ws.to_string());
     }
 }

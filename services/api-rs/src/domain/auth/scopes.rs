@@ -75,7 +75,7 @@ impl fmt::Display for Scope {
 // ── ScopeSet ──────────────────────────────────────────────────────────────
 
 /// A set of scopes for efficient membership checks.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct ScopeSet(HashSet<Scope>);
 
@@ -105,6 +105,16 @@ impl ScopeSet {
     /// Returns a reference to the inner set.
     pub fn inner(&self) -> &HashSet<Scope> {
         &self.0
+    }
+
+    /// Returns `true` if the set contains no scopes.
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    /// Returns the union of two scope sets.
+    pub fn union(&self, other: &ScopeSet) -> ScopeSet {
+        ScopeSet(self.0.union(&other.0).copied().collect())
     }
 
     /// Converts the set into a sorted `Vec<Scope>` (for deterministic serialization).
@@ -187,6 +197,35 @@ mod tests {
         assert!(parsed.has(Scope::FormationCreate));
         assert!(parsed.has(Scope::EquityRead));
         assert!(!parsed.has(Scope::Admin));
+    }
+
+    #[test]
+    fn scope_set_is_empty() {
+        assert!(ScopeSet::empty().is_empty());
+        assert!(!ScopeSet::from_vec(vec![Scope::Admin]).is_empty());
+    }
+
+    #[test]
+    fn scope_set_union() {
+        let a = ScopeSet::from_vec(vec![Scope::FormationCreate, Scope::EquityRead]);
+        let b = ScopeSet::from_vec(vec![Scope::EquityRead, Scope::Admin]);
+        let u = a.union(&b);
+        assert!(u.has(Scope::FormationCreate));
+        assert!(u.has(Scope::EquityRead));
+        assert!(u.has(Scope::Admin));
+        assert!(!u.has(Scope::TreasuryRead));
+    }
+
+    #[test]
+    fn scope_set_union_with_empty() {
+        let a = ScopeSet::from_vec(vec![Scope::Admin]);
+        let b = ScopeSet::empty();
+        let u = a.union(&b);
+        assert!(u.has(Scope::Admin));
+        assert!(!u.is_empty());
+
+        let u2 = b.union(&a);
+        assert!(u2.has(Scope::Admin));
     }
 
     #[test]

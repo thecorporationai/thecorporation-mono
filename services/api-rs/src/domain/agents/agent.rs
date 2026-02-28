@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use super::types::{
     AgentSkill, AgentStatus, BudgetConfig, ChannelConfig, MCPServerSpec, SandboxConfig, ToolSpec,
 };
+use crate::domain::auth::scopes::ScopeSet;
 use crate::domain::ids::{AgentId, EntityId, WorkspaceId};
 
 /// An AI agent associated with a workspace.
@@ -39,6 +40,8 @@ pub struct Agent {
     email_address: Option<String>,
     #[serde(default)]
     webhook_url: Option<String>,
+    #[serde(default)]
+    scopes: ScopeSet,
     created_at: DateTime<Utc>,
 }
 
@@ -68,6 +71,7 @@ impl Agent {
             parent_agent_id: None,
             email_address: None,
             webhook_url: None,
+            scopes: ScopeSet::empty(),
             created_at: Utc::now(),
         }
     }
@@ -124,24 +128,65 @@ impl Agent {
         self.parent_agent_id = parent_agent_id;
     }
 
+    pub fn set_scopes(&mut self, scopes: ScopeSet) {
+        self.scopes = scopes;
+    }
+
     // Accessors
-    pub fn agent_id(&self) -> AgentId { self.agent_id }
-    pub fn workspace_id(&self) -> WorkspaceId { self.workspace_id }
-    pub fn name(&self) -> &str { &self.name }
-    pub fn system_prompt(&self) -> Option<&str> { self.system_prompt.as_deref() }
-    pub fn model(&self) -> Option<&str> { self.model.as_deref() }
-    pub fn entity_id(&self) -> Option<EntityId> { self.entity_id }
-    pub fn skills(&self) -> &[AgentSkill] { &self.skills }
-    pub fn tools(&self) -> &[ToolSpec] { &self.tools }
-    pub fn mcp_servers(&self) -> &[MCPServerSpec] { &self.mcp_servers }
-    pub fn channels(&self) -> &[ChannelConfig] { &self.channels }
-    pub fn budget(&self) -> Option<&BudgetConfig> { self.budget.as_ref() }
-    pub fn sandbox(&self) -> Option<&SandboxConfig> { self.sandbox.as_ref() }
-    pub fn status(&self) -> AgentStatus { self.status }
-    pub fn parent_agent_id(&self) -> Option<AgentId> { self.parent_agent_id }
-    pub fn email_address(&self) -> Option<&str> { self.email_address.as_deref() }
-    pub fn webhook_url(&self) -> Option<&str> { self.webhook_url.as_deref() }
-    pub fn created_at(&self) -> DateTime<Utc> { self.created_at }
+    pub fn agent_id(&self) -> AgentId {
+        self.agent_id
+    }
+    pub fn workspace_id(&self) -> WorkspaceId {
+        self.workspace_id
+    }
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+    pub fn system_prompt(&self) -> Option<&str> {
+        self.system_prompt.as_deref()
+    }
+    pub fn model(&self) -> Option<&str> {
+        self.model.as_deref()
+    }
+    pub fn entity_id(&self) -> Option<EntityId> {
+        self.entity_id
+    }
+    pub fn skills(&self) -> &[AgentSkill] {
+        &self.skills
+    }
+    pub fn tools(&self) -> &[ToolSpec] {
+        &self.tools
+    }
+    pub fn mcp_servers(&self) -> &[MCPServerSpec] {
+        &self.mcp_servers
+    }
+    pub fn channels(&self) -> &[ChannelConfig] {
+        &self.channels
+    }
+    pub fn budget(&self) -> Option<&BudgetConfig> {
+        self.budget.as_ref()
+    }
+    pub fn sandbox(&self) -> Option<&SandboxConfig> {
+        self.sandbox.as_ref()
+    }
+    pub fn status(&self) -> AgentStatus {
+        self.status
+    }
+    pub fn parent_agent_id(&self) -> Option<AgentId> {
+        self.parent_agent_id
+    }
+    pub fn email_address(&self) -> Option<&str> {
+        self.email_address.as_deref()
+    }
+    pub fn webhook_url(&self) -> Option<&str> {
+        self.webhook_url.as_deref()
+    }
+    pub fn scopes(&self) -> &ScopeSet {
+        &self.scopes
+    }
+    pub fn created_at(&self) -> DateTime<Utc> {
+        self.created_at
+    }
 }
 
 #[cfg(test)]
