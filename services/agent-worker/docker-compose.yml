@@ -1,7 +1,7 @@
 services:
-  redis:
-    image: redis:7-alpine
-    command: redis-server --maxmemory 128mb --maxmemory-policy allkeys-lru
+  valkey:
+    image: valkey/valkey:8
+    command: valkey-server --maxmemory 128mb --maxmemory-policy allkeys-lru
     ports:
       - "6379:6379"
     deploy:
@@ -11,9 +11,10 @@ services:
 
   api:
     build:
-      context: ../api-rs
+      context: ../..
+      dockerfile: services/api-rs/Dockerfile
     environment:
-      - REDIS_URL=redis://redis:6379
+      - REDIS_URL=redis://valkey:6379
       - JWT_SECRET=dev-secret-do-not-use-in-production
       - DATA_DIR=/data/repos
     ports:
@@ -21,13 +22,14 @@ services:
     volumes:
       - api-data:/data/repos
     depends_on:
-      - redis
+      - valkey
 
   worker:
     build:
-      context: .
+      context: ../..
+      dockerfile: services/agent-worker/Dockerfile
     environment:
-      - REDIS_URL=redis://redis:6379
+      - REDIS_URL=redis://valkey:6379
       - API_BASE_URL=http://api:8000
       - DOCKER_HOST=unix:///var/run/docker.sock
       - WORKSPACE_ROOT=/var/lib/agents/workspaces
@@ -38,7 +40,7 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       - workspaces:/var/lib/agents/workspaces
     depends_on:
-      - redis
+      - valkey
       - api
     deploy:
       replicas: 2
