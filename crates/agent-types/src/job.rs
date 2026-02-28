@@ -1,9 +1,10 @@
 //! Job payload — serialized into the Redis queue.
 //!
-//! The struct is `#[non_exhaustive]` so that external crates cannot
-//! construct a `JobPayload` via struct literal — they must use `new()`
-//! or `cron()`.  This enforces the invariant that message-triggered jobs
-//! always have `message_id: Some(...)` and cron jobs always have `None`.
+//! `JobPayload` is a tagged enum, so the trigger source is part of the type:
+//! - `Message` always carries `message_id`
+//! - `Cron` can never carry `message_id`
+//!
+//! This encodes parse-time invariants directly in the wire type.
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -12,26 +13,28 @@ use uuid::Uuid;
 use crate::ids::{AgentId, ExecutionId, MessageId, WorkspaceId};
 
 /// A job on the Redis queue, representing an execution to run.
-///
-/// # Construction
-///
-/// Use [`JobPayload::new()`] for message-triggered jobs (guarantees
-/// `message_id` is `Some`) or [`JobPayload::cron()`] for scheduled
-/// jobs (guarantees `message_id` is `None`).  Direct struct-literal
-/// construction is prevented by `#[non_exhaustive]`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[non_exhaustive]
-pub struct JobPayload {
-    pub job_id: Uuid,
-    pub execution_id: ExecutionId,
-    pub agent_id: AgentId,
-    pub workspace_id: WorkspaceId,
-    /// `None` for cron-triggered jobs (no stored message in api-rs).
-    #[serde(default)]
-    pub message_id: Option<MessageId>,
-    #[serde(default)]
-    pub idempotency_key: Option<String>,
-    pub enqueued_at: DateTime<Utc>,
+#[serde(tag = "trigger", rename_all = "snake_case")]
+pub enum JobPayload {
+    Message {
+        job_id: Uuid,
+        execution_id: ExecutionId,
+        agent_id: AgentId,
+        workspace_id: WorkspaceId,
+        message_id: MessageId,
+        #[serde(default)]
+        idempotency_key: Option<String>,
+        enqueued_at: DateTime<Utc>,
+    },
+    Cron {
+        job_id: Uuid,
+        execution_id: ExecutionId,
+        agent_id: AgentId,
+        workspace_id: WorkspaceId,
+        #[serde(default)]
+        idempotency_key: Option<String>,
+        enqueued_at: DateTime<Utc>,
+    },
 }
 
 impl JobPayload {
@@ -42,12 +45,12 @@ impl JobPayload {
         workspace_id: WorkspaceId,
         message_id: MessageId,
     ) -> Self {
-        Self {
+        Self::Message {
             job_id: Uuid::new_v4(),
             execution_id,
             agent_id,
             workspace_id,
-            message_id: Some(message_id),
+            message_id,
             idempotency_key: None,
             enqueued_at: Utc::now(),
         }
@@ -59,14 +62,44 @@ impl JobPayload {
         agent_id: AgentId,
         workspace_id: WorkspaceId,
     ) -> Self {
-        Self {
+        Self::Cron {
             job_id: Uuid::new_v4(),
             execution_id,
             agent_id,
             workspace_id,
-            message_id: None,
             idempotency_key: None,
             enqueued_at: Utc::now(),
+        }
+    }
+
+    pub fn job_id(&self) -> Uuid {
+        match self {
+            Self::Message { job_id, .. } | Self::Cron { job_id, .. } => *job_id,
+        }
+    }
+
+    pub fn execution_id(&self) -> ExecutionId {
+        match self {
+            Self::Message { execution_id, .. } | Self::Cron { execution_id, .. } => *execution_id,
+        }
+    }
+
+    pub fn agent_id(&self) -> AgentId {
+        match self {
+            Self::Message { agent_id, .. } | Self::Cron { agent_id, .. } => *agent_id,
+        }
+    }
+
+    pub fn workspace_id(&self) -> WorkspaceId {
+        match self {
+            Self::Message { workspace_id, .. } | Self::Cron { workspace_id, .. } => *workspace_id,
+        }
+    }
+
+    pub fn message_id(&self) -> Option<MessageId> {
+        match self {
+            Self::Message { message_id, .. } => Some(*message_id),
+            Self::Cron { .. } => None,
         }
     }
 }
@@ -83,11 +116,11 @@ mod tests {
             WorkspaceId::new(),
             MessageId::new(),
         );
-        assert!(job.message_id.is_some());
+        assert!(job.message_id().is_some());
         let json = serde_json::to_string(&job).unwrap();
         let parsed: JobPayload = serde_json::from_str(&json).unwrap();
-        assert_eq!(parsed.job_id, job.job_id);
-        assert_eq!(parsed.execution_id, job.execution_id);
+        assert_eq!(parsed.job_id(), job.job_id());
+        assert_eq!(parsed.execution_id(), job.execution_id());
     }
 
     #[test]
@@ -97,9 +130,9 @@ mod tests {
             AgentId::new(),
             WorkspaceId::new(),
         );
-        assert!(job.message_id.is_none());
+        assert!(job.message_id().is_none());
         let json = serde_json::to_string(&job).unwrap();
         let parsed: JobPayload = serde_json::from_str(&json).unwrap();
-        assert!(parsed.message_id.is_none());
+        assert!(parsed.message_id().is_none());
     }
 }

@@ -42,16 +42,16 @@ pub async fn run(
                     continue; // timeout, loop again
                 };
 
-                let job_id_str = job.job_id.to_string();
+                let job_id_str = job.job_id().to_string();
 
                 // Try to acquire per-agent lock
-                if !lock::acquire(&pool, job.agent_id, &worker_id).await? {
+                if !lock::acquire(&pool, job.agent_id(), &worker_id).await? {
                     // Agent busy — move back to queue and reject this RPC
-                    tracing::debug!(agent_id = %job.agent_id, "agent locked, re-enqueueing");
+                    tracing::debug!(agent_id = %job.agent_id(), "agent locked, re-enqueueing");
                     queue::reject_to_queue(&pool, &worker_id, &raw_payload).await?;
                     rpc::send_reply(&pool, &job_id_str, &RpcReply {
                         status: RpcStatus::Rejected,
-                        execution_id: job.execution_id,
+                        execution_id: job.execution_id(),
                         message: Some("agent is busy".to_owned()),
                     }).await.ok();
                     continue;
@@ -60,7 +60,7 @@ pub async fn run(
                 // Ack the job immediately — worker has accepted it
                 rpc::send_reply(&pool, &job_id_str, &RpcReply {
                     status: RpcStatus::Accepted,
-                    execution_id: job.execution_id,
+                    execution_id: job.execution_id(),
                     message: None,
                 }).await.ok();
 
@@ -76,8 +76,8 @@ pub async fn run(
 
                 tokio::spawn(async move {
                     let _permit = permit;
-                    let exec_id = job.execution_id;
-                    let agent_id = job.agent_id;
+                    let exec_id = job.execution_id();
+                    let agent_id = job.agent_id();
 
                     if let Err(e) = super::lifecycle::run(
                         job,

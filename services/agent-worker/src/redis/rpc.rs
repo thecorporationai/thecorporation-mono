@@ -62,7 +62,7 @@ pub async fn enqueue_and_wait(
     conn.rpush::<_, _, ()>(keys::QUEUE_JOBS, &payload).await?;
     drop(conn);
 
-    wait_reply(pool, &job.job_id.to_string(), timeout_secs).await
+    wait_reply(pool, &job.job_id().to_string(), timeout_secs).await
 }
 
 /// Publish a kill command (api-rs side). Returns the reply_id for wait_reply.
