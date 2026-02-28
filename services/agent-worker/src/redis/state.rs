@@ -4,7 +4,7 @@
 
 use std::collections::HashMap;
 
-use agent_types::{AgentId, ExecutionId, ExecutionStatus, MessageId};
+use agent_types::{AgentId, ExecutionId, ExecutionStatus, MessageId, WorkspaceId};
 use deadpool_redis::Pool;
 use deadpool_redis::redis::AsyncCommands;
 
@@ -147,15 +147,18 @@ pub async fn init_queued(
     pool: &Pool,
     execution_id: ExecutionId,
     agent_id: AgentId,
+    workspace_id: WorkspaceId,
     message_id: Option<MessageId>,
 ) -> Result<(), WorkerError> {
     let mut conn = pool.get().await?;
     let key = keys::exec_state(execution_id);
     let created_at = chrono::Utc::now().to_rfc3339();
     let agent_str = agent_id.to_string();
+    let workspace_str = workspace_id.to_string();
 
     conn.hset::<_, _, _, ()>(&key, "status", ExecutionStatus::Queued.as_str()).await?;
     conn.hset::<_, _, _, ()>(&key, "agent_id", &agent_str).await?;
+    conn.hset::<_, _, _, ()>(&key, "workspace_id", &workspace_str).await?;
     conn.hset::<_, _, _, ()>(&key, "created_at", &created_at).await?;
     if let Some(mid) = message_id {
         conn.hset::<_, _, _, ()>(&key, "message_id", mid.to_string()).await?;

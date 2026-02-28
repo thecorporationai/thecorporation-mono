@@ -36,8 +36,8 @@ pub async fn run(
     config: &WorkerConfig,
     worker_id: &str,
 ) -> Result<(), WorkerError> {
-    let execution_id = job.execution_id;
-    let agent_id = job.agent_id;
+    let execution_id = job.execution_id();
+    let agent_id = job.agent_id();
 
     let result = run_inner(&job, pool, docker, http_client, config, worker_id).await;
 
@@ -107,18 +107,20 @@ async fn run_inner(
     config: &WorkerConfig,
     worker_id: &str,
 ) -> Result<RunOutcome, WorkerError> {
-    let execution_id = job.execution_id;
-    let agent_id = job.agent_id;
-    let workspace_id = job.workspace_id;
+    let execution_id = job.execution_id();
+    let agent_id = job.agent_id();
+    let workspace_id = job.workspace_id();
+    let auth_header = config.api_auth_header_value();
 
     tracing::info!(execution_id = %execution_id, agent_id = %agent_id, "starting lifecycle");
 
     // 1. Fetch resolved agent definition from api-rs (merges parent chain)
     let agent_def: AgentDefinition = http_client
         .get(format!(
-            "{}/v1/agents/{}/resolved?workspace_id={}",
+            "{}/v1/internal/agents/{}/resolved?workspace_id={}",
             config.api_base_url, agent_id, workspace_id
         ))
+        .header("authorization", &auth_header)
         .send()
         .await?
         .error_for_status()
@@ -127,20 +129,22 @@ async fn run_inner(
         .await?;
 
     // 2. Fetch message from api-rs (or synthesize for cron)
-    let message: InboundMessage = if let Some(message_id) = job.message_id {
-        http_client
-            .get(format!(
-                "{}/v1/workspaces/{}/agents/{}/messages/{}",
-                config.api_base_url, workspace_id, agent_id, message_id
-            ))
-            .send()
-            .await?
-            .error_for_status()
-            .map_err(|e| WorkerError::Internal(format!("fetch message: {e}")))?
-            .json()
-            .await?
-    } else {
-        InboundMessage::cron_trigger(agent_id)
+    let message: InboundMessage = match job {
+        JobPayload::Message { message_id, .. } => {
+            http_client
+                .get(format!(
+                    "{}/v1/agents/{}/messages/{}?workspace_id={}",
+                    config.api_base_url, agent_id, message_id, workspace_id
+                ))
+                .header("authorization", &auth_header)
+                .send()
+                .await?
+                .error_for_status()
+                .map_err(|e| WorkerError::Internal(format!("fetch message: {e}")))?
+                .json()
+                .await?
+        }
+        JobPayload::Cron { .. } => InboundMessage::cron_trigger(agent_id),
     };
 
     // 3. Create opaque tokens for secrets (if any)
@@ -193,6 +197,8 @@ async fn run_inner(
     let renew_worker_id = worker_id.to_owned();
     let renew_token = tokio_util::sync::CancellationToken::new();
     let renew_token_clone = renew_token.clone();
+    let renew_docker = docker.clone();
+    let renew_container_id = container_id.clone();
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(std::time::Duration::from_secs(200));
         interval.tick().await; // consume the immediate first tick
@@ -200,9 +206,18 @@ async fn run_inner(
             tokio::select! {
                 _ = renew_token_clone.cancelled() => break,
                 _ = interval.tick() => {
-                    if let Err(e) = lock::renew(&renew_pool, agent_id, &renew_worker_id).await {
-                        tracing::warn!(error = %e, "lock renewal failed");
-                        break;
+                    match lock::renew(&renew_pool, agent_id, &renew_worker_id).await {
+                        Ok(true) => {}
+                        Ok(false) => {
+                            tracing::warn!("lock renewal denied (lock lost), killing execution container");
+                            let _ = renew_docker.kill_container::<String>(&renew_container_id, None).await;
+                            break;
+                        }
+                        Err(e) => {
+                            tracing::warn!(error = %e, "lock renewal failed; killing execution container");
+                            let _ = renew_docker.kill_container::<String>(&renew_container_id, None).await;
+                            break;
+                        }
                     }
                 }
             }

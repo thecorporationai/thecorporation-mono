@@ -36,6 +36,7 @@ impl AgentMessage {
     pub fn message_id(&self) -> MessageId { self.message_id }
     pub fn agent_id(&self) -> AgentId { self.agent_id }
     pub fn content(&self) -> &str { &self.content }
+    pub fn metadata(&self) -> &serde_json::Value { &self.metadata }
     pub fn status(&self) -> &str { &self.status }
     pub fn created_at(&self) -> DateTime<Utc> { self.created_at }
 }

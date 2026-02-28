@@ -10,6 +10,9 @@ pub struct WorkerConfig {
     /// Base URL of the api-rs service (e.g. "http://localhost:8000").
     pub api_base_url: String,
 
+    /// Bearer token used for authenticated worker -> api-rs calls.
+    pub api_bearer_token: String,
+
     /// Docker socket path (e.g. "unix:///var/run/docker.sock").
     #[serde(default = "default_docker_host")]
     pub docker_host: String,
@@ -102,7 +105,15 @@ fn default_model_pricing() -> HashMap<String, ModelPricing> {
 
 impl WorkerConfig {
     pub fn from_env() -> Result<Self, envy::Error> {
-        envy::from_env()
+        let cfg: Self = envy::from_env()?;
+        if cfg.api_bearer_token.trim().is_empty() {
+            return Err(envy::Error::Custom("API_BEARER_TOKEN must not be empty".to_owned()));
+        }
+        Ok(cfg)
+    }
+
+    pub fn api_auth_header_value(&self) -> String {
+        format!("Bearer {}", self.api_bearer_token)
     }
 
     /// Secrets proxy URL that containers will call back to.
@@ -132,6 +143,7 @@ mod tests {
         let config = WorkerConfig {
             redis_url: String::new(),
             api_base_url: String::new(),
+            api_bearer_token: String::new(),
             docker_host: String::new(),
             workspace_root: String::new(),
             runtime_image: String::new(),
@@ -159,6 +171,7 @@ mod tests {
         let config = WorkerConfig {
             redis_url: String::new(),
             api_base_url: String::new(),
+            api_bearer_token: String::new(),
             docker_host: String::new(),
             workspace_root: String::new(),
             runtime_image: String::new(),

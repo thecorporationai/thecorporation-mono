@@ -3,15 +3,15 @@
 //! Endpoints for creating, listing, updating agents, adding skills, and messaging.
 
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::StatusCode,
-    routing::{patch, post},
+    routing::{get, patch, post},
     Json, Router,
 };
 use serde::{Deserialize, Serialize};
 
 use super::AppState;
-use crate::auth::RequireAdmin;
+use crate::auth::{RequireAdmin, RequireInternalWorker};
 use crate::domain::agents::{
     agent::Agent,
     resolve,
@@ -20,7 +20,7 @@ use crate::domain::agents::{
         SandboxConfig, ToolSpec,
     },
 };
-use agent_types::{JobPayload, RpcReply, RpcStatus};
+use agent_types::{AgentDefinition, ChannelType, InboundMessage, JobPayload, RpcReply, RpcStatus};
 use crate::domain::ids::{AgentId, EntityId, ExecutionId, MessageId, WorkspaceId};
 use crate::error::AppError;
 use crate::store::workspace_store::WorkspaceStore;
@@ -28,6 +28,7 @@ use crate::store::workspace_store::WorkspaceStore;
 // ── Request types ────────────────────────────────────────────────────
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct CreateAgentRequest {
     pub name: String,
     #[serde(default)]
@@ -41,6 +42,7 @@ pub struct CreateAgentRequest {
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct UpdateAgentRequest {
     #[serde(default)]
     pub name: Option<String>,
@@ -67,6 +69,7 @@ pub struct UpdateAgentRequest {
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct AddSkillRequest {
     /// Parsed at deserialization — empty names are rejected by `NonEmpty`.
     pub name: NonEmpty,
@@ -76,6 +79,7 @@ pub struct AddSkillRequest {
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct SendMessageRequest {
     pub message: String,
     #[serde(default)]
@@ -118,6 +122,28 @@ pub struct MessageResponse {
     pub message: String,
 }
 
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WorkerWorkspaceQuery {
+    pub workspace_id: WorkspaceId,
+}
+
+#[derive(Serialize)]
+pub struct InternalChannelResponse {
+    #[serde(rename = "type")]
+    pub channel_type: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub schedule: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct InternalCronAgentResponse {
+    pub agent_id: String,
+    pub workspace_id: String,
+    pub status: String,
+    pub channels: Vec<InternalChannelResponse>,
+}
+
 fn agent_to_response(a: &Agent) -> AgentResponse {
     AgentResponse {
         agent_id: a.agent_id(),
@@ -138,6 +164,37 @@ fn agent_to_response(a: &Agent) -> AgentResponse {
         webhook_url: a.webhook_url().map(|s| s.to_owned()),
         created_at: a.created_at().to_rfc3339(),
     }
+}
+
+fn agent_to_definition(a: &Agent) -> Result<AgentDefinition, AppError> {
+    Ok(AgentDefinition {
+        id: a.agent_id(),
+        workspace_id: Some(a.workspace_id()),
+        entity_id: a.entity_id().map(|id| id.to_string()),
+        name: NonEmpty::parse(a.name().to_owned())
+            .map_err(|e| AppError::Internal(format!("invalid agent name: {e}")))?,
+        status: a.status(),
+        system_prompt: a.system_prompt().unwrap_or_default().to_owned(),
+        model: a.model().unwrap_or("anthropic/claude-sonnet-4-6").to_owned(),
+        tools: a.tools().to_vec(),
+        skills: a.skills().iter().map(|s| agent_types::SkillSpec {
+            name: s.name.clone(),
+            description: s.description.clone(),
+            instructions: String::new(),
+            tools: Vec::new(),
+            mcp_server: None,
+            enabled: true,
+        }).collect(),
+        mcp_servers: a.mcp_servers().to_vec(),
+        channels: a.channels().to_vec(),
+        budget: a.budget().cloned().unwrap_or_default(),
+        sandbox: a.sandbox().cloned().unwrap_or_default(),
+        parent_agent_id: a.parent_agent_id(),
+        email_address: a.email_address().map(|s| s.to_owned()),
+        webhook_url: a.webhook_url().map(|s| s.to_owned()),
+        created_at: Some(a.created_at()),
+        updated_at: Some(a.created_at()),
+    })
 }
 
 // ── Handlers ─────────────────────────────────────────────────────────
@@ -399,6 +456,55 @@ async fn send_agent_message(
     }))
 }
 
+async fn get_agent_message_internal(
+    _worker: RequireInternalWorker,
+    State(state): State<AppState>,
+    Path((agent_id, message_id)): Path<(AgentId, MessageId)>,
+    Query(query): Query<WorkerWorkspaceQuery>,
+) -> Result<Json<InboundMessage>, AppError> {
+    let workspace_id = query.workspace_id;
+
+    let msg = tokio::task::spawn_blocking({
+        let layout = state.layout.clone();
+        move || {
+            let ws_store = WorkspaceStore::open(&layout, workspace_id)
+                .map_err(|e| AppError::NotFound(format!("workspace not found: {e}")))?;
+
+            let agent_path = format!("agents/{}.json", agent_id);
+            let _agent: Agent = ws_store
+                .read_json(&agent_path)
+                .map_err(|_| AppError::NotFound(format!("agent {} not found", agent_id)))?;
+
+            let msg_path = format!("agents/{}/messages/{}.json", agent_id, message_id);
+            let msg: crate::domain::agents::message::AgentMessage = ws_store
+                .read_json(&msg_path)
+                .map_err(|_| AppError::NotFound(format!("message {} not found", message_id)))?;
+
+            Ok::<_, AppError>(msg)
+        }
+    })
+    .await
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
+    ?;
+
+    let channel_metadata = msg.metadata()
+        .as_object()
+        .map(|obj| obj.iter().map(|(k, v)| (k.clone(), v.clone())).collect())
+        .unwrap_or_default();
+
+    Ok(Json(InboundMessage {
+        id: msg.message_id(),
+        agent_id: msg.agent_id(),
+        channel: ChannelType::Manual,
+        sender: None,
+        subject: None,
+        body: msg.content().to_owned(),
+        attachments: Vec::new(),
+        channel_metadata,
+        received_at: Some(msg.created_at()),
+    }))
+}
+
 /// Enqueue an execution job to Redis and wait for worker acknowledgment.
 async fn enqueue_execution(
     redis: &deadpool_redis::Pool,
@@ -424,7 +530,7 @@ async fn enqueue_execution(
 
     let execution_id = ExecutionId::new();
     let job = JobPayload::new(execution_id, agent_id, workspace_id, message_id);
-    let reply_key = format!("aw:rpc:reply:{}", job.job_id);
+    let reply_key = format!("aw:rpc:reply:{}", job.job_id());
 
     let job_json = serde_json::to_string(&job)
         .map_err(|e| AppError::Internal(format!("serialize job: {e}")))?;
@@ -437,6 +543,7 @@ async fn enqueue_execution(
     conn.hset_multiple::<_, _, _, ()>(&exec_key, &[
         ("status", "queued"),
         ("agent_id", &agent_id.to_string()),
+        ("workspace_id", &workspace_id.to_string()),
         ("message_id", &message_id.to_string()),
         ("created_at", &chrono::Utc::now().to_rfc3339()),
     ]).await.map_err(|e| AppError::Internal(format!("redis hset: {e}")))?;
@@ -545,13 +652,91 @@ async fn get_resolved_agent(
     Ok(Json(agent_to_response(&agent)))
 }
 
+async fn get_resolved_agent_internal(
+    _worker: RequireInternalWorker,
+    State(state): State<AppState>,
+    Path(agent_id): Path<AgentId>,
+    Query(query): Query<WorkerWorkspaceQuery>,
+) -> Result<Json<AgentDefinition>, AppError> {
+    let workspace_id = query.workspace_id;
+
+    let agent = tokio::task::spawn_blocking({
+        let layout = state.layout.clone();
+        move || {
+            let ws_store = WorkspaceStore::open(&layout, workspace_id)
+                .map_err(|e| AppError::NotFound(format!("workspace not found: {e}")))?;
+
+            resolve::resolve_agent(&ws_store, agent_id)
+        }
+    })
+    .await
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
+    ?;
+
+    Ok(Json(agent_to_definition(&agent)?))
+}
+
+async fn list_active_agents_internal(
+    _worker: RequireInternalWorker,
+    State(state): State<AppState>,
+) -> Result<Json<Vec<InternalCronAgentResponse>>, AppError> {
+    let results = tokio::task::spawn_blocking({
+        let layout = state.layout.clone();
+        move || {
+            let mut out = Vec::new();
+
+            for workspace_id in layout.list_workspace_ids() {
+                let ws_store = match WorkspaceStore::open(&layout, workspace_id) {
+                    Ok(store) => store,
+                    Err(_) => continue,
+                };
+
+                let ids: Vec<AgentId> = match ws_store.list_ids_in_dir_pub("agents") {
+                    Ok(ids) => ids,
+                    Err(_) => continue,
+                };
+
+                for id in ids {
+                    let path = format!("agents/{}.json", id);
+                    let Ok(agent) = ws_store.read_json::<Agent>(&path) else {
+                        continue;
+                    };
+                    if agent.status() != AgentStatus::Active {
+                        continue;
+                    }
+                    let channels = agent.channels().iter().map(|ch| InternalChannelResponse {
+                        channel_type: ch.channel_type_str().to_owned(),
+                        schedule: ch.schedule().map(|s| s.as_str().to_owned()),
+                    }).collect::<Vec<_>>();
+                    out.push(InternalCronAgentResponse {
+                        agent_id: agent.agent_id().to_string(),
+                        workspace_id: workspace_id.to_string(),
+                        status: agent.status().as_str().to_owned(),
+                        channels,
+                    });
+                }
+            }
+
+            Ok::<_, AppError>(out)
+        }
+    })
+    .await
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
+    ?;
+
+    Ok(Json(results))
+}
+
 // ── Router ───────────────────────────────────────────────────────────
 
 pub fn agent_routes() -> Router<AppState> {
     Router::new()
         .route("/v1/agents", post(create_agent).get(list_agents))
         .route("/v1/agents/{agent_id}", patch(update_agent))
-        .route("/v1/agents/{agent_id}/resolved", axum::routing::get(get_resolved_agent))
+        .route("/v1/agents/{agent_id}/resolved", get(get_resolved_agent))
         .route("/v1/agents/{agent_id}/skills", post(add_agent_skill))
         .route("/v1/agents/{agent_id}/messages", post(send_agent_message))
+        .route("/v1/agents/{agent_id}/messages/{message_id}", get(get_agent_message_internal))
+        .route("/v1/internal/agents/{agent_id}/resolved", get(get_resolved_agent_internal))
+        .route("/v1/internal/agents/active", get(list_active_agents_internal))
 }

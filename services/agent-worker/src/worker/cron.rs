@@ -64,7 +64,8 @@ async fn tick(pool: &Pool, config: &WorkerConfig) -> Result<(), WorkerError> {
     // Fetch active agents from api-rs
     let client = reqwest::Client::new();
     let resp = client
-        .get(format!("{}/v1/agents?status=active", config.api_base_url))
+        .get(format!("{}/v1/internal/agents/active", config.api_base_url))
+        .header("authorization", config.api_auth_header_value())
         .send()
         .await;
 
@@ -130,12 +131,12 @@ async fn tick(pool: &Pool, config: &WorkerConfig) -> Result<(), WorkerError> {
             let job = JobPayload::cron(execution_id, agent_uuid, ws_uuid);
 
             // Initialize execution state for cron jobs (api-rs does it for message jobs)
-            state::init_queued(pool, execution_id, agent_uuid, None).await?;
+            state::init_queued(pool, execution_id, agent_uuid, ws_uuid, None).await?;
 
             tracing::info!(
                 agent_id = agent_id_str.as_str(),
                 schedule,
-                execution_id = %job.execution_id,
+                execution_id = %job.execution_id(),
                 "cron: enqueueing job"
             );
             queue::enqueue_job(pool, &job, config.max_queue_depth).await?;
