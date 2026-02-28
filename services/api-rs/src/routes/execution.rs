@@ -3,23 +3,31 @@
 //! Endpoints for intents, obligations, and receipts.
 
 use axum::{
+    Json, Router,
     extract::{Path, Query, State},
     routing::{get, patch, post},
-    Json, Router,
 };
-use chrono::NaiveDate;
+use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 
 use super::AppState;
 use crate::auth::{RequireExecutionRead, RequireExecutionWrite};
 use crate::domain::execution::{
+    approval_artifact::ApprovalArtifact,
+    document_request::DocumentRequest,
     intent::Intent,
     obligation::Obligation,
     receipt::Receipt,
+    transaction_packet::{PacketItem, TransactionPacket, TransactionPacketStatus, WorkflowType},
     types::*,
 };
+use crate::domain::governance::mode::{GovernanceMode, GovernanceModeState};
+use crate::domain::governance::policy_engine::{
+    PolicyDecision, evaluate_intent as evaluate_governance_intent,
+};
 use crate::domain::ids::{
-    ContactId, EntityId, IntentId, ObligationId, ReceiptId, WorkspaceId,
+    ApprovalArtifactId, ContactId, DocumentRequestId, EntityId, IntentId, ObligationId, PacketId,
+    PacketSignatureId, ReceiptId, WorkspaceId,
 };
 use crate::error::AppError;
 use crate::store::entity_store::EntityStore;
@@ -30,7 +38,9 @@ use crate::store::entity_store::EntityStore;
 pub struct CreateIntentRequest {
     pub entity_id: EntityId,
     pub intent_type: String,
-    pub authority_tier: AuthorityTier,
+    /// Deprecated: authority is always derived server-side from policy.
+    #[serde(default)]
+    pub authority_tier: Option<AuthorityTier>,
     pub description: String,
     #[serde(default = "default_metadata")]
     pub metadata: serde_json::Value,
@@ -54,6 +64,39 @@ pub struct CreateObligationRequest {
     pub due_date: Option<NaiveDate>,
 }
 
+#[derive(Deserialize)]
+pub struct CreateApprovalArtifactRequest {
+    pub entity_id: EntityId,
+    pub intent_type: String,
+    pub scope: String,
+    pub approver_identity: String,
+    #[serde(default = "default_explicit_approval")]
+    pub explicit: bool,
+    #[serde(default)]
+    pub approved_at: Option<DateTime<Utc>>,
+    #[serde(default)]
+    pub expires_at: Option<DateTime<Utc>>,
+    pub channel: String,
+    #[serde(default)]
+    pub max_amount_cents: Option<i64>,
+}
+
+fn default_explicit_approval() -> bool {
+    true
+}
+
+#[derive(Deserialize)]
+pub struct BindApprovalArtifactRequest {
+    pub entity_id: EntityId,
+    pub approval_artifact_id: ApprovalArtifactId,
+}
+
+#[derive(Deserialize)]
+pub struct BindDocumentRequestRequest {
+    pub entity_id: EntityId,
+    pub request_id: DocumentRequestId,
+}
+
 // ── Response types ───────────────────────────────────────────────────
 
 #[derive(Serialize)]
@@ -62,6 +105,9 @@ pub struct IntentResponse {
     pub entity_id: EntityId,
     pub intent_type: String,
     pub authority_tier: AuthorityTier,
+    pub policy_decision: Option<PolicyDecision>,
+    pub bound_approval_artifact_id: Option<ApprovalArtifactId>,
+    pub bound_document_request_ids: Vec<DocumentRequestId>,
     pub status: IntentStatus,
     pub description: String,
     pub evaluated_at: Option<String>,
@@ -84,7 +130,49 @@ pub struct ObligationResponse {
     pub status: ObligationStatus,
     pub fulfilled_at: Option<String>,
     pub waived_at: Option<String>,
+    pub expired_at: Option<String>,
     pub created_at: String,
+}
+
+#[derive(Serialize)]
+pub struct ApprovalArtifactResponse {
+    pub approval_artifact_id: ApprovalArtifactId,
+    pub entity_id: EntityId,
+    pub intent_type: String,
+    pub scope: String,
+    pub approver_identity: String,
+    pub explicit: bool,
+    pub approved_at: String,
+    pub expires_at: Option<String>,
+    pub channel: String,
+    pub max_amount_cents: Option<i64>,
+    pub revoked_at: Option<String>,
+    pub created_at: String,
+}
+
+#[derive(Serialize)]
+pub struct PacketSignatureResponse {
+    pub signature_id: PacketSignatureId,
+    pub signer_identity: String,
+    pub channel: String,
+    pub signed_at: String,
+}
+
+#[derive(Serialize)]
+pub struct TransactionPacketResponse {
+    pub packet_id: PacketId,
+    pub entity_id: EntityId,
+    pub intent_id: IntentId,
+    pub workflow_type: WorkflowType,
+    pub workflow_id: String,
+    pub status: TransactionPacketStatus,
+    pub manifest_hash: String,
+    pub items: Vec<PacketItem>,
+    pub required_signers: Vec<String>,
+    pub signatures: Vec<PacketSignatureResponse>,
+    pub evidence_refs: Vec<String>,
+    pub created_at: String,
+    pub finalized_at: Option<String>,
 }
 
 // ── Conversion helpers ───────────────────────────────────────────────
@@ -95,6 +183,9 @@ fn intent_to_response(i: &Intent) -> IntentResponse {
         entity_id: i.entity_id(),
         intent_type: i.intent_type().to_owned(),
         authority_tier: i.authority_tier(),
+        policy_decision: i.policy_decision().cloned(),
+        bound_approval_artifact_id: i.bound_approval_artifact_id(),
+        bound_document_request_ids: i.bound_document_request_ids().to_vec(),
         status: i.status(),
         description: i.description().to_owned(),
         evaluated_at: i.evaluated_at().map(|t| t.to_rfc3339()),
@@ -102,6 +193,23 @@ fn intent_to_response(i: &Intent) -> IntentResponse {
         executed_at: i.executed_at().map(|t| t.to_rfc3339()),
         failure_reason: i.failure_reason().map(|s| s.to_owned()),
         created_at: i.created_at().to_rfc3339(),
+    }
+}
+
+fn approval_to_response(a: &ApprovalArtifact) -> ApprovalArtifactResponse {
+    ApprovalArtifactResponse {
+        approval_artifact_id: a.approval_artifact_id(),
+        entity_id: a.entity_id(),
+        intent_type: a.intent_type().to_owned(),
+        scope: a.scope().to_owned(),
+        approver_identity: a.approver_identity().to_owned(),
+        explicit: a.explicit(),
+        approved_at: a.approved_at().to_rfc3339(),
+        expires_at: a.expires_at().map(|t| t.to_rfc3339()),
+        channel: a.channel().to_owned(),
+        max_amount_cents: a.max_amount_cents(),
+        revoked_at: a.revoked_at().map(|t| t.to_rfc3339()),
+        created_at: a.created_at().to_rfc3339(),
     }
 }
 
@@ -118,7 +226,35 @@ fn obligation_to_response(o: &Obligation) -> ObligationResponse {
         status: o.status(),
         fulfilled_at: o.fulfilled_at().map(|t| t.to_rfc3339()),
         waived_at: o.waived_at().map(|t| t.to_rfc3339()),
+        expired_at: o.expired_at().map(|t| t.to_rfc3339()),
         created_at: o.created_at().to_rfc3339(),
+    }
+}
+
+fn packet_to_response(packet: &TransactionPacket) -> TransactionPacketResponse {
+    TransactionPacketResponse {
+        packet_id: packet.packet_id(),
+        entity_id: packet.entity_id(),
+        intent_id: packet.intent_id(),
+        workflow_type: packet.workflow_type(),
+        workflow_id: packet.workflow_id().to_owned(),
+        status: packet.status(),
+        manifest_hash: packet.manifest_hash().to_owned(),
+        items: packet.items().to_vec(),
+        required_signers: packet.required_signers().to_vec(),
+        signatures: packet
+            .signatures()
+            .iter()
+            .map(|s| PacketSignatureResponse {
+                signature_id: s.signature_id(),
+                signer_identity: s.signer_identity().to_owned(),
+                channel: s.channel().to_owned(),
+                signed_at: s.signed_at().to_rfc3339(),
+            })
+            .collect(),
+        evidence_refs: packet.evidence_refs().to_vec(),
+        created_at: packet.created_at().to_rfc3339(),
+        finalized_at: packet.finalized_at().map(|t| t.to_rfc3339()),
     }
 }
 
@@ -137,6 +273,163 @@ fn open_store<'a>(
     })
 }
 
+fn read_mode_or_default(store: &EntityStore<'_>, entity_id: EntityId) -> GovernanceModeState {
+    store
+        .read_json::<GovernanceModeState>("main", "governance/mode.json")
+        .unwrap_or_else(|_| GovernanceModeState::new(entity_id))
+}
+
+fn mode_allowlisted_in_lockdown(intent_type: &str) -> bool {
+    matches!(
+        intent_type,
+        "maintain_books_records"
+            | "prepare_compliance_docs"
+            | "compliance_deadline_tracking"
+            | "information_gathering"
+            | "routine_correspondence"
+    )
+}
+
+fn apply_mode_overrides(
+    mut decision: PolicyDecision,
+    mode: GovernanceMode,
+    intent_type: &str,
+    metadata: &serde_json::Value,
+) -> PolicyDecision {
+    match mode {
+        GovernanceMode::Normal => {}
+        GovernanceMode::PrincipalUnavailable => {
+            let reversible = metadata
+                .get("isReversible")
+                .and_then(serde_json::Value::as_bool)
+                .unwrap_or(false);
+            if !matches!(decision.tier, AuthorityTier::Tier1) || !reversible {
+                decision.allowed = false;
+                decision.blockers.push(
+                    "principal_unavailable mode only permits reversible tier_1 actions".to_owned(),
+                );
+            }
+            decision
+                .clause_refs
+                .push("rule.mode.principal_unavailable".to_owned());
+        }
+        GovernanceMode::IncidentLockdown => {
+            if !mode_allowlisted_in_lockdown(intent_type) {
+                decision.allowed = false;
+                decision
+                    .blockers
+                    .push("incident_lockdown mode blocks this capability".to_owned());
+            }
+            decision
+                .clause_refs
+                .push("rule.mode.incident_lockdown".to_owned());
+        }
+    }
+    decision
+}
+
+fn mapped_tier_requires_manual_artifacts(decision: &PolicyDecision) -> bool {
+    decision.policy_mapped && !matches!(decision.tier, AuthorityTier::Tier1)
+}
+
+fn amount_from_metadata_cents(metadata: &serde_json::Value) -> Option<i64> {
+    metadata
+        .get("amount_cents")
+        .and_then(serde_json::Value::as_i64)
+        .or_else(|| {
+            metadata
+                .get("amount")
+                .and_then(serde_json::Value::as_i64)
+                .filter(|amount| *amount > 0 && *amount < i64::MAX / 100)
+                .map(|dollars| dollars.saturating_mul(100))
+        })
+}
+
+fn required_document_types(intent_type: &str) -> &'static [&'static str] {
+    match intent_type {
+        "equity.transfer.execute" => &["stock_transfer_agreement", "transfer_board_consent"],
+        "equity.fundraising.accept" => &[
+            "board_consent",
+            "equity_issuance_approval",
+            "subscription_agreement",
+        ],
+        "equity.fundraising.close" => &["investor_rights_agreement", "subscription_agreement"],
+        _ => &[],
+    }
+}
+
+fn enforce_execution_prerequisites(
+    store: &EntityStore<'_>,
+    intent: &Intent,
+    decision: &PolicyDecision,
+) -> Result<(), AppError> {
+    if !mapped_tier_requires_manual_artifacts(decision) {
+        return Ok(());
+    }
+
+    let approval_id = intent.bound_approval_artifact_id().ok_or_else(|| {
+        AppError::UnprocessableEntity(format!(
+            "intent {} requires bound approval artifact for {}",
+            intent.intent_id(),
+            decision.tier
+        ))
+    })?;
+
+    let approval = store
+        .read::<ApprovalArtifact>("main", approval_id)
+        .map_err(|_| AppError::NotFound(format!("approval artifact {} not found", approval_id)))?;
+    if !approval.covers_intent(
+        intent.intent_type(),
+        amount_from_metadata_cents(intent.metadata()),
+        Utc::now(),
+    ) {
+        return Err(AppError::UnprocessableEntity(format!(
+            "approval artifact {} does not cover intent {}",
+            approval_id,
+            intent.intent_id()
+        )));
+    }
+
+    let required = required_document_types(intent.intent_type());
+    if required.is_empty() {
+        return Ok(());
+    }
+
+    let bound_ids = intent.bound_document_request_ids();
+    if bound_ids.is_empty() {
+        return Err(AppError::UnprocessableEntity(format!(
+            "intent {} requires supporting document requests: {}",
+            intent.intent_id(),
+            required.join(", ")
+        )));
+    }
+
+    let mut bound_requests = Vec::new();
+    for request_id in bound_ids {
+        let request = store
+            .read::<DocumentRequest>("main", *request_id)
+            .map_err(|_| {
+                AppError::NotFound(format!("document request {} not found", request_id))
+            })?;
+        bound_requests.push(request);
+    }
+
+    for required_doc_type in required {
+        let satisfied = bound_requests
+            .iter()
+            .any(|request| request.document_type() == *required_doc_type && request.is_satisfied());
+        if !satisfied {
+            return Err(AppError::UnprocessableEntity(format!(
+                "missing satisfied document request for {} on intent {}",
+                required_doc_type,
+                intent.intent_id()
+            )));
+        }
+    }
+
+    Ok(())
+}
+
 // ── Handlers: Intents ────────────────────────────────────────────────
 
 async fn create_intent(
@@ -151,17 +444,27 @@ async fn create_intent(
         let layout = state.layout.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
+            let mut decision = evaluate_governance_intent(&req.intent_type, &req.metadata);
+            let mode = read_mode_or_default(&store, entity_id);
+            decision = apply_mode_overrides(decision, mode.mode(), &req.intent_type, &req.metadata);
+            if let Some(requested_tier) = req.authority_tier
+                && !decision.policy_mapped
+            {
+                decision.tier = requested_tier;
+                decision.requires_approval = !matches!(requested_tier, AuthorityTier::Tier1);
+            }
 
             let intent_id = IntentId::new();
-            let intent = Intent::new(
+            let mut intent = Intent::new(
                 intent_id,
                 entity_id,
                 workspace_id,
                 req.intent_type,
-                req.authority_tier,
+                decision.tier,
                 req.description,
                 req.metadata,
             );
+            intent.set_policy_decision(decision);
 
             let path = format!("execution/intents/{}.json", intent_id);
             store
@@ -169,7 +472,7 @@ async fn create_intent(
                     "main",
                     &path,
                     &intent,
-                    &format!("Create intent {intent_id}"),
+                    &format!("EXECUTION: create intent {intent_id}"),
                 )
                 .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
 
@@ -177,8 +480,7 @@ async fn create_intent(
         }
     })
     .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
-    ?;
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
 
     Ok(Json(intent_to_response(&intent)))
 }
@@ -194,23 +496,22 @@ async fn list_intents(
         let layout = state.layout.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
-            let ids = store.list_ids::<Intent>("main").map_err(|e| {
-                AppError::Internal(format!("list intents: {e}"))
-            })?;
+            let ids = store
+                .list_ids::<Intent>("main")
+                .map_err(|e| AppError::Internal(format!("list intents: {e}")))?;
 
             let mut results = Vec::new();
             for id in ids {
-                let i = store.read::<Intent>("main",id).map_err(|e| {
-                    AppError::Internal(format!("read intent {id}: {e}"))
-                })?;
+                let i = store
+                    .read::<Intent>("main", id)
+                    .map_err(|e| AppError::Internal(format!("read intent {id}: {e}")))?;
                 results.push(intent_to_response(&i));
             }
             Ok::<_, AppError>(results)
         }
     })
     .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
-    ?;
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
 
     Ok(Json(intents))
 }
@@ -228,11 +529,32 @@ async fn evaluate_intent(
         let layout = state.layout.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
-            let mut intent = store.read::<Intent>("main",intent_id).map_err(|_| {
-                AppError::NotFound(format!("intent {} not found", intent_id))
-            })?;
+            let mut intent = store
+                .read::<Intent>("main", intent_id)
+                .map_err(|_| AppError::NotFound(format!("intent {} not found", intent_id)))?;
 
-            intent.evaluate()?;
+            let mut decision = evaluate_governance_intent(intent.intent_type(), intent.metadata());
+            let mode = read_mode_or_default(&store, entity_id);
+            decision = apply_mode_overrides(
+                decision,
+                mode.mode(),
+                intent.intent_type(),
+                intent.metadata(),
+            );
+            if !decision.policy_mapped {
+                decision.tier = intent.authority_tier();
+                decision.requires_approval = !matches!(decision.tier, AuthorityTier::Tier1);
+            }
+            let allowed = decision.allowed;
+            let blockers = decision.blockers.clone();
+            intent.update_authority_tier(decision.tier);
+            intent.set_policy_decision(decision);
+
+            if allowed {
+                intent.evaluate()?;
+            } else {
+                intent.mark_failed(format!("policy blocked: {}", blockers.join("; ")))?;
+            }
 
             let path = format!("execution/intents/{}.json", intent_id);
             store
@@ -240,7 +562,7 @@ async fn evaluate_intent(
                     "main",
                     &path,
                     &intent,
-                    &format!("Evaluate intent {intent_id}"),
+                    &format!("EXECUTION: evaluate intent {intent_id}"),
                 )
                 .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
 
@@ -248,8 +570,7 @@ async fn evaluate_intent(
         }
     })
     .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
-    ?;
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
 
     Ok(Json(intent_to_response(&intent)))
 }
@@ -267,10 +588,31 @@ async fn authorize_intent(
         let layout = state.layout.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
-            let mut intent = store.read::<Intent>("main",intent_id).map_err(|_| {
-                AppError::NotFound(format!("intent {} not found", intent_id))
-            })?;
+            let mut intent = store
+                .read::<Intent>("main", intent_id)
+                .map_err(|_| AppError::NotFound(format!("intent {} not found", intent_id)))?;
 
+            let mut decision = evaluate_governance_intent(intent.intent_type(), intent.metadata());
+            let mode = read_mode_or_default(&store, entity_id);
+            decision = apply_mode_overrides(
+                decision,
+                mode.mode(),
+                intent.intent_type(),
+                intent.metadata(),
+            );
+            if !decision.policy_mapped {
+                decision.tier = intent.authority_tier();
+                decision.requires_approval = !matches!(decision.tier, AuthorityTier::Tier1);
+            }
+            if !decision.allowed {
+                return Err(AppError::UnprocessableEntity(format!(
+                    "intent blocked by policy: {}",
+                    decision.blockers.join("; ")
+                )));
+            }
+            enforce_execution_prerequisites(&store, &intent, &decision)?;
+            intent.update_authority_tier(decision.tier);
+            intent.set_policy_decision(decision);
             intent.authorize()?;
 
             let path = format!("execution/intents/{}.json", intent_id);
@@ -279,7 +621,7 @@ async fn authorize_intent(
                     "main",
                     &path,
                     &intent,
-                    &format!("Authorize intent {intent_id}"),
+                    &format!("EXECUTION: authorize intent {intent_id}"),
                 )
                 .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
 
@@ -287,8 +629,7 @@ async fn authorize_intent(
         }
     })
     .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
-    ?;
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
 
     Ok(Json(intent_to_response(&intent)))
 }
@@ -306,10 +647,31 @@ async fn execute_intent(
         let layout = state.layout.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
-            let mut intent = store.read::<Intent>("main",intent_id).map_err(|_| {
-                AppError::NotFound(format!("intent {} not found", intent_id))
-            })?;
+            let mut intent = store
+                .read::<Intent>("main", intent_id)
+                .map_err(|_| AppError::NotFound(format!("intent {} not found", intent_id)))?;
 
+            let mut decision = evaluate_governance_intent(intent.intent_type(), intent.metadata());
+            let mode = read_mode_or_default(&store, entity_id);
+            decision = apply_mode_overrides(
+                decision,
+                mode.mode(),
+                intent.intent_type(),
+                intent.metadata(),
+            );
+            if !decision.policy_mapped {
+                decision.tier = intent.authority_tier();
+                decision.requires_approval = !matches!(decision.tier, AuthorityTier::Tier1);
+            }
+            if !decision.allowed {
+                return Err(AppError::UnprocessableEntity(format!(
+                    "intent blocked by policy: {}",
+                    decision.blockers.join("; ")
+                )));
+            }
+            enforce_execution_prerequisites(&store, &intent, &decision)?;
+            intent.update_authority_tier(decision.tier);
+            intent.set_policy_decision(decision);
             intent.mark_executed()?;
 
             let path = format!("execution/intents/{}.json", intent_id);
@@ -318,7 +680,7 @@ async fn execute_intent(
                     "main",
                     &path,
                     &intent,
-                    &format!("Execute intent {intent_id}"),
+                    &format!("EXECUTION: execute intent {intent_id}"),
                 )
                 .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
 
@@ -326,8 +688,184 @@ async fn execute_intent(
         }
     })
     .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
-    ?;
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+
+    Ok(Json(intent_to_response(&intent)))
+}
+
+async fn create_approval_artifact(
+    RequireExecutionWrite(auth): RequireExecutionWrite,
+    State(state): State<AppState>,
+    Json(req): Json<CreateApprovalArtifactRequest>,
+) -> Result<Json<ApprovalArtifactResponse>, AppError> {
+    let workspace_id = auth.workspace_id();
+    let entity_id = req.entity_id;
+
+    let artifact = tokio::task::spawn_blocking({
+        let layout = state.layout.clone();
+        move || {
+            let store = open_store(&layout, workspace_id, entity_id)?;
+            let artifact = ApprovalArtifact::new(
+                ApprovalArtifactId::new(),
+                entity_id,
+                req.intent_type,
+                req.scope,
+                req.approver_identity,
+                req.explicit,
+                req.approved_at.unwrap_or_else(Utc::now),
+                req.expires_at,
+                req.channel,
+                req.max_amount_cents,
+            );
+            let path = format!(
+                "execution/approval-artifacts/{}.json",
+                artifact.approval_artifact_id()
+            );
+            store
+                .write_json(
+                    "main",
+                    &path,
+                    &artifact,
+                    &format!(
+                        "EXECUTION: create approval artifact {}",
+                        artifact.approval_artifact_id()
+                    ),
+                )
+                .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
+            Ok::<_, AppError>(artifact)
+        }
+    })
+    .await
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+
+    Ok(Json(approval_to_response(&artifact)))
+}
+
+async fn list_approval_artifacts(
+    RequireExecutionRead(auth): RequireExecutionRead,
+    State(state): State<AppState>,
+    Path(entity_id): Path<EntityId>,
+) -> Result<Json<Vec<ApprovalArtifactResponse>>, AppError> {
+    let workspace_id = auth.workspace_id();
+    let artifacts = tokio::task::spawn_blocking({
+        let layout = state.layout.clone();
+        move || {
+            let store = open_store(&layout, workspace_id, entity_id)?;
+            let ids = store
+                .list_ids::<ApprovalArtifact>("main")
+                .map_err(|e| AppError::Internal(format!("list approval artifacts: {e}")))?;
+            let mut out = Vec::new();
+            for id in ids {
+                let artifact = store
+                    .read::<ApprovalArtifact>("main", id)
+                    .map_err(|e| AppError::Internal(format!("read approval artifact {id}: {e}")))?;
+                out.push(approval_to_response(&artifact));
+            }
+            out.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+            Ok::<_, AppError>(out)
+        }
+    })
+    .await
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+    Ok(Json(artifacts))
+}
+
+async fn bind_approval_artifact_to_intent(
+    RequireExecutionWrite(auth): RequireExecutionWrite,
+    State(state): State<AppState>,
+    Path(intent_id): Path<IntentId>,
+    Json(req): Json<BindApprovalArtifactRequest>,
+) -> Result<Json<IntentResponse>, AppError> {
+    let workspace_id = auth.workspace_id();
+    let entity_id = req.entity_id;
+
+    let intent = tokio::task::spawn_blocking({
+        let layout = state.layout.clone();
+        move || {
+            let store = open_store(&layout, workspace_id, entity_id)?;
+            // Ensure the approval artifact exists before binding.
+            store
+                .read::<ApprovalArtifact>("main", req.approval_artifact_id)
+                .map_err(|_| {
+                    AppError::NotFound(format!(
+                        "approval artifact {} not found",
+                        req.approval_artifact_id
+                    ))
+                })?;
+
+            let mut intent = store
+                .read::<Intent>("main", intent_id)
+                .map_err(|_| AppError::NotFound(format!("intent {} not found", intent_id)))?;
+            intent.bind_approval_artifact(req.approval_artifact_id);
+            let path = format!("execution/intents/{}.json", intent_id);
+            store
+                .write_json(
+                    "main",
+                    &path,
+                    &intent,
+                    &format!(
+                        "EXECUTION: bind approval artifact {} to intent {}",
+                        req.approval_artifact_id, intent_id
+                    ),
+                )
+                .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
+            Ok::<_, AppError>(intent)
+        }
+    })
+    .await
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+
+    Ok(Json(intent_to_response(&intent)))
+}
+
+async fn bind_document_request_to_intent(
+    RequireExecutionWrite(auth): RequireExecutionWrite,
+    State(state): State<AppState>,
+    Path(intent_id): Path<IntentId>,
+    Json(req): Json<BindDocumentRequestRequest>,
+) -> Result<Json<IntentResponse>, AppError> {
+    let workspace_id = auth.workspace_id();
+    let entity_id = req.entity_id;
+
+    let intent = tokio::task::spawn_blocking({
+        let layout = state.layout.clone();
+        move || {
+            let store = open_store(&layout, workspace_id, entity_id)?;
+            let request = store
+                .read::<DocumentRequest>("main", req.request_id)
+                .map_err(|_| {
+                    AppError::NotFound(format!("document request {} not found", req.request_id))
+                })?;
+
+            if request.entity_id() != entity_id {
+                return Err(AppError::UnprocessableEntity(format!(
+                    "document request {} belongs to a different entity",
+                    req.request_id
+                )));
+            }
+
+            let mut intent = store
+                .read::<Intent>("main", intent_id)
+                .map_err(|_| AppError::NotFound(format!("intent {} not found", intent_id)))?;
+            intent.bind_document_request(req.request_id);
+
+            let path = format!("execution/intents/{}.json", intent_id);
+            store
+                .write_json(
+                    "main",
+                    &path,
+                    &intent,
+                    &format!(
+                        "EXECUTION: bind document request {} to intent {}",
+                        req.request_id, intent_id
+                    ),
+                )
+                .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
+            Ok::<_, AppError>(intent)
+        }
+    })
+    .await
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
 
     Ok(Json(intent_to_response(&intent)))
 }
@@ -373,8 +911,7 @@ async fn create_obligation(
         }
     })
     .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
-    ?;
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
 
     Ok(Json(obligation_to_response(&obligation)))
 }
@@ -390,23 +927,22 @@ async fn list_obligations(
         let layout = state.layout.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
-            let ids = store.list_ids::<Obligation>("main").map_err(|e| {
-                AppError::Internal(format!("list obligations: {e}"))
-            })?;
+            let ids = store
+                .list_ids::<Obligation>("main")
+                .map_err(|e| AppError::Internal(format!("list obligations: {e}")))?;
 
             let mut results = Vec::new();
             for id in ids {
-                let o = store.read::<Obligation>("main",id).map_err(|e| {
-                    AppError::Internal(format!("read obligation {id}: {e}"))
-                })?;
+                let o = store
+                    .read::<Obligation>("main", id)
+                    .map_err(|e| AppError::Internal(format!("read obligation {id}: {e}")))?;
                 results.push(obligation_to_response(&o));
             }
             Ok::<_, AppError>(results)
         }
     })
     .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
-    ?;
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
 
     Ok(Json(obligations))
 }
@@ -424,12 +960,11 @@ async fn fulfill_obligation(
         let layout = state.layout.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
-            let mut obligation =
-                store
-                    .read::<Obligation>("main",obligation_id)
-                    .map_err(|_| {
-                        AppError::NotFound(format!("obligation {} not found", obligation_id))
-                    })?;
+            let mut obligation = store
+                .read::<Obligation>("main", obligation_id)
+                .map_err(|_| {
+                    AppError::NotFound(format!("obligation {} not found", obligation_id))
+                })?;
 
             obligation.fulfill()?;
 
@@ -447,8 +982,7 @@ async fn fulfill_obligation(
         }
     })
     .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
-    ?;
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
 
     Ok(Json(obligation_to_response(&obligation)))
 }
@@ -466,12 +1000,11 @@ async fn waive_obligation(
         let layout = state.layout.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
-            let mut obligation =
-                store
-                    .read::<Obligation>("main",obligation_id)
-                    .map_err(|_| {
-                        AppError::NotFound(format!("obligation {} not found", obligation_id))
-                    })?;
+            let mut obligation = store
+                .read::<Obligation>("main", obligation_id)
+                .map_err(|_| {
+                    AppError::NotFound(format!("obligation {} not found", obligation_id))
+                })?;
 
             obligation.waive()?;
 
@@ -489,8 +1022,47 @@ async fn waive_obligation(
         }
     })
     .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
-    ?;
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+
+    Ok(Json(obligation_to_response(&obligation)))
+}
+
+async fn expire_obligation(
+    RequireExecutionWrite(auth): RequireExecutionWrite,
+    State(state): State<AppState>,
+    Path(obligation_id): Path<ObligationId>,
+    Query(query): Query<super::EntityIdQuery>,
+) -> Result<Json<ObligationResponse>, AppError> {
+    let workspace_id = auth.workspace_id();
+    let entity_id = query.entity_id;
+
+    let obligation = tokio::task::spawn_blocking({
+        let layout = state.layout.clone();
+        move || {
+            let store = open_store(&layout, workspace_id, entity_id)?;
+            let mut obligation = store
+                .read::<Obligation>("main", obligation_id)
+                .map_err(|_| {
+                    AppError::NotFound(format!("obligation {} not found", obligation_id))
+                })?;
+
+            obligation.expire()?;
+
+            let path = format!("execution/obligations/{}.json", obligation_id);
+            store
+                .write_json(
+                    "main",
+                    &path,
+                    &obligation,
+                    &format!("Expire obligation {obligation_id}"),
+                )
+                .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
+
+            Ok::<_, AppError>(obligation)
+        }
+    })
+    .await
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
 
     Ok(Json(obligation_to_response(&obligation)))
 }
@@ -535,14 +1107,13 @@ async fn get_receipt(
         let layout = state.layout.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
-            store.read::<Receipt>("main",receipt_id).map_err(|_| {
-                AppError::NotFound(format!("receipt {} not found", receipt_id))
-            })
+            store
+                .read::<Receipt>("main", receipt_id)
+                .map_err(|_| AppError::NotFound(format!("receipt {} not found", receipt_id)))
         }
     })
     .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
-    ?;
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
 
     Ok(Json(receipt_to_response(&receipt)))
 }
@@ -560,13 +1131,13 @@ async fn list_receipts_by_intent(
         let layout = state.layout.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
-            let ids = store.list_ids::<Receipt>("main").map_err(|e| {
-                AppError::Internal(format!("list receipts: {e}"))
-            })?;
+            let ids = store
+                .list_ids::<Receipt>("main")
+                .map_err(|e| AppError::Internal(format!("list receipts: {e}")))?;
 
             let mut results = Vec::new();
             for id in ids {
-                if let Ok(r) = store.read::<Receipt>("main",id) {
+                if let Ok(r) = store.read::<Receipt>("main", id) {
                     if r.intent_id() == intent_id {
                         results.push(receipt_to_response(&r));
                     }
@@ -576,10 +1147,73 @@ async fn list_receipts_by_intent(
         }
     })
     .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
-    ?;
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
 
     Ok(Json(receipts))
+}
+
+// ── Packet handlers ─────────────────────────────────────────────────
+
+async fn get_packet(
+    RequireExecutionRead(auth): RequireExecutionRead,
+    State(state): State<AppState>,
+    Path(packet_id): Path<PacketId>,
+    Query(query): Query<super::EntityIdQuery>,
+) -> Result<Json<TransactionPacketResponse>, AppError> {
+    let workspace_id = auth.workspace_id();
+    let entity_id = query.entity_id;
+
+    let packet = tokio::task::spawn_blocking({
+        let layout = state.layout.clone();
+        move || {
+            let store = open_store(&layout, workspace_id, entity_id)?;
+            let packet = store
+                .read::<TransactionPacket>("main", packet_id)
+                .map_err(|_| AppError::NotFound(format!("packet {} not found", packet_id)))?;
+            if packet.entity_id() != entity_id {
+                return Err(AppError::Forbidden(
+                    "packet belongs to a different entity".to_owned(),
+                ));
+            }
+            Ok::<_, AppError>(packet)
+        }
+    })
+    .await
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+
+    Ok(Json(packet_to_response(&packet)))
+}
+
+async fn list_entity_packets(
+    RequireExecutionRead(auth): RequireExecutionRead,
+    State(state): State<AppState>,
+    Path(entity_id): Path<EntityId>,
+) -> Result<Json<Vec<TransactionPacketResponse>>, AppError> {
+    let workspace_id = auth.workspace_id();
+
+    let packets = tokio::task::spawn_blocking({
+        let layout = state.layout.clone();
+        move || {
+            let store = open_store(&layout, workspace_id, entity_id)?;
+            let ids = store
+                .list_ids::<TransactionPacket>("main")
+                .map_err(|e| AppError::Internal(format!("list packets: {e}")))?;
+            let mut out = Vec::new();
+            for id in ids {
+                if let Ok(packet) = store.read::<TransactionPacket>("main", id)
+                    && packet.entity_id() == entity_id
+                {
+                    out.push(packet_to_response(&packet));
+                }
+            }
+            out.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+            Ok::<_, AppError>(out)
+        }
+    })
+    .await
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+
+    Ok(Json(packets))
 }
 
 // ── Obligation extended ─────────────────────────────────────────────
@@ -604,22 +1238,28 @@ async fn assign_obligation(
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
             let mut obligation = store
-                .read::<Obligation>("main",obligation_id)
-                .map_err(|_| AppError::NotFound(format!("obligation {} not found", obligation_id)))?;
+                .read::<Obligation>("main", obligation_id)
+                .map_err(|_| {
+                    AppError::NotFound(format!("obligation {} not found", obligation_id))
+                })?;
 
             obligation.assign(req.assignee_id)?;
 
             let path = format!("execution/obligations/{}.json", obligation_id);
             store
-                .write_json("main", &path, &obligation, &format!("Assign obligation {obligation_id}"))
+                .write_json(
+                    "main",
+                    &path,
+                    &obligation,
+                    &format!("Assign obligation {obligation_id}"),
+                )
                 .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
 
             Ok::<_, AppError>(obligation)
         }
     })
     .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
-    ?;
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
 
     Ok(Json(obligation_to_response(&obligation)))
 }
@@ -630,6 +1270,7 @@ pub struct ObligationsSummaryResponse {
     pub pending: usize,
     pub fulfilled: usize,
     pub waived: usize,
+    pub expired: usize,
 }
 
 async fn obligations_summary(
@@ -643,23 +1284,24 @@ async fn obligations_summary(
         let layout = state.layout.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
-            let ids = store.list_ids::<Obligation>("main").map_err(|e| {
-                AppError::Internal(format!("list obligations: {e}"))
-            })?;
+            let ids = store
+                .list_ids::<Obligation>("main")
+                .map_err(|e| AppError::Internal(format!("list obligations: {e}")))?;
 
             let mut total = 0;
             let mut pending = 0;
             let mut fulfilled = 0;
             let mut waived = 0;
+            let mut expired = 0;
 
             for id in ids {
-                if let Ok(o) = store.read::<Obligation>("main",id) {
+                if let Ok(o) = store.read::<Obligation>("main", id) {
                     total += 1;
                     match o.status() {
                         ObligationStatus::Required | ObligationStatus::InProgress => pending += 1,
                         ObligationStatus::Fulfilled => fulfilled += 1,
                         ObligationStatus::Waived => waived += 1,
-                        _ => {}
+                        ObligationStatus::Expired => expired += 1,
                     }
                 }
             }
@@ -669,12 +1311,12 @@ async fn obligations_summary(
                 pending,
                 fulfilled,
                 waived,
+                expired,
             })
         }
     })
     .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
-    ?;
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
 
     Ok(Json(summary))
 }
@@ -690,13 +1332,13 @@ async fn list_human_obligations(
         let layout = state.layout.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
-            let ids = store.list_ids::<Obligation>("main").map_err(|e| {
-                AppError::Internal(format!("list obligations: {e}"))
-            })?;
+            let ids = store
+                .list_ids::<Obligation>("main")
+                .map_err(|e| AppError::Internal(format!("list obligations: {e}")))?;
 
             let mut results = Vec::new();
             for id in ids {
-                if let Ok(o) = store.read::<Obligation>("main",id) {
+                if let Ok(o) = store.read::<Obligation>("main", id) {
                     if o.assignee_type() == AssigneeType::Human {
                         results.push(obligation_to_response(&o));
                     }
@@ -706,8 +1348,7 @@ async fn list_human_obligations(
         }
     })
     .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
-    ?;
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
 
     Ok(Json(obligations))
 }
@@ -730,7 +1371,7 @@ async fn list_global_human_obligations(
                 if let Ok(store) = EntityStore::open(&layout, workspace_id, entity_id) {
                     if let Ok(ids) = store.list_ids::<Obligation>("main") {
                         for id in ids {
-                            if let Ok(o) = store.read::<Obligation>("main",id) {
+                            if let Ok(o) = store.read::<Obligation>("main", id) {
                                 if o.assignee_type() == AssigneeType::Human
                                     && o.status() != ObligationStatus::Fulfilled
                                     && o.status() != ObligationStatus::Waived
@@ -746,8 +1387,7 @@ async fn list_global_human_obligations(
         }
     })
     .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
-    ?;
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
 
     Ok(Json(obligations))
 }
@@ -802,12 +1442,29 @@ pub struct CreateDocumentRequestPayload {
 
 #[derive(Serialize)]
 pub struct DocumentRequestResponse {
-    pub request_id: String,
+    pub request_id: DocumentRequestId,
     pub obligation_id: ObligationId,
+    pub entity_id: EntityId,
     pub description: String,
     pub document_type: String,
-    pub status: String,
+    pub status: DocumentRequestStatus,
+    pub fulfilled_at: Option<String>,
+    pub not_applicable_at: Option<String>,
     pub created_at: String,
+}
+
+fn document_request_to_response(r: &DocumentRequest) -> DocumentRequestResponse {
+    DocumentRequestResponse {
+        request_id: r.request_id(),
+        obligation_id: r.obligation_id(),
+        entity_id: r.entity_id(),
+        description: r.description().to_owned(),
+        document_type: r.document_type().to_owned(),
+        status: r.status(),
+        fulfilled_at: r.fulfilled_at().map(|t| t.to_rfc3339()),
+        not_applicable_at: r.not_applicable_at().map(|t| t.to_rfc3339()),
+        created_at: r.created_at().to_rfc3339(),
+    }
 }
 
 async fn create_document_request(
@@ -818,53 +1475,44 @@ async fn create_document_request(
 ) -> Result<Json<DocumentRequestResponse>, AppError> {
     let workspace_id = auth.workspace_id();
     let entity_id = req.entity_id;
-    let request_id = uuid::Uuid::new_v4().to_string();
-    let now = chrono::Utc::now();
+    let request_id = DocumentRequestId::new();
 
-    tokio::task::spawn_blocking({
+    let request = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
-        let request_id = request_id.clone();
-        let description = req.description.clone();
-        let document_type = req.document_type.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
 
             // Verify obligation exists
-            store.read::<Obligation>("main",obligation_id).map_err(|_| {
-                AppError::NotFound(format!("obligation {} not found", obligation_id))
-            })?;
+            store
+                .read::<Obligation>("main", obligation_id)
+                .map_err(|_| {
+                    AppError::NotFound(format!("obligation {} not found", obligation_id))
+                })?;
+
+            let request = DocumentRequest::new(
+                request_id,
+                entity_id,
+                obligation_id,
+                req.description,
+                req.document_type,
+            );
 
             store
                 .write_json(
                     "main",
                     &format!("execution/document-requests/{}.json", request_id),
-                    &serde_json::json!({
-                        "request_id": request_id,
-                        "obligation_id": obligation_id,
-                        "description": description,
-                        "document_type": document_type,
-                        "status": "pending",
-                        "created_at": now.to_rfc3339(),
-                    }),
-                    &format!("Create document request {request_id}"),
+                    &request,
+                    &format!("EXECUTION: create document request {request_id}"),
                 )
                 .map_err(|e| AppError::Internal(format!("commit: {e}")))?;
 
-            Ok::<_, AppError>(())
+            Ok::<_, AppError>(request)
         }
     })
     .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
-    ?;
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
 
-    Ok(Json(DocumentRequestResponse {
-        request_id,
-        obligation_id,
-        description: req.description,
-        document_type: req.document_type,
-        status: "pending".to_owned(),
-        created_at: now.to_rfc3339(),
-    }))
+    Ok(Json(document_request_to_response(&request)))
 }
 
 async fn list_document_requests(
@@ -881,32 +1529,23 @@ async fn list_document_requests(
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
 
-            // List all document requests and filter by obligation_id
-            let dir = "execution/document-requests";
-            let ids: Vec<String> = store.list_ids_in_dir("main", dir).unwrap_or_default();
+            let ids = store
+                .list_ids::<DocumentRequest>("main")
+                .map_err(|e| AppError::Internal(format!("list document requests: {e}")))?;
 
             let mut results = Vec::new();
             for id in ids {
-                let path = format!("{}/{}.json", dir, id);
-                if let Ok(val) = store.read_json::<serde_json::Value>("main", &path) {
-                    if val.get("obligation_id").and_then(|v| v.as_str()) == Some(&obligation_id.to_string()) {
-                        results.push(DocumentRequestResponse {
-                            request_id: val.get("request_id").and_then(|v| v.as_str()).unwrap_or("").to_owned(),
-                            obligation_id,
-                            description: val.get("description").and_then(|v| v.as_str()).unwrap_or("").to_owned(),
-                            document_type: val.get("document_type").and_then(|v| v.as_str()).unwrap_or("").to_owned(),
-                            status: val.get("status").and_then(|v| v.as_str()).unwrap_or("pending").to_owned(),
-                            created_at: val.get("created_at").and_then(|v| v.as_str()).unwrap_or("").to_owned(),
-                        });
-                    }
+                if let Ok(request) = store.read::<DocumentRequest>("main", id)
+                    && request.obligation_id() == obligation_id
+                {
+                    results.push(document_request_to_response(&request));
                 }
             }
             Ok::<_, AppError>(results)
         }
     })
     .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
-    ?;
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
 
     Ok(Json(requests))
 }
@@ -914,65 +1553,78 @@ async fn list_document_requests(
 async fn fulfill_document_request(
     RequireExecutionWrite(auth): RequireExecutionWrite,
     State(state): State<AppState>,
-    Path(request_id): Path<String>,
+    Path(request_id): Path<DocumentRequestId>,
     Query(query): Query<super::EntityIdQuery>,
 ) -> Result<Json<DocumentRequestResponse>, AppError> {
-    update_document_request_status(state, request_id, auth.workspace_id(), query.entity_id, "fulfilled").await
+    update_document_request_status(
+        state,
+        request_id,
+        auth.workspace_id(),
+        query.entity_id,
+        DocumentRequestStatus::Provided,
+    )
+    .await
 }
 
 async fn mark_document_request_na(
     RequireExecutionWrite(auth): RequireExecutionWrite,
     State(state): State<AppState>,
-    Path(request_id): Path<String>,
+    Path(request_id): Path<DocumentRequestId>,
     Query(query): Query<super::EntityIdQuery>,
 ) -> Result<Json<DocumentRequestResponse>, AppError> {
-    update_document_request_status(state, request_id, auth.workspace_id(), query.entity_id, "not_applicable").await
+    update_document_request_status(
+        state,
+        request_id,
+        auth.workspace_id(),
+        query.entity_id,
+        DocumentRequestStatus::NotApplicable,
+    )
+    .await
 }
 
 async fn update_document_request_status(
     state: AppState,
-    request_id: String,
+    request_id: DocumentRequestId,
     workspace_id: WorkspaceId,
     entity_id: EntityId,
-    new_status: &'static str,
+    new_status: DocumentRequestStatus,
 ) -> Result<Json<DocumentRequestResponse>, AppError> {
-
     let result = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
-        let request_id = request_id.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
             let path = format!("execution/document-requests/{}.json", request_id);
-            let mut val: serde_json::Value = store.read_json("main", &path).map_err(|_| {
+            let mut request: DocumentRequest = store.read_json("main", &path).map_err(|_| {
                 AppError::NotFound(format!("document request {} not found", request_id))
             })?;
 
-            val["status"] = serde_json::json!(new_status);
+            match new_status {
+                DocumentRequestStatus::Provided => request.fulfill()?,
+                DocumentRequestStatus::NotApplicable => request.mark_not_applicable()?,
+                DocumentRequestStatus::Waived => request.waive()?,
+                DocumentRequestStatus::Requested => {
+                    return Err(AppError::BadRequest(
+                        "cannot transition document request back to requested".to_owned(),
+                    ));
+                }
+            }
 
             store
-                .write_json("main", &path, &val, &format!("Update doc request {request_id} to {new_status}"))
+                .write_json(
+                    "main",
+                    &path,
+                    &request,
+                    &format!("EXECUTION: update document request {request_id} to {new_status:?}"),
+                )
                 .map_err(|e| AppError::Internal(format!("commit: {e}")))?;
 
-            Ok::<_, AppError>(val)
+            Ok::<_, AppError>(request)
         }
     })
     .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
-    ?;
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
 
-    let obl_id_str = result.get("obligation_id").and_then(|v| v.as_str()).unwrap_or("");
-    let obligation_id = obl_id_str.parse::<uuid::Uuid>()
-        .map(ObligationId::from_uuid)
-        .map_err(|_| AppError::Internal("document request has invalid obligation_id".to_owned()))?;
-
-    Ok(Json(DocumentRequestResponse {
-        request_id,
-        obligation_id,
-        description: result.get("description").and_then(|v| v.as_str()).unwrap_or("").to_owned(),
-        document_type: result.get("document_type").and_then(|v| v.as_str()).unwrap_or("").to_owned(),
-        status: new_status.to_owned(),
-        created_at: result.get("created_at").and_then(|v| v.as_str()).unwrap_or("").to_owned(),
-    }))
+    Ok(Json(document_request_to_response(&result)))
 }
 
 // ── Handlers: Global obligations summary ────────────────────────────
@@ -991,18 +1643,21 @@ async fn global_obligations_summary(
             let mut pending = 0;
             let mut fulfilled = 0;
             let mut waived = 0;
+            let mut expired = 0;
 
             for entity_id in entity_ids {
                 if let Ok(store) = EntityStore::open(&layout, workspace_id, entity_id) {
                     if let Ok(ids) = store.list_ids::<Obligation>("main") {
                         for id in ids {
-                            if let Ok(o) = store.read::<Obligation>("main",id) {
+                            if let Ok(o) = store.read::<Obligation>("main", id) {
                                 total += 1;
                                 match o.status() {
-                                    ObligationStatus::Required | ObligationStatus::InProgress => pending += 1,
+                                    ObligationStatus::Required | ObligationStatus::InProgress => {
+                                        pending += 1
+                                    }
                                     ObligationStatus::Fulfilled => fulfilled += 1,
                                     ObligationStatus::Waived => waived += 1,
-                                    _ => {}
+                                    ObligationStatus::Expired => expired += 1,
                                 }
                             }
                         }
@@ -1015,12 +1670,12 @@ async fn global_obligations_summary(
                 pending,
                 fulfilled,
                 waived,
+                expired,
             })
         }
     })
     .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
-    ?;
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
 
     Ok(Json(summary))
 }
@@ -1032,17 +1687,24 @@ pub fn execution_routes() -> Router<AppState> {
         // Intents
         .route("/v1/execution/intents", post(create_intent))
         .route("/v1/entities/{entity_id}/intents", get(list_intents))
+        .route("/v1/intents/{intent_id}/evaluate", post(evaluate_intent))
+        .route("/v1/intents/{intent_id}/authorize", post(authorize_intent))
+        .route("/v1/intents/{intent_id}/execute", post(execute_intent))
         .route(
-            "/v1/intents/{intent_id}/evaluate",
-            post(evaluate_intent),
+            "/v1/intents/{intent_id}/bind-approval-artifact",
+            post(bind_approval_artifact_to_intent),
         )
         .route(
-            "/v1/intents/{intent_id}/authorize",
-            post(authorize_intent),
+            "/v1/intents/{intent_id}/bind-document-request",
+            post(bind_document_request_to_intent),
         )
         .route(
-            "/v1/intents/{intent_id}/execute",
-            post(execute_intent),
+            "/v1/execution/approval-artifacts",
+            post(create_approval_artifact),
+        )
+        .route(
+            "/v1/entities/{entity_id}/approval-artifacts",
+            get(list_approval_artifacts),
         )
         // Obligations
         .route("/v1/execution/obligations", post(create_obligation))
@@ -1059,6 +1721,10 @@ pub fn execution_routes() -> Router<AppState> {
             post(waive_obligation),
         )
         .route(
+            "/v1/obligations/{obligation_id}/expire",
+            post(expire_obligation),
+        )
+        .route(
             "/v1/obligations/{obligation_id}/assign",
             post(assign_obligation),
         )
@@ -1072,6 +1738,8 @@ pub fn execution_routes() -> Router<AppState> {
             "/v1/intents/{intent_id}/receipts",
             get(list_receipts_by_intent),
         )
+        .route("/v1/execution/packets/{packet_id}", get(get_packet))
+        .route("/v1/entities/{entity_id}/packets", get(list_entity_packets))
         // Human obligations
         .route(
             "/v1/entities/{entity_id}/obligations/human",
