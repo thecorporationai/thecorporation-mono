@@ -354,6 +354,7 @@ export const GENERATED_TOOL_DEFINITIONS: Record<string, unknown>[] = [
           "entity_id",
           "customer_name",
           "amount_cents",
+          "description",
           "due_date"
         ]
       }
@@ -592,34 +593,23 @@ export const GENERATED_TOOL_DEFINITIONS: Record<string, unknown>[] = [
       "parameters": {
         "type": "object",
         "properties": {
-          "meeting_type": {
+          "entity_id": {
             "type": "string"
           },
-          "title": {
+          "meeting_id": {
             "type": "string"
           },
-          "agenda_item_titles": {
+          "present_seat_ids": {
             "type": "array",
             "items": {
               "type": "string"
             }
-          },
-          "entity_id": {
-            "type": "string"
-          },
-          "governance_body_id": {
-            "type": "string"
-          },
-          "scheduled_date": {
-            "type": "string"
           }
         },
         "required": [
           "entity_id",
-          "governance_body_id",
-          "meeting_type",
-          "title",
-          "scheduled_date"
+          "meeting_id",
+          "present_seat_ids"
         ]
       }
     }
@@ -632,6 +622,9 @@ export const GENERATED_TOOL_DEFINITIONS: Record<string, unknown>[] = [
       "parameters": {
         "type": "object",
         "properties": {
+          "entity_id": {
+            "type": "string"
+          },
           "meeting_id": {
             "type": "string"
           },
@@ -641,16 +634,17 @@ export const GENERATED_TOOL_DEFINITIONS: Record<string, unknown>[] = [
           "voter_id": {
             "type": "string"
           },
-          "vote": {
+          "vote_value": {
             "type": "string",
             "description": "for, against, abstain, or recusal"
           }
         },
         "required": [
+          "entity_id",
           "meeting_id",
           "agenda_item_id",
           "voter_id",
-          "vote"
+          "vote_value"
         ]
       }
     }
@@ -663,6 +657,9 @@ export const GENERATED_TOOL_DEFINITIONS: Record<string, unknown>[] = [
       "parameters": {
         "type": "object",
         "properties": {
+          "entity_id": {
+            "type": "string"
+          },
           "body_id": {
             "type": "string"
           },
@@ -672,10 +669,10 @@ export const GENERATED_TOOL_DEFINITIONS: Record<string, unknown>[] = [
           "title": {
             "type": "string"
           },
-          "proposed_date": {
+          "scheduled_date": {
             "type": "string"
           },
-          "agenda_items": {
+          "agenda_item_titles": {
             "type": "array",
             "items": {
               "type": "string"
@@ -683,10 +680,10 @@ export const GENERATED_TOOL_DEFINITIONS: Record<string, unknown>[] = [
           }
         },
         "required": [
+          "entity_id",
           "body_id",
           "meeting_type",
-          "title",
-          "proposed_date"
+          "title"
         ]
       }
     }
@@ -923,4 +920,3 @@ export const GENERATED_TOOL_DEFINITIONS: Record<string, unknown>[] = [
     }
   }
 ];
-

@@ -67,6 +67,13 @@ export class CorpAPIClient {
     return resp.json();
   }
 
+  private async postWithParams(path: string, body: unknown, params: Record<string, string>): Promise<unknown> {
+    const resp = await this.request("POST", path, body, params);
+    if (resp.status === 401) throw new SessionExpiredError();
+    if (!resp.ok) throw new Error(`${resp.status} ${resp.statusText}`);
+    return resp.json();
+  }
+
   private async patch(path: string, body?: unknown): Promise<unknown> {
     const resp = await this.request("PATCH", path, body);
     if (resp.status === 401) throw new SessionExpiredError();
@@ -123,8 +130,13 @@ export class CorpAPIClient {
   getGovernanceSeats(bodyId: string) { return this.get(`/v1/governance-bodies/${bodyId}/seats`) as Promise<ApiRecord[]>; }
   listMeetings(bodyId: string) { return this.get(`/v1/governance-bodies/${bodyId}/meetings`) as Promise<ApiRecord[]>; }
   getMeetingResolutions(meetingId: string) { return this.get(`/v1/meetings/${meetingId}/resolutions`) as Promise<ApiRecord[]>; }
-  conveneMeeting(data: ApiRecord) { return this.post("/v1/meetings", data) as Promise<ApiRecord>; }
-  castVote(meetingId: string, itemId: string, data: ApiRecord) { return this.post(`/v1/meetings/${meetingId}/agenda-items/${itemId}/vote`, data) as Promise<ApiRecord>; }
+  scheduleMeeting(data: ApiRecord) { return this.post("/v1/meetings", data) as Promise<ApiRecord>; }
+  conveneMeeting(meetingId: string, entityId: string, data: ApiRecord) {
+    return this.postWithParams(`/v1/meetings/${meetingId}/convene`, data, { entity_id: entityId }) as Promise<ApiRecord>;
+  }
+  castVote(entityId: string, meetingId: string, itemId: string, data: ApiRecord) {
+    return this.postWithParams(`/v1/meetings/${meetingId}/agenda-items/${itemId}/vote`, data, { entity_id: entityId }) as Promise<ApiRecord>;
+  }
 
   // --- Documents ---
   getEntityDocuments(entityId: string) { return this.get(`/v1/formations/${entityId}/documents`) as Promise<ApiRecord[]>; }
@@ -137,7 +149,7 @@ export class CorpAPIClient {
   }
 
   // --- Finance ---
-  createInvoice(data: ApiRecord) { return this.post("/v1/invoices", data) as Promise<ApiRecord>; }
+  createInvoice(data: ApiRecord) { return this.post("/v1/treasury/invoices", data) as Promise<ApiRecord>; }
   runPayroll(data: ApiRecord) { return this.post("/v1/payroll/runs", data) as Promise<ApiRecord>; }
   submitPayment(data: ApiRecord) { return this.post("/v1/payments", data) as Promise<ApiRecord>; }
   openBankAccount(data: ApiRecord) { return this.post("/v1/bank-accounts", data) as Promise<ApiRecord>; }

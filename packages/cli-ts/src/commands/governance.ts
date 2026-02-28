@@ -57,14 +57,14 @@ export async function governanceConveneCommand(opts: {
   const eid = resolveEntityId(cfg, opts.entityId);
   const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
   try {
-    const result = await client.conveneMeeting({
-      entity_id: eid, governance_body_id: opts.body, meeting_type: opts.meetingType,
+    const result = await client.scheduleMeeting({
+      entity_id: eid, body_id: opts.body, meeting_type: opts.meetingType,
       title: opts.title, scheduled_date: opts.date,
-      agenda_items: opts.agenda.map((item) => ({ title: item })),
+      agenda_item_titles: opts.agenda,
     });
-    printSuccess(`Meeting convened: ${result.meeting_id ?? "OK"}`);
+    printSuccess(`Meeting scheduled: ${result.meeting_id ?? "OK"}`);
     printJson(result);
-  } catch (err) { printError(`Failed to convene meeting: ${err}`); process.exit(1); }
+  } catch (err) { printError(`Failed to schedule meeting: ${err}`); process.exit(1); }
 }
 
 export async function governanceVoteCommand(
@@ -73,9 +73,10 @@ export async function governanceVoteCommand(
   opts: { voter: string; vote: string }
 ): Promise<void> {
   const cfg = requireConfig("api_url", "api_key", "workspace_id");
+  const eid = resolveEntityId(cfg, undefined);
   const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
   try {
-    const result = await client.castVote(meetingId, itemId, {
+    const result = await client.castVote(eid, meetingId, itemId, {
       voter_id: opts.voter, vote_value: opts.vote,
     });
     printSuccess(`Vote cast: ${result.vote_id ?? "OK"}`);

@@ -10,6 +10,14 @@ export interface ToolContext {
 
 type ToolHandler = (args: Record<string, unknown>, client: CorpAPIClient, ctx: ToolContext) => Promise<unknown>;
 
+function requiredString(args: Record<string, unknown>, key: string): string {
+  const value = args[key];
+  if (typeof value !== "string" || value.trim().length === 0) {
+    throw new Error(`Missing required field: ${key}`);
+  }
+  return value;
+}
+
 const TOOL_HANDLERS: Record<string, ToolHandler> = {
   get_workspace_status: async (_args, client) => client.getStatus(),
   list_obligations: async (args, client) => client.getObligations(args.tier as string | undefined),
@@ -57,6 +65,9 @@ const TOOL_HANDLERS: Record<string, ToolHandler> = {
         .reduce((sum, item) => sum + (item.amount_cents ?? 0), 0);
     }
     if (!("amount_cents" in args)) args.amount_cents = 0;
+    if (!("description" in args) || typeof args.description !== "string" || args.description.trim().length === 0) {
+      args.description = "Invoice";
+    }
     return client.createInvoice(args);
   },
   run_payroll: async (args, client) => client.runPayroll(args),
@@ -84,17 +95,30 @@ const TOOL_HANDLERS: Record<string, ToolHandler> = {
 
   schedule_meeting: async (args, client) => {
     const body: Record<string, unknown> = {
-      body_id: args.body_id, meeting_type: args.meeting_type,
-      title: args.title, proposed_date: args.proposed_date,
+      entity_id: requiredString(args, "entity_id"),
+      body_id: requiredString(args, "body_id"),
+      meeting_type: requiredString(args, "meeting_type"),
+      title: requiredString(args, "title"),
     };
-    if (args.agenda_items) body.agenda_item_titles = args.agenda_items;
-    return client.conveneMeeting(body);
+    const scheduledDate = args.scheduled_date ?? args.proposed_date;
+    if (typeof scheduledDate === "string" && scheduledDate.trim().length > 0) {
+      body.scheduled_date = scheduledDate;
+    }
+    const agendaItems = args.agenda_item_titles ?? args.agenda_items;
+    if (Array.isArray(agendaItems)) body.agenda_item_titles = agendaItems;
+    return client.scheduleMeeting(body);
   },
 
   cast_vote: async (args, client) =>
-    client.castVote(args.meeting_id as string, args.agenda_item_id as string, {
-      voter_id: args.voter_id, vote_value: args.vote,
-    }),
+    client.castVote(
+      requiredString(args, "entity_id"),
+      requiredString(args, "meeting_id"),
+      requiredString(args, "agenda_item_id"),
+      {
+        voter_id: requiredString(args, "voter_id"),
+        vote_value: requiredString(args, "vote_value"),
+      },
+    ),
 
   update_checklist: async (args, _client, ctx) => {
     const path = join(ctx.dataDir, "checklist.md");
@@ -139,7 +163,13 @@ const TOOL_HANDLERS: Record<string, ToolHandler> = {
   classify_contractor: async (args, client) => client.classifyContractor(args),
   reconcile_ledger: async (args, client) => client.reconcileLedger(args),
   track_deadline: async (args, client) => client.trackDeadline(args),
-  convene_meeting: async (args, client) => client.conveneMeeting(args),
+  convene_meeting: async (args, client) => client.conveneMeeting(
+    requiredString(args, "meeting_id"),
+    requiredString(args, "entity_id"),
+    {
+      present_seat_ids: Array.isArray(args.present_seat_ids) ? args.present_seat_ids : [],
+    },
+  ),
 
   create_agent: async (args, client) => client.createAgent(args),
   send_agent_message: async (args, client) => client.sendAgentMessage(args.agent_id as string, args.body as string),
@@ -153,7 +183,7 @@ export const TOOL_DEFINITIONS: Record<string, unknown>[] = GENERATED_TOOL_DEFINI
 
 const READ_ONLY_TOOLS = new Set([
   "get_workspace_status", "list_entities", "get_cap_table", "list_documents",
-  "list_safe_notes", "list_agents", "get_checklist", "get_document_link",
+  "list_safe_notes", "list_agents", "get_checklist",
   "get_signing_link", "list_obligations", "get_billing_status",
 ]);
 

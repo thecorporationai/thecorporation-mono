@@ -16,7 +16,9 @@
   ],
   "scripts": {
     "build": "tsup",
-    "dev": "tsup --watch"
+    "dev": "tsup --watch",
+    "generate:tools": "python3 ../../scripts/dev/generate_tool_defs.py --api-url http://localhost:8000 > src/tool-defs.generated.ts",
+    "check:tools": "python3 ../../scripts/dev/check_tool_sync.py"
   },
   "devDependencies": {
     "tsup": "^8.4.0",
