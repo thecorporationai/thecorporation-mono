@@ -121,7 +121,7 @@ import { SYSTEM_PROMPT_BASE, formatConfigSection } from "@thecorporation/corp-to
 
 ## Tools
 
-35 tools across corporate governance domains:
+36 tools across corporate governance domains:
 
 | Category | Tools |
 |---|---|

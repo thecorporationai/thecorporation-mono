@@ -1,6 +1,6 @@
 # @thecorporation/mcp-server
 
-MCP server that gives AI agents full corporate operations capabilities — entity formation, equity management, payroll, contracts, banking, and tax compliance. 35 tools, zero corporate law expertise required.
+MCP server that gives AI agents full corporate operations capabilities — entity formation, equity management, payroll, contracts, banking, and tax compliance. 36 tools, zero corporate law expertise required.
 
 Part of [The Corporation](https://thecorporation.ai) — agent-native corporate infrastructure.
 
