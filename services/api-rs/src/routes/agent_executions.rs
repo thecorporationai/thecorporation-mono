@@ -13,7 +13,8 @@ use std::collections::HashMap;
 
 use agent_types::KillCommand;
 use super::AppState;
-use crate::domain::ids::{AgentId, ExecutionId};
+use crate::auth::{RequireExecutionRead, RequireExecutionWrite};
+use crate::domain::ids::{AgentId, ExecutionId, WorkspaceId};
 use crate::error::AppError;
 
 // ── Response types ───────────────────────────────────────────────────
@@ -47,15 +48,50 @@ fn require_redis(state: &AppState) -> Result<&deadpool_redis::Pool, AppError> {
     })
 }
 
+async fn authorize_execution(
+    conn: &mut deadpool_redis::Connection,
+    expected_agent_id: AgentId,
+    execution_id: ExecutionId,
+    workspace_id: WorkspaceId,
+) -> Result<(), AppError> {
+    let state_key = format!("aw:exec:{execution_id}");
+
+    let actual_agent_id: Option<String> = conn.hget(&state_key, "agent_id").await
+        .map_err(|e| AppError::Internal(format!("redis hget: {e}")))?;
+    let Some(actual_agent_id) = actual_agent_id else {
+        return Err(AppError::NotFound(format!("execution {execution_id} not found")));
+    };
+    if actual_agent_id != expected_agent_id.to_string() {
+        return Err(AppError::NotFound(format!("execution {execution_id} not found")));
+    }
+
+    let actual_workspace_id: Option<String> = conn.hget(&state_key, "workspace_id").await
+        .map_err(|e| AppError::Internal(format!("redis hget: {e}")))?;
+    let Some(actual_workspace_id) = actual_workspace_id else {
+        return Err(AppError::Forbidden("execution workspace missing".to_owned()));
+    };
+    let actual_workspace_id: WorkspaceId = actual_workspace_id
+        .parse()
+        .map_err(|_| AppError::Internal("invalid execution workspace id".to_owned()))?;
+    if actual_workspace_id != workspace_id {
+        return Err(AppError::Forbidden("workspace access denied".to_owned()));
+    }
+
+    Ok(())
+}
+
 // ── Handlers ─────────────────────────────────────────────────────────
 
 async fn get_execution(
+    RequireExecutionRead(auth): RequireExecutionRead,
     State(state): State<AppState>,
-    Path((_agent_id, execution_id)): Path<(AgentId, ExecutionId)>,
+    Path((agent_id, execution_id)): Path<(AgentId, ExecutionId)>,
 ) -> Result<Json<ExecutionResponse>, AppError> {
     let redis = require_redis(&state)?;
     let mut conn = redis.get().await
         .map_err(|e| AppError::Internal(format!("redis: {e}")))?;
+
+    authorize_execution(&mut conn, agent_id, execution_id, auth.workspace_id()).await?;
 
     let key = format!("aw:exec:{execution_id}");
     let fields: HashMap<String, String> = conn.hgetall(&key).await
@@ -77,12 +113,15 @@ async fn get_execution(
 }
 
 async fn get_execution_result(
+    RequireExecutionRead(auth): RequireExecutionRead,
     State(state): State<AppState>,
-    Path((_agent_id, execution_id)): Path<(AgentId, ExecutionId)>,
+    Path((agent_id, execution_id)): Path<(AgentId, ExecutionId)>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     let redis = require_redis(&state)?;
     let mut conn = redis.get().await
         .map_err(|e| AppError::Internal(format!("redis: {e}")))?;
+
+    authorize_execution(&mut conn, agent_id, execution_id, auth.workspace_id()).await?;
 
     let key = format!("aw:exec:{execution_id}:result");
     let json: Option<String> = conn.get(&key).await
@@ -99,12 +138,15 @@ async fn get_execution_result(
 }
 
 async fn get_execution_logs(
+    RequireExecutionRead(auth): RequireExecutionRead,
     State(state): State<AppState>,
-    Path((_agent_id, execution_id)): Path<(AgentId, ExecutionId)>,
+    Path((agent_id, execution_id)): Path<(AgentId, ExecutionId)>,
 ) -> Result<Json<Vec<serde_json::Value>>, AppError> {
     let redis = require_redis(&state)?;
     let mut conn = redis.get().await
         .map_err(|e| AppError::Internal(format!("redis: {e}")))?;
+
+    authorize_execution(&mut conn, agent_id, execution_id, auth.workspace_id()).await?;
 
     let key = format!("aw:logs:{execution_id}:history");
     let entries: Vec<String> = conn.lrange(&key, 0, -1).await
@@ -118,12 +160,15 @@ async fn get_execution_logs(
 }
 
 async fn kill_execution(
+    RequireExecutionWrite(auth): RequireExecutionWrite,
     State(state): State<AppState>,
-    Path((_agent_id, execution_id)): Path<(AgentId, ExecutionId)>,
+    Path((agent_id, execution_id)): Path<(AgentId, ExecutionId)>,
 ) -> Result<Json<KillResponse>, AppError> {
     let redis = require_redis(&state)?;
     let mut conn = redis.get().await
         .map_err(|e| AppError::Internal(format!("redis: {e}")))?;
+
+    authorize_execution(&mut conn, agent_id, execution_id, auth.workspace_id()).await?;
 
     // Check execution exists and is running
     let state_key = format!("aw:exec:{execution_id}");

@@ -61,6 +61,14 @@ impl Contact {
         self.phone = Some(phone);
     }
 
+    pub fn set_name(&mut self, name: String) {
+        self.name = name;
+    }
+
+    pub fn set_email(&mut self, email: Option<String>) {
+        self.email = email;
+    }
+
     pub fn set_notes(&mut self, notes: String) {
         self.notes = Some(notes);
     }

@@ -963,7 +963,7 @@ async fn update_document_request_status(
     let obl_id_str = result.get("obligation_id").and_then(|v| v.as_str()).unwrap_or("");
     let obligation_id = obl_id_str.parse::<uuid::Uuid>()
         .map(ObligationId::from_uuid)
-        .unwrap_or_else(|_| ObligationId::new());
+        .map_err(|_| AppError::Internal("document request has invalid obligation_id".to_owned()))?;
 
     Ok(Json(DocumentRequestResponse {
         request_id,

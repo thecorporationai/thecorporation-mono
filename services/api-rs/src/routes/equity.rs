@@ -33,6 +33,7 @@ use crate::store::entity_store::EntityStore;
 // ── Request types ────────────────────────────────────────────────────
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct CreateGrantRequest {
     pub entity_id: EntityId,
     #[serde(default)]
@@ -46,6 +47,7 @@ pub struct CreateGrantRequest {
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct CreateSafeNoteRequest {
     pub entity_id: EntityId,
     pub investor_name: String,
@@ -60,6 +62,7 @@ pub struct CreateSafeNoteRequest {
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct CreateValuationRequest {
     pub entity_id: EntityId,
     pub valuation_type: ValuationType,
@@ -72,6 +75,7 @@ pub struct CreateValuationRequest {
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct CreateTransferRequest {
     pub entity_id: EntityId,
     pub share_class_id: ShareClassId,
@@ -88,6 +92,7 @@ pub struct CreateTransferRequest {
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct CreateFundingRoundRequest {
     pub entity_id: EntityId,
     pub round_name: String,
@@ -98,6 +103,7 @@ pub struct CreateFundingRoundRequest {
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct BylawsReviewRequest {
     pub approved: bool,
     #[serde(default)]
@@ -107,6 +113,7 @@ pub struct BylawsReviewRequest {
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct RofrDecisionRequest {
     #[serde(default)]
     pub offered: bool,
@@ -309,6 +316,9 @@ async fn get_cap_table(
     Path(entity_id): Path<EntityId>,
 ) -> Result<Json<CapTableResponse>, AppError> {
     let workspace_id = auth.workspace_id();
+    if !auth.allows_entity(entity_id) {
+        return Err(AppError::Forbidden("entity access denied".to_owned()));
+    }
 
     let resp = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
@@ -418,6 +428,9 @@ async fn create_grant(
 ) -> Result<Json<GrantResponse>, AppError> {
     let workspace_id = auth.workspace_id();
     let entity_id = req.entity_id;
+    if !auth.allows_entity(entity_id) {
+        return Err(AppError::Forbidden("entity access denied".to_owned()));
+    }
 
     let grant = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
@@ -490,6 +503,9 @@ async fn create_safe_note(
 ) -> Result<Json<SafeNoteResponse>, AppError> {
     let workspace_id = auth.workspace_id();
     let entity_id = req.entity_id;
+    if !auth.allows_entity(entity_id) {
+        return Err(AppError::Forbidden("entity access denied".to_owned()));
+    }
 
     let safe = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
@@ -573,6 +589,9 @@ async fn get_safe_note(
 ) -> Result<Json<SafeNoteResponse>, AppError> {
     let workspace_id = auth.workspace_id();
     let entity_id = query.entity_id;
+    if !auth.allows_entity(entity_id) {
+        return Err(AppError::Forbidden("entity access denied".to_owned()));
+    }
 
     let safe = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
@@ -599,6 +618,9 @@ async fn create_valuation(
 ) -> Result<Json<ValuationResponse>, AppError> {
     let workspace_id = auth.workspace_id();
     let entity_id = req.entity_id;
+    if !auth.allows_entity(entity_id) {
+        return Err(AppError::Forbidden("entity access denied".to_owned()));
+    }
 
     let val = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
@@ -723,6 +745,9 @@ async fn get_valuation(
 ) -> Result<Json<ValuationResponse>, AppError> {
     let workspace_id = auth.workspace_id();
     let entity_id = query.entity_id;
+    if !auth.allows_entity(entity_id) {
+        return Err(AppError::Forbidden("entity access denied".to_owned()));
+    }
 
     let val = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
@@ -748,6 +773,9 @@ async fn approve_valuation(
 ) -> Result<Json<ValuationResponse>, AppError> {
     let workspace_id = auth.workspace_id();
     let entity_id = query.entity_id;
+    if !auth.allows_entity(entity_id) {
+        return Err(AppError::Forbidden("entity access denied".to_owned()));
+    }
 
     let val = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
@@ -782,6 +810,9 @@ async fn expire_valuation(
 ) -> Result<Json<ValuationResponse>, AppError> {
     let workspace_id = auth.workspace_id();
     let entity_id = query.entity_id;
+    if !auth.allows_entity(entity_id) {
+        return Err(AppError::Forbidden("entity access denied".to_owned()));
+    }
 
     let val = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
@@ -894,6 +925,9 @@ async fn create_transfer(
 ) -> Result<Json<TransferResponse>, AppError> {
     let workspace_id = auth.workspace_id();
     let entity_id = req.entity_id;
+    if !auth.allows_entity(entity_id) {
+        return Err(AppError::Forbidden("entity access denied".to_owned()));
+    }
 
     let transfer = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
@@ -947,6 +981,9 @@ async fn get_transfer(
 ) -> Result<Json<TransferResponse>, AppError> {
     let workspace_id = auth.workspace_id();
     let entity_id = query.entity_id;
+    if !auth.allows_entity(entity_id) {
+        return Err(AppError::Forbidden("entity access denied".to_owned()));
+    }
 
     let transfer = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
@@ -971,6 +1008,9 @@ async fn list_transfers(
     Path(entity_id): Path<EntityId>,
 ) -> Result<Json<Vec<TransferResponse>>, AppError> {
     let workspace_id = auth.workspace_id();
+    if !auth.allows_entity(entity_id) {
+        return Err(AppError::Forbidden("entity access denied".to_owned()));
+    }
 
     let transfers = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
@@ -1005,6 +1045,9 @@ async fn submit_transfer_review(
 ) -> Result<Json<TransferResponse>, AppError> {
     let workspace_id = auth.workspace_id();
     let entity_id = query.entity_id;
+    if !auth.allows_entity(entity_id) {
+        return Err(AppError::Forbidden("entity access denied".to_owned()));
+    }
 
     let transfer = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
@@ -1042,6 +1085,9 @@ async fn record_bylaws_review(
 ) -> Result<Json<TransferResponse>, AppError> {
     let workspace_id = auth.workspace_id();
     let entity_id = query.entity_id;
+    if !auth.allows_entity(entity_id) {
+        return Err(AppError::Forbidden("entity access denied".to_owned()));
+    }
 
     let transfer = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
@@ -1083,6 +1129,9 @@ async fn record_rofr_decision(
 ) -> Result<Json<TransferResponse>, AppError> {
     let workspace_id = auth.workspace_id();
     let entity_id = query.entity_id;
+    if !auth.allows_entity(entity_id) {
+        return Err(AppError::Forbidden("entity access denied".to_owned()));
+    }
 
     let transfer = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
@@ -1119,6 +1168,9 @@ async fn approve_transfer(
 ) -> Result<Json<TransferResponse>, AppError> {
     let workspace_id = auth.workspace_id();
     let entity_id = query.entity_id;
+    if !auth.allows_entity(entity_id) {
+        return Err(AppError::Forbidden("entity access denied".to_owned()));
+    }
 
     let transfer = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
@@ -1192,6 +1244,9 @@ async fn create_funding_round(
 ) -> Result<Json<FundingRoundResponse>, AppError> {
     let workspace_id = auth.workspace_id();
     let entity_id = req.entity_id;
+    if !auth.allows_entity(entity_id) {
+        return Err(AppError::Forbidden("entity access denied".to_owned()));
+    }
 
     let round = tokio::task::spawn_blocking({
         let layout = state.layout.clone();

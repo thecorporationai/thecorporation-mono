@@ -22,6 +22,7 @@ use crate::store::entity_store::EntityStore;
 // ── Request types ────────────────────────────────────────────────────
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct CreateContactRequest {
     pub entity_id: EntityId,
     pub contact_type: ContactType,
@@ -90,6 +91,9 @@ async fn create_contact(
 ) -> Result<Json<ContactResponse>, AppError> {
     let workspace_id = auth.workspace_id();
     let entity_id = req.entity_id;
+    if !auth.allows_entity(entity_id) {
+        return Err(AppError::Forbidden("entity access denied".to_owned()));
+    }
 
     let contact = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
@@ -133,6 +137,9 @@ async fn list_contacts(
     Path(entity_id): Path<EntityId>,
 ) -> Result<Json<Vec<ContactResponse>>, AppError> {
     let workspace_id = auth.workspace_id();
+    if !auth.allows_entity(entity_id) {
+        return Err(AppError::Forbidden("entity access denied".to_owned()));
+    }
 
     let contacts = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
@@ -169,6 +176,9 @@ async fn get_contact(
 ) -> Result<Json<ContactResponse>, AppError> {
     let workspace_id = auth.workspace_id();
     let entity_id = query.entity_id;
+    if !auth.allows_entity(entity_id) {
+        return Err(AppError::Forbidden("entity access denied".to_owned()));
+    }
 
     let contact = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
@@ -187,6 +197,7 @@ async fn get_contact(
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct UpdateContactRequest {
     pub entity_id: EntityId,
     #[serde(default)]
@@ -209,6 +220,15 @@ async fn update_contact(
 ) -> Result<Json<ContactResponse>, AppError> {
     let workspace_id = auth.workspace_id();
     let entity_id = req.entity_id;
+    if !auth.allows_entity(entity_id) {
+        return Err(AppError::Forbidden("entity access denied".to_owned()));
+    }
+    if req.name.as_deref().is_some_and(|s| s.trim().is_empty()) {
+        return Err(AppError::BadRequest("name cannot be empty".to_owned()));
+    }
+    if req.email.as_deref().is_some_and(|s| s.trim().is_empty()) {
+        return Err(AppError::BadRequest("email cannot be empty".to_owned()));
+    }
 
     let contact = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
@@ -218,6 +238,12 @@ async fn update_contact(
                 AppError::NotFound(format!("contact {} not found", contact_id))
             })?;
 
+            if let Some(name) = req.name {
+                contact.set_name(name);
+            }
+            if let Some(email) = req.email {
+                contact.set_email(Some(email));
+            }
             if let Some(phone) = req.phone {
                 contact.set_phone(phone);
             }
@@ -261,6 +287,9 @@ async fn get_contact_profile(
 ) -> Result<Json<ContactProfileResponse>, AppError> {
     let workspace_id = auth.workspace_id();
     let entity_id = query.entity_id;
+    if !auth.allows_entity(entity_id) {
+        return Err(AppError::Forbidden("entity access denied".to_owned()));
+    }
 
     let contact = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
@@ -314,6 +343,9 @@ async fn get_notification_prefs(
 ) -> Result<Json<NotificationPrefsResponse>, AppError> {
     let workspace_id = auth.workspace_id();
     let entity_id = query.entity_id;
+    if !auth.allows_entity(entity_id) {
+        return Err(AppError::Forbidden("entity access denied".to_owned()));
+    }
 
     let prefs = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
@@ -346,6 +378,7 @@ async fn get_notification_prefs(
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct UpdateNotificationPrefsRequest {
     pub entity_id: EntityId,
     #[serde(default)]
@@ -364,6 +397,9 @@ async fn update_notification_prefs(
 ) -> Result<Json<NotificationPrefsResponse>, AppError> {
     let workspace_id = auth.workspace_id();
     let entity_id = req.entity_id;
+    if !auth.allows_entity(entity_id) {
+        return Err(AppError::Forbidden("entity access denied".to_owned()));
+    }
 
     let prefs = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
