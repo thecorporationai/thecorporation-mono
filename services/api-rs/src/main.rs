@@ -2,6 +2,7 @@
 #![allow(clippy::inconsistent_digit_grouping)]
 
 use axum::{Json, Router, routing::get};
+use clap::{Parser, Subcommand};
 use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::net::SocketAddr;
@@ -17,6 +18,28 @@ mod git;
 mod openapi;
 mod routes;
 mod store;
+mod validate;
+
+#[derive(Parser)]
+#[command(name = "api-rs", about = "Corporate API server")]
+struct Cli {
+    /// Skip data validation on server boot.
+    #[arg(long)]
+    skip_validation: bool,
+
+    #[command(subcommand)]
+    command: Option<Command>,
+}
+
+#[derive(Subcommand)]
+enum Command {
+    /// Validate all stored data by deserializing every file and reporting errors.
+    Validate {
+        /// Path to the data/repos directory.
+        #[arg(long, default_value = "./data/repos")]
+        data_dir: PathBuf,
+    },
+}
 
 async fn health() -> Json<Value> {
     Json(json!({ "status": "ok" }))
@@ -28,11 +51,38 @@ async fn openapi_json() -> Json<Value> {
 
 #[tokio::main]
 async fn main() {
+    let cli = Cli::parse();
+
+    match cli.command {
+        Some(Command::Validate { data_dir }) => {
+            let code = validate::run(data_dir);
+            std::process::exit(code);
+        }
+        None => {
+            run_server(cli.skip_validation).await;
+        }
+    }
+}
+
+async fn run_server(skip_validation: bool) {
     tracing_subscriber::fmt()
         .with_env_filter(EnvFilter::from_default_env())
         .init();
 
-    let layout = Arc::new(store::RepoLayout::new(PathBuf::from("./data/repos")));
+    let data_dir = PathBuf::from("./data/repos");
+
+    if skip_validation {
+        tracing::warn!("--skip-validation set — skipping startup data validation");
+    } else if data_dir.exists() {
+        tracing::info!("validating stored data before startup…");
+        let code = validate::run(data_dir.clone());
+        if code != 0 {
+            panic!("data validation failed — fix the errors above or pass --skip-validation to bypass");
+        }
+        tracing::info!("data validation passed");
+    }
+
+    let layout = Arc::new(store::RepoLayout::new(data_dir));
 
     let jwt_secret: Arc<[u8]> = match std::env::var("JWT_SECRET") {
         Ok(s) if s.len() >= 32 => Arc::from(s.into_bytes()),

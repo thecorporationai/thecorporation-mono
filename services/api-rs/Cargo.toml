@@ -5,6 +5,9 @@ edition = "2024"
 rust-version = "1.85"
 
 [dependencies]
+# CLI
+clap = { version = "4", features = ["derive"] }
+
 # Web framework
 axum = { version = "0.8", features = ["macros"] }
 tower = "0.5"

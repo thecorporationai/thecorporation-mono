@@ -9,3 +9,4 @@ pub mod git;
 pub mod openapi;
 pub mod routes;
 pub mod store;
+pub mod validate;
