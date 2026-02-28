@@ -13,7 +13,7 @@ use std::sync::Arc;
 use tempfile::TempDir;
 use tower::ServiceExt; // oneshot
 
-use api_rs::domain::auth::claims::{encode_token, Claims};
+use api_rs::domain::auth::claims::{Claims, PrincipalType, encode_token};
 use api_rs::domain::auth::scopes::Scope;
 use api_rs::domain::ids::WorkspaceId;
 
@@ -23,7 +23,16 @@ const TEST_SECRET: &[u8] = b"test-secret-for-integration-tests";
 
 fn make_token(ws_id: WorkspaceId) -> String {
     let now = chrono::Utc::now().timestamp();
-    let claims = Claims::new(ws_id, None, vec![Scope::All], now, now + 3600);
+    let claims = Claims::new(
+        ws_id,
+        None,
+        None,
+        None,
+        PrincipalType::User,
+        vec![Scope::All],
+        now,
+        now + 3600,
+    );
     encode_token(&claims, TEST_SECRET).expect("encode token")
 }
 
@@ -1355,48 +1364,69 @@ async fn patch_json(app: &Router, path: &str, body: Value, token: &str) -> (Stat
 async fn test_webhook_lifecycle() {
     let tmp = TempDir::new().unwrap();
     let app = build_app(&tmp);
-    let token = make_token(WorkspaceId::new());
+    unsafe {
+        std::env::set_var("STRIPE_WEBHOOK_SECRET", "stripe-secret-test");
+        std::env::set_var("STRIPE_BILLING_WEBHOOK_SECRET", "stripe-billing-secret-test");
+    }
 
     // 1. Stripe webhook
-    let (status, body) = post_json(
-        &app,
-        "/v1/webhooks/stripe",
-        json!({
-            "id": "evt_test_123",
-            "type": "payment_intent.succeeded",
-            "data": { "object": { "amount": 5000 } }
-        }),
-        &token,
-    )
-    .await;
+    let req = Request::builder()
+        .method(Method::POST)
+        .uri("/v1/webhooks/stripe")
+        .header("content-type", "application/json")
+        .header("x-webhook-secret", "stripe-secret-test")
+        .body(Body::from(
+            serde_json::to_vec(&json!({
+                "id": "evt_test_123",
+                "type": "payment_intent.succeeded",
+                "data": { "object": { "amount": 5000 } }
+            }))
+            .unwrap(),
+        ))
+        .unwrap();
+    let response = app.clone().oneshot(req).await.unwrap();
+    let status = response.status();
+    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let body: Value = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
     assert_eq!(status, StatusCode::OK, "stripe webhook: {body}");
     assert_eq!(body["received"], true);
     assert_eq!(body["event_id"], "evt_test_123");
 
     // 2. Stripe billing webhook
-    let (status, body) = post_json(
-        &app,
-        "/v1/webhooks/stripe-billing",
-        json!({
-            "id": "evt_billing_456",
-            "type": "invoice.paid",
-            "data": { "object": { "subscription": "sub_123" } }
-        }),
-        &token,
-    )
-    .await;
+    let req = Request::builder()
+        .method(Method::POST)
+        .uri("/v1/webhooks/stripe-billing")
+        .header("content-type", "application/json")
+        .header("x-webhook-secret", "stripe-billing-secret-test")
+        .body(Body::from(
+            serde_json::to_vec(&json!({
+                "id": "evt_billing_456",
+                "type": "invoice.paid",
+                "data": { "object": { "subscription": "sub_123" } }
+            }))
+            .unwrap(),
+        ))
+        .unwrap();
+    let response = app.clone().oneshot(req).await.unwrap();
+    let status = response.status();
+    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let body: Value = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
     assert_eq!(status, StatusCode::OK, "stripe billing webhook: {body}");
     assert_eq!(body["received"], true);
     assert_eq!(body["event_id"], "evt_billing_456");
 
     // 3. Webhook with missing optional fields
-    let (status, body) = post_json(
-        &app,
-        "/v1/webhooks/stripe",
-        json!({}),
-        &token,
-    )
-    .await;
+    let req = Request::builder()
+        .method(Method::POST)
+        .uri("/v1/webhooks/stripe")
+        .header("content-type", "application/json")
+        .header("x-webhook-secret", "stripe-secret-test")
+        .body(Body::from(serde_json::to_vec(&json!({})).unwrap()))
+        .unwrap();
+    let response = app.clone().oneshot(req).await.unwrap();
+    let status = response.status();
+    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let body: Value = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
     assert_eq!(status, StatusCode::OK, "empty webhook: {body}");
     assert_eq!(body["received"], true);
     assert!(body["event_id"].is_null());
@@ -1437,7 +1467,6 @@ async fn test_auth_workspace_lifecycle() {
         &app,
         "/v1/api-keys",
         json!({
-            "workspace_id": ws_id_str,
             "name": "secondary-key",
             "scopes": ["all"]
         }),
@@ -1452,7 +1481,7 @@ async fn test_auth_workspace_lifecycle() {
     // 3. List API keys
     let (status, body) = get_json(
         &app,
-        &format!("/v1/api-keys/{ws_id_str}"),
+        "/v1/api-keys",
         &ws_token,
     )
     .await;
@@ -1466,7 +1495,6 @@ async fn test_auth_workspace_lifecycle() {
         "/v1/auth/token-exchange",
         json!({
             "api_key": api_key,
-            "workspace_id": ws_id_str,
             "ttl_seconds": 1800
         }),
         &ws_token,
