@@ -12,8 +12,10 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 
-use super::{AppState, WorkspaceEntityQuery};
+use super::AppState;
+use crate::auth::{RequireBranchCreate, RequireBranchDelete, RequireBranchMerge};
 use crate::error::AppError;
+use crate::git::branch_name::{BranchName, BranchNameError};
 use crate::git::merge::MergeResult;
 
 // ── BranchTarget extractor ──────────────────────────────────────────────
@@ -21,17 +23,23 @@ use crate::git::merge::MergeResult;
 /// Extracts the target branch from the `X-Corp-Branch` header.
 ///
 /// If the header is absent, defaults to `"main"`.
-pub struct BranchTarget(String);
+/// Validates the branch name against git branch naming rules.
+pub struct BranchTarget(BranchName);
 
 impl BranchTarget {
-    /// Returns the branch name.
+    /// Returns the branch name as a string slice.
     pub fn name(&self) -> &str {
+        self.0.as_str()
+    }
+
+    /// Returns a reference to the inner `BranchName`.
+    pub fn branch(&self) -> &BranchName {
         &self.0
     }
 
-    /// Consumes the extractor and returns the inner branch name.
+    /// Consumes the extractor and returns the inner branch name string.
     pub fn into_inner(self) -> String {
-        self.0
+        self.0.into_inner()
     }
 }
 
@@ -39,15 +47,17 @@ impl<S> FromRequestParts<S> for BranchTarget
 where
     S: Send + Sync,
 {
-    type Rejection = std::convert::Infallible;
+    type Rejection = (StatusCode, String);
 
     async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
-        let branch = parts
+        let raw = parts
             .headers
             .get("X-Corp-Branch")
             .and_then(|v| v.to_str().ok())
-            .unwrap_or("main")
-            .to_owned();
+            .unwrap_or("main");
+        let branch = BranchName::new(raw).map_err(|e: BranchNameError| {
+            (StatusCode::BAD_REQUEST, e.to_string())
+        })?;
         Ok(BranchTarget(branch))
     }
 }
@@ -56,23 +66,23 @@ where
 
 #[derive(Deserialize)]
 pub struct CreateBranchRequest {
-    name: String,
+    name: BranchName,
     #[serde(default = "default_branch")]
-    from: String,
+    from: BranchName,
 }
 
 impl CreateBranchRequest {
     pub fn name(&self) -> &str {
-        &self.name
+        self.name.as_str()
     }
 
     pub fn from(&self) -> &str {
-        &self.from
+        self.from.as_str()
     }
 }
 
-fn default_branch() -> String {
-    "main".to_owned()
+fn default_branch() -> BranchName {
+    BranchName::main()
 }
 
 #[derive(Serialize)]
@@ -110,12 +120,12 @@ impl BranchListEntry {
 #[derive(Deserialize)]
 pub struct MergeBranchRequest {
     #[serde(default = "default_branch")]
-    into: String,
+    into: BranchName,
 }
 
 impl MergeBranchRequest {
     pub fn target_branch(&self) -> &str {
-        &self.into
+        self.into.as_str()
     }
 }
 
@@ -143,11 +153,12 @@ impl MergeBranchResponse {
 // ── Handlers ────────────────────────────────────────────────────────────
 
 async fn create_branch(
+    RequireBranchCreate(auth): RequireBranchCreate,
     State(state): State<AppState>,
-    Query(query): Query<WorkspaceEntityQuery>,
+    Query(query): Query<super::EntityIdQuery>,
     Json(req): Json<CreateBranchRequest>,
 ) -> Result<(StatusCode, Json<CreateBranchResponse>), AppError> {
-    let workspace_id = query.workspace_id;
+    let workspace_id = auth.workspace_id();
     let entity_id = query.entity_id;
 
     let info = tokio::task::spawn_blocking({
@@ -180,10 +191,11 @@ async fn create_branch(
 }
 
 async fn list_branches(
+    RequireBranchCreate(auth): RequireBranchCreate,
     State(state): State<AppState>,
-    Query(query): Query<WorkspaceEntityQuery>,
+    Query(query): Query<super::EntityIdQuery>,
 ) -> Result<Json<Vec<BranchListEntry>>, AppError> {
-    let workspace_id = query.workspace_id;
+    let workspace_id = auth.workspace_id();
     let entity_id = query.entity_id;
 
     let branches = tokio::task::spawn_blocking({
@@ -215,17 +227,19 @@ async fn list_branches(
 }
 
 async fn merge_branch(
+    RequireBranchMerge(auth): RequireBranchMerge,
     State(state): State<AppState>,
     Path(name): Path<String>,
-    Query(query): Query<WorkspaceEntityQuery>,
+    Query(query): Query<super::EntityIdQuery>,
     Json(req): Json<MergeBranchRequest>,
 ) -> Result<Json<MergeBranchResponse>, AppError> {
-    let workspace_id = query.workspace_id;
+    let workspace_id = auth.workspace_id();
     let entity_id = query.entity_id;
+
+    let source = BranchName::new(name).map_err(|e| AppError::BadRequest(e.to_string()))?;
 
     let result = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
-        let source = name.clone();
         let target = req.into.clone();
         move || {
             let store = crate::store::entity_store::EntityStore::open(
@@ -265,12 +279,14 @@ async fn merge_branch(
 }
 
 async fn delete_branch_handler(
+    RequireBranchDelete(auth): RequireBranchDelete,
     State(state): State<AppState>,
     Path(name): Path<String>,
-    Query(query): Query<WorkspaceEntityQuery>,
+    Query(query): Query<super::EntityIdQuery>,
 ) -> Result<StatusCode, AppError> {
-    let workspace_id = query.workspace_id;
+    let workspace_id = auth.workspace_id();
     let entity_id = query.entity_id;
+    let branch = BranchName::new(name).map_err(|e| AppError::BadRequest(e.to_string()))?;
 
     tokio::task::spawn_blocking({
         let layout = state.layout.clone();
@@ -282,7 +298,7 @@ async fn delete_branch_handler(
             )
             .map_err(|e| AppError::Internal(e.to_string()))?;
 
-            crate::git::branch::delete_branch(store.repo(), &name)
+            crate::git::branch::delete_branch(store.repo(), &branch)
                 .map_err(AppError::from)
         }
     })
@@ -295,11 +311,12 @@ async fn delete_branch_handler(
 
 /// Prune a branch (POST alternative to DELETE for clients that don't support DELETE).
 async fn prune_branch(
+    RequireBranchDelete(auth): RequireBranchDelete,
     State(state): State<AppState>,
     Path(name): Path<String>,
-    Query(query): Query<WorkspaceEntityQuery>,
+    Query(query): Query<super::EntityIdQuery>,
 ) -> Result<StatusCode, AppError> {
-    delete_branch_handler(State(state), Path(name), Query(query)).await
+    delete_branch_handler(RequireBranchDelete(auth), State(state), Path(name), Query(query)).await
 }
 
 // ── Router ──────────────────────────────────────────────────────────────
@@ -338,6 +355,13 @@ mod tests {
         let mut parts = request_parts_with_header("dev");
         let target = BranchTarget::from_request_parts(&mut parts, &()).await.unwrap();
         assert_eq!(target.into_inner(), "dev");
+    }
+
+    #[tokio::test]
+    async fn branch_target_rejects_invalid() {
+        let mut parts = request_parts_with_header("my branch");
+        let result = BranchTarget::from_request_parts(&mut parts, &()).await;
+        assert!(result.is_err());
     }
 
     fn request_parts_without_header() -> Parts {

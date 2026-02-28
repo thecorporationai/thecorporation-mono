@@ -10,6 +10,7 @@ use axum::{
 use serde::{Deserialize, Serialize};
 
 use super::AppState;
+use crate::auth::{RequireContactsRead, RequireContactsWrite};
 use crate::domain::contacts::{
     contact::Contact,
     types::{CapTableAccess, ContactCategory, ContactStatus, ContactType},
@@ -17,13 +18,6 @@ use crate::domain::contacts::{
 use crate::domain::ids::{ContactId, EntityId, WorkspaceId};
 use crate::error::AppError;
 use crate::store::entity_store::EntityStore;
-
-// ── Query types ──────────────────────────────────────────────────────
-
-#[derive(Deserialize)]
-pub struct EntityQuery {
-    pub workspace_id: WorkspaceId,
-}
 
 // ── Request types ────────────────────────────────────────────────────
 
@@ -35,8 +29,6 @@ pub struct CreateContactRequest {
     #[serde(default)]
     pub email: Option<String>,
     pub category: ContactCategory,
-    #[serde(default)]
-    pub workspace_id: Option<WorkspaceId>,
 }
 
 // ── Response types ───────────────────────────────────────────────────
@@ -92,10 +84,11 @@ fn open_store<'a>(
 // ── Handlers ─────────────────────────────────────────────────────────
 
 async fn create_contact(
+    RequireContactsWrite(auth): RequireContactsWrite,
     State(state): State<AppState>,
     Json(req): Json<CreateContactRequest>,
 ) -> Result<Json<ContactResponse>, AppError> {
-    let workspace_id = req.workspace_id.ok_or_else(|| AppError::BadRequest("workspace_id is required".to_owned()))?;
+    let workspace_id = auth.workspace_id();
     let entity_id = req.entity_id;
 
     let contact = tokio::task::spawn_blocking({
@@ -135,23 +128,23 @@ async fn create_contact(
 }
 
 async fn list_contacts(
+    RequireContactsRead(auth): RequireContactsRead,
     State(state): State<AppState>,
     Path(entity_id): Path<EntityId>,
-    Query(query): Query<EntityQuery>,
 ) -> Result<Json<Vec<ContactResponse>>, AppError> {
-    let workspace_id = query.workspace_id;
+    let workspace_id = auth.workspace_id();
 
     let contacts = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
-            let ids = store.list_contact_ids("main").map_err(|e| {
+            let ids = store.list_ids::<Contact>("main").map_err(|e| {
                 AppError::Internal(format!("list contacts: {e}"))
             })?;
 
             let mut results = Vec::new();
             for id in ids {
-                let c = store.read_contact("main", id).map_err(|e| {
+                let c = store.read::<Contact>("main",id).map_err(|e| {
                     AppError::Internal(format!("read contact {id}: {e}"))
                 })?;
                 results.push(contact_to_response(&c));
@@ -169,18 +162,19 @@ async fn list_contacts(
 // ── Extended contact handlers ────────────────────────────────────────
 
 async fn get_contact(
+    RequireContactsRead(auth): RequireContactsRead,
     State(state): State<AppState>,
     Path(contact_id): Path<ContactId>,
-    Query(query): Query<super::WorkspaceEntityQuery>,
+    Query(query): Query<super::EntityIdQuery>,
 ) -> Result<Json<ContactResponse>, AppError> {
-    let workspace_id = query.workspace_id;
+    let workspace_id = auth.workspace_id();
     let entity_id = query.entity_id;
 
     let contact = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
-            store.read_contact("main", contact_id).map_err(|_| {
+            store.read::<Contact>("main",contact_id).map_err(|_| {
                 AppError::NotFound(format!("contact {} not found", contact_id))
             })
         }
@@ -194,7 +188,6 @@ async fn get_contact(
 
 #[derive(Deserialize)]
 pub struct UpdateContactRequest {
-    pub workspace_id: WorkspaceId,
     pub entity_id: EntityId,
     #[serde(default)]
     pub name: Option<String>,
@@ -209,18 +202,19 @@ pub struct UpdateContactRequest {
 }
 
 async fn update_contact(
+    RequireContactsWrite(auth): RequireContactsWrite,
     State(state): State<AppState>,
     Path(contact_id): Path<ContactId>,
     Json(req): Json<UpdateContactRequest>,
 ) -> Result<Json<ContactResponse>, AppError> {
-    let workspace_id = req.workspace_id;
+    let workspace_id = auth.workspace_id();
     let entity_id = req.entity_id;
 
     let contact = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
-            let mut contact = store.read_contact("main", contact_id).map_err(|_| {
+            let mut contact = store.read::<Contact>("main",contact_id).map_err(|_| {
                 AppError::NotFound(format!("contact {} not found", contact_id))
             })?;
 
@@ -260,18 +254,19 @@ pub struct ContactProfileResponse {
 }
 
 async fn get_contact_profile(
+    RequireContactsRead(auth): RequireContactsRead,
     State(state): State<AppState>,
     Path(contact_id): Path<ContactId>,
-    Query(query): Query<super::WorkspaceEntityQuery>,
+    Query(query): Query<super::EntityIdQuery>,
 ) -> Result<Json<ContactProfileResponse>, AppError> {
-    let workspace_id = query.workspace_id;
+    let workspace_id = auth.workspace_id();
     let entity_id = query.entity_id;
 
     let contact = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
-            store.read_contact("main", contact_id).map_err(|_| {
+            store.read::<Contact>("main",contact_id).map_err(|_| {
                 AppError::NotFound(format!("contact {} not found", contact_id))
             })
         }
@@ -312,11 +307,12 @@ fn prefs_to_response(p: &NotifPrefsRecord) -> NotificationPrefsResponse {
 }
 
 async fn get_notification_prefs(
+    RequireContactsRead(auth): RequireContactsRead,
     State(state): State<AppState>,
     Path(contact_id): Path<ContactId>,
-    Query(query): Query<super::WorkspaceEntityQuery>,
+    Query(query): Query<super::EntityIdQuery>,
 ) -> Result<Json<NotificationPrefsResponse>, AppError> {
-    let workspace_id = query.workspace_id;
+    let workspace_id = auth.workspace_id();
     let entity_id = query.entity_id;
 
     let prefs = tokio::task::spawn_blocking({
@@ -330,7 +326,7 @@ async fn get_notification_prefs(
                 Ok(p) => Ok::<_, AppError>(p),
                 Err(_) => {
                     // Verify the contact exists first
-                    store.read_contact("main", contact_id).map_err(|_| {
+                    store.read::<Contact>("main",contact_id).map_err(|_| {
                         AppError::NotFound(format!("contact {} not found", contact_id))
                     })?;
                     let p = NotifPrefsRecord::new(contact_id);
@@ -351,7 +347,6 @@ async fn get_notification_prefs(
 
 #[derive(Deserialize)]
 pub struct UpdateNotificationPrefsRequest {
-    pub workspace_id: WorkspaceId,
     pub entity_id: EntityId,
     #[serde(default)]
     pub email_enabled: Option<bool>,
@@ -362,11 +357,12 @@ pub struct UpdateNotificationPrefsRequest {
 }
 
 async fn update_notification_prefs(
+    RequireContactsWrite(auth): RequireContactsWrite,
     State(state): State<AppState>,
     Path(contact_id): Path<ContactId>,
     Json(req): Json<UpdateNotificationPrefsRequest>,
 ) -> Result<Json<NotificationPrefsResponse>, AppError> {
-    let workspace_id = req.workspace_id;
+    let workspace_id = auth.workspace_id();
     let entity_id = req.entity_id;
 
     let prefs = tokio::task::spawn_blocking({
@@ -379,7 +375,7 @@ async fn update_notification_prefs(
             let mut prefs = match store.read_json::<NotifPrefsRecord>("main", &path) {
                 Ok(p) => p,
                 Err(_) => {
-                    store.read_contact("main", contact_id).map_err(|_| {
+                    store.read::<Contact>("main",contact_id).map_err(|_| {
                         AppError::NotFound(format!("contact {} not found", contact_id))
                     })?;
                     NotifPrefsRecord::new(contact_id)

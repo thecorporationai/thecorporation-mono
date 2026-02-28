@@ -194,6 +194,74 @@ impl fmt::Display for FilingStatus {
     }
 }
 
+// ── String newtypes ────────────────────────────────────────────────────
+
+/// Maximum length for a jurisdiction string.
+const MAX_JURISDICTION_LEN: usize = 200;
+
+/// A validated jurisdiction (e.g., "Delaware", "California").
+///
+/// Guarantees: non-empty, at most 200 characters.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize)]
+#[serde(transparent)]
+pub struct Jurisdiction(String);
+
+impl Jurisdiction {
+    /// Create a validated jurisdiction.
+    pub fn new(s: impl Into<String>) -> Result<Self, String> {
+        let s = s.into();
+        if s.is_empty() {
+            return Err("jurisdiction must not be empty".into());
+        }
+        if s.len() > MAX_JURISDICTION_LEN {
+            return Err(format!(
+                "jurisdiction must be at most {} characters",
+                MAX_JURISDICTION_LEN
+            ));
+        }
+        Ok(Self(s))
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl<'de> Deserialize<'de> for Jurisdiction {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        Self::new(s).map_err(serde::de::Error::custom)
+    }
+}
+
+impl std::ops::Deref for Jurisdiction {
+    type Target = str;
+    fn deref(&self) -> &str {
+        &self.0
+    }
+}
+
+impl PartialEq<str> for Jurisdiction {
+    fn eq(&self, other: &str) -> bool {
+        self.0 == other
+    }
+}
+
+impl AsRef<str> for Jurisdiction {
+    fn as_ref(&self) -> &str {
+        &self.0
+    }
+}
+
+impl fmt::Display for Jurisdiction {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -271,5 +339,37 @@ mod tests {
         let json = serde_json::to_string(&cls).expect("serialize IrsTaxClassification");
         // serde rename_all snake_case: CCorporation -> "c_corporation"
         assert_eq!(json, "\"c_corporation\"");
+    }
+
+    #[test]
+    fn jurisdiction_valid() {
+        assert!(Jurisdiction::new("Delaware").is_ok());
+        assert!(Jurisdiction::new("California").is_ok());
+    }
+
+    #[test]
+    fn jurisdiction_rejects_empty() {
+        assert!(Jurisdiction::new("").is_err());
+    }
+
+    #[test]
+    fn jurisdiction_rejects_oversized() {
+        let long = "x".repeat(MAX_JURISDICTION_LEN + 1);
+        assert!(Jurisdiction::new(long).is_err());
+    }
+
+    #[test]
+    fn jurisdiction_serde_roundtrip() {
+        let j = Jurisdiction::new("Delaware").unwrap();
+        let json = serde_json::to_string(&j).unwrap();
+        let parsed: Jurisdiction = serde_json::from_str(&json).unwrap();
+        assert_eq!(j, parsed);
+    }
+
+    #[test]
+    fn jurisdiction_deserialize_rejects_empty() {
+        let json = serde_json::json!("");
+        let result: Result<Jurisdiction, _> = serde_json::from_value(json);
+        assert!(result.is_err());
     }
 }

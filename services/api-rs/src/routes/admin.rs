@@ -4,14 +4,16 @@
 //! and subscriptions. All data is read from git repos on disk.
 
 use axum::{
-    extract::{Path, Query, State},
+    extract::{Path, State},
     routing::{get, post},
     Json, Router,
 };
 use serde::{Deserialize, Serialize};
 
 use super::AppState;
+use crate::auth::RequireAdmin;
 use crate::domain::billing::subscription::Subscription;
+use crate::domain::contacts::contact::Contact;
 use crate::domain::ids::{EntityId, SubscriptionId, WorkspaceId};
 use crate::error::AppError;
 use crate::store::workspace_store::WorkspaceStore;
@@ -45,6 +47,7 @@ pub struct SystemHealth {
 // ── Handlers ─────────────────────────────────────────────────────────
 
 async fn list_workspaces(
+    RequireAdmin(_auth): RequireAdmin,
     State(state): State<AppState>,
 ) -> Result<Json<Vec<WorkspaceSummary>>, AppError> {
     let summaries = tokio::task::spawn_blocking({
@@ -84,6 +87,7 @@ async fn list_workspaces(
 }
 
 async fn list_audit_events(
+    RequireAdmin(_auth): RequireAdmin,
     State(state): State<AppState>,
 ) -> Result<Json<Vec<AuditEvent>>, AppError> {
     let events = tokio::task::spawn_blocking({
@@ -126,6 +130,7 @@ async fn list_audit_events(
 }
 
 async fn system_health(
+    RequireAdmin(_auth): RequireAdmin,
     State(state): State<AppState>,
 ) -> Result<Json<SystemHealth>, AppError> {
     let workspace_count = tokio::task::spawn_blocking({
@@ -153,11 +158,6 @@ async fn system_health(
 
 // ── Workspace status ────────────────────────────────────────────────
 
-#[derive(Deserialize)]
-pub struct WorkspaceStatusQuery {
-    pub workspace_id: WorkspaceId,
-}
-
 #[derive(Serialize)]
 pub struct WorkspaceStatusResponse {
     pub workspace_id: WorkspaceId,
@@ -167,10 +167,10 @@ pub struct WorkspaceStatusResponse {
 }
 
 async fn workspace_status(
+    RequireAdmin(auth): RequireAdmin,
     State(state): State<AppState>,
-    Query(query): Query<WorkspaceStatusQuery>,
 ) -> Result<Json<WorkspaceStatusResponse>, AppError> {
-    let workspace_id = query.workspace_id;
+    let workspace_id = auth.workspace_id();
 
     let response = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
@@ -206,10 +206,10 @@ pub struct WorkspaceEntitySummary {
 }
 
 async fn list_workspace_entities(
+    RequireAdmin(auth): RequireAdmin,
     State(state): State<AppState>,
-    Query(query): Query<WorkspaceStatusQuery>,
 ) -> Result<Json<Vec<WorkspaceEntitySummary>>, AppError> {
-    let workspace_id = query.workspace_id;
+    let workspace_id = auth.workspace_id();
 
     let entities = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
@@ -237,8 +237,6 @@ async fn list_workspace_entities(
 
 #[derive(Deserialize)]
 pub struct DemoSeedRequest {
-    #[serde(default)]
-    pub workspace_id: Option<WorkspaceId>,
     #[serde(default = "default_scenario")]
     pub scenario: String,
 }
@@ -256,10 +254,11 @@ pub struct DemoSeedResponse {
 }
 
 async fn demo_seed(
+    RequireAdmin(auth): RequireAdmin,
     State(state): State<AppState>,
     Json(req): Json<DemoSeedRequest>,
 ) -> Result<Json<DemoSeedResponse>, AppError> {
-    let workspace_id = req.workspace_id.ok_or_else(|| AppError::BadRequest("workspace_id is required".to_owned()))?;
+    let workspace_id = auth.workspace_id();
     let scenario = req.scenario.clone();
 
     let entities_created = tokio::task::spawn_blocking({
@@ -298,7 +297,7 @@ async fn demo_seed(
                 workspace_id,
                 legal_name.to_owned(),
                 entity_type,
-                "Delaware".to_owned(),
+                crate::domain::formation::types::Jurisdiction::new("Delaware").unwrap(),
                 None,
                 None,
             )
@@ -342,10 +341,10 @@ pub struct SubscriptionResponse {
 }
 
 async fn get_subscription(
+    RequireAdmin(auth): RequireAdmin,
     State(state): State<AppState>,
-    Query(query): Query<WorkspaceStatusQuery>,
 ) -> Result<Json<SubscriptionResponse>, AppError> {
-    let workspace_id = query.workspace_id;
+    let workspace_id = auth.workspace_id();
 
     let sub = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
@@ -403,7 +402,6 @@ async fn get_config() -> Json<ConfigResponse> {
 
 #[derive(Deserialize)]
 pub struct WorkspaceLinkRequest {
-    pub workspace_id: WorkspaceId,
     pub external_id: String,
     pub provider: String,
 }
@@ -416,10 +414,11 @@ pub struct WorkspaceLinkResponse {
 }
 
 async fn link_workspace(
+    RequireAdmin(auth): RequireAdmin,
     State(state): State<AppState>,
     Json(req): Json<WorkspaceLinkRequest>,
 ) -> Result<Json<WorkspaceLinkResponse>, AppError> {
-    let workspace_id = req.workspace_id;
+    let workspace_id = auth.workspace_id();
 
     tokio::task::spawn_blocking({
         let layout = state.layout.clone();
@@ -457,7 +456,6 @@ async fn link_workspace(
 
 #[derive(Deserialize)]
 pub struct WorkspaceClaimRequest {
-    pub workspace_id: WorkspaceId,
     pub claim_token: String,
 }
 
@@ -468,10 +466,11 @@ pub struct WorkspaceClaimResponse {
 }
 
 async fn claim_workspace(
+    RequireAdmin(auth): RequireAdmin,
     State(state): State<AppState>,
-    Json(req): Json<WorkspaceClaimRequest>,
+    Json(_req): Json<WorkspaceClaimRequest>,
 ) -> Result<Json<WorkspaceClaimResponse>, AppError> {
-    let workspace_id = req.workspace_id;
+    let workspace_id = auth.workspace_id();
 
     // Verify workspace exists
     tokio::task::spawn_blocking({
@@ -495,6 +494,7 @@ async fn claim_workspace(
 // ── Handlers: Workspace by path param ───────────────────────────────
 
 async fn workspace_status_by_path(
+    RequireAdmin(_auth): RequireAdmin,
     State(state): State<AppState>,
     Path(workspace_id): Path<WorkspaceId>,
 ) -> Result<Json<WorkspaceStatusResponse>, AppError> {
@@ -527,6 +527,7 @@ async fn workspace_status_by_path(
 }
 
 async fn workspace_entities_by_path(
+    RequireAdmin(_auth): RequireAdmin,
     State(state): State<AppState>,
     Path(workspace_id): Path<WorkspaceId>,
 ) -> Result<Json<Vec<WorkspaceEntitySummary>>, AppError> {
@@ -560,6 +561,7 @@ pub struct WorkspaceContactSummary {
 }
 
 async fn workspace_contacts(
+    RequireAdmin(_auth): RequireAdmin,
     State(state): State<AppState>,
     Path(workspace_id): Path<WorkspaceId>,
 ) -> Result<Json<Vec<WorkspaceContactSummary>>, AppError> {
@@ -574,7 +576,7 @@ async fn workspace_contacts(
 
             for entity_id in entity_ids {
                 if let Ok(store) = crate::store::entity_store::EntityStore::open(&layout, workspace_id, entity_id) {
-                    if let Ok(ids) = store.list_contact_ids("main") {
+                    if let Ok(ids) = store.list_ids::<Contact>("main") {
                         for contact_id in ids {
                             results.push(WorkspaceContactSummary {
                                 contact_id: contact_id.to_string(),
@@ -608,11 +610,15 @@ pub struct DigestTriggerResponse {
     pub digest_count: usize,
 }
 
-async fn list_digests() -> Json<Vec<DigestSummary>> {
+async fn list_digests(
+    RequireAdmin(_auth): RequireAdmin,
+) -> Json<Vec<DigestSummary>> {
     Json(vec![])
 }
 
-async fn trigger_digests() -> Json<DigestTriggerResponse> {
+async fn trigger_digests(
+    RequireAdmin(_auth): RequireAdmin,
+) -> Json<DigestTriggerResponse> {
     Json(DigestTriggerResponse {
         triggered: true,
         digest_count: 0,
@@ -620,6 +626,7 @@ async fn trigger_digests() -> Json<DigestTriggerResponse> {
 }
 
 async fn get_digest(
+    RequireAdmin(_auth): RequireAdmin,
     Path(digest_key): Path<String>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     Err(AppError::NotFound(format!("digest {} not found", digest_key)))

@@ -1,4 +1,5 @@
 pub mod entity_store;
+pub mod stored_entity;
 pub mod workspace_store;
 
 use std::path::PathBuf;

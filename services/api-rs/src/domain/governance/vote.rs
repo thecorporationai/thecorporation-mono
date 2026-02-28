@@ -8,8 +8,46 @@ use super::error::GovernanceError;
 use super::types::{VoteValue, VotingPower};
 use crate::domain::ids::{AgendaItemId, ContactId, GovernanceSeatId, MeetingId, VoteId};
 
+// ── Raw mirror for deserialization ──────────────────────────────────────
+
+#[derive(Deserialize)]
+struct RawVote {
+    vote_id: VoteId,
+    meeting_id: MeetingId,
+    agenda_item_id: AgendaItemId,
+    seat_id: GovernanceSeatId,
+    voter_id: ContactId,
+    vote_value: VoteValue,
+    voting_power_applied: VotingPower,
+    signature_hash: String,
+    cast_at: DateTime<Utc>,
+}
+
+impl TryFrom<RawVote> for Vote {
+    type Error = GovernanceError;
+
+    fn try_from(raw: RawVote) -> Result<Self, Self::Error> {
+        // VotingPower type already guarantees > 0 via its own TryFrom.
+        // No additional validation needed beyond what the types enforce.
+        Ok(Vote {
+            vote_id: raw.vote_id,
+            meeting_id: raw.meeting_id,
+            agenda_item_id: raw.agenda_item_id,
+            seat_id: raw.seat_id,
+            voter_id: raw.voter_id,
+            vote_value: raw.vote_value,
+            voting_power_applied: raw.voting_power_applied,
+            signature_hash: raw.signature_hash,
+            cast_at: raw.cast_at,
+        })
+    }
+}
+
+// ── Vote ────────────────────────────────────────────────────────────────
+
 /// A vote cast by a seat holder on an agenda item.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(try_from = "RawVote")]
 pub struct Vote {
     vote_id: VoteId,
     meeting_id: MeetingId,
@@ -25,7 +63,7 @@ pub struct Vote {
 impl Vote {
     /// Create a new vote with an auto-computed signature hash.
     ///
-    /// Returns `Err` if `voting_power_applied` is zero.
+    /// `voting_power_applied` is guaranteed > 0 by the `VotingPower` type.
     pub fn new(
         vote_id: VoteId,
         meeting_id: MeetingId,
@@ -35,11 +73,9 @@ impl Vote {
         vote_value: VoteValue,
         voting_power_applied: VotingPower,
     ) -> Result<Self, GovernanceError> {
-        if voting_power_applied.raw() == 0 {
-            return Err(GovernanceError::Validation(
-                "voting power must be greater than zero".into(),
-            ));
-        }
+        // VotingPower type guarantees > 0 via TryFrom, but we keep a
+        // belt-and-suspenders check so the constructor is self-documenting.
+        debug_assert!(voting_power_applied.raw() > 0);
         let cast_at = Utc::now();
         let signature_hash =
             Self::compute_hash(vote_id, meeting_id, agenda_item_id, voter_id, vote_value, cast_at);
@@ -125,7 +161,7 @@ mod tests {
             GovernanceSeatId::new(),
             ContactId::new(),
             VoteValue::For,
-            VotingPower::new(1),
+            VotingPower::new(1).unwrap(),
         )
         .unwrap()
     }
@@ -154,5 +190,14 @@ mod tests {
         assert_eq!(parsed.vote_id(), v.vote_id());
         assert_eq!(parsed.vote_value(), v.vote_value());
         assert_eq!(parsed.signature_hash(), v.signature_hash());
+    }
+
+    #[test]
+    fn deserialize_rejects_zero_voting_power() {
+        let v = make_vote();
+        let mut json: serde_json::Value = serde_json::to_value(&v).unwrap();
+        json["voting_power_applied"] = serde_json::json!(0);
+        let result: Result<Vote, _> = serde_json::from_value(json);
+        assert!(result.is_err());
     }
 }

@@ -2,57 +2,23 @@
 
 use serde::Serialize;
 
-use crate::domain::contacts::contact::Contact;
-use crate::domain::formation::contract::Contract;
-use crate::domain::formation::contractor::ContractorClassification;
-use crate::domain::formation::deadline::Deadline;
-use crate::domain::formation::tax_filing::TaxFiling;
-use crate::domain::treasury::distribution::Distribution;
-use crate::domain::treasury::payment::Payment;
-use crate::domain::treasury::payroll::PayrollRun;
-use crate::domain::treasury::reconciliation::Reconciliation;
-use crate::domain::equity::{
-    cap_table::CapTable,
-    funding_round::FundingRound,
-    grant::EquityGrant,
-    safe_note::SafeNote,
-    share_class::ShareClass,
-    transfer::ShareTransfer,
-    valuation::Valuation,
-};
-use crate::domain::execution::{
-    intent::Intent,
-    obligation::Obligation,
-    receipt::Receipt,
-};
+use crate::domain::equity::cap_table::CapTable;
 use crate::domain::formation::{
     document::Document, entity::Entity, filing::Filing, tax_profile::TaxProfile,
 };
 use crate::domain::governance::{
     agenda_item::AgendaItem,
-    body::GovernanceBody,
-    meeting::Meeting,
     resolution::Resolution,
-    seat::GovernanceSeat,
     vote::Vote,
 };
 use crate::domain::ids::{
-    AccountId, AgendaItemId, BankAccountId, ClassificationId, ContactId, ContractId, DeadlineId,
-    DistributionId, DocumentId, EntityId, EquityGrantId, FundingRoundId, GovernanceBodyId,
-    GovernanceSeatId, IntentId, InvoiceId, JournalEntryId, MeetingId, ObligationId, PaymentId,
-    PayrollRunId, ReceiptId, ReconciliationId, ResolutionId, SafeNoteId, ShareClassId,
-    TaxFilingId, TransferId, ValuationId, VoteId, WorkspaceId,
-};
-use crate::domain::treasury::{
-    account::Account,
-    bank_account::BankAccount,
-    invoice::Invoice,
-    journal_entry::JournalEntry,
+    AgendaItemId, DocumentId, EntityId, MeetingId, ResolutionId, VoteId, WorkspaceId,
 };
 use crate::git::commit::{commit_files, FileWrite};
 use crate::git::error::GitStorageError;
 use crate::git::repo::CorpRepo;
 
+use super::stored_entity::StoredEntity;
 use super::RepoLayout;
 
 /// Operations on a single entity's git repo.
@@ -87,6 +53,55 @@ impl<'a> EntityStore<'a> {
         Ok(Self { repo, layout })
     }
 
+    /// Write multiple files atomically.
+    pub fn commit(
+        &self,
+        branch: &str,
+        message: &str,
+        files: Vec<FileWrite>,
+    ) -> Result<(), GitStorageError> {
+        commit_files(&self.repo, branch, message, &files, None)?;
+        Ok(())
+    }
+
+    /// Get the underlying repo for advanced operations.
+    pub fn repo(&self) -> &CorpRepo {
+        &self.repo
+    }
+
+    /// Get the layout reference.
+    pub fn layout(&self) -> &RepoLayout {
+        self.layout
+    }
+
+    // ── Generic StoredEntity methods ─────────────────────────────────
+
+    /// Read a stored entity by ID.
+    pub fn read<T: StoredEntity>(&self, branch: &str, id: T::Id) -> Result<T, GitStorageError> {
+        self.repo.read_json(branch, &T::storage_path(id))
+    }
+
+    /// List all IDs for a stored entity type.
+    pub fn list_ids<T: StoredEntity>(&self, branch: &str) -> Result<Vec<T::Id>, GitStorageError> {
+        self.list_ids_in_dir(branch, T::storage_dir())
+    }
+
+    /// Write a stored entity and commit.
+    pub fn write<T: StoredEntity>(
+        &self,
+        branch: &str,
+        id: T::Id,
+        value: &T,
+        message: &str,
+    ) -> Result<(), GitStorageError> {
+        let path = T::storage_path(id);
+        let files = vec![FileWrite::json(path, value)?];
+        commit_files(&self.repo, branch, message, &files, None)?;
+        Ok(())
+    }
+
+    // ── Singletons & special paths (not ID-based) ────────────────────
+
     /// Read the entity record (corp.json) from a branch.
     pub fn read_entity(&self, branch: &str) -> Result<Entity, GitStorageError> {
         self.repo.read_json(branch, "corp.json")
@@ -103,6 +118,23 @@ impl<'a> EntityStore<'a> {
         commit_files(&self.repo, branch, message, &files, None)?;
         Ok(())
     }
+
+    /// Read the cap table record.
+    pub fn read_cap_table(&self, branch: &str) -> Result<CapTable, GitStorageError> {
+        self.repo.read_json(branch, "cap-table/cap-table.json")
+    }
+
+    /// Read filing record.
+    pub fn read_filing(&self, branch: &str) -> Result<Filing, GitStorageError> {
+        self.repo.read_json(branch, "formation/filing.json")
+    }
+
+    /// Read tax profile.
+    pub fn read_tax_profile(&self, branch: &str) -> Result<TaxProfile, GitStorageError> {
+        self.repo.read_json(branch, "tax/profile.json")
+    }
+
+    // ── Documents (special: skips filing.json) ───────────────────────
 
     /// Read a document.
     pub fn read_document(
@@ -127,27 +159,6 @@ impl<'a> EntityStore<'a> {
         Ok(())
     }
 
-    /// Write multiple files atomically.
-    pub fn commit(
-        &self,
-        branch: &str,
-        message: &str,
-        files: Vec<FileWrite>,
-    ) -> Result<(), GitStorageError> {
-        commit_files(&self.repo, branch, message, &files, None)?;
-        Ok(())
-    }
-
-    /// Read filing record.
-    pub fn read_filing(&self, branch: &str) -> Result<Filing, GitStorageError> {
-        self.repo.read_json(branch, "formation/filing.json")
-    }
-
-    /// Read tax profile.
-    pub fn read_tax_profile(&self, branch: &str) -> Result<TaxProfile, GitStorageError> {
-        self.repo.read_json(branch, "tax/profile.json")
-    }
-
     /// List all document IDs in the formation/ directory.
     pub fn list_document_ids(&self, branch: &str) -> Result<Vec<DocumentId>, GitStorageError> {
         let entries = self.repo.list_dir(branch, "formation")?;
@@ -159,7 +170,6 @@ impl<'a> EntityStore<'a> {
             if name == "filing.json" {
                 continue;
             }
-            // Parse "{uuid}.json" -> DocumentId
             if let Some(uuid_str) = name.strip_suffix(".json") {
                 if let Ok(id) = uuid_str.parse() {
                     ids.push(id);
@@ -169,204 +179,7 @@ impl<'a> EntityStore<'a> {
         Ok(ids)
     }
 
-    /// Get the underlying repo for advanced operations.
-    pub fn repo(&self) -> &CorpRepo {
-        &self.repo
-    }
-
-    /// Get the layout reference.
-    pub fn layout(&self) -> &RepoLayout {
-        self.layout
-    }
-
-    // ── Equity: Cap table ────────────────────────────────────────────
-
-    /// Read the cap table record.
-    pub fn read_cap_table(&self, branch: &str) -> Result<CapTable, GitStorageError> {
-        self.repo.read_json(branch, "cap-table/cap-table.json")
-    }
-
-    // ── Equity: Share classes ────────────────────────────────────────
-
-    /// Read a share class by ID.
-    pub fn read_share_class(
-        &self,
-        branch: &str,
-        id: ShareClassId,
-    ) -> Result<ShareClass, GitStorageError> {
-        self.repo
-            .read_json(branch, &format!("cap-table/classes/{}.json", id))
-    }
-
-    /// List all share class IDs.
-    pub fn list_share_class_ids(
-        &self,
-        branch: &str,
-    ) -> Result<Vec<ShareClassId>, GitStorageError> {
-        self.list_ids_in_dir(branch, "cap-table/classes")
-    }
-
-    // ── Equity: Grants ───────────────────────────────────────────────
-
-    /// Read an equity grant by ID.
-    pub fn read_grant(
-        &self,
-        branch: &str,
-        id: EquityGrantId,
-    ) -> Result<EquityGrant, GitStorageError> {
-        self.repo
-            .read_json(branch, &format!("cap-table/grants/{}.json", id))
-    }
-
-    /// List all grant IDs.
-    pub fn list_grant_ids(
-        &self,
-        branch: &str,
-    ) -> Result<Vec<EquityGrantId>, GitStorageError> {
-        self.list_ids_in_dir(branch, "cap-table/grants")
-    }
-
-    // ── Equity: SAFE notes ───────────────────────────────────────────
-
-    /// Read a SAFE note by ID.
-    pub fn read_safe_note(
-        &self,
-        branch: &str,
-        id: SafeNoteId,
-    ) -> Result<SafeNote, GitStorageError> {
-        self.repo
-            .read_json(branch, &format!("safe-notes/{}.json", id))
-    }
-
-    /// List all SAFE note IDs.
-    pub fn list_safe_note_ids(
-        &self,
-        branch: &str,
-    ) -> Result<Vec<SafeNoteId>, GitStorageError> {
-        self.list_ids_in_dir(branch, "safe-notes")
-    }
-
-    // ── Equity: Valuations ───────────────────────────────────────────
-
-    /// Read a valuation by ID.
-    pub fn read_valuation(
-        &self,
-        branch: &str,
-        id: ValuationId,
-    ) -> Result<Valuation, GitStorageError> {
-        self.repo
-            .read_json(branch, &format!("valuations/{}.json", id))
-    }
-
-    /// List all valuation IDs.
-    pub fn list_valuation_ids(
-        &self,
-        branch: &str,
-    ) -> Result<Vec<ValuationId>, GitStorageError> {
-        self.list_ids_in_dir(branch, "valuations")
-    }
-
-    // ── Equity: Transfers ────────────────────────────────────────────
-
-    /// Read a share transfer by ID.
-    pub fn read_transfer(
-        &self,
-        branch: &str,
-        id: TransferId,
-    ) -> Result<ShareTransfer, GitStorageError> {
-        self.repo
-            .read_json(branch, &format!("cap-table/transfers/{}.json", id))
-    }
-
-    /// List all transfer IDs.
-    pub fn list_transfer_ids(
-        &self,
-        branch: &str,
-    ) -> Result<Vec<TransferId>, GitStorageError> {
-        self.list_ids_in_dir(branch, "cap-table/transfers")
-    }
-
-    // ── Equity: Funding rounds ───────────────────────────────────────
-
-    /// Read a funding round by ID.
-    pub fn read_funding_round(
-        &self,
-        branch: &str,
-        id: FundingRoundId,
-    ) -> Result<FundingRound, GitStorageError> {
-        self.repo
-            .read_json(branch, &format!("funding-rounds/{}.json", id))
-    }
-
-    /// List all funding round IDs.
-    pub fn list_funding_round_ids(
-        &self,
-        branch: &str,
-    ) -> Result<Vec<FundingRoundId>, GitStorageError> {
-        self.list_ids_in_dir(branch, "funding-rounds")
-    }
-
-    // ── Governance: Bodies ─────────────────────────────────────────────
-
-    /// Read a governance body by ID.
-    pub fn read_governance_body(
-        &self,
-        branch: &str,
-        id: GovernanceBodyId,
-    ) -> Result<GovernanceBody, GitStorageError> {
-        self.repo
-            .read_json(branch, &format!("governance/bodies/{}.json", id))
-    }
-
-    /// List all governance body IDs.
-    pub fn list_governance_body_ids(
-        &self,
-        branch: &str,
-    ) -> Result<Vec<GovernanceBodyId>, GitStorageError> {
-        self.list_ids_in_dir(branch, "governance/bodies")
-    }
-
-    // ── Governance: Seats ──────────────────────────────────────────────
-
-    /// Read a governance seat by ID.
-    pub fn read_governance_seat(
-        &self,
-        branch: &str,
-        id: GovernanceSeatId,
-    ) -> Result<GovernanceSeat, GitStorageError> {
-        self.repo
-            .read_json(branch, &format!("governance/seats/{}.json", id))
-    }
-
-    /// List all governance seat IDs.
-    pub fn list_governance_seat_ids(
-        &self,
-        branch: &str,
-    ) -> Result<Vec<GovernanceSeatId>, GitStorageError> {
-        self.list_ids_in_dir(branch, "governance/seats")
-    }
-
-    // ── Governance: Meetings ───────────────────────────────────────────
-
-    /// Read a meeting by ID.
-    pub fn read_meeting(
-        &self,
-        branch: &str,
-        id: MeetingId,
-    ) -> Result<Meeting, GitStorageError> {
-        self.repo
-            .read_json(branch, &format!("governance/meetings/{}/meeting.json", id))
-    }
-
-    /// List all meeting IDs.
-    pub fn list_meeting_ids(
-        &self,
-        branch: &str,
-    ) -> Result<Vec<MeetingId>, GitStorageError> {
-        self.list_ids_in_dir(branch, "governance/meetings")
-    }
-
-    // ── Governance: Agenda items ───────────────────────────────────────
+    // ── Nested governance types (need meeting_id context) ────────────
 
     /// Read an agenda item from a meeting.
     pub fn read_agenda_item(
@@ -393,8 +206,6 @@ impl<'a> EntityStore<'a> {
         )
     }
 
-    // ── Governance: Votes ──────────────────────────────────────────────
-
     /// Read a vote from a meeting.
     pub fn read_vote(
         &self,
@@ -419,8 +230,6 @@ impl<'a> EntityStore<'a> {
             &format!("governance/meetings/{}/votes", meeting_id),
         )
     }
-
-    // ── Governance: Resolutions ────────────────────────────────────────
 
     /// Read a resolution from a meeting.
     pub fn read_resolution(
@@ -448,167 +257,6 @@ impl<'a> EntityStore<'a> {
             branch,
             &format!("governance/meetings/{}/resolutions", meeting_id),
         )
-    }
-
-    // ── Treasury: Accounts ────────────────────────────────────────────
-    pub fn read_account(&self, branch: &str, id: AccountId) -> Result<Account, GitStorageError> {
-        self.repo
-            .read_json(branch, &format!("treasury/accounts/{}.json", id))
-    }
-    pub fn list_account_ids(&self, branch: &str) -> Result<Vec<AccountId>, GitStorageError> {
-        self.list_ids_in_dir(branch, "treasury/accounts")
-    }
-
-    // ── Treasury: Journal Entries ─────────────────────────────────────
-    pub fn read_journal_entry(
-        &self,
-        branch: &str,
-        id: JournalEntryId,
-    ) -> Result<JournalEntry, GitStorageError> {
-        self.repo
-            .read_json(branch, &format!("treasury/journal-entries/{}.json", id))
-    }
-    pub fn list_journal_entry_ids(
-        &self,
-        branch: &str,
-    ) -> Result<Vec<JournalEntryId>, GitStorageError> {
-        self.list_ids_in_dir(branch, "treasury/journal-entries")
-    }
-
-    // ── Treasury: Invoices ────────────────────────────────────────────
-    pub fn read_invoice(
-        &self,
-        branch: &str,
-        id: InvoiceId,
-    ) -> Result<Invoice, GitStorageError> {
-        self.repo
-            .read_json(branch, &format!("treasury/invoices/{}.json", id))
-    }
-    pub fn list_invoice_ids(&self, branch: &str) -> Result<Vec<InvoiceId>, GitStorageError> {
-        self.list_ids_in_dir(branch, "treasury/invoices")
-    }
-
-    // ── Treasury: Bank Accounts ───────────────────────────────────────
-    pub fn read_bank_account(
-        &self,
-        branch: &str,
-        id: BankAccountId,
-    ) -> Result<BankAccount, GitStorageError> {
-        self.repo
-            .read_json(branch, &format!("treasury/bank-accounts/{}.json", id))
-    }
-    pub fn list_bank_account_ids(
-        &self,
-        branch: &str,
-    ) -> Result<Vec<BankAccountId>, GitStorageError> {
-        self.list_ids_in_dir(branch, "treasury/bank-accounts")
-    }
-
-    // ── Execution: Intents ────────────────────────────────────────────
-    pub fn read_intent(&self, branch: &str, id: IntentId) -> Result<Intent, GitStorageError> {
-        self.repo
-            .read_json(branch, &format!("execution/intents/{}.json", id))
-    }
-    pub fn list_intent_ids(&self, branch: &str) -> Result<Vec<IntentId>, GitStorageError> {
-        self.list_ids_in_dir(branch, "execution/intents")
-    }
-
-    // ── Execution: Obligations ────────────────────────────────────────
-    pub fn read_obligation(
-        &self,
-        branch: &str,
-        id: ObligationId,
-    ) -> Result<Obligation, GitStorageError> {
-        self.repo
-            .read_json(branch, &format!("execution/obligations/{}.json", id))
-    }
-    pub fn list_obligation_ids(
-        &self,
-        branch: &str,
-    ) -> Result<Vec<ObligationId>, GitStorageError> {
-        self.list_ids_in_dir(branch, "execution/obligations")
-    }
-
-    // ── Execution: Receipts ───────────────────────────────────────────
-    pub fn read_receipt(&self, branch: &str, id: ReceiptId) -> Result<Receipt, GitStorageError> {
-        self.repo
-            .read_json(branch, &format!("execution/receipts/{}.json", id))
-    }
-    pub fn list_receipt_ids(&self, branch: &str) -> Result<Vec<ReceiptId>, GitStorageError> {
-        self.list_ids_in_dir(branch, "execution/receipts")
-    }
-
-    // ── Contacts ──────────────────────────────────────────────────────
-    pub fn read_contact(&self, branch: &str, id: ContactId) -> Result<Contact, GitStorageError> {
-        self.repo
-            .read_json(branch, &format!("contacts/{}.json", id))
-    }
-    pub fn list_contact_ids(&self, branch: &str) -> Result<Vec<ContactId>, GitStorageError> {
-        self.list_ids_in_dir(branch, "contacts")
-    }
-
-    // ── Contracts ────────────────────────────────────────────────────
-    pub fn read_contract(&self, branch: &str, id: ContractId) -> Result<Contract, GitStorageError> {
-        self.repo.read_json(branch, &format!("contracts/{}.json", id))
-    }
-    pub fn list_contract_ids(&self, branch: &str) -> Result<Vec<ContractId>, GitStorageError> {
-        self.list_ids_in_dir(branch, "contracts")
-    }
-
-    // ── Tax Filings ─────────────────────────────────────────────────
-    pub fn read_tax_filing(&self, branch: &str, id: TaxFilingId) -> Result<TaxFiling, GitStorageError> {
-        self.repo.read_json(branch, &format!("tax/filings/{}.json", id))
-    }
-    pub fn list_tax_filing_ids(&self, branch: &str) -> Result<Vec<TaxFilingId>, GitStorageError> {
-        self.list_ids_in_dir(branch, "tax/filings")
-    }
-
-    // ── Deadlines ───────────────────────────────────────────────────
-    pub fn read_deadline(&self, branch: &str, id: DeadlineId) -> Result<Deadline, GitStorageError> {
-        self.repo.read_json(branch, &format!("deadlines/{}.json", id))
-    }
-    pub fn list_deadline_ids(&self, branch: &str) -> Result<Vec<DeadlineId>, GitStorageError> {
-        self.list_ids_in_dir(branch, "deadlines")
-    }
-
-    // ── Contractor Classifications ──────────────────────────────────
-    pub fn read_contractor_classification(&self, branch: &str, id: ClassificationId) -> Result<ContractorClassification, GitStorageError> {
-        self.repo.read_json(branch, &format!("contractors/{}.json", id))
-    }
-    pub fn list_contractor_classification_ids(&self, branch: &str) -> Result<Vec<ClassificationId>, GitStorageError> {
-        self.list_ids_in_dir(branch, "contractors")
-    }
-
-    // ── Treasury: Payments ──────────────────────────────────────────
-    pub fn read_payment(&self, branch: &str, id: PaymentId) -> Result<Payment, GitStorageError> {
-        self.repo.read_json(branch, &format!("treasury/payments/{}.json", id))
-    }
-    pub fn list_payment_ids(&self, branch: &str) -> Result<Vec<PaymentId>, GitStorageError> {
-        self.list_ids_in_dir(branch, "treasury/payments")
-    }
-
-    // ── Treasury: Payroll ───────────────────────────────────────────
-    pub fn read_payroll_run(&self, branch: &str, id: PayrollRunId) -> Result<PayrollRun, GitStorageError> {
-        self.repo.read_json(branch, &format!("treasury/payroll/{}.json", id))
-    }
-    pub fn list_payroll_run_ids(&self, branch: &str) -> Result<Vec<PayrollRunId>, GitStorageError> {
-        self.list_ids_in_dir(branch, "treasury/payroll")
-    }
-
-    // ── Treasury: Distributions ─────────────────────────────────────
-    pub fn read_distribution(&self, branch: &str, id: DistributionId) -> Result<Distribution, GitStorageError> {
-        self.repo.read_json(branch, &format!("treasury/distributions/{}.json", id))
-    }
-    pub fn list_distribution_ids(&self, branch: &str) -> Result<Vec<DistributionId>, GitStorageError> {
-        self.list_ids_in_dir(branch, "treasury/distributions")
-    }
-
-    // ── Treasury: Reconciliations ───────────────────────────────────
-    pub fn read_reconciliation(&self, branch: &str, id: ReconciliationId) -> Result<Reconciliation, GitStorageError> {
-        self.repo.read_json(branch, &format!("treasury/reconciliations/{}.json", id))
-    }
-    pub fn list_reconciliation_ids(&self, branch: &str) -> Result<Vec<ReconciliationId>, GitStorageError> {
-        self.list_ids_in_dir(branch, "treasury/reconciliations")
     }
 
     // ── Generic helpers ──────────────────────────────────────────────

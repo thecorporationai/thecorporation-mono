@@ -57,14 +57,22 @@ impl ShareCount {
 impl Add for ShareCount {
     type Output = Self;
     fn add(self, rhs: Self) -> Self {
-        Self(self.0 + rhs.0)
+        Self(
+            self.0
+                .checked_add(rhs.0)
+                .expect("ShareCount addition overflow"),
+        )
     }
 }
 
 impl Sub for ShareCount {
     type Output = Self;
     fn sub(self, rhs: Self) -> Self {
-        Self(self.0 - rhs.0)
+        Self(
+            self.0
+                .checked_sub(rhs.0)
+                .expect("ShareCount subtraction overflow"),
+        )
     }
 }
 
@@ -76,7 +84,64 @@ impl fmt::Display for ShareCount {
 
 impl std::iter::Sum for ShareCount {
     fn sum<I: Iterator<Item = Self>>(iter: I) -> Self {
+        // Uses the checked Add impl above, so overflow will panic.
         iter.fold(Self::ZERO, |acc, x| acc + x)
+    }
+}
+
+// ── PositiveShareCount ─────────────────────────────────────────────────
+
+/// A share count guaranteed to be positive (> 0).
+///
+/// Used in contexts where zero or negative shares are invalid (grants,
+/// transfers, SAFE notes). Deserializes via `TryFrom<i64>`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(transparent)]
+pub struct PositiveShareCount(ShareCount);
+
+impl TryFrom<i64> for PositiveShareCount {
+    type Error = String;
+    fn try_from(v: i64) -> Result<Self, Self::Error> {
+        if v <= 0 {
+            Err(format!("share count must be positive, got {v}"))
+        } else {
+            Ok(Self(ShareCount::new(v)))
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for PositiveShareCount {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let v = i64::deserialize(deserializer)?;
+        PositiveShareCount::try_from(v).map_err(serde::de::Error::custom)
+    }
+}
+
+impl PositiveShareCount {
+    /// Create a new positive share count.
+    ///
+    /// Returns `Err` if `count <= 0`.
+    pub fn new(count: i64) -> Result<Self, String> {
+        Self::try_from(count)
+    }
+
+    /// Return the inner `ShareCount`.
+    pub fn into_inner(self) -> ShareCount {
+        self.0
+    }
+
+    /// Return the raw integer value.
+    pub fn raw(self) -> i64 {
+        self.0.raw()
+    }
+}
+
+impl From<PositiveShareCount> for ShareCount {
+    fn from(p: PositiveShareCount) -> Self {
+        p.0
     }
 }
 
@@ -137,31 +202,52 @@ impl fmt::Display for ValuationCap {
 // ── Percentage ─────────────────────────────────────────────────────────
 
 /// A percentage stored as basis points (10000 = 100%).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
 #[serde(transparent)]
 pub struct Percentage(u32);
 
+impl TryFrom<u32> for Percentage {
+    type Error = String;
+    fn try_from(basis_points: u32) -> Result<Self, Self::Error> {
+        if basis_points > 10_000 {
+            Err(format!(
+                "percentage cannot exceed 100% (10000 basis points), got {basis_points}"
+            ))
+        } else {
+            Ok(Self(basis_points))
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for Percentage {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let v = u32::deserialize(deserializer)?;
+        Percentage::try_from(v).map_err(serde::de::Error::custom)
+    }
+}
+
 impl Percentage {
+    /// Zero percent.
+    pub const ZERO: Self = Self(0);
+
+    /// One hundred percent.
+    pub const ONE_HUNDRED: Self = Self(10_000);
+
     /// Create a percentage from basis points (10000 = 100%).
+    ///
+    /// Returns `Err` if `basis_points > 10_000`.
     #[inline]
-    pub const fn new(basis_points: u32) -> Self {
-        Self(basis_points)
+    pub fn new(basis_points: u32) -> Result<Self, String> {
+        Self::try_from(basis_points)
     }
 
     /// Return the raw basis points value.
     #[inline]
     pub const fn basis_points(self) -> u32 {
         self.0
-    }
-
-    /// Create a percentage from basis points with validation (rejects > 10_000).
-    #[inline]
-    pub fn new_validated(basis_points: u32) -> Result<Self, &'static str> {
-        if basis_points > 10_000 {
-            Err("percentage cannot exceed 100% (10000 basis points)")
-        } else {
-            Ok(Self(basis_points))
-        }
     }
 
     /// Convert to a `Decimal` fraction (e.g. 5000 bps -> 0.5000).
@@ -175,6 +261,40 @@ impl fmt::Display for Percentage {
         let whole = self.0 / 100;
         let frac = self.0 % 100;
         write!(f, "{whole}.{frac:02}%")
+    }
+}
+
+// ── VotingRights ──────────────────────────────────────────────────────
+
+/// Whether an equity grant carries voting rights.
+///
+/// Replaces `Option<bool>` for clearer semantics.
+/// Backward-compatible deserialization from `Option<bool>` via `From`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum VotingRights {
+    /// Voting rights have not been specified.
+    Unspecified,
+    /// Voting rights are granted.
+    Granted,
+    /// Voting rights are withheld.
+    Withheld,
+}
+
+impl From<Option<bool>> for VotingRights {
+    fn from(v: Option<bool>) -> Self {
+        match v {
+            None => Self::Unspecified,
+            Some(true) => Self::Granted,
+            Some(false) => Self::Withheld,
+        }
+    }
+}
+
+impl VotingRights {
+    /// Whether voting rights are granted.
+    pub fn is_granted(self) -> bool {
+        self == Self::Granted
     }
 }
 
@@ -612,6 +732,18 @@ mod tests {
     }
 
     #[test]
+    #[should_panic(expected = "overflow")]
+    fn share_count_addition_overflow() {
+        let _ = ShareCount::new(i64::MAX) + ShareCount::new(1);
+    }
+
+    #[test]
+    #[should_panic(expected = "overflow")]
+    fn share_count_subtraction_overflow() {
+        let _ = ShareCount::new(i64::MIN) - ShareCount::new(1);
+    }
+
+    #[test]
     fn price_per_share_display() {
         let pps = PricePerShare::new(Cents::new(1050));
         assert_eq!(pps.to_string(), "$10.50");
@@ -619,16 +751,78 @@ mod tests {
 
     #[test]
     fn percentage_display() {
-        assert_eq!(Percentage::new(10000).to_string(), "100.00%");
-        assert_eq!(Percentage::new(2500).to_string(), "25.00%");
-        assert_eq!(Percentage::new(1).to_string(), "0.01%");
+        assert_eq!(Percentage::new(10000).unwrap().to_string(), "100.00%");
+        assert_eq!(Percentage::new(2500).unwrap().to_string(), "25.00%");
+        assert_eq!(Percentage::new(1).unwrap().to_string(), "0.01%");
     }
 
     #[test]
     fn percentage_to_decimal() {
-        let pct = Percentage::new(5000);
+        let pct = Percentage::new(5000).unwrap();
         let d = pct.to_decimal();
         assert_eq!(d.to_string(), "0.5000");
+    }
+
+    #[test]
+    fn percentage_rejects_over_100() {
+        assert!(Percentage::new(10_001).is_err());
+        assert!(Percentage::new(20_000).is_err());
+    }
+
+    #[test]
+    fn percentage_accepts_valid() {
+        assert!(Percentage::new(0).is_ok());
+        assert!(Percentage::new(5000).is_ok());
+        assert!(Percentage::new(10_000).is_ok());
+    }
+
+    #[test]
+    fn percentage_deserialize_rejects_invalid() {
+        let result: Result<Percentage, _> = serde_json::from_str("10001");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn percentage_deserialize_accepts_valid() {
+        let pct: Percentage = serde_json::from_str("5000").unwrap();
+        assert_eq!(pct.basis_points(), 5000);
+    }
+
+    #[test]
+    fn percentage_const_helpers() {
+        assert_eq!(Percentage::ZERO.basis_points(), 0);
+        assert_eq!(Percentage::ONE_HUNDRED.basis_points(), 10_000);
+    }
+
+    #[test]
+    fn positive_share_count_rejects_zero() {
+        assert!(PositiveShareCount::new(0).is_err());
+    }
+
+    #[test]
+    fn positive_share_count_rejects_negative() {
+        assert!(PositiveShareCount::new(-1).is_err());
+    }
+
+    #[test]
+    fn positive_share_count_accepts_positive() {
+        let psc = PositiveShareCount::new(100).unwrap();
+        assert_eq!(psc.raw(), 100);
+        assert_eq!(psc.into_inner(), ShareCount::new(100));
+    }
+
+    #[test]
+    fn positive_share_count_deserialize_rejects_invalid() {
+        let result: Result<PositiveShareCount, _> = serde_json::from_str("0");
+        assert!(result.is_err());
+        let result: Result<PositiveShareCount, _> = serde_json::from_str("-5");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn positive_share_count_deserialize_accepts_valid() {
+        let psc: PositiveShareCount = serde_json::from_str("42").unwrap();
+        assert_eq!(psc.raw(), 42);
     }
 
     #[test]

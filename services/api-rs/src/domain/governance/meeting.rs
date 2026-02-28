@@ -4,7 +4,7 @@ use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 
 use super::error::GovernanceError;
-use super::types::{MeetingStatus, MeetingType};
+use super::types::{MeetingStatus, MeetingType, QuorumStatus};
 use crate::domain::ids::{GovernanceBodyId, GovernanceSeatId, MeetingId};
 
 /// A meeting of a governance body.
@@ -18,7 +18,7 @@ pub struct Meeting {
     location: String,
     notice_days: u32,
     status: MeetingStatus,
-    quorum_met: Option<bool>,
+    quorum_met: QuorumStatus,
     present_seat_ids: Vec<GovernanceSeatId>,
     convened_at: Option<DateTime<Utc>>,
     adjourned_at: Option<DateTime<Utc>>,
@@ -53,7 +53,7 @@ impl Meeting {
             location,
             notice_days,
             status: initial_status,
-            quorum_met: None,
+            quorum_met: QuorumStatus::Unknown,
             present_seat_ids: Vec::new(),
             convened_at: if meeting_type == MeetingType::WrittenConsent {
                 Some(Utc::now())
@@ -92,7 +92,11 @@ impl Meeting {
             });
         }
         self.present_seat_ids = present_seat_ids;
-        self.quorum_met = Some(quorum_met);
+        self.quorum_met = if quorum_met {
+            QuorumStatus::Met
+        } else {
+            QuorumStatus::NotMet
+        };
         self.convened_at = Some(Utc::now());
         self.status = MeetingStatus::Convened;
         Ok(())
@@ -127,7 +131,7 @@ impl Meeting {
 
     /// Whether voting is allowed (convened and quorum met).
     pub fn can_vote(&self) -> bool {
-        self.status == MeetingStatus::Convened && self.quorum_met == Some(true)
+        self.status == MeetingStatus::Convened && self.quorum_met.is_met()
     }
 
     // ── Accessors ────────────────────────────────────────────────────────
@@ -164,7 +168,7 @@ impl Meeting {
         self.status
     }
 
-    pub fn quorum_met(&self) -> Option<bool> {
+    pub fn quorum_met(&self) -> QuorumStatus {
         self.quorum_met
     }
 
@@ -213,7 +217,7 @@ mod tests {
         m.convene(seats.clone(), true).unwrap();
         assert_eq!(m.status(), MeetingStatus::Convened);
         assert_eq!(m.present_seat_ids().len(), 2);
-        assert_eq!(m.quorum_met(), Some(true));
+        assert_eq!(m.quorum_met(), QuorumStatus::Met);
         assert!(m.convened_at().is_some());
 
         m.adjourn().unwrap();

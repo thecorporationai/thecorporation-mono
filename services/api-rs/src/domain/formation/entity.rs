@@ -6,20 +6,70 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 use super::error::FormationError;
-use super::types::{EntityType, FormationState, FormationStatus};
+use super::types::{EntityType, FormationState, FormationStatus, Jurisdiction};
 use crate::domain::ids::{EntityId, WorkspaceId};
 
 /// Maximum length for a legal entity name.
 const MAX_LEGAL_NAME_LEN: usize = 500;
 
+/// Validate data-integrity invariants shared by `new()` and `TryFrom<RawEntity>`.
+fn validate_legal_name(legal_name: &str) -> Result<(), FormationError> {
+    if legal_name.is_empty() || legal_name.len() > MAX_LEGAL_NAME_LEN {
+        return Err(FormationError::Validation(format!(
+            "legal_name must be between 1 and {MAX_LEGAL_NAME_LEN} characters, got {}",
+            legal_name.len()
+        )));
+    }
+    Ok(())
+}
+
+// ── Raw mirror for deserialization ──────────────────────────────────────
+
+#[derive(Deserialize)]
+struct RawEntity {
+    entity_id: EntityId,
+    workspace_id: WorkspaceId,
+    legal_name: String,
+    entity_type: EntityType,
+    jurisdiction: Jurisdiction,
+    formation_state: FormationState,
+    formation_status: FormationStatus,
+    registered_agent_name: Option<String>,
+    registered_agent_address: Option<String>,
+    created_at: DateTime<Utc>,
+}
+
+impl TryFrom<RawEntity> for Entity {
+    type Error = FormationError;
+
+    fn try_from(raw: RawEntity) -> Result<Self, Self::Error> {
+        validate_legal_name(&raw.legal_name)?;
+        Ok(Entity {
+            entity_id: raw.entity_id,
+            workspace_id: raw.workspace_id,
+            legal_name: raw.legal_name,
+            entity_type: raw.entity_type,
+            jurisdiction: raw.jurisdiction,
+            formation_state: raw.formation_state,
+            formation_status: raw.formation_status,
+            registered_agent_name: raw.registered_agent_name,
+            registered_agent_address: raw.registered_agent_address,
+            created_at: raw.created_at,
+        })
+    }
+}
+
+// ── Entity ──────────────────────────────────────────────────────────────
+
 /// The top-level corporate entity record.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(try_from = "RawEntity")]
 pub struct Entity {
     entity_id: EntityId,
     workspace_id: WorkspaceId,
     legal_name: String,
     entity_type: EntityType,
-    jurisdiction: String,
+    jurisdiction: Jurisdiction,
     formation_state: FormationState,
     formation_status: FormationStatus,
     registered_agent_name: Option<String>,
@@ -36,16 +86,11 @@ impl Entity {
         workspace_id: WorkspaceId,
         legal_name: String,
         entity_type: EntityType,
-        jurisdiction: String,
+        jurisdiction: Jurisdiction,
         registered_agent_name: Option<String>,
         registered_agent_address: Option<String>,
     ) -> Result<Self, FormationError> {
-        if legal_name.is_empty() || legal_name.len() > MAX_LEGAL_NAME_LEN {
-            return Err(FormationError::Validation(format!(
-                "legal_name must be between 1 and {MAX_LEGAL_NAME_LEN} characters, got {}",
-                legal_name.len()
-            )));
-        }
+        validate_legal_name(&legal_name)?;
 
         Ok(Self {
             entity_id,
@@ -62,6 +107,8 @@ impl Entity {
     }
 
     /// Advance the formation status, checking the FSM for valid transitions.
+    ///
+    /// When transitioning to `Active`, also sets `formation_state` to `Active`.
     pub fn advance_status(&mut self, to: FormationStatus) -> Result<(), FormationError> {
         if !self.formation_status.allowed_transitions().contains(&to) {
             return Err(FormationError::InvalidTransition {
@@ -70,6 +117,9 @@ impl Entity {
             });
         }
         self.formation_status = to;
+        if to == FormationStatus::Active {
+            self.formation_state = FormationState::Active;
+        }
         Ok(())
     }
 
@@ -94,13 +144,6 @@ impl Entity {
         self.advance_status(FormationStatus::Dissolved)
     }
 
-    /// Activate the entity — sets both `formation_state` to `Active` and
-    /// `formation_status` to `Active` (terminal).
-    pub fn activate(&mut self) {
-        self.formation_state = FormationState::Active;
-        self.formation_status = FormationStatus::Active;
-    }
-
     // ── Accessors ────────────────────────────────────────────────────────
 
     pub fn entity_id(&self) -> EntityId {
@@ -119,7 +162,7 @@ impl Entity {
         self.entity_type
     }
 
-    pub fn jurisdiction(&self) -> &str {
+    pub fn jurisdiction(&self) -> &Jurisdiction {
         &self.jurisdiction
     }
 
@@ -154,7 +197,7 @@ mod tests {
             WorkspaceId::new(),
             "Acme Corp".into(),
             EntityType::Corporation,
-            "US-DE".into(),
+            Jurisdiction::new("US-DE").unwrap(),
             None,
             None,
         )
@@ -176,7 +219,7 @@ mod tests {
             WorkspaceId::new(),
             "".into(),
             EntityType::Llc,
-            "US-WY".into(),
+            Jurisdiction::new("US-WY").unwrap(),
             None,
             None,
         );
@@ -191,7 +234,7 @@ mod tests {
             WorkspaceId::new(),
             long_name,
             EntityType::Llc,
-            "US-WY".into(),
+            Jurisdiction::new("US-WY").unwrap(),
             None,
             None,
         );
@@ -215,9 +258,15 @@ mod tests {
     }
 
     #[test]
-    fn activate_sets_terminal_state() {
+    fn advance_to_active_sets_formation_state() {
         let mut e = make_entity();
-        e.activate();
+        // Walk the FSM to Active
+        e.advance_status(FormationStatus::DocumentsGenerated).unwrap();
+        e.advance_status(FormationStatus::DocumentsSigned).unwrap();
+        e.advance_status(FormationStatus::FilingSubmitted).unwrap();
+        e.advance_status(FormationStatus::Filed).unwrap();
+        e.advance_status(FormationStatus::EinApplied).unwrap();
+        e.advance_status(FormationStatus::Active).unwrap();
         assert_eq!(e.formation_state(), FormationState::Active);
         assert_eq!(e.formation_status(), FormationStatus::Active);
     }
@@ -229,5 +278,23 @@ mod tests {
         let parsed: Entity = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed.entity_id(), e.entity_id());
         assert_eq!(parsed.legal_name(), e.legal_name());
+    }
+
+    #[test]
+    fn deserialize_rejects_empty_legal_name() {
+        let e = make_entity();
+        let mut json: serde_json::Value = serde_json::to_value(&e).unwrap();
+        json["legal_name"] = serde_json::json!("");
+        let result: Result<Entity, _> = serde_json::from_value(json);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn deserialize_rejects_oversized_legal_name() {
+        let e = make_entity();
+        let mut json: serde_json::Value = serde_json::to_value(&e).unwrap();
+        json["legal_name"] = serde_json::json!("X".repeat(501));
+        let result: Result<Entity, _> = serde_json::from_value(json);
+        assert!(result.is_err());
     }
 }

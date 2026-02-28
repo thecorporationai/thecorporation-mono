@@ -6,31 +6,44 @@ use std::fmt;
 // ── VotingPower ────────────────────────────────────────────────────────
 
 /// The voting weight of a governance seat.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
 #[serde(transparent)]
 pub struct VotingPower(u32);
 
+impl TryFrom<u32> for VotingPower {
+    type Error = String;
+    fn try_from(power: u32) -> Result<Self, Self::Error> {
+        if power == 0 {
+            Err("voting power must be greater than zero".into())
+        } else {
+            Ok(Self(power))
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for VotingPower {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let v = u32::deserialize(deserializer)?;
+        VotingPower::try_from(v).map_err(serde::de::Error::custom)
+    }
+}
+
 impl VotingPower {
-    /// Create a new voting power value.
+    /// Create a validated voting power (rejects 0).
+    ///
+    /// Returns `Err` if `power == 0`.
     #[inline]
-    pub const fn new(power: u32) -> Self {
-        Self(power)
+    pub fn new(power: u32) -> Result<Self, String> {
+        Self::try_from(power)
     }
 
     /// Return the raw integer value.
     #[inline]
     pub const fn raw(self) -> u32 {
         self.0
-    }
-
-    /// Create a validated voting power (rejects 0).
-    #[inline]
-    pub fn new_validated(power: u32) -> Result<Self, &'static str> {
-        if power == 0 {
-            Err("voting power must be greater than zero")
-        } else {
-            Ok(Self(power))
-        }
     }
 }
 
@@ -88,6 +101,40 @@ impl QuorumThreshold {
             }
             Self::Unanimous => votes_for == total_eligible,
         }
+    }
+}
+
+// ── QuorumStatus ──────────────────────────────────────────────────────
+
+/// Whether a quorum was met for a meeting.
+///
+/// Replaces `Option<bool>` for clearer semantics.
+/// Backward-compatible deserialization from `Option<bool>` via `From`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum QuorumStatus {
+    /// Quorum status has not yet been determined.
+    Unknown,
+    /// A quorum was met.
+    Met,
+    /// A quorum was not met.
+    NotMet,
+}
+
+impl From<Option<bool>> for QuorumStatus {
+    fn from(v: Option<bool>) -> Self {
+        match v {
+            None => Self::Unknown,
+            Some(true) => Self::Met,
+            Some(false) => Self::NotMet,
+        }
+    }
+}
+
+impl QuorumStatus {
+    /// Whether the quorum was met.
+    pub fn is_met(self) -> bool {
+        self == Self::Met
     }
 }
 
@@ -319,7 +366,30 @@ mod tests {
 
     #[test]
     fn voting_power_display() {
-        assert_eq!(VotingPower::new(42).to_string(), "42");
+        assert_eq!(VotingPower::new(42).unwrap().to_string(), "42");
+    }
+
+    #[test]
+    fn voting_power_rejects_zero() {
+        assert!(VotingPower::new(0).is_err());
+    }
+
+    #[test]
+    fn voting_power_accepts_positive() {
+        assert!(VotingPower::new(1).is_ok());
+        assert!(VotingPower::new(100).is_ok());
+    }
+
+    #[test]
+    fn voting_power_deserialize_rejects_zero() {
+        let result: Result<VotingPower, _> = serde_json::from_str("0");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn voting_power_deserialize_accepts_valid() {
+        let vp: VotingPower = serde_json::from_str("5").unwrap();
+        assert_eq!(vp.raw(), 5);
     }
 
     #[test]

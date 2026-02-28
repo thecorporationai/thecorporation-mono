@@ -40,12 +40,6 @@ macro_rules! define_id {
             }
         }
 
-        impl Default for $name {
-            fn default() -> Self {
-                Self::new()
-            }
-        }
-
         impl fmt::Display for $name {
             fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
                 self.0.fmt(f)
@@ -120,7 +114,7 @@ define_id!(DocumentRequestId);
 
 // ── Execution ──────────────────────────────────────────────────────────
 define_id!(IntentId);
-define_id!(ExecutionId);
+// ExecutionId is re-exported from agent_types above.
 define_id!(ReceiptId);
 
 // ── Contracts & Compliance ────────────────────────────────────────────
@@ -135,11 +129,13 @@ define_id!(DistributionId);
 define_id!(ReconciliationId);
 
 // ── Auth & Workspace ───────────────────────────────────────────────────
-define_id!(WorkspaceId);
+// AgentId, WorkspaceId, ExecutionId, MessageId come from the shared crate
+// so that api-rs and agent-worker use the exact same types.
+#[allow(unused_imports)] // ExecutionId not yet used in api-rs routes
+pub use agent_types::{AgentId, ExecutionId, MessageId, WorkspaceId};
+
 define_id!(ApiKeyId);
-define_id!(AgentId);
 define_id!(SubscriptionId);
-define_id!(MessageId);
 define_id!(StripeConnectionId);
 define_id!(NotificationPrefsId);
 define_id!(AuditEventId);

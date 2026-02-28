@@ -64,8 +64,75 @@ impl LedgerLine {
     }
 }
 
+/// Validate that debits == credits. Shared by `new()` and `TryFrom<RawJournalEntry>`.
+fn validate_balanced(lines: &[LedgerLine]) -> Result<(Cents, Cents), TreasuryError> {
+    let total_debits: i64 = lines
+        .iter()
+        .filter(|l| l.side == Side::Debit)
+        .map(|l| l.amount.raw())
+        .sum();
+    let total_credits: i64 = lines
+        .iter()
+        .filter(|l| l.side == Side::Credit)
+        .map(|l| l.amount.raw())
+        .sum();
+
+    if total_debits != total_credits {
+        return Err(TreasuryError::UnbalancedEntry {
+            debits: Cents::new(total_debits),
+            credits: Cents::new(total_credits),
+        });
+    }
+
+    Ok((Cents::new(total_debits), Cents::new(total_credits)))
+}
+
+// ── Raw mirror for deserialization ──────────────────────────────────────
+
+#[derive(Deserialize)]
+struct RawJournalEntry {
+    journal_entry_id: JournalEntryId,
+    entity_id: EntityId,
+    description: String,
+    currency: Currency,
+    effective_date: NaiveDate,
+    lines: Vec<LedgerLine>,
+    total_debits: Cents,
+    total_credits: Cents,
+    status: JournalEntryStatus,
+    posted_at: Option<DateTime<Utc>>,
+    voided_at: Option<DateTime<Utc>>,
+    created_at: DateTime<Utc>,
+}
+
+impl TryFrom<RawJournalEntry> for JournalEntry {
+    type Error = TreasuryError;
+
+    fn try_from(raw: RawJournalEntry) -> Result<Self, Self::Error> {
+        // Re-validate balance from lines (don't trust stored totals)
+        let (total_debits, total_credits) = validate_balanced(&raw.lines)?;
+        Ok(JournalEntry {
+            journal_entry_id: raw.journal_entry_id,
+            entity_id: raw.entity_id,
+            description: raw.description,
+            currency: raw.currency,
+            effective_date: raw.effective_date,
+            lines: raw.lines,
+            total_debits,
+            total_credits,
+            status: raw.status,
+            posted_at: raw.posted_at,
+            voided_at: raw.voided_at,
+            created_at: raw.created_at,
+        })
+    }
+}
+
+// ── JournalEntry ────────────────────────────────────────────────────────
+
 /// A double-entry journal entry with balanced ledger lines.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(try_from = "RawJournalEntry")]
 pub struct JournalEntry {
     journal_entry_id: JournalEntryId,
     entity_id: EntityId,
@@ -90,23 +157,7 @@ impl JournalEntry {
         effective_date: NaiveDate,
         lines: Vec<LedgerLine>,
     ) -> Result<Self, TreasuryError> {
-        let total_debits: i64 = lines
-            .iter()
-            .filter(|l| l.side == Side::Debit)
-            .map(|l| l.amount.raw())
-            .sum();
-        let total_credits: i64 = lines
-            .iter()
-            .filter(|l| l.side == Side::Credit)
-            .map(|l| l.amount.raw())
-            .sum();
-
-        if total_debits != total_credits {
-            return Err(TreasuryError::UnbalancedEntry {
-                debits: Cents::new(total_debits),
-                credits: Cents::new(total_credits),
-            });
-        }
+        let (total_debits, total_credits) = validate_balanced(&lines)?;
 
         Ok(Self {
             journal_entry_id,
@@ -115,8 +166,8 @@ impl JournalEntry {
             currency: Currency::default(),
             effective_date,
             lines,
-            total_debits: Cents::new(total_debits),
-            total_credits: Cents::new(total_credits),
+            total_debits,
+            total_credits,
             status: JournalEntryStatus::Draft,
             posted_at: None,
             voided_at: None,
@@ -320,6 +371,16 @@ mod tests {
         assert_eq!(parsed.total_debits(), entry.total_debits());
         assert_eq!(parsed.status(), entry.status());
         assert_eq!(parsed.lines().len(), 2);
+    }
+
+    #[test]
+    fn deserialize_rejects_unbalanced() {
+        let entry = make_entry();
+        let mut json: serde_json::Value = serde_json::to_value(&entry).unwrap();
+        // Tamper with one of the lines to make it unbalanced
+        json["lines"][1]["amount"] = serde_json::json!(5000);
+        let result: Result<JournalEntry, _> = serde_json::from_value(json);
+        assert!(result.is_err());
     }
 
     #[test]

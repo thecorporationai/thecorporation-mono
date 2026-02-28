@@ -3,7 +3,7 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use super::types::{FilingStatus, FilingType};
+use super::types::{FilingStatus, FilingType, Jurisdiction};
 use crate::domain::ids::{EntityId, FilingId};
 
 /// A formation filing submitted to a state government.
@@ -12,7 +12,7 @@ pub struct Filing {
     filing_id: FilingId,
     entity_id: EntityId,
     filing_type: FilingType,
-    jurisdiction: String,
+    jurisdiction: Jurisdiction,
     status: FilingStatus,
     external_filing_id: Option<String>,
     receipt_reference: Option<String>,
@@ -26,7 +26,7 @@ impl Filing {
         filing_id: FilingId,
         entity_id: EntityId,
         filing_type: FilingType,
-        jurisdiction: String,
+        jurisdiction: Jurisdiction,
     ) -> Self {
         Self {
             filing_id,
@@ -97,7 +97,7 @@ mod tests {
             FilingId::new(),
             EntityId::new(),
             FilingType::CertificateOfIncorporation,
-            "US-DE".into(),
+            Jurisdiction::new("US-DE").unwrap(),
         )
     }
 

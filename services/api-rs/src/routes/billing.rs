@@ -4,13 +4,14 @@
 //! Subscription state is stored in the workspace repo at `billing/subscription.json`.
 
 use axum::{
-    extract::{Path, Query, State},
+    extract::{Path, State},
     routing::{get, post},
     Json, Router,
 };
 use serde::{Deserialize, Serialize};
 
 use super::AppState;
+use crate::auth::RequireAdmin;
 use crate::domain::billing::subscription::Subscription;
 use crate::domain::ids::{SubscriptionId, WorkspaceId};
 use crate::error::AppError;
@@ -20,7 +21,6 @@ use crate::store::workspace_store::WorkspaceStore;
 
 #[derive(Deserialize)]
 pub struct CheckoutRequest {
-    pub workspace_id: WorkspaceId,
     pub plan_id: String,
     #[serde(default)]
     pub success_url: Option<String>,
@@ -30,14 +30,8 @@ pub struct CheckoutRequest {
 
 #[derive(Deserialize)]
 pub struct PortalRequest {
-    pub workspace_id: WorkspaceId,
     #[serde(default)]
     pub return_url: Option<String>,
-}
-
-#[derive(Deserialize)]
-pub struct BillingStatusQuery {
-    pub workspace_id: WorkspaceId,
 }
 
 // ── Response types ───────────────────────────────────────────────────
@@ -132,10 +126,11 @@ fn read_or_create_subscription(
 // ── Handlers ─────────────────────────────────────────────────────────
 
 async fn checkout(
+    RequireAdmin(auth): RequireAdmin,
     State(state): State<AppState>,
     Json(req): Json<CheckoutRequest>,
 ) -> Result<Json<CheckoutResponse>, AppError> {
-    let workspace_id = req.workspace_id;
+    let workspace_id = auth.workspace_id();
     let plan_id = req.plan_id.clone();
 
     // Validate plan exists
@@ -179,10 +174,11 @@ async fn checkout(
 }
 
 async fn portal(
+    RequireAdmin(auth): RequireAdmin,
     State(state): State<AppState>,
-    Json(req): Json<PortalRequest>,
+    Json(_req): Json<PortalRequest>,
 ) -> Result<Json<PortalResponse>, AppError> {
-    let workspace_id = req.workspace_id;
+    let workspace_id = auth.workspace_id();
 
     // Verify workspace exists
     tokio::task::spawn_blocking({
@@ -207,10 +203,10 @@ async fn portal(
 }
 
 async fn billing_status(
+    RequireAdmin(auth): RequireAdmin,
     State(state): State<AppState>,
-    Query(query): Query<BillingStatusQuery>,
 ) -> Result<Json<BillingStatusResponse>, AppError> {
-    let workspace_id = query.workspace_id;
+    let workspace_id = auth.workspace_id();
 
     let sub = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
@@ -241,7 +237,6 @@ async fn list_plans() -> Json<Vec<BillingPlan>> {
 
 #[derive(Deserialize)]
 pub struct CreateSubscriptionRequest {
-    pub workspace_id: WorkspaceId,
     pub plan: String,
 }
 
@@ -265,10 +260,11 @@ fn subscription_to_response(sub: &Subscription) -> SubscriptionResponse {
 }
 
 async fn create_subscription(
+    RequireAdmin(auth): RequireAdmin,
     State(state): State<AppState>,
     Json(req): Json<CreateSubscriptionRequest>,
 ) -> Result<Json<SubscriptionResponse>, AppError> {
-    let workspace_id = req.workspace_id;
+    let workspace_id = auth.workspace_id();
 
     let sub = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
@@ -292,11 +288,11 @@ async fn create_subscription(
 }
 
 async fn get_subscription(
+    RequireAdmin(auth): RequireAdmin,
     State(state): State<AppState>,
     Path(subscription_id): Path<SubscriptionId>,
-    Query(query): Query<BillingStatusQuery>,
 ) -> Result<Json<SubscriptionResponse>, AppError> {
-    let workspace_id = query.workspace_id;
+    let workspace_id = auth.workspace_id();
 
     let sub = tokio::task::spawn_blocking({
         let layout = state.layout.clone();

@@ -10,8 +10,84 @@ use crate::domain::ids::{
 };
 use crate::domain::treasury::types::Cents;
 
+/// Validate data-integrity invariants shared by `new()` and `TryFrom<RawShareTransfer>`.
+fn validate_transfer(
+    share_count: &ShareCount,
+    from_contact_id: ContactId,
+    to_contact_id: ContactId,
+) -> Result<(), EquityError> {
+    if share_count.raw() <= 0 {
+        return Err(EquityError::Validation("share_count must be positive".into()));
+    }
+    if from_contact_id == to_contact_id {
+        return Err(EquityError::Validation("from_holder and to_holder must be different".into()));
+    }
+    Ok(())
+}
+
+// ── Raw mirror for deserialization ──────────────────────────────────────
+
+#[derive(Deserialize)]
+struct RawShareTransfer {
+    transfer_id: TransferId,
+    entity_id: EntityId,
+    workspace_id: WorkspaceId,
+    share_class_id: ShareClassId,
+    from_contact_id: ContactId,
+    to_contact_id: ContactId,
+    transfer_type: TransferType,
+    share_count: ShareCount,
+    price_per_share_cents: Option<Cents>,
+    relationship_to_holder: Option<String>,
+    governing_doc_type: GoverningDocType,
+    bylaws_review_status: Option<BylawsReviewStatus>,
+    bylaws_review_notes: Option<String>,
+    reviewed_by: Option<String>,
+    transferee_rights: TransfereeRights,
+    rofr_offered: bool,
+    rofr_waived: bool,
+    board_approval_resolution_id: Option<ResolutionId>,
+    valuation_id: Option<ValuationId>,
+    status: TransferStatus,
+    created_at: DateTime<Utc>,
+}
+
+impl TryFrom<RawShareTransfer> for ShareTransfer {
+    type Error = EquityError;
+
+    fn try_from(raw: RawShareTransfer) -> Result<Self, Self::Error> {
+        validate_transfer(&raw.share_count, raw.from_contact_id, raw.to_contact_id)?;
+        Ok(ShareTransfer {
+            transfer_id: raw.transfer_id,
+            entity_id: raw.entity_id,
+            workspace_id: raw.workspace_id,
+            share_class_id: raw.share_class_id,
+            from_contact_id: raw.from_contact_id,
+            to_contact_id: raw.to_contact_id,
+            transfer_type: raw.transfer_type,
+            share_count: raw.share_count,
+            price_per_share_cents: raw.price_per_share_cents,
+            relationship_to_holder: raw.relationship_to_holder,
+            governing_doc_type: raw.governing_doc_type,
+            bylaws_review_status: raw.bylaws_review_status,
+            bylaws_review_notes: raw.bylaws_review_notes,
+            reviewed_by: raw.reviewed_by,
+            transferee_rights: raw.transferee_rights,
+            rofr_offered: raw.rofr_offered,
+            rofr_waived: raw.rofr_waived,
+            board_approval_resolution_id: raw.board_approval_resolution_id,
+            valuation_id: raw.valuation_id,
+            status: raw.status,
+            created_at: raw.created_at,
+        })
+    }
+}
+
+// ── ShareTransfer ───────────────────────────────────────────────────────
+
 /// A share transfer between parties.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(try_from = "RawShareTransfer")]
 pub struct ShareTransfer {
     transfer_id: TransferId,
     entity_id: EntityId,
@@ -55,12 +131,7 @@ impl ShareTransfer {
         governing_doc_type: GoverningDocType,
         transferee_rights: TransfereeRights,
     ) -> Result<Self, EquityError> {
-        if share_count.raw() <= 0 {
-            return Err(EquityError::Validation("share_count must be positive".into()));
-        }
-        if from_contact_id == to_contact_id {
-            return Err(EquityError::Validation("from_holder and to_holder must be different".into()));
-        }
+        validate_transfer(&share_count, from_contact_id, to_contact_id)?;
         Ok(Self {
             transfer_id,
             entity_id,
@@ -396,6 +467,35 @@ mod tests {
         t.record_bylaws_review(false, "denied".to_string(), "counsel".to_string())
             .unwrap();
         let result = t.cancel();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn serde_roundtrip() {
+        let t = make_transfer();
+        let json = serde_json::to_string(&t).unwrap();
+        let parsed: ShareTransfer = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.transfer_id(), t.transfer_id());
+        assert_eq!(parsed.share_count(), t.share_count());
+    }
+
+    #[test]
+    fn deserialize_rejects_zero_shares() {
+        let t = make_transfer();
+        let mut json: serde_json::Value = serde_json::to_value(&t).unwrap();
+        json["share_count"] = serde_json::json!(0);
+        let result: Result<ShareTransfer, _> = serde_json::from_value(json);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn deserialize_rejects_same_sender_receiver() {
+        let t = make_transfer();
+        let mut json: serde_json::Value = serde_json::to_value(&t).unwrap();
+        let contact = serde_json::json!(ContactId::new());
+        json["from_contact_id"] = contact.clone();
+        json["to_contact_id"] = contact;
+        let result: Result<ShareTransfer, _> = serde_json::from_value(json);
         assert!(result.is_err());
     }
 }

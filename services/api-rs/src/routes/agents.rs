@@ -3,7 +3,7 @@
 //! Endpoints for creating, listing, updating agents, adding skills, and messaging.
 
 use axum::{
-    extract::{Path, Query, State},
+    extract::{Path, State},
     http::StatusCode,
     routing::{patch, post},
     Json, Router,
@@ -11,15 +11,17 @@ use axum::{
 use serde::{Deserialize, Serialize};
 
 use super::AppState;
+use crate::auth::RequireAdmin;
 use crate::domain::agents::{
     agent::Agent,
     resolve,
     types::{
-        AgentSkill, AgentStatus, BudgetConfig, ChannelConfig, MCPServerSpec, SandboxConfig,
-        ToolSpec,
+        AgentSkill, AgentStatus, BudgetConfig, ChannelConfig, MCPServerSpec, NonEmpty,
+        SandboxConfig, ToolSpec,
     },
 };
-use crate::domain::ids::{AgentId, EntityId, MessageId, WorkspaceId};
+use agent_types::{JobPayload, RpcReply, RpcStatus};
+use crate::domain::ids::{AgentId, EntityId, ExecutionId, MessageId, WorkspaceId};
 use crate::error::AppError;
 use crate::store::workspace_store::WorkspaceStore;
 
@@ -27,7 +29,6 @@ use crate::store::workspace_store::WorkspaceStore;
 
 #[derive(Deserialize)]
 pub struct CreateAgentRequest {
-    pub workspace_id: WorkspaceId,
     pub name: String,
     #[serde(default)]
     pub system_prompt: Option<String>,
@@ -41,7 +42,6 @@ pub struct CreateAgentRequest {
 
 #[derive(Deserialize)]
 pub struct UpdateAgentRequest {
-    pub workspace_id: WorkspaceId,
     #[serde(default)]
     pub name: Option<String>,
     #[serde(default)]
@@ -68,8 +68,8 @@ pub struct UpdateAgentRequest {
 
 #[derive(Deserialize)]
 pub struct AddSkillRequest {
-    pub workspace_id: WorkspaceId,
-    pub name: String,
+    /// Parsed at deserialization — empty names are rejected by `NonEmpty`.
+    pub name: NonEmpty,
     pub description: String,
     #[serde(default)]
     pub parameters: serde_json::Value,
@@ -77,7 +77,6 @@ pub struct AddSkillRequest {
 
 #[derive(Deserialize)]
 pub struct SendMessageRequest {
-    pub workspace_id: WorkspaceId,
     pub message: String,
     #[serde(default)]
     pub metadata: serde_json::Value,
@@ -115,7 +114,7 @@ pub struct MessageResponse {
     pub message_id: MessageId,
     pub status: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub execution_id: Option<String>,
+    pub execution_id: Option<ExecutionId>,
     pub message: String,
 }
 
@@ -144,6 +143,7 @@ fn agent_to_response(a: &Agent) -> AgentResponse {
 // ── Handlers ─────────────────────────────────────────────────────────
 
 async fn create_agent(
+    RequireAdmin(auth): RequireAdmin,
     State(state): State<AppState>,
     Json(req): Json<CreateAgentRequest>,
 ) -> Result<(StatusCode, Json<AgentResponse>), AppError> {
@@ -152,7 +152,7 @@ async fn create_agent(
             "agent name must be between 1 and 256 characters".to_owned(),
         ));
     }
-    let workspace_id = req.workspace_id;
+    let workspace_id = auth.workspace_id();
 
     let agent = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
@@ -191,16 +191,11 @@ async fn create_agent(
     Ok((StatusCode::CREATED, Json(agent_to_response(&agent))))
 }
 
-#[derive(Deserialize)]
-pub struct WorkspaceQuery {
-    pub workspace_id: WorkspaceId,
-}
-
 async fn list_agents(
+    RequireAdmin(auth): RequireAdmin,
     State(state): State<AppState>,
-    Query(query): Query<WorkspaceQuery>,
 ) -> Result<Json<Vec<AgentResponse>>, AppError> {
-    let workspace_id = query.workspace_id;
+    let workspace_id = auth.workspace_id();
     let agents = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
@@ -229,11 +224,12 @@ async fn list_agents(
 }
 
 async fn update_agent(
+    RequireAdmin(auth): RequireAdmin,
     State(state): State<AppState>,
     Path(agent_id): Path<AgentId>,
     Json(req): Json<UpdateAgentRequest>,
 ) -> Result<Json<AgentResponse>, AppError> {
-    let workspace_id = req.workspace_id;
+    let workspace_id = auth.workspace_id();
 
     let agent = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
@@ -296,11 +292,12 @@ async fn update_agent(
 }
 
 async fn add_agent_skill(
+    RequireAdmin(auth): RequireAdmin,
     State(state): State<AppState>,
     Path(agent_id): Path<AgentId>,
     Json(req): Json<AddSkillRequest>,
 ) -> Result<Json<AgentResponse>, AppError> {
-    let workspace_id = req.workspace_id;
+    let workspace_id = auth.workspace_id();
 
     let agent = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
@@ -334,6 +331,7 @@ async fn add_agent_skill(
 }
 
 async fn send_agent_message(
+    RequireAdmin(auth): RequireAdmin,
     State(state): State<AppState>,
     Path(agent_id): Path<AgentId>,
     Json(req): Json<SendMessageRequest>,
@@ -341,7 +339,7 @@ async fn send_agent_message(
     if req.message.is_empty() {
         return Err(AppError::BadRequest("message cannot be empty".to_owned()));
     }
-    let workspace_id = req.workspace_id;
+    let workspace_id = auth.workspace_id();
 
     let msg = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
@@ -380,8 +378,9 @@ async fn send_agent_message(
 
     // Enqueue to Redis for worker dispatch (if Redis is configured)
     let execution_id = if let Some(ref redis) = state.redis {
-        match enqueue_execution(redis, workspace_id, agent_id, msg.message_id()).await {
+        match enqueue_execution(redis, workspace_id, agent_id, msg.message_id(), state.max_queue_depth).await {
             Ok(exec_id) => Some(exec_id),
+            Err(e @ AppError::ServiceUnavailable(_)) => return Err(e),
             Err(e) => {
                 tracing::error!(error = ?e, "failed to enqueue execution");
                 None
@@ -406,20 +405,27 @@ async fn enqueue_execution(
     workspace_id: WorkspaceId,
     agent_id: AgentId,
     message_id: MessageId,
-) -> Result<String, AppError> {
+    max_queue_depth: u64,
+) -> Result<ExecutionId, AppError> {
     use deadpool_redis::redis::AsyncCommands;
 
-    let execution_id = uuid::Uuid::new_v4();
-    let job_id = uuid::Uuid::new_v4();
+    // Check queue depth before enqueuing
+    if max_queue_depth > 0 {
+        let mut conn = redis.get().await
+            .map_err(|e| AppError::Internal(format!("redis pool: {e}")))?;
+        let current: u64 = conn.llen("aw:queue:jobs").await
+            .map_err(|e| AppError::Internal(format!("redis llen: {e}")))?;
+        if current >= max_queue_depth {
+            return Err(AppError::ServiceUnavailable(
+                format!("execution queue is full ({current}/{max_queue_depth})")
+            ));
+        }
+    }
 
-    let job = serde_json::json!({
-        "job_id": job_id,
-        "execution_id": execution_id,
-        "agent_id": agent_id,
-        "workspace_id": workspace_id,
-        "message_id": message_id,
-        "enqueued_at": chrono::Utc::now().to_rfc3339(),
-    });
+    let execution_id = ExecutionId::new();
+    let job = JobPayload::new(execution_id, agent_id, workspace_id, message_id);
+    let reply_key = format!("aw:rpc:reply:{}", job.job_id);
+
     let job_json = serde_json::to_string(&job)
         .map_err(|e| AppError::Internal(format!("serialize job: {e}")))?;
 
@@ -442,7 +448,6 @@ async fn enqueue_execution(
     drop(conn);
 
     // Wait for worker acknowledgment (2s timeout)
-    let reply_key = format!("aw:rpc:reply:{job_id}");
     let mut conn = redis.get().await
         .map_err(|e| AppError::Internal(format!("redis pool: {e}")))?;
 
@@ -456,20 +461,18 @@ async fn enqueue_execution(
     match result {
         Some((_key, payload)) => {
             // Worker acknowledged — check if accepted or rejected
-            if let Ok(reply) = serde_json::from_str::<serde_json::Value>(&payload) {
-                if reply.get("status").and_then(|s| s.as_str()) == Some("rejected") {
-                    let reason = reply.get("message")
-                        .and_then(|m| m.as_str())
-                        .unwrap_or("rejected by worker");
+            if let Ok(reply) = serde_json::from_str::<RpcReply>(&payload) {
+                if reply.status == RpcStatus::Rejected {
+                    let reason = reply.message.as_deref().unwrap_or("rejected by worker");
                     return Err(AppError::Conflict(reason.to_owned()));
                 }
             }
-            Ok(execution_id.to_string())
+            Ok(execution_id)
         }
         None => {
             // No worker responded — job is queued but unconfirmed
             tracing::warn!(execution_id = %execution_id, "no worker ack within timeout");
-            Ok(execution_id.to_string())
+            Ok(execution_id)
         }
     }
 }
@@ -520,11 +523,11 @@ fn validate_parent(
 // ── Resolved agent endpoint ──────────────────────────────────────────
 
 async fn get_resolved_agent(
+    RequireAdmin(auth): RequireAdmin,
     State(state): State<AppState>,
     Path(agent_id): Path<AgentId>,
-    Query(query): Query<WorkspaceQuery>,
 ) -> Result<Json<AgentResponse>, AppError> {
-    let workspace_id = query.workspace_id;
+    let workspace_id = auth.workspace_id();
 
     let agent = tokio::task::spawn_blocking({
         let layout = state.layout.clone();

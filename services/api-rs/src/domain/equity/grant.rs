@@ -4,13 +4,75 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 use super::error::EquityError;
-use super::types::{GrantStatus, GrantType, RecipientType, ShareCount};
+use super::types::{GrantStatus, GrantType, RecipientType, ShareCount, VotingRights};
 use crate::domain::ids::{
     AgentId, ContactId, EntityId, EquityGrantId, FilingId, ShareClassId,
 };
 
+/// Validate data-integrity invariants shared by constructors and deserialization.
+fn validate_grant(share_count: &ShareCount, recipient_name: &str) -> Result<(), EquityError> {
+    if share_count.raw() <= 0 {
+        return Err(EquityError::Validation("share_count must be positive".into()));
+    }
+    if recipient_name.is_empty() {
+        return Err(EquityError::Validation("recipient_name must not be empty".into()));
+    }
+    Ok(())
+}
+
+// ── Raw mirror for deserialization ──────────────────────────────────────
+
+#[derive(Deserialize)]
+struct RawEquityGrant {
+    grant_id: EquityGrantId,
+    entity_id: EntityId,
+    share_class_id: ShareClassId,
+    issuance_id: String,
+    recipient_name: String,
+    recipient_type: RecipientType,
+    grant_type: Option<GrantType>,
+    share_count: ShareCount,
+    board_approval_reference: Option<String>,
+    status: GrantStatus,
+    contact_id: Option<ContactId>,
+    agent_id: Option<AgentId>,
+    entity_investor_id: Option<EntityId>,
+    voting_rights: VotingRights,
+    issued_at: DateTime<Utc>,
+    created_at: DateTime<Utc>,
+}
+
+impl TryFrom<RawEquityGrant> for EquityGrant {
+    type Error = EquityError;
+
+    fn try_from(raw: RawEquityGrant) -> Result<Self, Self::Error> {
+        validate_grant(&raw.share_count, &raw.recipient_name)?;
+        Ok(EquityGrant {
+            grant_id: raw.grant_id,
+            entity_id: raw.entity_id,
+            share_class_id: raw.share_class_id,
+            issuance_id: raw.issuance_id,
+            recipient_name: raw.recipient_name,
+            recipient_type: raw.recipient_type,
+            grant_type: raw.grant_type,
+            share_count: raw.share_count,
+            board_approval_reference: raw.board_approval_reference,
+            status: raw.status,
+            contact_id: raw.contact_id,
+            agent_id: raw.agent_id,
+            entity_investor_id: raw.entity_investor_id,
+            voting_rights: raw.voting_rights,
+            issued_at: raw.issued_at,
+            created_at: raw.created_at,
+        })
+    }
+}
+
+// ── EquityGrant ─────────────────────────────────────────────────────────
+
 /// An equity grant issued to a recipient.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(try_from = "RawEquityGrant")]
 pub struct EquityGrant {
     grant_id: EquityGrantId,
     entity_id: EntityId,
@@ -25,7 +87,7 @@ pub struct EquityGrant {
     contact_id: Option<ContactId>,
     agent_id: Option<AgentId>,
     entity_investor_id: Option<EntityId>,
-    voting_rights: Option<bool>,
+    voting_rights: VotingRights,
     issued_at: DateTime<Utc>,
     created_at: DateTime<Utc>,
 }
@@ -48,14 +110,9 @@ impl EquityGrant {
         contact_id: Option<ContactId>,
         agent_id: Option<AgentId>,
         entity_investor_id: Option<EntityId>,
-        voting_rights: Option<bool>,
+        voting_rights: VotingRights,
     ) -> Result<Self, EquityError> {
-        if share_count.raw() <= 0 {
-            return Err(EquityError::Validation("share_count must be positive".into()));
-        }
-        if recipient_name.is_empty() {
-            return Err(EquityError::Validation("recipient_name must not be empty".into()));
-        }
+        validate_grant(&share_count, &recipient_name)?;
         let now = Utc::now();
         Ok(Self {
             grant_id,
@@ -91,12 +148,7 @@ impl EquityGrant {
         agent_id: Option<AgentId>,
         entity_investor_id: Option<EntityId>,
     ) -> Result<Self, EquityError> {
-        if share_count.raw() <= 0 {
-            return Err(EquityError::Validation("share_count must be positive".into()));
-        }
-        if recipient_name.is_empty() {
-            return Err(EquityError::Validation("recipient_name must not be empty".into()));
-        }
+        validate_grant(&share_count, &recipient_name)?;
         let now = Utc::now();
         Ok(Self {
             grant_id: EquityGrantId::new(),
@@ -112,7 +164,7 @@ impl EquityGrant {
             contact_id: None,
             agent_id,
             entity_investor_id,
-            voting_rights: Some(true),
+            voting_rights: VotingRights::Granted,
             issued_at: now,
             created_at: now,
         })
@@ -207,7 +259,7 @@ impl EquityGrant {
         self.entity_investor_id
     }
 
-    pub fn voting_rights(&self) -> Option<bool> {
+    pub fn voting_rights(&self) -> VotingRights {
         self.voting_rights
     }
 
@@ -238,7 +290,7 @@ mod tests {
             None,
             None,
             None,
-            Some(true),
+            VotingRights::Granted,
         )
         .unwrap()
     }
@@ -267,7 +319,7 @@ mod tests {
         assert_eq!(g.status(), GrantStatus::Issued);
         assert_eq!(g.share_count().raw(), 5000);
         assert!(g.issuance_id().starts_with("formation-"));
-        assert_eq!(g.voting_rights(), Some(true));
+        assert_eq!(g.voting_rights(), VotingRights::Granted);
     }
 
     #[test]
@@ -311,5 +363,32 @@ mod tests {
         assert!(result.is_err());
         // Share count unchanged
         assert_eq!(g.share_count().raw(), 1000);
+    }
+
+    #[test]
+    fn serde_roundtrip() {
+        let g = make_grant();
+        let json = serde_json::to_string(&g).unwrap();
+        let parsed: EquityGrant = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.grant_id(), g.grant_id());
+        assert_eq!(parsed.share_count(), g.share_count());
+    }
+
+    #[test]
+    fn deserialize_rejects_zero_shares() {
+        let g = make_grant();
+        let mut json: serde_json::Value = serde_json::to_value(&g).unwrap();
+        json["share_count"] = serde_json::json!(0);
+        let result: Result<EquityGrant, _> = serde_json::from_value(json);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn deserialize_rejects_empty_recipient() {
+        let g = make_grant();
+        let mut json: serde_json::Value = serde_json::to_value(&g).unwrap();
+        json["recipient_name"] = serde_json::json!("");
+        let result: Result<EquityGrant, _> = serde_json::from_value(json);
+        assert!(result.is_err());
     }
 }

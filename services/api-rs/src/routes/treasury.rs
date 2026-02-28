@@ -11,6 +11,7 @@ use chrono::NaiveDate;
 use serde::{Deserialize, Serialize};
 
 use super::AppState;
+use crate::auth::{RequireTreasuryRead, RequireTreasuryWrite};
 use crate::domain::ids::{
     AccountId, BankAccountId, DistributionId, EntityId, InvoiceId, JournalEntryId, LedgerLineId,
     PaymentId, PayrollRunId, ReconciliationId, SpendingLimitId, WorkspaceId,
@@ -29,21 +30,12 @@ use crate::domain::treasury::{
 use crate::error::AppError;
 use crate::store::entity_store::EntityStore;
 
-// ── Query types ──────────────────────────────────────────────────────
-
-#[derive(Deserialize)]
-pub struct EntityQuery {
-    pub workspace_id: WorkspaceId,
-}
-
 // ── Request types ────────────────────────────────────────────────────
 
 #[derive(Deserialize)]
 pub struct CreateAccountRequest {
     pub entity_id: EntityId,
     pub account_code: GlAccountCode,
-    #[serde(default)]
-    pub workspace_id: Option<WorkspaceId>,
 }
 
 #[derive(Deserialize)]
@@ -61,8 +53,6 @@ pub struct CreateJournalEntryRequest {
     pub description: String,
     pub effective_date: NaiveDate,
     pub lines: Vec<LedgerLineRequest>,
-    #[serde(default)]
-    pub workspace_id: Option<WorkspaceId>,
 }
 
 #[derive(Deserialize)]
@@ -72,8 +62,6 @@ pub struct CreateInvoiceRequest {
     pub amount_cents: i64,
     pub description: String,
     pub due_date: NaiveDate,
-    #[serde(default)]
-    pub workspace_id: Option<WorkspaceId>,
 }
 
 #[derive(Deserialize)]
@@ -82,8 +70,6 @@ pub struct CreateBankAccountRequest {
     pub bank_name: String,
     #[serde(default)]
     pub account_type: Option<BankAccountType>,
-    #[serde(default)]
-    pub workspace_id: Option<WorkspaceId>,
 }
 
 // ── Response types ───────────────────────────────────────────────────
@@ -208,10 +194,11 @@ fn open_store<'a>(
 // ── Handlers: Accounts ───────────────────────────────────────────────
 
 async fn create_account(
+    RequireTreasuryWrite(auth): RequireTreasuryWrite,
     State(state): State<AppState>,
     Json(req): Json<CreateAccountRequest>,
 ) -> Result<Json<AccountResponse>, AppError> {
-    let workspace_id = req.workspace_id.ok_or_else(|| AppError::BadRequest("workspace_id is required".to_owned()))?;
+    let workspace_id = auth.workspace_id();
     let entity_id = req.entity_id;
 
     let account = tokio::task::spawn_blocking({
@@ -243,23 +230,23 @@ async fn create_account(
 }
 
 async fn list_accounts(
+    RequireTreasuryRead(auth): RequireTreasuryRead,
     State(state): State<AppState>,
     Path(entity_id): Path<EntityId>,
-    Query(query): Query<EntityQuery>,
 ) -> Result<Json<Vec<AccountResponse>>, AppError> {
-    let workspace_id = query.workspace_id;
+    let workspace_id = auth.workspace_id();
 
     let accounts = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
-            let ids = store.list_account_ids("main").map_err(|e| {
+            let ids = store.list_ids::<Account>("main").map_err(|e| {
                 AppError::Internal(format!("list accounts: {e}"))
             })?;
 
             let mut results = Vec::new();
             for id in ids {
-                let a = store.read_account("main", id).map_err(|e| {
+                let a = store.read::<Account>("main", id).map_err(|e| {
                     AppError::Internal(format!("read account {id}: {e}"))
                 })?;
                 results.push(account_to_response(&a));
@@ -277,10 +264,11 @@ async fn list_accounts(
 // ── Handlers: Journal Entries ────────────────────────────────────────
 
 async fn create_journal_entry(
+    RequireTreasuryWrite(auth): RequireTreasuryWrite,
     State(state): State<AppState>,
     Json(req): Json<CreateJournalEntryRequest>,
 ) -> Result<Json<JournalEntryResponse>, AppError> {
-    let workspace_id = req.workspace_id.ok_or_else(|| AppError::BadRequest("workspace_id is required".to_owned()))?;
+    let workspace_id = auth.workspace_id();
     let entity_id = req.entity_id;
 
     for line in &req.lines {
@@ -338,23 +326,23 @@ async fn create_journal_entry(
 }
 
 async fn list_journal_entries(
+    RequireTreasuryRead(auth): RequireTreasuryRead,
     State(state): State<AppState>,
     Path(entity_id): Path<EntityId>,
-    Query(query): Query<EntityQuery>,
 ) -> Result<Json<Vec<JournalEntryResponse>>, AppError> {
-    let workspace_id = query.workspace_id;
+    let workspace_id = auth.workspace_id();
 
     let entries = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
-            let ids = store.list_journal_entry_ids("main").map_err(|e| {
+            let ids = store.list_ids::<JournalEntry>("main").map_err(|e| {
                 AppError::Internal(format!("list journal entries: {e}"))
             })?;
 
             let mut results = Vec::new();
             for id in ids {
-                let je = store.read_journal_entry("main", id).map_err(|e| {
+                let je = store.read::<JournalEntry>("main", id).map_err(|e| {
                     AppError::Internal(format!("read journal entry {id}: {e}"))
                 })?;
                 results.push(journal_entry_to_response(&je));
@@ -370,18 +358,19 @@ async fn list_journal_entries(
 }
 
 async fn post_journal_entry(
+    RequireTreasuryWrite(auth): RequireTreasuryWrite,
     State(state): State<AppState>,
     Path(entry_id): Path<JournalEntryId>,
-    Query(query): Query<super::WorkspaceEntityQuery>,
+    Query(query): Query<super::EntityIdQuery>,
 ) -> Result<Json<JournalEntryResponse>, AppError> {
-    let workspace_id = query.workspace_id;
+    let workspace_id = auth.workspace_id();
     let entity_id = query.entity_id;
 
     let entry = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
-            let mut entry = store.read_journal_entry("main", entry_id).map_err(|_| {
+            let mut entry = store.read::<JournalEntry>("main", entry_id).map_err(|_| {
                 AppError::NotFound(format!("journal entry {} not found", entry_id))
             })?;
 
@@ -408,18 +397,19 @@ async fn post_journal_entry(
 }
 
 async fn void_journal_entry(
+    RequireTreasuryWrite(auth): RequireTreasuryWrite,
     State(state): State<AppState>,
     Path(entry_id): Path<JournalEntryId>,
-    Query(query): Query<super::WorkspaceEntityQuery>,
+    Query(query): Query<super::EntityIdQuery>,
 ) -> Result<Json<JournalEntryResponse>, AppError> {
-    let workspace_id = query.workspace_id;
+    let workspace_id = auth.workspace_id();
     let entity_id = query.entity_id;
 
     let entry = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
-            let mut entry = store.read_journal_entry("main", entry_id).map_err(|_| {
+            let mut entry = store.read::<JournalEntry>("main", entry_id).map_err(|_| {
                 AppError::NotFound(format!("journal entry {} not found", entry_id))
             })?;
 
@@ -448,10 +438,11 @@ async fn void_journal_entry(
 // ── Handlers: Invoices ───────────────────────────────────────────────
 
 async fn create_invoice(
+    RequireTreasuryWrite(auth): RequireTreasuryWrite,
     State(state): State<AppState>,
     Json(req): Json<CreateInvoiceRequest>,
 ) -> Result<Json<InvoiceResponse>, AppError> {
-    let workspace_id = req.workspace_id.ok_or_else(|| AppError::BadRequest("workspace_id is required".to_owned()))?;
+    let workspace_id = auth.workspace_id();
     let entity_id = req.entity_id;
 
     if req.amount_cents <= 0 {
@@ -494,23 +485,23 @@ async fn create_invoice(
 }
 
 async fn list_invoices(
+    RequireTreasuryRead(auth): RequireTreasuryRead,
     State(state): State<AppState>,
     Path(entity_id): Path<EntityId>,
-    Query(query): Query<EntityQuery>,
 ) -> Result<Json<Vec<InvoiceResponse>>, AppError> {
-    let workspace_id = query.workspace_id;
+    let workspace_id = auth.workspace_id();
 
     let invoices = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
-            let ids = store.list_invoice_ids("main").map_err(|e| {
+            let ids = store.list_ids::<Invoice>("main").map_err(|e| {
                 AppError::Internal(format!("list invoices: {e}"))
             })?;
 
             let mut results = Vec::new();
             for id in ids {
-                let inv = store.read_invoice("main", id).map_err(|e| {
+                let inv = store.read::<Invoice>("main", id).map_err(|e| {
                     AppError::Internal(format!("read invoice {id}: {e}"))
                 })?;
                 results.push(invoice_to_response(&inv));
@@ -526,18 +517,19 @@ async fn list_invoices(
 }
 
 async fn send_invoice(
+    RequireTreasuryWrite(auth): RequireTreasuryWrite,
     State(state): State<AppState>,
     Path(invoice_id): Path<InvoiceId>,
-    Query(query): Query<super::WorkspaceEntityQuery>,
+    Query(query): Query<super::EntityIdQuery>,
 ) -> Result<Json<InvoiceResponse>, AppError> {
-    let workspace_id = query.workspace_id;
+    let workspace_id = auth.workspace_id();
     let entity_id = query.entity_id;
 
     let invoice = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
-            let mut invoice = store.read_invoice("main", invoice_id).map_err(|_| {
+            let mut invoice = store.read::<Invoice>("main", invoice_id).map_err(|_| {
                 AppError::NotFound(format!("invoice {} not found", invoice_id))
             })?;
 
@@ -564,18 +556,19 @@ async fn send_invoice(
 }
 
 async fn mark_invoice_paid(
+    RequireTreasuryWrite(auth): RequireTreasuryWrite,
     State(state): State<AppState>,
     Path(invoice_id): Path<InvoiceId>,
-    Query(query): Query<super::WorkspaceEntityQuery>,
+    Query(query): Query<super::EntityIdQuery>,
 ) -> Result<Json<InvoiceResponse>, AppError> {
-    let workspace_id = query.workspace_id;
+    let workspace_id = auth.workspace_id();
     let entity_id = query.entity_id;
 
     let invoice = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
-            let mut invoice = store.read_invoice("main", invoice_id).map_err(|_| {
+            let mut invoice = store.read::<Invoice>("main", invoice_id).map_err(|_| {
                 AppError::NotFound(format!("invoice {} not found", invoice_id))
             })?;
 
@@ -602,18 +595,19 @@ async fn mark_invoice_paid(
 }
 
 async fn get_invoice_status(
+    RequireTreasuryRead(auth): RequireTreasuryRead,
     State(state): State<AppState>,
     Path(invoice_id): Path<InvoiceId>,
-    Query(query): Query<super::WorkspaceEntityQuery>,
+    Query(query): Query<super::EntityIdQuery>,
 ) -> Result<Json<InvoiceResponse>, AppError> {
-    let workspace_id = query.workspace_id;
+    let workspace_id = auth.workspace_id();
     let entity_id = query.entity_id;
 
     let invoice = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
-            store.read_invoice("main", invoice_id).map_err(|_| {
+            store.read::<Invoice>("main", invoice_id).map_err(|_| {
                 AppError::NotFound(format!("invoice {} not found", invoice_id))
             })
         }
@@ -635,18 +629,19 @@ pub struct PayInstructionsResponse {
 }
 
 async fn get_pay_instructions(
+    RequireTreasuryRead(auth): RequireTreasuryRead,
     State(state): State<AppState>,
     Path(invoice_id): Path<InvoiceId>,
-    Query(query): Query<super::WorkspaceEntityQuery>,
+    Query(query): Query<super::EntityIdQuery>,
 ) -> Result<Json<PayInstructionsResponse>, AppError> {
-    let workspace_id = query.workspace_id;
+    let workspace_id = auth.workspace_id();
     let entity_id = query.entity_id;
 
     let invoice = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
-            store.read_invoice("main", invoice_id).map_err(|_| {
+            store.read::<Invoice>("main", invoice_id).map_err(|_| {
                 AppError::NotFound(format!("invoice {} not found", invoice_id))
             })
         }
@@ -672,10 +667,11 @@ async fn get_pay_instructions(
 // ── Handlers: Bank Accounts ──────────────────────────────────────────
 
 async fn create_bank_account(
+    RequireTreasuryWrite(auth): RequireTreasuryWrite,
     State(state): State<AppState>,
     Json(req): Json<CreateBankAccountRequest>,
 ) -> Result<Json<BankAccountResponse>, AppError> {
-    let workspace_id = req.workspace_id.ok_or_else(|| AppError::BadRequest("workspace_id is required".to_owned()))?;
+    let workspace_id = auth.workspace_id();
     let entity_id = req.entity_id;
 
     let bank_account = tokio::task::spawn_blocking({
@@ -712,23 +708,23 @@ async fn create_bank_account(
 }
 
 async fn list_bank_accounts(
+    RequireTreasuryRead(auth): RequireTreasuryRead,
     State(state): State<AppState>,
     Path(entity_id): Path<EntityId>,
-    Query(query): Query<EntityQuery>,
 ) -> Result<Json<Vec<BankAccountResponse>>, AppError> {
-    let workspace_id = query.workspace_id;
+    let workspace_id = auth.workspace_id();
 
     let bank_accounts = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
-            let ids = store.list_bank_account_ids("main").map_err(|e| {
+            let ids = store.list_ids::<BankAccount>("main").map_err(|e| {
                 AppError::Internal(format!("list bank accounts: {e}"))
             })?;
 
             let mut results = Vec::new();
             for id in ids {
-                let ba = store.read_bank_account("main", id).map_err(|e| {
+                let ba = store.read::<BankAccount>("main", id).map_err(|e| {
                     AppError::Internal(format!("read bank account {id}: {e}"))
                 })?;
                 results.push(bank_account_to_response(&ba));
@@ -744,18 +740,19 @@ async fn list_bank_accounts(
 }
 
 async fn activate_bank_account(
+    RequireTreasuryWrite(auth): RequireTreasuryWrite,
     State(state): State<AppState>,
     Path(bank_account_id): Path<BankAccountId>,
-    Query(query): Query<super::WorkspaceEntityQuery>,
+    Query(query): Query<super::EntityIdQuery>,
 ) -> Result<Json<BankAccountResponse>, AppError> {
-    let workspace_id = query.workspace_id;
+    let workspace_id = auth.workspace_id();
     let entity_id = query.entity_id;
 
     let bank_account = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
-            let mut ba = store.read_bank_account("main", bank_account_id).map_err(|_| {
+            let mut ba = store.read::<BankAccount>("main", bank_account_id).map_err(|_| {
                 AppError::NotFound(format!("bank account {} not found", bank_account_id))
             })?;
 
@@ -782,18 +779,19 @@ async fn activate_bank_account(
 }
 
 async fn close_bank_account(
+    RequireTreasuryWrite(auth): RequireTreasuryWrite,
     State(state): State<AppState>,
     Path(bank_account_id): Path<BankAccountId>,
-    Query(query): Query<super::WorkspaceEntityQuery>,
+    Query(query): Query<super::EntityIdQuery>,
 ) -> Result<Json<BankAccountResponse>, AppError> {
-    let workspace_id = query.workspace_id;
+    let workspace_id = auth.workspace_id();
     let entity_id = query.entity_id;
 
     let bank_account = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
-            let mut ba = store.read_bank_account("main", bank_account_id).map_err(|_| {
+            let mut ba = store.read::<BankAccount>("main", bank_account_id).map_err(|_| {
                 AppError::NotFound(format!("bank account {} not found", bank_account_id))
             })?;
 
@@ -829,8 +827,6 @@ pub struct SubmitPaymentRequest {
     #[serde(default = "default_payment_method")]
     pub payment_method: PaymentMethod,
     pub description: String,
-    #[serde(default)]
-    pub workspace_id: Option<WorkspaceId>,
 }
 
 fn default_payment_method() -> PaymentMethod {
@@ -845,8 +841,6 @@ pub struct ExecutePaymentRequest {
     #[serde(default = "default_payment_method")]
     pub payment_method: PaymentMethod,
     pub description: String,
-    #[serde(default)]
-    pub workspace_id: Option<WorkspaceId>,
 }
 
 #[derive(Deserialize)]
@@ -854,8 +848,6 @@ pub struct CreatePayrollRunRequest {
     pub entity_id: EntityId,
     pub pay_period_start: chrono::NaiveDate,
     pub pay_period_end: chrono::NaiveDate,
-    #[serde(default)]
-    pub workspace_id: Option<WorkspaceId>,
 }
 
 #[derive(Deserialize)]
@@ -865,8 +857,6 @@ pub struct CreateDistributionRequest {
     pub distribution_type: DistributionType,
     pub total_amount_cents: i64,
     pub description: String,
-    #[serde(default)]
-    pub workspace_id: Option<WorkspaceId>,
 }
 
 fn default_distribution_type() -> DistributionType {
@@ -878,8 +868,6 @@ pub struct ReconcileLedgerRequest {
     pub entity_id: EntityId,
     #[serde(default)]
     pub as_of_date: Option<chrono::NaiveDate>,
-    #[serde(default)]
-    pub workspace_id: Option<WorkspaceId>,
 }
 
 // ── Response types ──────────────────────────────────────────────────
@@ -932,10 +920,11 @@ pub struct ReconciliationResponse {
 // ── Handlers: Payments ──────────────────────────────────────────────
 
 async fn submit_payment(
+    RequireTreasuryWrite(auth): RequireTreasuryWrite,
     State(state): State<AppState>,
     Json(req): Json<SubmitPaymentRequest>,
 ) -> Result<Json<PaymentResponse>, AppError> {
-    let workspace_id = req.workspace_id.ok_or_else(|| AppError::BadRequest("workspace_id is required".to_owned()))?;
+    let workspace_id = auth.workspace_id();
     let entity_id = req.entity_id;
 
     let payment = tokio::task::spawn_blocking({
@@ -978,10 +967,11 @@ async fn submit_payment(
 }
 
 async fn execute_payment(
+    RequireTreasuryWrite(auth): RequireTreasuryWrite,
     State(state): State<AppState>,
     Json(req): Json<ExecutePaymentRequest>,
 ) -> Result<Json<PaymentResponse>, AppError> {
-    let workspace_id = req.workspace_id.ok_or_else(|| AppError::BadRequest("workspace_id is required".to_owned()))?;
+    let workspace_id = auth.workspace_id();
     let entity_id = req.entity_id;
 
     let payment = tokio::task::spawn_blocking({
@@ -1027,10 +1017,11 @@ async fn execute_payment(
 // ── Handlers: Payroll ───────────────────────────────────────────────
 
 async fn create_payroll_run(
+    RequireTreasuryWrite(auth): RequireTreasuryWrite,
     State(state): State<AppState>,
     Json(req): Json<CreatePayrollRunRequest>,
 ) -> Result<Json<PayrollRunResponse>, AppError> {
-    let workspace_id = req.workspace_id.ok_or_else(|| AppError::BadRequest("workspace_id is required".to_owned()))?;
+    let workspace_id = auth.workspace_id();
     let entity_id = req.entity_id;
 
     let run = tokio::task::spawn_blocking({
@@ -1066,10 +1057,11 @@ async fn create_payroll_run(
 // ── Handlers: Distributions ─────────────────────────────────────────
 
 async fn create_distribution(
+    RequireTreasuryWrite(auth): RequireTreasuryWrite,
     State(state): State<AppState>,
     Json(req): Json<CreateDistributionRequest>,
 ) -> Result<Json<DistributionResponse>, AppError> {
-    let workspace_id = req.workspace_id.ok_or_else(|| AppError::BadRequest("workspace_id is required".to_owned()))?;
+    let workspace_id = auth.workspace_id();
     let entity_id = req.entity_id;
 
     let dist = tokio::task::spawn_blocking({
@@ -1112,10 +1104,11 @@ async fn create_distribution(
 // ── Handlers: Reconciliation ────────────────────────────────────────
 
 async fn reconcile_ledger(
+    RequireTreasuryWrite(auth): RequireTreasuryWrite,
     State(state): State<AppState>,
     Json(req): Json<ReconcileLedgerRequest>,
 ) -> Result<Json<ReconciliationResponse>, AppError> {
-    let workspace_id = req.workspace_id.ok_or_else(|| AppError::BadRequest("workspace_id is required".to_owned()))?;
+    let workspace_id = auth.workspace_id();
     let entity_id = req.entity_id;
     let as_of_date = req.as_of_date.unwrap_or_else(|| chrono::Utc::now().date_naive());
 
@@ -1126,14 +1119,14 @@ async fn reconcile_ledger(
 
             // Sum up all journal entries to compute totals
             let entry_ids = store
-                .list_journal_entry_ids("main")
+                .list_ids::<JournalEntry>("main")
                 .map_err(|e| AppError::Internal(format!("list entries: {e}")))?;
 
             let mut total_debits = Cents::ZERO;
             let mut total_credits = Cents::ZERO;
 
             for id in entry_ids {
-                if let Ok(entry) = store.read_journal_entry("main", id) {
+                if let Ok(entry) = store.read::<JournalEntry>("main", id) {
                     total_debits += entry.total_debits();
                     total_credits += entry.total_credits();
                 }
@@ -1181,17 +1174,12 @@ pub struct StripeAccountResponse {
     pub created_at: String,
 }
 
-#[derive(Deserialize)]
-pub struct StripeAccountQuery {
-    pub workspace_id: WorkspaceId,
-}
-
 async fn get_stripe_account(
+    RequireTreasuryRead(auth): RequireTreasuryRead,
     State(state): State<AppState>,
     Path(entity_id): Path<EntityId>,
-    Query(query): Query<StripeAccountQuery>,
 ) -> Result<Json<StripeAccountResponse>, AppError> {
-    let workspace_id = query.workspace_id;
+    let workspace_id = auth.workspace_id();
 
     let conn = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
@@ -1255,15 +1243,14 @@ pub struct CreateSpendingLimitRequest {
     pub amount_cents: i64,
     pub period: String,
     pub category: String,
-    #[serde(default)]
-    pub workspace_id: Option<WorkspaceId>,
 }
 
 async fn create_spending_limit(
+    RequireTreasuryWrite(auth): RequireTreasuryWrite,
     State(state): State<AppState>,
     Json(req): Json<CreateSpendingLimitRequest>,
 ) -> Result<Json<SpendingLimitResponse>, AppError> {
-    let workspace_id = req.workspace_id.ok_or_else(|| AppError::BadRequest("workspace_id is required".to_owned()))?;
+    let workspace_id = auth.workspace_id();
     let entity_id = req.entity_id;
 
     let sl = tokio::task::spawn_blocking({
@@ -1286,17 +1273,12 @@ async fn create_spending_limit(
     Ok(Json(spending_limit_to_response(&sl)))
 }
 
-#[derive(Deserialize)]
-pub struct SpendingLimitQuery {
-    pub workspace_id: WorkspaceId,
-}
-
 async fn list_spending_limits(
+    RequireTreasuryRead(auth): RequireTreasuryRead,
     State(state): State<AppState>,
     Path(entity_id): Path<EntityId>,
-    Query(query): Query<SpendingLimitQuery>,
 ) -> Result<Json<Vec<SpendingLimitResponse>>, AppError> {
-    let workspace_id = query.workspace_id;
+    let workspace_id = auth.workspace_id();
 
     let limits = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
@@ -1337,7 +1319,6 @@ pub struct FinancialStatementResponse {
 
 #[derive(Deserialize)]
 pub struct FinancialStatementQuery {
-    pub workspace_id: WorkspaceId,
     #[serde(default = "default_statement_type")]
     pub statement_type: String,
 }
@@ -1347,11 +1328,12 @@ fn default_statement_type() -> String {
 }
 
 async fn get_financial_statements(
+    RequireTreasuryRead(auth): RequireTreasuryRead,
     State(state): State<AppState>,
     Path(entity_id): Path<EntityId>,
     Query(query): Query<FinancialStatementQuery>,
 ) -> Result<Json<FinancialStatementResponse>, AppError> {
-    let workspace_id = query.workspace_id;
+    let workspace_id = auth.workspace_id();
 
     let statement = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
@@ -1359,7 +1341,7 @@ async fn get_financial_statements(
             let store = open_store(&layout, workspace_id, entity_id)?;
 
             // Read all accounts and compute totals by type
-            let account_ids = store.list_account_ids("main").unwrap_or_default();
+            let account_ids = store.list_ids::<Account>("main").unwrap_or_default();
             let mut total_assets: i64 = 0;
             let mut total_liabilities: i64 = 0;
             let mut total_equity: i64 = 0;
@@ -1369,15 +1351,15 @@ async fn get_financial_statements(
             // Build a map of account_id -> account_type
             let mut acct_types = std::collections::HashMap::new();
             for &acct_id in &account_ids {
-                if let Ok(acct) = store.read_account("main", acct_id) {
+                if let Ok(acct) = store.read::<Account>("main", acct_id) {
                     acct_types.insert(acct.account_id(), acct.account_type());
                 }
             }
 
             // Read journal entries to sum by account type
-            let entry_ids = store.list_journal_entry_ids("main").unwrap_or_default();
+            let entry_ids = store.list_ids::<JournalEntry>("main").unwrap_or_default();
             for entry_id in entry_ids {
-                if let Ok(entry) = store.read_journal_entry("main", entry_id) {
+                if let Ok(entry) = store.read::<JournalEntry>("main", entry_id) {
                     for line in entry.lines() {
                         if let Some(&acct_type) = acct_types.get(&line.account_id()) {
                             let signed = match line.side() {
@@ -1418,8 +1400,6 @@ async fn get_financial_statements(
 #[derive(Deserialize)]
 pub struct SeedChartOfAccountsRequest {
     pub entity_id: EntityId,
-    #[serde(default)]
-    pub workspace_id: Option<WorkspaceId>,
     #[serde(default = "default_template")]
     pub template: String,
 }
@@ -1436,10 +1416,11 @@ pub struct SeedChartOfAccountsResponse {
 }
 
 async fn seed_chart_of_accounts(
+    RequireTreasuryWrite(auth): RequireTreasuryWrite,
     State(state): State<AppState>,
     Json(req): Json<SeedChartOfAccountsRequest>,
 ) -> Result<Json<SeedChartOfAccountsResponse>, AppError> {
-    let workspace_id = req.workspace_id.ok_or_else(|| AppError::BadRequest("workspace_id is required".to_owned()))?;
+    let workspace_id = auth.workspace_id();
     let entity_id = req.entity_id;
 
     let count = tokio::task::spawn_blocking({
@@ -1484,18 +1465,19 @@ async fn seed_chart_of_accounts(
 // ── Handlers: Get Invoice ────────────────────────────────────────────
 
 async fn get_invoice(
+    RequireTreasuryRead(auth): RequireTreasuryRead,
     State(state): State<AppState>,
     Path(invoice_id): Path<InvoiceId>,
-    Query(query): Query<super::WorkspaceEntityQuery>,
+    Query(query): Query<super::EntityIdQuery>,
 ) -> Result<Json<InvoiceResponse>, AppError> {
-    let workspace_id = query.workspace_id;
+    let workspace_id = auth.workspace_id();
     let entity_id = query.entity_id;
 
     let invoice = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
-            store.read_invoice("main", invoice_id).map_err(|_| {
+            store.read::<Invoice>("main", invoice_id).map_err(|_| {
                 AppError::NotFound(format!("invoice {} not found", invoice_id))
             })
         }
@@ -1516,8 +1498,6 @@ pub struct AgentInvoiceRequest {
     pub amount_cents: i64,
     pub description: String,
     pub due_date: NaiveDate,
-    #[serde(default)]
-    pub workspace_id: Option<WorkspaceId>,
 }
 
 #[derive(Serialize)]
@@ -1530,10 +1510,11 @@ pub struct PaymentOfferResponse {
 }
 
 async fn from_agent_request(
+    RequireTreasuryWrite(auth): RequireTreasuryWrite,
     State(state): State<AppState>,
     Json(req): Json<AgentInvoiceRequest>,
 ) -> Result<Json<PaymentOfferResponse>, AppError> {
-    let workspace_id = req.workspace_id.ok_or_else(|| AppError::BadRequest("workspace_id is required".to_owned()))?;
+    let workspace_id = auth.workspace_id();
     let entity_id = req.entity_id;
 
     if req.amount_cents <= 0 {
@@ -1584,15 +1565,14 @@ async fn from_agent_request(
 #[derive(Deserialize)]
 pub struct CreateStripeAccountRequest {
     pub entity_id: EntityId,
-    #[serde(default)]
-    pub workspace_id: Option<WorkspaceId>,
 }
 
 async fn create_stripe_account(
+    RequireTreasuryWrite(auth): RequireTreasuryWrite,
     State(state): State<AppState>,
     Json(req): Json<CreateStripeAccountRequest>,
 ) -> Result<Json<StripeAccountResponse>, AppError> {
-    let workspace_id = req.workspace_id.ok_or_else(|| AppError::BadRequest("workspace_id is required".to_owned()))?;
+    let workspace_id = auth.workspace_id();
     let entity_id = req.entity_id;
 
     let conn = tokio::task::spawn_blocking({
@@ -1629,23 +1609,23 @@ pub struct ChartOfAccountsResponse {
 }
 
 async fn get_chart_of_accounts(
+    RequireTreasuryRead(auth): RequireTreasuryRead,
     State(state): State<AppState>,
     Path(entity_id): Path<EntityId>,
-    Query(query): Query<EntityQuery>,
 ) -> Result<Json<ChartOfAccountsResponse>, AppError> {
-    let workspace_id = query.workspace_id;
+    let workspace_id = auth.workspace_id();
 
     let accounts = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
-            let ids = store.list_account_ids("main").map_err(|e| {
+            let ids = store.list_ids::<Account>("main").map_err(|e| {
                 AppError::Internal(format!("list accounts: {e}"))
             })?;
 
             let mut results = Vec::new();
             for id in ids {
-                let a = store.read_account("main", id).map_err(|e| {
+                let a = store.read::<Account>("main",id).map_err(|e| {
                     AppError::Internal(format!("read account {id}: {e}"))
                 })?;
                 results.push(account_to_response(&a));
@@ -1670,8 +1650,6 @@ pub struct CreatePayoutRequest {
     pub destination: String,
     #[serde(default)]
     pub description: Option<String>,
-    #[serde(default)]
-    pub workspace_id: Option<WorkspaceId>,
 }
 
 #[derive(Serialize)]
@@ -1685,10 +1663,11 @@ pub struct PayoutResponse {
 }
 
 async fn create_payout(
+    RequireTreasuryWrite(auth): RequireTreasuryWrite,
     State(state): State<AppState>,
     Json(req): Json<CreatePayoutRequest>,
 ) -> Result<Json<PayoutResponse>, AppError> {
-    let workspace_id = req.workspace_id.ok_or_else(|| AppError::BadRequest("workspace_id is required".to_owned()))?;
+    let workspace_id = auth.workspace_id();
     let entity_id = req.entity_id;
 
     if req.amount_cents <= 0 {
@@ -1744,8 +1723,6 @@ pub struct CreatePaymentIntentRequest {
     pub amount_cents: i64,
     pub currency: Option<String>,
     pub description: Option<String>,
-    #[serde(default)]
-    pub workspace_id: Option<WorkspaceId>,
 }
 
 #[derive(Serialize)]
@@ -1760,10 +1737,11 @@ pub struct PaymentIntentResponse {
 }
 
 async fn create_payment_intent(
+    RequireTreasuryWrite(auth): RequireTreasuryWrite,
     State(state): State<AppState>,
     Json(req): Json<CreatePaymentIntentRequest>,
 ) -> Result<Json<PaymentIntentResponse>, AppError> {
-    let workspace_id = req.workspace_id.ok_or_else(|| AppError::BadRequest("workspace_id is required".to_owned()))?;
+    let workspace_id = auth.workspace_id();
     let entity_id = req.entity_id;
 
     if req.amount_cents <= 0 {

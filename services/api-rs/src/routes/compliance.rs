@@ -11,6 +11,7 @@ use chrono::NaiveDate;
 use serde::{Deserialize, Serialize};
 
 use super::AppState;
+use crate::auth::RequireAdmin;
 use crate::domain::formation::{
     contractor::{ClassificationResult, ContractorClassification, RiskLevel},
     deadline::{Deadline, DeadlineStatus, Recurrence},
@@ -27,8 +28,6 @@ pub struct FileTaxDocumentRequest {
     pub entity_id: EntityId,
     pub document_type: String,
     pub tax_year: i32,
-    #[serde(default)]
-    pub workspace_id: Option<WorkspaceId>,
 }
 
 #[derive(Deserialize)]
@@ -39,8 +38,6 @@ pub struct CreateDeadlineRequest {
     pub description: String,
     #[serde(default = "default_recurrence")]
     pub recurrence: Recurrence,
-    #[serde(default)]
-    pub workspace_id: Option<WorkspaceId>,
 }
 
 fn default_recurrence() -> Recurrence {
@@ -55,8 +52,6 @@ pub struct ClassifyContractorRequest {
     pub state: String,
     #[serde(default)]
     pub factors: serde_json::Value,
-    #[serde(default)]
-    pub workspace_id: Option<WorkspaceId>,
 }
 
 fn default_state() -> String {
@@ -118,10 +113,11 @@ fn open_store<'a>(
 // ── Handlers ─────────────────────────────────────────────────────────
 
 async fn file_tax_document(
+    RequireAdmin(auth): RequireAdmin,
     State(state): State<AppState>,
     Json(req): Json<FileTaxDocumentRequest>,
 ) -> Result<Json<TaxFilingResponse>, AppError> {
-    let workspace_id = req.workspace_id.ok_or_else(|| AppError::BadRequest("workspace_id is required".to_owned()))?;
+    let workspace_id = auth.workspace_id();
     let entity_id = req.entity_id;
 
     let filing = tokio::task::spawn_blocking({
@@ -163,10 +159,11 @@ async fn file_tax_document(
 }
 
 async fn create_deadline(
+    RequireAdmin(auth): RequireAdmin,
     State(state): State<AppState>,
     Json(req): Json<CreateDeadlineRequest>,
 ) -> Result<Json<DeadlineResponse>, AppError> {
-    let workspace_id = req.workspace_id.ok_or_else(|| AppError::BadRequest("workspace_id is required".to_owned()))?;
+    let workspace_id = auth.workspace_id();
     let entity_id = req.entity_id;
 
     let deadline = tokio::task::spawn_blocking({
@@ -209,10 +206,11 @@ async fn create_deadline(
 }
 
 async fn classify_contractor(
+    RequireAdmin(auth): RequireAdmin,
     State(state): State<AppState>,
     Json(req): Json<ClassifyContractorRequest>,
 ) -> Result<Json<ClassificationResponse>, AppError> {
-    let workspace_id = req.workspace_id.ok_or_else(|| AppError::BadRequest("workspace_id is required".to_owned()))?;
+    let workspace_id = auth.workspace_id();
     let entity_id = req.entity_id;
 
     let classification = tokio::task::spawn_blocking({

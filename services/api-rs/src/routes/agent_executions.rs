@@ -11,15 +11,16 @@ use deadpool_redis::redis::AsyncCommands;
 use serde::Serialize;
 use std::collections::HashMap;
 
+use agent_types::KillCommand;
 use super::AppState;
-use crate::domain::ids::AgentId;
+use crate::domain::ids::{AgentId, ExecutionId};
 use crate::error::AppError;
 
 // ── Response types ───────────────────────────────────────────────────
 
 #[derive(Serialize)]
 pub struct ExecutionResponse {
-    pub execution_id: String,
+    pub execution_id: ExecutionId,
     pub agent_id: String,
     pub status: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -34,7 +35,7 @@ pub struct ExecutionResponse {
 
 #[derive(Serialize)]
 pub struct KillResponse {
-    pub execution_id: String,
+    pub execution_id: ExecutionId,
     pub status: String,
 }
 
@@ -50,7 +51,7 @@ fn require_redis(state: &AppState) -> Result<&deadpool_redis::Pool, AppError> {
 
 async fn get_execution(
     State(state): State<AppState>,
-    Path((_agent_id, execution_id)): Path<(AgentId, String)>,
+    Path((_agent_id, execution_id)): Path<(AgentId, ExecutionId)>,
 ) -> Result<Json<ExecutionResponse>, AppError> {
     let redis = require_redis(&state)?;
     let mut conn = redis.get().await
@@ -77,7 +78,7 @@ async fn get_execution(
 
 async fn get_execution_result(
     State(state): State<AppState>,
-    Path((_agent_id, execution_id)): Path<(AgentId, String)>,
+    Path((_agent_id, execution_id)): Path<(AgentId, ExecutionId)>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     let redis = require_redis(&state)?;
     let mut conn = redis.get().await
@@ -99,7 +100,7 @@ async fn get_execution_result(
 
 async fn get_execution_logs(
     State(state): State<AppState>,
-    Path((_agent_id, execution_id)): Path<(AgentId, String)>,
+    Path((_agent_id, execution_id)): Path<(AgentId, ExecutionId)>,
 ) -> Result<Json<Vec<serde_json::Value>>, AppError> {
     let redis = require_redis(&state)?;
     let mut conn = redis.get().await
@@ -118,7 +119,7 @@ async fn get_execution_logs(
 
 async fn kill_execution(
     State(state): State<AppState>,
-    Path((_agent_id, execution_id)): Path<(AgentId, String)>,
+    Path((_agent_id, execution_id)): Path<(AgentId, ExecutionId)>,
 ) -> Result<Json<KillResponse>, AppError> {
     let redis = require_redis(&state)?;
     let mut conn = redis.get().await
@@ -146,11 +147,13 @@ async fn kill_execution(
         Some("running") => {
             // Publish kill command via pub/sub
             let reply_id = uuid::Uuid::new_v4().to_string();
-            let cmd = serde_json::json!({
-                "execution_id": execution_id,
-                "reply_key": format!("aw:rpc:reply:{reply_id}"),
-            });
-            conn.publish::<_, _, ()>("aw:cmd:kill", serde_json::to_string(&cmd).unwrap_or_default())
+            let cmd = KillCommand {
+                execution_id,
+                reply_id: reply_id.clone(),
+            };
+            let cmd_json = serde_json::to_string(&cmd)
+                .map_err(|e| AppError::Internal(format!("serialize kill: {e}")))?;
+            conn.publish::<_, _, ()>("aw:cmd:kill", &cmd_json)
                 .await.map_err(|e| AppError::Internal(format!("redis publish: {e}")))?;
 
             drop(conn);

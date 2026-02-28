@@ -48,7 +48,7 @@ impl GovernanceSeat {
             role,
             appointed_date,
             term_expiration,
-            voting_power: voting_power.unwrap_or(VotingPower::new(1)),
+            voting_power: voting_power.unwrap_or(VotingPower::new(1).expect("1 is valid voting power")),
             status: SeatStatus::Active,
             created_at: Utc::now(),
         })
@@ -133,7 +133,7 @@ mod tests {
     fn new_seat_defaults_to_active() {
         let s = make_seat(SeatRole::Member);
         assert_eq!(s.status(), SeatStatus::Active);
-        assert_eq!(s.voting_power(), VotingPower::new(1));
+        assert_eq!(s.voting_power(), VotingPower::new(1).unwrap());
     }
 
     #[test]

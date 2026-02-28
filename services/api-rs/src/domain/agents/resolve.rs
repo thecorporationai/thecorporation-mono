@@ -232,21 +232,23 @@ mod tests {
     #[test]
     fn merge_tools_union_by_name() {
         let mut parent = make_agent("parent");
+        use crate::domain::agents::types::{HttpMethod, NonEmpty};
+
         parent.set_tools(vec![
             ToolSpec {
-                name: "fetch".to_owned(),
+                name: NonEmpty::parse("fetch").unwrap(),
                 description: Some("Parent fetch".to_owned()),
-                method: "GET".to_owned(),
-                url: "http://parent/fetch".to_owned(),
+                method: HttpMethod::Get,
+                url: NonEmpty::parse("http://parent/fetch").unwrap(),
                 headers: Default::default(),
                 parameters: serde_json::json!({}),
                 body_schema: serde_json::json!({}),
             },
             ToolSpec {
-                name: "search".to_owned(),
+                name: NonEmpty::parse("search").unwrap(),
                 description: Some("Parent search".to_owned()),
-                method: "GET".to_owned(),
-                url: "http://parent/search".to_owned(),
+                method: HttpMethod::Get,
+                url: NonEmpty::parse("http://parent/search").unwrap(),
                 headers: Default::default(),
                 parameters: serde_json::json!({}),
                 body_schema: serde_json::json!({}),
@@ -255,10 +257,10 @@ mod tests {
 
         let mut child = make_agent("child");
         child.set_tools(vec![ToolSpec {
-            name: "fetch".to_owned(),
+            name: NonEmpty::parse("fetch").unwrap(),
             description: Some("Child fetch override".to_owned()),
-            method: "POST".to_owned(),
-            url: "http://child/fetch".to_owned(),
+            method: HttpMethod::Post,
+            url: NonEmpty::parse("http://child/fetch").unwrap(),
             headers: Default::default(),
             parameters: serde_json::json!({}),
             body_schema: serde_json::json!({}),
@@ -269,7 +271,7 @@ mod tests {
 
         let fetch = merged.tools().iter().find(|t| t.name == "fetch").unwrap();
         assert_eq!(fetch.url, "http://child/fetch"); // child overrides
-        assert_eq!(fetch.method, "POST");
+        assert_eq!(fetch.method, HttpMethod::Post);
 
         let search = merged.tools().iter().find(|t| t.name == "search").unwrap();
         assert_eq!(search.url, "http://parent/search"); // inherited
@@ -311,10 +313,8 @@ mod tests {
         use crate::domain::agents::types::ChannelConfig;
 
         let mut parent = make_agent("parent");
-        parent.set_channels(vec![ChannelConfig {
-            channel_type: "email".to_owned(),
+        parent.set_channels(vec![ChannelConfig::Email {
             address: Some("parent@example.com".to_owned()),
-            schedule: None,
             webhook_secret: None,
         }]);
 
@@ -335,20 +335,22 @@ mod tests {
 
     #[test]
     fn merge_by_name_works() {
+        use crate::domain::agents::types::NonEmpty;
+
         let parent = vec![
             AgentSkill {
-                name: "a".to_owned(),
+                name: NonEmpty::parse("a").unwrap(),
                 description: "parent a".to_owned(),
                 parameters: serde_json::json!({}),
             },
             AgentSkill {
-                name: "b".to_owned(),
+                name: NonEmpty::parse("b").unwrap(),
                 description: "parent b".to_owned(),
                 parameters: serde_json::json!({}),
             },
         ];
         let child = vec![AgentSkill {
-            name: "b".to_owned(),
+            name: NonEmpty::parse("b").unwrap(),
             description: "child b".to_owned(),
             parameters: serde_json::json!({}),
         }];

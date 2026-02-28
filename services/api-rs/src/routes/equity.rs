@@ -12,10 +12,12 @@ use chrono::NaiveDate;
 use serde::{Deserialize, Serialize};
 
 use super::AppState;
+use crate::auth::{RequireEquityRead, RequireEquityWrite, RequireEquityTransfer};
 use crate::domain::equity::{
     funding_round::FundingRound,
     grant::EquityGrant,
     safe_note::SafeNote,
+    share_class::ShareClass,
     transfer::ShareTransfer,
     types::*,
     valuation::Valuation,
@@ -27,13 +29,6 @@ use crate::domain::ids::{
 use crate::domain::treasury::types::Cents;
 use crate::error::AppError;
 use crate::store::entity_store::EntityStore;
-
-// ── Query types ──────────────────────────────────────────────────────
-
-#[derive(Deserialize)]
-pub struct EntityQuery {
-    pub workspace_id: WorkspaceId,
-}
 
 // ── Request types ────────────────────────────────────────────────────
 
@@ -48,8 +43,6 @@ pub struct CreateGrantRequest {
     pub recipient_type: Option<RecipientType>,
     #[serde(default)]
     pub share_class_id: Option<ShareClassId>,
-    #[serde(default)]
-    pub workspace_id: Option<WorkspaceId>,
 }
 
 #[derive(Deserialize)]
@@ -64,8 +57,6 @@ pub struct CreateSafeNoteRequest {
     pub discount_rate: Option<f64>,
     #[serde(default)]
     pub pro_rata_rights: Option<bool>,
-    #[serde(default)]
-    pub workspace_id: Option<WorkspaceId>,
 }
 
 #[derive(Deserialize)]
@@ -78,8 +69,6 @@ pub struct CreateValuationRequest {
     #[serde(default)]
     pub enterprise_value_cents: Option<i64>,
     pub effective_date: NaiveDate,
-    #[serde(default)]
-    pub workspace_id: Option<WorkspaceId>,
 }
 
 #[derive(Deserialize)]
@@ -96,8 +85,6 @@ pub struct CreateTransferRequest {
     pub governing_doc_type: Option<GoverningDocType>,
     #[serde(default)]
     pub transferee_rights: Option<TransfereeRights>,
-    #[serde(default)]
-    pub workspace_id: Option<WorkspaceId>,
 }
 
 #[derive(Deserialize)]
@@ -108,8 +95,6 @@ pub struct CreateFundingRoundRequest {
     pub pre_money_valuation_cents: Option<i64>,
     #[serde(default)]
     pub lead_investor_id: Option<ContactId>,
-    #[serde(default)]
-    pub workspace_id: Option<WorkspaceId>,
 }
 
 #[derive(Deserialize)]
@@ -319,11 +304,11 @@ fn open_store<'a>(
 // ── Handlers: Cap table ──────────────────────────────────────────────
 
 async fn get_cap_table(
+    RequireEquityRead(auth): RequireEquityRead,
     State(state): State<AppState>,
     Path(entity_id): Path<EntityId>,
-    Query(query): Query<EntityQuery>,
 ) -> Result<Json<CapTableResponse>, AppError> {
-    let workspace_id = query.workspace_id;
+    let workspace_id = auth.workspace_id();
 
     let resp = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
@@ -331,23 +316,23 @@ async fn get_cap_table(
             let store = open_store(&layout, workspace_id, entity_id)?;
 
             // Read share classes
-            let class_ids = store.list_share_class_ids("main").map_err(|e| {
+            let class_ids = store.list_ids::<ShareClass>("main").map_err(|e| {
                 AppError::Internal(format!("list share classes: {e}"))
             })?;
 
             let mut classes = Vec::new();
             for id in &class_ids {
-                let sc = store.read_share_class("main", *id).map_err(|e| {
+                let sc = store.read::<ShareClass>("main",*id).map_err(|e| {
                     AppError::Internal(format!("read share class {id}: {e}"))
                 })?;
                 classes.push(sc);
             }
 
             // Read grants
-            let grant_ids = store.list_grant_ids("main").unwrap_or_default();
+            let grant_ids = store.list_ids::<EquityGrant>("main").unwrap_or_default();
             let mut grants = Vec::new();
             for id in &grant_ids {
-                if let Ok(g) = store.read_grant("main", *id) {
+                if let Ok(g) = store.read::<EquityGrant>("main",*id) {
                     grants.push(g);
                 }
             }
@@ -397,10 +382,10 @@ async fn get_cap_table(
                 .collect();
 
             // Count outstanding SAFEs
-            let safe_ids = store.list_safe_note_ids("main").unwrap_or_default();
+            let safe_ids = store.list_ids::<SafeNote>("main").unwrap_or_default();
             let mut outstanding_safes = 0usize;
             for id in &safe_ids {
-                if let Ok(s) = store.read_safe_note("main", *id) {
+                if let Ok(s) = store.read::<SafeNote>("main",*id) {
                     if s.status() == SafeStatus::Issued {
                         outstanding_safes += 1;
                     }
@@ -427,10 +412,11 @@ async fn get_cap_table(
 // ── Handlers: Equity grants ──────────────────────────────────────────
 
 async fn create_grant(
+    RequireEquityWrite(auth): RequireEquityWrite,
     State(state): State<AppState>,
     Json(req): Json<CreateGrantRequest>,
 ) -> Result<Json<GrantResponse>, AppError> {
-    let workspace_id = req.workspace_id.ok_or_else(|| AppError::BadRequest("workspace_id is required".to_owned()))?;
+    let workspace_id = auth.workspace_id();
     let entity_id = req.entity_id;
 
     let grant = tokio::task::spawn_blocking({
@@ -442,7 +428,7 @@ async fn create_grant(
             let share_class_id = match req.share_class_id {
                 Some(id) => id,
                 None => {
-                    let ids = store.list_share_class_ids("main").map_err(|e| {
+                    let ids = store.list_ids::<ShareClass>("main").map_err(|e| {
                         AppError::Internal(format!("list share classes: {e}"))
                     })?;
                     *ids.first().ok_or_else(|| {
@@ -472,7 +458,7 @@ async fn create_grant(
                 None,
                 None,
                 None,
-                Some(true),
+                VotingRights::Granted,
             )?;
 
             let path = format!("cap-table/grants/{}.json", grant_id);
@@ -498,10 +484,11 @@ async fn create_grant(
 // ── Handlers: SAFE notes ─────────────────────────────────────────────
 
 async fn create_safe_note(
+    RequireEquityWrite(auth): RequireEquityWrite,
     State(state): State<AppState>,
     Json(req): Json<CreateSafeNoteRequest>,
 ) -> Result<Json<SafeNoteResponse>, AppError> {
-    let workspace_id = req.workspace_id.ok_or_else(|| AppError::BadRequest("workspace_id is required".to_owned()))?;
+    let workspace_id = auth.workspace_id();
     let entity_id = req.entity_id;
 
     let safe = tokio::task::spawn_blocking({
@@ -547,23 +534,23 @@ async fn create_safe_note(
 }
 
 async fn list_safe_notes(
+    RequireEquityRead(auth): RequireEquityRead,
     State(state): State<AppState>,
     Path(entity_id): Path<EntityId>,
-    Query(query): Query<EntityQuery>,
 ) -> Result<Json<Vec<SafeNoteResponse>>, AppError> {
-    let workspace_id = query.workspace_id;
+    let workspace_id = auth.workspace_id();
 
     let safes = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
-            let ids = store.list_safe_note_ids("main").map_err(|e| {
+            let ids = store.list_ids::<SafeNote>("main").map_err(|e| {
                 AppError::Internal(format!("list safe notes: {e}"))
             })?;
 
             let mut results = Vec::new();
             for id in ids {
-                let s = store.read_safe_note("main", id).map_err(|e| {
+                let s = store.read::<SafeNote>("main",id).map_err(|e| {
                     AppError::Internal(format!("read safe note {id}: {e}"))
                 })?;
                 results.push(safe_to_response(&s));
@@ -579,18 +566,19 @@ async fn list_safe_notes(
 }
 
 async fn get_safe_note(
+    RequireEquityRead(auth): RequireEquityRead,
     State(state): State<AppState>,
     Path(safe_note_id): Path<SafeNoteId>,
-    Query(query): Query<super::WorkspaceEntityQuery>,
+    Query(query): Query<super::EntityIdQuery>,
 ) -> Result<Json<SafeNoteResponse>, AppError> {
-    let workspace_id = query.workspace_id;
+    let workspace_id = auth.workspace_id();
     let entity_id = query.entity_id;
 
     let safe = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
-            store.read_safe_note("main", safe_note_id).map_err(|_| {
+            store.read::<SafeNote>("main",safe_note_id).map_err(|_| {
                 AppError::NotFound(format!("safe note {} not found", safe_note_id))
             })
         }
@@ -605,10 +593,11 @@ async fn get_safe_note(
 // ── Handlers: Valuations ─────────────────────────────────────────────
 
 async fn create_valuation(
+    RequireEquityWrite(auth): RequireEquityWrite,
     State(state): State<AppState>,
     Json(req): Json<CreateValuationRequest>,
 ) -> Result<Json<ValuationResponse>, AppError> {
-    let workspace_id = req.workspace_id.ok_or_else(|| AppError::BadRequest("workspace_id is required".to_owned()))?;
+    let workspace_id = auth.workspace_id();
     let entity_id = req.entity_id;
 
     let val = tokio::task::spawn_blocking({
@@ -652,23 +641,23 @@ async fn create_valuation(
 }
 
 async fn list_valuations(
+    RequireEquityRead(auth): RequireEquityRead,
     State(state): State<AppState>,
     Path(entity_id): Path<EntityId>,
-    Query(query): Query<EntityQuery>,
 ) -> Result<Json<Vec<ValuationResponse>>, AppError> {
-    let workspace_id = query.workspace_id;
+    let workspace_id = auth.workspace_id();
 
     let vals = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
-            let ids = store.list_valuation_ids("main").map_err(|e| {
+            let ids = store.list_ids::<Valuation>("main").map_err(|e| {
                 AppError::Internal(format!("list valuations: {e}"))
             })?;
 
             let mut results = Vec::new();
             for id in ids {
-                let v = store.read_valuation("main", id).map_err(|e| {
+                let v = store.read::<Valuation>("main",id).map_err(|e| {
                     AppError::Internal(format!("read valuation {id}: {e}"))
                 })?;
                 results.push(valuation_to_response(&v));
@@ -684,24 +673,24 @@ async fn list_valuations(
 }
 
 async fn get_current_409a(
+    RequireEquityRead(auth): RequireEquityRead,
     State(state): State<AppState>,
     Path(entity_id): Path<EntityId>,
-    Query(query): Query<EntityQuery>,
 ) -> Result<Json<Option<ValuationResponse>>, AppError> {
-    let workspace_id = query.workspace_id;
+    let workspace_id = auth.workspace_id();
 
     let result = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
-            let ids = store.list_valuation_ids("main").map_err(|e| {
+            let ids = store.list_ids::<Valuation>("main").map_err(|e| {
                 AppError::Internal(format!("list valuations: {e}"))
             })?;
 
             let mut current: Option<Valuation> = None;
 
             for id in ids {
-                if let Ok(v) = store.read_valuation("main", id) {
+                if let Ok(v) = store.read::<Valuation>("main",id) {
                     if v.is_current_409a() {
                         match &current {
                             Some(existing) if v.effective_date() > existing.effective_date() => {
@@ -727,18 +716,19 @@ async fn get_current_409a(
 }
 
 async fn get_valuation(
+    RequireEquityRead(auth): RequireEquityRead,
     State(state): State<AppState>,
     Path(valuation_id): Path<ValuationId>,
-    Query(query): Query<super::WorkspaceEntityQuery>,
+    Query(query): Query<super::EntityIdQuery>,
 ) -> Result<Json<ValuationResponse>, AppError> {
-    let workspace_id = query.workspace_id;
+    let workspace_id = auth.workspace_id();
     let entity_id = query.entity_id;
 
     let val = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
-            store.read_valuation("main", valuation_id).map_err(|_| {
+            store.read::<Valuation>("main",valuation_id).map_err(|_| {
                 AppError::NotFound(format!("valuation {} not found", valuation_id))
             })
         }
@@ -751,18 +741,19 @@ async fn get_valuation(
 }
 
 async fn approve_valuation(
+    RequireEquityWrite(auth): RequireEquityWrite,
     State(state): State<AppState>,
     Path(valuation_id): Path<ValuationId>,
-    Query(query): Query<super::WorkspaceEntityQuery>,
+    Query(query): Query<super::EntityIdQuery>,
 ) -> Result<Json<ValuationResponse>, AppError> {
-    let workspace_id = query.workspace_id;
+    let workspace_id = auth.workspace_id();
     let entity_id = query.entity_id;
 
     let val = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
-            let mut val = store.read_valuation("main", valuation_id).map_err(|_| {
+            let mut val = store.read::<Valuation>("main",valuation_id).map_err(|_| {
                 AppError::NotFound(format!("valuation {} not found", valuation_id))
             })?;
 
@@ -784,18 +775,19 @@ async fn approve_valuation(
 }
 
 async fn expire_valuation(
+    RequireEquityWrite(auth): RequireEquityWrite,
     State(state): State<AppState>,
     Path(valuation_id): Path<ValuationId>,
-    Query(query): Query<super::WorkspaceEntityQuery>,
+    Query(query): Query<super::EntityIdQuery>,
 ) -> Result<Json<ValuationResponse>, AppError> {
-    let workspace_id = query.workspace_id;
+    let workspace_id = auth.workspace_id();
     let entity_id = query.entity_id;
 
     let val = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
-            let mut val = store.read_valuation("main", valuation_id).map_err(|_| {
+            let mut val = store.read::<Valuation>("main",valuation_id).map_err(|_| {
                 AppError::NotFound(format!("valuation {} not found", valuation_id))
             })?;
 
@@ -828,30 +820,29 @@ pub struct ExercisePriceCheckResponse {
 #[derive(Deserialize)]
 pub struct CheckExercisePriceRequest {
     pub exercise_price_cents: i64,
-    #[serde(default)]
-    pub workspace_id: Option<WorkspaceId>,
 }
 
 async fn check_exercise_price(
+    RequireEquityRead(auth): RequireEquityRead,
     State(state): State<AppState>,
     Path(entity_id): Path<EntityId>,
     Json(req): Json<CheckExercisePriceRequest>,
 ) -> Result<Json<ExercisePriceCheckResponse>, AppError> {
-    let workspace_id = req.workspace_id.ok_or_else(|| AppError::BadRequest("workspace_id is required".to_owned()))?;
+    let workspace_id = auth.workspace_id();
 
     let response = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         let exercise_cents = req.exercise_price_cents;
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
-            let ids = store.list_valuation_ids("main").map_err(|e| {
+            let ids = store.list_ids::<Valuation>("main").map_err(|e| {
                 AppError::Internal(format!("list valuations: {e}"))
             })?;
 
             // Find current 409A
             let mut current_fmv: Option<i64> = None;
             for id in ids {
-                if let Ok(v) = store.read_valuation("main", id) {
+                if let Ok(v) = store.read::<Valuation>("main",id) {
                     if v.is_current_409a() {
                         if let Some(fmv) = v.fmv_per_share_cents() {
                             current_fmv = Some(fmv.raw());
@@ -897,10 +888,11 @@ async fn check_exercise_price(
 // ── Handlers: Share transfers ────────────────────────────────────────
 
 async fn create_transfer(
+    RequireEquityTransfer(auth): RequireEquityTransfer,
     State(state): State<AppState>,
     Json(req): Json<CreateTransferRequest>,
 ) -> Result<Json<TransferResponse>, AppError> {
-    let workspace_id = req.workspace_id.ok_or_else(|| AppError::BadRequest("workspace_id is required".to_owned()))?;
+    let workspace_id = auth.workspace_id();
     let entity_id = req.entity_id;
 
     let transfer = tokio::task::spawn_blocking({
@@ -948,18 +940,19 @@ async fn create_transfer(
 }
 
 async fn get_transfer(
+    RequireEquityRead(auth): RequireEquityRead,
     State(state): State<AppState>,
     Path(transfer_id): Path<TransferId>,
-    Query(query): Query<super::WorkspaceEntityQuery>,
+    Query(query): Query<super::EntityIdQuery>,
 ) -> Result<Json<TransferResponse>, AppError> {
-    let workspace_id = query.workspace_id;
+    let workspace_id = auth.workspace_id();
     let entity_id = query.entity_id;
 
     let transfer = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
-            let t = store.read_transfer("main", transfer_id).map_err(|e| {
+            let t = store.read::<ShareTransfer>("main",transfer_id).map_err(|e| {
                 AppError::NotFound(format!("transfer {transfer_id} not found: {e}"))
             })?;
             Ok::<_, AppError>(transfer_to_response(&t))
@@ -973,23 +966,23 @@ async fn get_transfer(
 }
 
 async fn list_transfers(
+    RequireEquityRead(auth): RequireEquityRead,
     State(state): State<AppState>,
     Path(entity_id): Path<EntityId>,
-    Query(query): Query<EntityQuery>,
 ) -> Result<Json<Vec<TransferResponse>>, AppError> {
-    let workspace_id = query.workspace_id;
+    let workspace_id = auth.workspace_id();
 
     let transfers = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
-            let ids = store.list_transfer_ids("main").map_err(|e| {
+            let ids = store.list_ids::<ShareTransfer>("main").map_err(|e| {
                 AppError::Internal(format!("list transfers: {e}"))
             })?;
 
             let mut results = Vec::new();
             for id in ids {
-                let t = store.read_transfer("main", id).map_err(|e| {
+                let t = store.read::<ShareTransfer>("main",id).map_err(|e| {
                     AppError::Internal(format!("read transfer {id}: {e}"))
                 })?;
                 results.push(transfer_to_response(&t));
@@ -1005,18 +998,19 @@ async fn list_transfers(
 }
 
 async fn submit_transfer_review(
+    RequireEquityTransfer(auth): RequireEquityTransfer,
     State(state): State<AppState>,
     Path(transfer_id): Path<TransferId>,
-    Query(query): Query<super::WorkspaceEntityQuery>,
+    Query(query): Query<super::EntityIdQuery>,
 ) -> Result<Json<TransferResponse>, AppError> {
-    let workspace_id = query.workspace_id;
+    let workspace_id = auth.workspace_id();
     let entity_id = query.entity_id;
 
     let transfer = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
-            let mut t = store.read_transfer("main", transfer_id).map_err(|e| {
+            let mut t = store.read::<ShareTransfer>("main",transfer_id).map_err(|e| {
                 AppError::NotFound(format!("transfer {transfer_id} not found: {e}"))
             })?;
             t.submit_for_review()?;
@@ -1040,19 +1034,20 @@ async fn submit_transfer_review(
 }
 
 async fn record_bylaws_review(
+    RequireEquityTransfer(auth): RequireEquityTransfer,
     State(state): State<AppState>,
     Path(transfer_id): Path<TransferId>,
-    Query(query): Query<super::WorkspaceEntityQuery>,
+    Query(query): Query<super::EntityIdQuery>,
     Json(req): Json<BylawsReviewRequest>,
 ) -> Result<Json<TransferResponse>, AppError> {
-    let workspace_id = query.workspace_id;
+    let workspace_id = auth.workspace_id();
     let entity_id = query.entity_id;
 
     let transfer = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
-            let mut t = store.read_transfer("main", transfer_id).map_err(|e| {
+            let mut t = store.read::<ShareTransfer>("main",transfer_id).map_err(|e| {
                 AppError::NotFound(format!("transfer {transfer_id} not found: {e}"))
             })?;
             t.record_bylaws_review(
@@ -1080,19 +1075,20 @@ async fn record_bylaws_review(
 }
 
 async fn record_rofr_decision(
+    RequireEquityTransfer(auth): RequireEquityTransfer,
     State(state): State<AppState>,
     Path(transfer_id): Path<TransferId>,
-    Query(query): Query<super::WorkspaceEntityQuery>,
+    Query(query): Query<super::EntityIdQuery>,
     Json(req): Json<RofrDecisionRequest>,
 ) -> Result<Json<TransferResponse>, AppError> {
-    let workspace_id = query.workspace_id;
+    let workspace_id = auth.workspace_id();
     let entity_id = query.entity_id;
 
     let transfer = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
-            let mut t = store.read_transfer("main", transfer_id).map_err(|e| {
+            let mut t = store.read::<ShareTransfer>("main",transfer_id).map_err(|e| {
                 AppError::NotFound(format!("transfer {transfer_id} not found: {e}"))
             })?;
             t.record_rofr_decision(req.offered, req.waived)?;
@@ -1116,18 +1112,19 @@ async fn record_rofr_decision(
 }
 
 async fn approve_transfer(
+    RequireEquityTransfer(auth): RequireEquityTransfer,
     State(state): State<AppState>,
     Path(transfer_id): Path<TransferId>,
-    Query(query): Query<super::WorkspaceEntityQuery>,
+    Query(query): Query<super::EntityIdQuery>,
 ) -> Result<Json<TransferResponse>, AppError> {
-    let workspace_id = query.workspace_id;
+    let workspace_id = auth.workspace_id();
     let entity_id = query.entity_id;
 
     let transfer = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
-            let mut t = store.read_transfer("main", transfer_id).map_err(|e| {
+            let mut t = store.read::<ShareTransfer>("main",transfer_id).map_err(|e| {
                 AppError::NotFound(format!("transfer {transfer_id} not found: {e}"))
             })?;
             t.approve(None)?;
@@ -1151,18 +1148,19 @@ async fn approve_transfer(
 }
 
 async fn execute_transfer(
+    RequireEquityTransfer(auth): RequireEquityTransfer,
     State(state): State<AppState>,
     Path(transfer_id): Path<TransferId>,
-    Query(query): Query<super::WorkspaceEntityQuery>,
+    Query(query): Query<super::EntityIdQuery>,
 ) -> Result<Json<TransferResponse>, AppError> {
-    let workspace_id = query.workspace_id;
+    let workspace_id = auth.workspace_id();
     let entity_id = query.entity_id;
 
     let transfer = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
-            let mut t = store.read_transfer("main", transfer_id).map_err(|e| {
+            let mut t = store.read::<ShareTransfer>("main",transfer_id).map_err(|e| {
                 AppError::NotFound(format!("transfer {transfer_id} not found: {e}"))
             })?;
             t.execute()?;
@@ -1188,10 +1186,11 @@ async fn execute_transfer(
 // ── Handlers: Funding rounds ─────────────────────────────────────────
 
 async fn create_funding_round(
+    RequireEquityWrite(auth): RequireEquityWrite,
     State(state): State<AppState>,
     Json(req): Json<CreateFundingRoundRequest>,
 ) -> Result<Json<FundingRoundResponse>, AppError> {
-    let workspace_id = req.workspace_id.ok_or_else(|| AppError::BadRequest("workspace_id is required".to_owned()))?;
+    let workspace_id = auth.workspace_id();
     let entity_id = req.entity_id;
 
     let round = tokio::task::spawn_blocking({
@@ -1229,23 +1228,23 @@ async fn create_funding_round(
 }
 
 async fn list_funding_rounds(
+    RequireEquityRead(auth): RequireEquityRead,
     State(state): State<AppState>,
     Path(entity_id): Path<EntityId>,
-    Query(query): Query<EntityQuery>,
 ) -> Result<Json<Vec<FundingRoundResponse>>, AppError> {
-    let workspace_id = query.workspace_id;
+    let workspace_id = auth.workspace_id();
 
     let rounds = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
-            let ids = store.list_funding_round_ids("main").map_err(|e| {
+            let ids = store.list_ids::<FundingRound>("main").map_err(|e| {
                 AppError::Internal(format!("list funding rounds: {e}"))
             })?;
 
             let mut results = Vec::new();
             for id in ids {
-                let r = store.read_funding_round("main", id).map_err(|e| {
+                let r = store.read::<FundingRound>("main",id).map_err(|e| {
                     AppError::Internal(format!("read funding round {id}: {e}"))
                 })?;
                 results.push(funding_round_to_response(&r));

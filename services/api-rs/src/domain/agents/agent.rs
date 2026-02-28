@@ -169,9 +169,10 @@ mod tests {
 
     #[test]
     fn add_skill() {
+        use agent_types::NonEmpty;
         let mut a = make_agent();
         a.add_skill(AgentSkill {
-            name: "formation".to_owned(),
+            name: NonEmpty::parse("formation").unwrap(),
             description: "File formations".to_owned(),
             parameters: serde_json::json!({}),
         });
@@ -181,9 +182,10 @@ mod tests {
 
     #[test]
     fn serde_roundtrip() {
+        use agent_types::NonEmpty;
         let mut a = make_agent();
         a.add_skill(AgentSkill {
-            name: "equity".to_owned(),
+            name: NonEmpty::parse("equity").unwrap(),
             description: "Manage equity".to_owned(),
             parameters: serde_json::json!({}),
         });

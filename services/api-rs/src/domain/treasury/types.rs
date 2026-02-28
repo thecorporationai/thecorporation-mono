@@ -63,7 +63,11 @@ impl Cents {
     /// Multiply by an integer scaling factor.
     #[inline]
     pub fn scale(self, multiplier: i64) -> Self {
-        Self(self.0 * multiplier)
+        Self(
+            self.0
+                .checked_mul(multiplier)
+                .expect("Cents scale overflow"),
+        )
     }
 
     /// Checked addition — returns `None` on overflow.
@@ -94,33 +98,40 @@ impl Cents {
 impl Add for Cents {
     type Output = Self;
     fn add(self, rhs: Self) -> Self {
-        Self(self.0 + rhs.0)
+        Self(self.0.checked_add(rhs.0).expect("Cents addition overflow"))
     }
 }
 
 impl Sub for Cents {
     type Output = Self;
     fn sub(self, rhs: Self) -> Self {
-        Self(self.0 - rhs.0)
+        Self(
+            self.0
+                .checked_sub(rhs.0)
+                .expect("Cents subtraction overflow"),
+        )
     }
 }
 
 impl Neg for Cents {
     type Output = Self;
     fn neg(self) -> Self {
-        Self(-self.0)
+        Self(self.0.checked_neg().expect("Cents negation overflow"))
     }
 }
 
 impl AddAssign for Cents {
     fn add_assign(&mut self, rhs: Self) {
-        self.0 += rhs.0;
+        self.0 = self.0.checked_add(rhs.0).expect("Cents addition overflow");
     }
 }
 
 impl SubAssign for Cents {
     fn sub_assign(&mut self, rhs: Self) {
-        self.0 -= rhs.0;
+        self.0 = self
+            .0
+            .checked_sub(rhs.0)
+            .expect("Cents subtraction overflow");
     }
 }
 
@@ -541,5 +552,43 @@ mod tests {
         // let cents = Cents::new(100);
         // let shares = crate::domain::equity::types::ShareCount::new(10);
         // let _ = cents + shares; // ERROR: mismatched types
+    }
+
+    #[test]
+    #[should_panic(expected = "overflow")]
+    fn cents_addition_overflow() {
+        let _ = Cents::new(i64::MAX) + Cents::new(1);
+    }
+
+    #[test]
+    #[should_panic(expected = "overflow")]
+    fn cents_subtraction_overflow() {
+        let _ = Cents::new(i64::MIN) - Cents::new(1);
+    }
+
+    #[test]
+    #[should_panic(expected = "overflow")]
+    fn cents_negation_overflow() {
+        let _ = -Cents::new(i64::MIN);
+    }
+
+    #[test]
+    #[should_panic(expected = "overflow")]
+    fn cents_add_assign_overflow() {
+        let mut c = Cents::new(i64::MAX);
+        c += Cents::new(1);
+    }
+
+    #[test]
+    #[should_panic(expected = "overflow")]
+    fn cents_sub_assign_overflow() {
+        let mut c = Cents::new(i64::MIN);
+        c -= Cents::new(1);
+    }
+
+    #[test]
+    #[should_panic(expected = "overflow")]
+    fn cents_scale_overflow() {
+        let _ = Cents::new(i64::MAX).scale(2);
     }
 }

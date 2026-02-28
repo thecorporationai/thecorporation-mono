@@ -35,6 +35,8 @@ pub enum AppError {
     UnprocessableEntity(String),
     /// 429 — rate limited
     RateLimited { limit: u32, window_seconds: u32 },
+    /// 503 — service temporarily unavailable (e.g., queue full)
+    ServiceUnavailable(String),
     /// 500 — unexpected internal error
     Internal(String),
 }
@@ -67,6 +69,9 @@ impl IntoResponse for AppError {
                     Json(body),
                 )
                     .into_response();
+            }
+            Self::ServiceUnavailable(msg) => {
+                (StatusCode::SERVICE_UNAVAILABLE, "service_unavailable", msg)
             }
             Self::Internal(msg) => {
                 tracing::error!("internal error: {}", msg);

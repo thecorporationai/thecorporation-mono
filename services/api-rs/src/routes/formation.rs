@@ -11,6 +11,7 @@ use axum::{
 use serde::{Deserialize, Serialize};
 
 use super::AppState;
+use crate::auth::{RequireFormationCreate, RequireFormationRead, RequireFormationSign};
 use crate::domain::formation::{
     content::MemberInput,
     contract::{Contract, ContractStatus, ContractTemplateType},
@@ -28,7 +29,7 @@ use crate::store::entity_store::EntityStore;
 pub struct CreateFormationRequest {
     pub entity_type: EntityType,
     pub legal_name: String,
-    pub jurisdiction: String,
+    pub jurisdiction: Jurisdiction,
     #[serde(default)]
     pub registered_agent_name: Option<String>,
     #[serde(default)]
@@ -38,8 +39,6 @@ pub struct CreateFormationRequest {
     pub authorized_shares: Option<i64>,
     #[serde(default)]
     pub par_value: Option<String>,
-    #[serde(default)]
-    pub workspace_id: Option<WorkspaceId>,
 }
 
 #[derive(Serialize)]
@@ -56,7 +55,7 @@ pub struct FormationStatusResponse {
     pub entity_id: EntityId,
     pub legal_name: String,
     pub entity_type: EntityType,
-    pub jurisdiction: String,
+    pub jurisdiction: Jurisdiction,
     pub formation_state: FormationState,
     pub formation_status: FormationStatus,
     pub next_action: Option<String>,
@@ -117,26 +116,16 @@ pub struct SignDocumentResponse {
     pub signed_at: String,
 }
 
-/// Query params for identifying which workspace an entity belongs to.
-#[derive(Deserialize)]
-pub struct EntityQuery {
-    pub workspace_id: WorkspaceId,
-}
-
 #[derive(Deserialize)]
 pub struct ConfirmFilingRequest {
     pub external_filing_id: String,
     #[serde(default)]
     pub receipt_reference: Option<String>,
-    #[serde(default)]
-    pub workspace_id: Option<WorkspaceId>,
 }
 
 #[derive(Deserialize)]
 pub struct ConfirmEinRequest {
     pub ein: String,
-    #[serde(default)]
-    pub workspace_id: Option<WorkspaceId>,
 }
 
 /// Open an entity store, mapping git errors to formation errors.
@@ -160,16 +149,14 @@ fn open_formation_store<'a>(
 // ── Handlers ────────────────────────────────────────────────────────────
 
 async fn create_formation(
+    RequireFormationCreate(auth): RequireFormationCreate,
     State(state): State<AppState>,
     Json(req): Json<CreateFormationRequest>,
 ) -> Result<Json<FormationResponse>, AppError> {
     if req.members.is_empty() {
         return Err(AppError::BadRequest("at least one member is required".to_owned()));
     }
-    if req.jurisdiction.is_empty() {
-        return Err(AppError::BadRequest("jurisdiction is required".to_owned()));
-    }
-    let workspace_id = req.workspace_id.ok_or_else(|| AppError::BadRequest("workspace_id is required".to_owned()))?;
+    let workspace_id = auth.workspace_id();
 
     let result = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
@@ -214,11 +201,11 @@ async fn create_formation(
 }
 
 async fn get_formation(
+    RequireFormationRead(auth): RequireFormationRead,
     State(state): State<AppState>,
     Path(entity_id): Path<EntityId>,
-    Query(query): Query<EntityQuery>,
 ) -> Result<Json<FormationStatusResponse>, AppError> {
-    let workspace_id = query.workspace_id;
+    let workspace_id = auth.workspace_id();
 
     let entity = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
@@ -247,11 +234,11 @@ async fn get_formation(
 }
 
 async fn list_documents(
+    RequireFormationRead(auth): RequireFormationRead,
     State(state): State<AppState>,
     Path(entity_id): Path<EntityId>,
-    Query(query): Query<EntityQuery>,
 ) -> Result<Json<Vec<DocumentSummary>>, AppError> {
-    let workspace_id = query.workspace_id;
+    let workspace_id = auth.workspace_id();
 
     let docs = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
@@ -292,11 +279,12 @@ async fn list_documents(
 }
 
 async fn get_document(
+    RequireFormationRead(auth): RequireFormationRead,
     State(state): State<AppState>,
     Path(document_id): Path<DocumentId>,
-    Query(query): Query<super::WorkspaceEntityQuery>,
+    Query(query): Query<super::EntityIdQuery>,
 ) -> Result<Json<DocumentResponse>, AppError> {
-    let workspace_id = query.workspace_id;
+    let workspace_id = auth.workspace_id();
     let entity_id = query.entity_id;
 
     let doc = tokio::task::spawn_blocking({
@@ -344,9 +332,10 @@ async fn get_document(
 }
 
 async fn sign_document(
+    RequireFormationSign(auth): RequireFormationSign,
     State(state): State<AppState>,
     Path(document_id): Path<DocumentId>,
-    Query(query): Query<super::WorkspaceEntityQuery>,
+    Query(query): Query<super::EntityIdQuery>,
     Json(req): Json<SignDocumentRequest>,
 ) -> Result<Json<SignDocumentResponse>, AppError> {
     if req.signer_name.is_empty() || req.signer_name.len() > 256 {
@@ -358,7 +347,7 @@ async fn sign_document(
     if req.signature_text.is_empty() {
         return Err(AppError::BadRequest("signature_text is required".to_owned()));
     }
-    let workspace_id = query.workspace_id;
+    let workspace_id = auth.workspace_id();
     let entity_id = query.entity_id;
 
     let doc = tokio::task::spawn_blocking({
@@ -419,11 +408,12 @@ async fn sign_document(
 }
 
 async fn confirm_filing(
+    RequireFormationCreate(auth): RequireFormationCreate,
     State(state): State<AppState>,
     Path(entity_id): Path<EntityId>,
     Json(req): Json<ConfirmFilingRequest>,
 ) -> Result<Json<FormationStatusResponse>, AppError> {
-    let workspace_id = req.workspace_id.ok_or_else(|| AppError::BadRequest("workspace_id is required".to_owned()))?;
+    let workspace_id = auth.workspace_id();
 
     let entity = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
@@ -489,11 +479,12 @@ async fn confirm_filing(
 }
 
 async fn confirm_ein(
+    RequireFormationCreate(auth): RequireFormationCreate,
     State(state): State<AppState>,
     Path(entity_id): Path<EntityId>,
     Json(req): Json<ConfirmEinRequest>,
 ) -> Result<Json<FormationStatusResponse>, AppError> {
-    let workspace_id = req.workspace_id.ok_or_else(|| AppError::BadRequest("workspace_id is required".to_owned()))?;
+    let workspace_id = auth.workspace_id();
 
     // Validate EIN format: XX-XXXXXXX (2 digits, hyphen, 7 digits)
     let ein_bytes = req.ein.as_bytes();
@@ -519,7 +510,6 @@ async fn confirm_ein(
             })?;
 
             entity.advance_status(FormationStatus::Active)?;
-            entity.activate();
 
             store
                 .write_entity("main", &entity, &format!("Confirm EIN: {ein}"))
@@ -580,8 +570,6 @@ pub struct GenerateContractRequest {
     pub effective_date: chrono::NaiveDate,
     #[serde(default = "default_params")]
     pub parameters: serde_json::Value,
-    #[serde(default)]
-    pub workspace_id: Option<WorkspaceId>,
 }
 
 fn default_params() -> serde_json::Value {
@@ -621,10 +609,11 @@ pub struct AmendmentHistoryEntry {
 }
 
 async fn generate_contract(
+    RequireFormationCreate(auth): RequireFormationCreate,
     State(state): State<AppState>,
     Json(req): Json<GenerateContractRequest>,
 ) -> Result<Json<ContractResponse>, AppError> {
-    let workspace_id = req.workspace_id.ok_or_else(|| AppError::BadRequest("workspace_id is required".to_owned()))?;
+    let workspace_id = auth.workspace_id();
     let entity_id = req.entity_id;
 
     let contract = tokio::task::spawn_blocking({
@@ -673,11 +662,12 @@ async fn generate_contract(
 }
 
 async fn get_signing_link(
+    RequireFormationRead(auth): RequireFormationRead,
     State(state): State<AppState>,
     Path(document_id): Path<DocumentId>,
-    Query(query): Query<super::WorkspaceEntityQuery>,
+    Query(query): Query<super::EntityIdQuery>,
 ) -> Result<Json<SigningLinkResponse>, AppError> {
-    let workspace_id = query.workspace_id;
+    let workspace_id = auth.workspace_id();
     let entity_id = query.entity_id;
 
     // Verify the document exists in storage
@@ -701,11 +691,12 @@ async fn get_signing_link(
 }
 
 async fn get_document_pdf(
+    RequireFormationRead(auth): RequireFormationRead,
     State(state): State<AppState>,
     Path(document_id): Path<DocumentId>,
-    Query(query): Query<super::WorkspaceEntityQuery>,
+    Query(query): Query<super::EntityIdQuery>,
 ) -> Result<Json<DocumentPdfResponse>, AppError> {
-    let workspace_id = query.workspace_id;
+    let workspace_id = auth.workspace_id();
     let entity_id = query.entity_id;
 
     // Verify the document exists and return metadata-derived URL
@@ -736,7 +727,6 @@ async fn get_document_pdf(
 
 #[derive(Deserialize)]
 pub struct DocumentCopyRequest {
-    pub workspace_id: WorkspaceId,
     pub entity_id: EntityId,
     #[serde(default)]
     pub recipient_email: Option<String>,
@@ -753,11 +743,12 @@ pub struct DocumentCopyResponse {
 }
 
 async fn request_document_copy(
+    RequireFormationCreate(auth): RequireFormationCreate,
     State(state): State<AppState>,
     Path(document_id): Path<DocumentId>,
     Json(req): Json<DocumentCopyRequest>,
 ) -> Result<Json<DocumentCopyResponse>, AppError> {
-    let workspace_id = req.workspace_id;
+    let workspace_id = auth.workspace_id();
     let entity_id = req.entity_id;
 
     // Verify the document exists and read its title
@@ -785,11 +776,12 @@ async fn request_document_copy(
 }
 
 async fn get_amendment_history(
+    RequireFormationRead(auth): RequireFormationRead,
     State(state): State<AppState>,
     Path(document_id): Path<DocumentId>,
-    Query(query): Query<super::WorkspaceEntityQuery>,
+    Query(query): Query<super::EntityIdQuery>,
 ) -> Result<Json<Vec<AmendmentHistoryEntry>>, AppError> {
-    let workspace_id = query.workspace_id;
+    let workspace_id = auth.workspace_id();
     let entity_id = query.entity_id;
 
     let doc = tokio::task::spawn_blocking({
@@ -823,11 +815,11 @@ async fn get_amendment_history(
 // ── Governance documents ────────────────────────────────────────────
 
 async fn list_governance_documents(
+    RequireFormationRead(auth): RequireFormationRead,
     State(state): State<AppState>,
     Path(entity_id): Path<EntityId>,
-    Query(query): Query<EntityQuery>,
 ) -> Result<Json<Vec<DocumentSummary>>, AppError> {
-    let workspace_id = query.workspace_id;
+    let workspace_id = auth.workspace_id();
 
     let docs = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
@@ -871,11 +863,11 @@ async fn list_governance_documents(
 }
 
 async fn get_current_governance_document(
+    RequireFormationRead(auth): RequireFormationRead,
     State(state): State<AppState>,
     Path(entity_id): Path<EntityId>,
-    Query(query): Query<EntityQuery>,
 ) -> Result<Json<DocumentSummary>, AppError> {
-    let workspace_id = query.workspace_id;
+    let workspace_id = auth.workspace_id();
 
     let doc = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
@@ -919,10 +911,10 @@ async fn get_current_governance_document(
 // ── Entity lifecycle ────────────────────────────────────────────────
 
 async fn list_entities(
+    RequireFormationRead(auth): RequireFormationRead,
     State(state): State<AppState>,
-    Query(query): Query<EntityQuery>,
 ) -> Result<Json<Vec<FormationStatusResponse>>, AppError> {
-    let workspace_id = query.workspace_id;
+    let workspace_id = auth.workspace_id();
 
     let entities = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
@@ -959,16 +951,15 @@ async fn list_entities(
 #[derive(Deserialize)]
 pub struct ConvertEntityRequest {
     pub target_type: EntityType,
-    #[serde(default)]
-    pub workspace_id: Option<WorkspaceId>,
 }
 
 async fn convert_entity(
+    RequireFormationCreate(auth): RequireFormationCreate,
     State(state): State<AppState>,
     Path(entity_id): Path<EntityId>,
     Json(req): Json<ConvertEntityRequest>,
 ) -> Result<Json<FormationStatusResponse>, AppError> {
-    let workspace_id = req.workspace_id.ok_or_else(|| AppError::BadRequest("workspace_id is required".to_owned()))?;
+    let workspace_id = auth.workspace_id();
 
     let entity = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
@@ -1016,16 +1007,15 @@ async fn convert_entity(
 pub struct DissolveEntityRequest {
     #[serde(default)]
     pub reason: Option<String>,
-    #[serde(default)]
-    pub workspace_id: Option<WorkspaceId>,
 }
 
 async fn dissolve_entity(
+    RequireFormationCreate(auth): RequireFormationCreate,
     State(state): State<AppState>,
     Path(entity_id): Path<EntityId>,
     Json(req): Json<DissolveEntityRequest>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    let workspace_id = req.workspace_id.ok_or_else(|| AppError::BadRequest("workspace_id is required".to_owned()))?;
+    let workspace_id = auth.workspace_id();
     let reason = req.reason.unwrap_or_else(|| "voluntary dissolution".to_owned());
 
     let entity = tokio::task::spawn_blocking({

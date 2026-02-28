@@ -11,6 +11,7 @@ use chrono::NaiveDate;
 use serde::{Deserialize, Serialize};
 
 use super::AppState;
+use crate::auth::{RequireExecutionRead, RequireExecutionWrite};
 use crate::domain::execution::{
     intent::Intent,
     obligation::Obligation,
@@ -23,13 +24,6 @@ use crate::domain::ids::{
 use crate::error::AppError;
 use crate::store::entity_store::EntityStore;
 
-// ── Query types ──────────────────────────────────────────────────────
-
-#[derive(Deserialize)]
-pub struct EntityQuery {
-    pub workspace_id: WorkspaceId,
-}
-
 // ── Request types ────────────────────────────────────────────────────
 
 #[derive(Deserialize)]
@@ -40,8 +34,6 @@ pub struct CreateIntentRequest {
     pub description: String,
     #[serde(default = "default_metadata")]
     pub metadata: serde_json::Value,
-    #[serde(default)]
-    pub workspace_id: Option<WorkspaceId>,
 }
 
 fn default_metadata() -> serde_json::Value {
@@ -60,8 +52,6 @@ pub struct CreateObligationRequest {
     pub description: String,
     #[serde(default)]
     pub due_date: Option<NaiveDate>,
-    #[serde(default)]
-    pub workspace_id: Option<WorkspaceId>,
 }
 
 // ── Response types ───────────────────────────────────────────────────
@@ -150,10 +140,11 @@ fn open_store<'a>(
 // ── Handlers: Intents ────────────────────────────────────────────────
 
 async fn create_intent(
+    RequireExecutionWrite(auth): RequireExecutionWrite,
     State(state): State<AppState>,
     Json(req): Json<CreateIntentRequest>,
 ) -> Result<Json<IntentResponse>, AppError> {
-    let workspace_id = req.workspace_id.ok_or_else(|| AppError::BadRequest("workspace_id is required".to_owned()))?;
+    let workspace_id = auth.workspace_id();
     let entity_id = req.entity_id;
 
     let intent = tokio::task::spawn_blocking({
@@ -193,23 +184,23 @@ async fn create_intent(
 }
 
 async fn list_intents(
+    RequireExecutionRead(auth): RequireExecutionRead,
     State(state): State<AppState>,
     Path(entity_id): Path<EntityId>,
-    Query(query): Query<EntityQuery>,
 ) -> Result<Json<Vec<IntentResponse>>, AppError> {
-    let workspace_id = query.workspace_id;
+    let workspace_id = auth.workspace_id();
 
     let intents = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
-            let ids = store.list_intent_ids("main").map_err(|e| {
+            let ids = store.list_ids::<Intent>("main").map_err(|e| {
                 AppError::Internal(format!("list intents: {e}"))
             })?;
 
             let mut results = Vec::new();
             for id in ids {
-                let i = store.read_intent("main", id).map_err(|e| {
+                let i = store.read::<Intent>("main",id).map_err(|e| {
                     AppError::Internal(format!("read intent {id}: {e}"))
                 })?;
                 results.push(intent_to_response(&i));
@@ -225,18 +216,19 @@ async fn list_intents(
 }
 
 async fn evaluate_intent(
+    RequireExecutionWrite(auth): RequireExecutionWrite,
     State(state): State<AppState>,
     Path(intent_id): Path<IntentId>,
-    Query(query): Query<super::WorkspaceEntityQuery>,
+    Query(query): Query<super::EntityIdQuery>,
 ) -> Result<Json<IntentResponse>, AppError> {
-    let workspace_id = query.workspace_id;
+    let workspace_id = auth.workspace_id();
     let entity_id = query.entity_id;
 
     let intent = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
-            let mut intent = store.read_intent("main", intent_id).map_err(|_| {
+            let mut intent = store.read::<Intent>("main",intent_id).map_err(|_| {
                 AppError::NotFound(format!("intent {} not found", intent_id))
             })?;
 
@@ -263,18 +255,19 @@ async fn evaluate_intent(
 }
 
 async fn authorize_intent(
+    RequireExecutionWrite(auth): RequireExecutionWrite,
     State(state): State<AppState>,
     Path(intent_id): Path<IntentId>,
-    Query(query): Query<super::WorkspaceEntityQuery>,
+    Query(query): Query<super::EntityIdQuery>,
 ) -> Result<Json<IntentResponse>, AppError> {
-    let workspace_id = query.workspace_id;
+    let workspace_id = auth.workspace_id();
     let entity_id = query.entity_id;
 
     let intent = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
-            let mut intent = store.read_intent("main", intent_id).map_err(|_| {
+            let mut intent = store.read::<Intent>("main",intent_id).map_err(|_| {
                 AppError::NotFound(format!("intent {} not found", intent_id))
             })?;
 
@@ -301,18 +294,19 @@ async fn authorize_intent(
 }
 
 async fn execute_intent(
+    RequireExecutionWrite(auth): RequireExecutionWrite,
     State(state): State<AppState>,
     Path(intent_id): Path<IntentId>,
-    Query(query): Query<super::WorkspaceEntityQuery>,
+    Query(query): Query<super::EntityIdQuery>,
 ) -> Result<Json<IntentResponse>, AppError> {
-    let workspace_id = query.workspace_id;
+    let workspace_id = auth.workspace_id();
     let entity_id = query.entity_id;
 
     let intent = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
-            let mut intent = store.read_intent("main", intent_id).map_err(|_| {
+            let mut intent = store.read::<Intent>("main",intent_id).map_err(|_| {
                 AppError::NotFound(format!("intent {} not found", intent_id))
             })?;
 
@@ -341,10 +335,11 @@ async fn execute_intent(
 // ── Handlers: Obligations ────────────────────────────────────────────
 
 async fn create_obligation(
+    RequireExecutionWrite(auth): RequireExecutionWrite,
     State(state): State<AppState>,
     Json(req): Json<CreateObligationRequest>,
 ) -> Result<Json<ObligationResponse>, AppError> {
-    let workspace_id = req.workspace_id.ok_or_else(|| AppError::BadRequest("workspace_id is required".to_owned()))?;
+    let workspace_id = auth.workspace_id();
     let entity_id = req.entity_id;
 
     let obligation = tokio::task::spawn_blocking({
@@ -385,23 +380,23 @@ async fn create_obligation(
 }
 
 async fn list_obligations(
+    RequireExecutionRead(auth): RequireExecutionRead,
     State(state): State<AppState>,
     Path(entity_id): Path<EntityId>,
-    Query(query): Query<EntityQuery>,
 ) -> Result<Json<Vec<ObligationResponse>>, AppError> {
-    let workspace_id = query.workspace_id;
+    let workspace_id = auth.workspace_id();
 
     let obligations = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
-            let ids = store.list_obligation_ids("main").map_err(|e| {
+            let ids = store.list_ids::<Obligation>("main").map_err(|e| {
                 AppError::Internal(format!("list obligations: {e}"))
             })?;
 
             let mut results = Vec::new();
             for id in ids {
-                let o = store.read_obligation("main", id).map_err(|e| {
+                let o = store.read::<Obligation>("main",id).map_err(|e| {
                     AppError::Internal(format!("read obligation {id}: {e}"))
                 })?;
                 results.push(obligation_to_response(&o));
@@ -417,11 +412,12 @@ async fn list_obligations(
 }
 
 async fn fulfill_obligation(
+    RequireExecutionWrite(auth): RequireExecutionWrite,
     State(state): State<AppState>,
     Path(obligation_id): Path<ObligationId>,
-    Query(query): Query<super::WorkspaceEntityQuery>,
+    Query(query): Query<super::EntityIdQuery>,
 ) -> Result<Json<ObligationResponse>, AppError> {
-    let workspace_id = query.workspace_id;
+    let workspace_id = auth.workspace_id();
     let entity_id = query.entity_id;
 
     let obligation = tokio::task::spawn_blocking({
@@ -430,7 +426,7 @@ async fn fulfill_obligation(
             let store = open_store(&layout, workspace_id, entity_id)?;
             let mut obligation =
                 store
-                    .read_obligation("main", obligation_id)
+                    .read::<Obligation>("main",obligation_id)
                     .map_err(|_| {
                         AppError::NotFound(format!("obligation {} not found", obligation_id))
                     })?;
@@ -458,11 +454,12 @@ async fn fulfill_obligation(
 }
 
 async fn waive_obligation(
+    RequireExecutionWrite(auth): RequireExecutionWrite,
     State(state): State<AppState>,
     Path(obligation_id): Path<ObligationId>,
-    Query(query): Query<super::WorkspaceEntityQuery>,
+    Query(query): Query<super::EntityIdQuery>,
 ) -> Result<Json<ObligationResponse>, AppError> {
-    let workspace_id = query.workspace_id;
+    let workspace_id = auth.workspace_id();
     let entity_id = query.entity_id;
 
     let obligation = tokio::task::spawn_blocking({
@@ -471,7 +468,7 @@ async fn waive_obligation(
             let store = open_store(&layout, workspace_id, entity_id)?;
             let mut obligation =
                 store
-                    .read_obligation("main", obligation_id)
+                    .read::<Obligation>("main",obligation_id)
                     .map_err(|_| {
                         AppError::NotFound(format!("obligation {} not found", obligation_id))
                     })?;
@@ -526,18 +523,19 @@ fn receipt_to_response(r: &Receipt) -> ReceiptResponse {
 }
 
 async fn get_receipt(
+    RequireExecutionRead(auth): RequireExecutionRead,
     State(state): State<AppState>,
     Path(receipt_id): Path<ReceiptId>,
-    Query(query): Query<super::WorkspaceEntityQuery>,
+    Query(query): Query<super::EntityIdQuery>,
 ) -> Result<Json<ReceiptResponse>, AppError> {
-    let workspace_id = query.workspace_id;
+    let workspace_id = auth.workspace_id();
     let entity_id = query.entity_id;
 
     let receipt = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
-            store.read_receipt("main", receipt_id).map_err(|_| {
+            store.read::<Receipt>("main",receipt_id).map_err(|_| {
                 AppError::NotFound(format!("receipt {} not found", receipt_id))
             })
         }
@@ -550,24 +548,25 @@ async fn get_receipt(
 }
 
 async fn list_receipts_by_intent(
+    RequireExecutionRead(auth): RequireExecutionRead,
     State(state): State<AppState>,
     Path(intent_id): Path<IntentId>,
-    Query(query): Query<super::WorkspaceEntityQuery>,
+    Query(query): Query<super::EntityIdQuery>,
 ) -> Result<Json<Vec<ReceiptResponse>>, AppError> {
-    let workspace_id = query.workspace_id;
+    let workspace_id = auth.workspace_id();
     let entity_id = query.entity_id;
 
     let receipts = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
-            let ids = store.list_receipt_ids("main").map_err(|e| {
+            let ids = store.list_ids::<Receipt>("main").map_err(|e| {
                 AppError::Internal(format!("list receipts: {e}"))
             })?;
 
             let mut results = Vec::new();
             for id in ids {
-                if let Ok(r) = store.read_receipt("main", id) {
+                if let Ok(r) = store.read::<Receipt>("main",id) {
                     if r.intent_id() == intent_id {
                         results.push(receipt_to_response(&r));
                     }
@@ -587,17 +586,17 @@ async fn list_receipts_by_intent(
 
 #[derive(Deserialize)]
 pub struct AssignObligationRequest {
-    pub workspace_id: WorkspaceId,
     pub entity_id: EntityId,
     pub assignee_id: ContactId,
 }
 
 async fn assign_obligation(
+    RequireExecutionWrite(auth): RequireExecutionWrite,
     State(state): State<AppState>,
     Path(obligation_id): Path<ObligationId>,
     Json(req): Json<AssignObligationRequest>,
 ) -> Result<Json<ObligationResponse>, AppError> {
-    let workspace_id = req.workspace_id;
+    let workspace_id = auth.workspace_id();
     let entity_id = req.entity_id;
 
     let obligation = tokio::task::spawn_blocking({
@@ -605,7 +604,7 @@ async fn assign_obligation(
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
             let mut obligation = store
-                .read_obligation("main", obligation_id)
+                .read::<Obligation>("main",obligation_id)
                 .map_err(|_| AppError::NotFound(format!("obligation {} not found", obligation_id)))?;
 
             obligation.assign(req.assignee_id)?;
@@ -634,17 +633,17 @@ pub struct ObligationsSummaryResponse {
 }
 
 async fn obligations_summary(
+    RequireExecutionRead(auth): RequireExecutionRead,
     State(state): State<AppState>,
     Path(entity_id): Path<EntityId>,
-    Query(query): Query<EntityQuery>,
 ) -> Result<Json<ObligationsSummaryResponse>, AppError> {
-    let workspace_id = query.workspace_id;
+    let workspace_id = auth.workspace_id();
 
     let summary = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
-            let ids = store.list_obligation_ids("main").map_err(|e| {
+            let ids = store.list_ids::<Obligation>("main").map_err(|e| {
                 AppError::Internal(format!("list obligations: {e}"))
             })?;
 
@@ -654,7 +653,7 @@ async fn obligations_summary(
             let mut waived = 0;
 
             for id in ids {
-                if let Ok(o) = store.read_obligation("main", id) {
+                if let Ok(o) = store.read::<Obligation>("main",id) {
                     total += 1;
                     match o.status() {
                         ObligationStatus::Required | ObligationStatus::InProgress => pending += 1,
@@ -681,23 +680,23 @@ async fn obligations_summary(
 }
 
 async fn list_human_obligations(
+    RequireExecutionRead(auth): RequireExecutionRead,
     State(state): State<AppState>,
     Path(entity_id): Path<EntityId>,
-    Query(query): Query<EntityQuery>,
 ) -> Result<Json<Vec<ObligationResponse>>, AppError> {
-    let workspace_id = query.workspace_id;
+    let workspace_id = auth.workspace_id();
 
     let obligations = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
-            let ids = store.list_obligation_ids("main").map_err(|e| {
+            let ids = store.list_ids::<Obligation>("main").map_err(|e| {
                 AppError::Internal(format!("list obligations: {e}"))
             })?;
 
             let mut results = Vec::new();
             for id in ids {
-                if let Ok(o) = store.read_obligation("main", id) {
+                if let Ok(o) = store.read::<Obligation>("main",id) {
                     if o.assignee_type() == AssigneeType::Human {
                         results.push(obligation_to_response(&o));
                     }
@@ -716,10 +715,10 @@ async fn list_human_obligations(
 // ── Handlers: Global human obligations ──────────────────────────────
 
 async fn list_global_human_obligations(
+    RequireExecutionRead(auth): RequireExecutionRead,
     State(state): State<AppState>,
-    Query(query): Query<EntityQuery>,
 ) -> Result<Json<Vec<ObligationResponse>>, AppError> {
-    let workspace_id = query.workspace_id;
+    let workspace_id = auth.workspace_id();
 
     let obligations = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
@@ -729,9 +728,9 @@ async fn list_global_human_obligations(
 
             for entity_id in entity_ids {
                 if let Ok(store) = EntityStore::open(&layout, workspace_id, entity_id) {
-                    if let Ok(ids) = store.list_obligation_ids("main") {
+                    if let Ok(ids) = store.list_ids::<Obligation>("main") {
                         for id in ids {
-                            if let Ok(o) = store.read_obligation("main", id) {
+                            if let Ok(o) = store.read::<Obligation>("main",id) {
                                 if o.assignee_type() == AssigneeType::Human
                                     && o.status() != ObligationStatus::Fulfilled
                                     && o.status() != ObligationStatus::Waived
@@ -763,6 +762,7 @@ pub struct SignerTokenResponse {
 }
 
 async fn generate_signer_token(
+    RequireExecutionWrite(_auth): RequireExecutionWrite,
     Path(obligation_id): Path<ObligationId>,
 ) -> Json<SignerTokenResponse> {
     let token = format!("signer_{}", uuid::Uuid::new_v4().simple());
@@ -777,11 +777,13 @@ async fn generate_signer_token(
 // ── Handlers: Human obligation fulfill ──────────────────────────────
 
 async fn fulfill_human_obligation(
+    RequireExecutionWrite(auth): RequireExecutionWrite,
     State(state): State<AppState>,
     Path(obligation_id): Path<ObligationId>,
-    Query(query): Query<super::WorkspaceEntityQuery>,
+    Query(query): Query<super::EntityIdQuery>,
 ) -> Result<Json<ObligationResponse>, AppError> {
     fulfill_obligation(
+        RequireExecutionWrite(auth),
         State(state),
         Path(obligation_id),
         Query(query),
@@ -795,7 +797,6 @@ async fn fulfill_human_obligation(
 pub struct CreateDocumentRequestPayload {
     pub description: String,
     pub document_type: String,
-    pub workspace_id: WorkspaceId,
     pub entity_id: EntityId,
 }
 
@@ -810,11 +811,12 @@ pub struct DocumentRequestResponse {
 }
 
 async fn create_document_request(
+    RequireExecutionWrite(auth): RequireExecutionWrite,
     State(state): State<AppState>,
     Path(obligation_id): Path<ObligationId>,
     Json(req): Json<CreateDocumentRequestPayload>,
 ) -> Result<Json<DocumentRequestResponse>, AppError> {
-    let workspace_id = req.workspace_id;
+    let workspace_id = auth.workspace_id();
     let entity_id = req.entity_id;
     let request_id = uuid::Uuid::new_v4().to_string();
     let now = chrono::Utc::now();
@@ -828,7 +830,7 @@ async fn create_document_request(
             let store = open_store(&layout, workspace_id, entity_id)?;
 
             // Verify obligation exists
-            store.read_obligation("main", obligation_id).map_err(|_| {
+            store.read::<Obligation>("main",obligation_id).map_err(|_| {
                 AppError::NotFound(format!("obligation {} not found", obligation_id))
             })?;
 
@@ -866,11 +868,12 @@ async fn create_document_request(
 }
 
 async fn list_document_requests(
+    RequireExecutionRead(auth): RequireExecutionRead,
     State(state): State<AppState>,
     Path(obligation_id): Path<ObligationId>,
-    Query(query): Query<super::WorkspaceEntityQuery>,
+    Query(query): Query<super::EntityIdQuery>,
 ) -> Result<Json<Vec<DocumentRequestResponse>>, AppError> {
-    let workspace_id = query.workspace_id;
+    let workspace_id = auth.workspace_id();
     let entity_id = query.entity_id;
 
     let requests = tokio::task::spawn_blocking({
@@ -909,29 +912,30 @@ async fn list_document_requests(
 }
 
 async fn fulfill_document_request(
+    RequireExecutionWrite(auth): RequireExecutionWrite,
     State(state): State<AppState>,
     Path(request_id): Path<String>,
-    Query(query): Query<super::WorkspaceEntityQuery>,
+    Query(query): Query<super::EntityIdQuery>,
 ) -> Result<Json<DocumentRequestResponse>, AppError> {
-    update_document_request_status(state, request_id, query, "fulfilled").await
+    update_document_request_status(state, request_id, auth.workspace_id(), query.entity_id, "fulfilled").await
 }
 
 async fn mark_document_request_na(
+    RequireExecutionWrite(auth): RequireExecutionWrite,
     State(state): State<AppState>,
     Path(request_id): Path<String>,
-    Query(query): Query<super::WorkspaceEntityQuery>,
+    Query(query): Query<super::EntityIdQuery>,
 ) -> Result<Json<DocumentRequestResponse>, AppError> {
-    update_document_request_status(state, request_id, query, "not_applicable").await
+    update_document_request_status(state, request_id, auth.workspace_id(), query.entity_id, "not_applicable").await
 }
 
 async fn update_document_request_status(
     state: AppState,
     request_id: String,
-    query: super::WorkspaceEntityQuery,
+    workspace_id: WorkspaceId,
+    entity_id: EntityId,
     new_status: &'static str,
 ) -> Result<Json<DocumentRequestResponse>, AppError> {
-    let workspace_id = query.workspace_id;
-    let entity_id = query.entity_id;
 
     let result = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
@@ -974,10 +978,10 @@ async fn update_document_request_status(
 // ── Handlers: Global obligations summary ────────────────────────────
 
 async fn global_obligations_summary(
+    RequireExecutionRead(auth): RequireExecutionRead,
     State(state): State<AppState>,
-    Query(query): Query<EntityQuery>,
 ) -> Result<Json<ObligationsSummaryResponse>, AppError> {
-    let workspace_id = query.workspace_id;
+    let workspace_id = auth.workspace_id();
 
     let summary = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
@@ -990,9 +994,9 @@ async fn global_obligations_summary(
 
             for entity_id in entity_ids {
                 if let Ok(store) = EntityStore::open(&layout, workspace_id, entity_id) {
-                    if let Ok(ids) = store.list_obligation_ids("main") {
+                    if let Ok(ids) = store.list_ids::<Obligation>("main") {
                         for id in ids {
-                            if let Ok(o) = store.read_obligation("main", id) {
+                            if let Ok(o) = store.read::<Obligation>("main",id) {
                                 total += 1;
                                 match o.status() {
                                     ObligationStatus::Required | ObligationStatus::InProgress => pending += 1,

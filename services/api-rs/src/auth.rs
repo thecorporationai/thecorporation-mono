@@ -10,8 +10,92 @@ use serde_json::json;
 
 use crate::domain::auth::claims::decode_token;
 use crate::domain::auth::error::AuthError;
-use crate::domain::auth::scopes::ScopeSet;
+use crate::domain::auth::scopes::{Scope, ScopeSet};
 use crate::domain::ids::{EntityId, WorkspaceId};
+
+// ── Scoped extractors ──────────────────────────────────────────────────
+//
+// Each scoped extractor wraps a `Principal` and checks that the principal
+// has the required scope. Adding a scoped extractor to a handler signature
+// enforces auth + authorization at compile time — if the extractor is
+// missing, the handler cannot access `workspace_id`.
+
+macro_rules! define_scoped_extractor {
+    ($name:ident, $scope:expr) => {
+        #[derive(Debug)]
+        pub struct $name(pub Principal);
+
+        impl $name {
+            pub fn workspace_id(&self) -> WorkspaceId {
+                self.0.workspace_id()
+            }
+
+            #[allow(dead_code)]
+            pub fn entity_id(&self) -> Option<EntityId> {
+                self.0.entity_id()
+            }
+
+            #[allow(dead_code)]
+            pub fn scopes(&self) -> &ScopeSet {
+                self.0.scopes()
+            }
+        }
+
+        impl<S: Send + Sync> FromRequestParts<S> for $name {
+            type Rejection = AuthRejection;
+
+            async fn from_request_parts(
+                parts: &mut Parts,
+                state: &S,
+            ) -> Result<Self, Self::Rejection> {
+                let principal = Principal::from_request_parts(parts, state).await?;
+                if !principal.scopes().has($scope) {
+                    return Err(AuthRejection(AuthError::InsufficientScopes(format!(
+                        "required: {}",
+                        $scope
+                    ))));
+                }
+                Ok(Self(principal))
+            }
+        }
+    };
+}
+
+// Formation
+define_scoped_extractor!(RequireFormationCreate, Scope::FormationCreate);
+define_scoped_extractor!(RequireFormationRead, Scope::FormationRead);
+define_scoped_extractor!(RequireFormationSign, Scope::FormationSign);
+
+// Equity
+define_scoped_extractor!(RequireEquityRead, Scope::EquityRead);
+define_scoped_extractor!(RequireEquityWrite, Scope::EquityWrite);
+define_scoped_extractor!(RequireEquityTransfer, Scope::EquityTransfer);
+
+// Governance
+define_scoped_extractor!(RequireGovernanceRead, Scope::GovernanceRead);
+define_scoped_extractor!(RequireGovernanceWrite, Scope::GovernanceWrite);
+define_scoped_extractor!(RequireGovernanceVote, Scope::GovernanceVote);
+
+// Treasury
+define_scoped_extractor!(RequireTreasuryRead, Scope::TreasuryRead);
+define_scoped_extractor!(RequireTreasuryWrite, Scope::TreasuryWrite);
+define_scoped_extractor!(RequireTreasuryApprove, Scope::TreasuryApprove);
+
+// Contacts
+define_scoped_extractor!(RequireContactsRead, Scope::ContactsRead);
+define_scoped_extractor!(RequireContactsWrite, Scope::ContactsWrite);
+
+// Execution
+define_scoped_extractor!(RequireExecutionRead, Scope::ExecutionRead);
+define_scoped_extractor!(RequireExecutionWrite, Scope::ExecutionWrite);
+
+// Branches
+define_scoped_extractor!(RequireBranchCreate, Scope::BranchCreate);
+define_scoped_extractor!(RequireBranchMerge, Scope::BranchMerge);
+define_scoped_extractor!(RequireBranchDelete, Scope::BranchDelete);
+
+// Admin
+define_scoped_extractor!(RequireAdmin, Scope::Admin);
 
 /// The resolved identity of a request.
 ///

@@ -8,8 +8,86 @@ use super::types::{SafeStatus, SafeType, ShareCount};
 use crate::domain::ids::{ContactId, DocumentId, EntityId, SafeNoteId};
 use crate::domain::treasury::types::Cents;
 
+/// Validate data-integrity invariants shared by `new()` and `TryFrom<RawSafeNote>`.
+fn validate_safe(
+    principal_amount_cents: Cents,
+    discount_rate: Option<f64>,
+    valuation_cap_cents: Option<Cents>,
+) -> Result<(), EquityError> {
+    if principal_amount_cents.raw() <= 0 {
+        return Err(EquityError::Validation("principal amount must be positive".into()));
+    }
+    if let Some(rate) = discount_rate {
+        if !(0.0..=1.0).contains(&rate) {
+            return Err(EquityError::Validation("discount_rate must be between 0.0 and 1.0".into()));
+        }
+    }
+    if let Some(cap) = valuation_cap_cents {
+        if cap.raw() < principal_amount_cents.raw() {
+            return Err(EquityError::ValuationCapBelowPrincipal {
+                cap,
+                principal: principal_amount_cents,
+            });
+        }
+    }
+    Ok(())
+}
+
+// ── Raw mirror for deserialization ──────────────────────────────────────
+
+#[derive(Deserialize)]
+struct RawSafeNote {
+    safe_note_id: SafeNoteId,
+    entity_id: EntityId,
+    investor_name: String,
+    investor_id: Option<ContactId>,
+    principal_amount_cents: Cents,
+    valuation_cap_cents: Option<Cents>,
+    discount_rate: Option<f64>,
+    safe_type: SafeType,
+    pro_rata_rights: bool,
+    status: SafeStatus,
+    document_id: Option<DocumentId>,
+    conversion_unit_type: String,
+    issued_at: DateTime<Utc>,
+    created_at: DateTime<Utc>,
+    converted_at: Option<DateTime<Utc>>,
+    conversion_shares: Option<ShareCount>,
+    conversion_price_cents: Option<Cents>,
+}
+
+impl TryFrom<RawSafeNote> for SafeNote {
+    type Error = EquityError;
+
+    fn try_from(raw: RawSafeNote) -> Result<Self, Self::Error> {
+        validate_safe(raw.principal_amount_cents, raw.discount_rate, raw.valuation_cap_cents)?;
+        Ok(SafeNote {
+            safe_note_id: raw.safe_note_id,
+            entity_id: raw.entity_id,
+            investor_name: raw.investor_name,
+            investor_id: raw.investor_id,
+            principal_amount_cents: raw.principal_amount_cents,
+            valuation_cap_cents: raw.valuation_cap_cents,
+            discount_rate: raw.discount_rate,
+            safe_type: raw.safe_type,
+            pro_rata_rights: raw.pro_rata_rights,
+            status: raw.status,
+            document_id: raw.document_id,
+            conversion_unit_type: raw.conversion_unit_type,
+            issued_at: raw.issued_at,
+            created_at: raw.created_at,
+            converted_at: raw.converted_at,
+            conversion_shares: raw.conversion_shares,
+            conversion_price_cents: raw.conversion_price_cents,
+        })
+    }
+}
+
+// ── SafeNote ────────────────────────────────────────────────────────────
+
 /// A SAFE (Simple Agreement for Future Equity) note.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(try_from = "RawSafeNote")]
 pub struct SafeNote {
     safe_note_id: SafeNoteId,
     entity_id: EntityId,
@@ -48,22 +126,7 @@ impl SafeNote {
         document_id: Option<DocumentId>,
         conversion_unit_type: String,
     ) -> Result<Self, EquityError> {
-        if principal_amount_cents.raw() <= 0 {
-            return Err(EquityError::Validation("principal amount must be positive".into()));
-        }
-        if let Some(rate) = discount_rate {
-            if !(0.0..=1.0).contains(&rate) {
-                return Err(EquityError::Validation("discount_rate must be between 0.0 and 1.0".into()));
-            }
-        }
-        if let Some(cap) = valuation_cap_cents {
-            if cap.raw() < principal_amount_cents.raw() {
-                return Err(EquityError::ValuationCapBelowPrincipal {
-                    cap,
-                    principal: principal_amount_cents,
-                });
-            }
-        }
+        validate_safe(principal_amount_cents, discount_rate, valuation_cap_cents)?;
         let now = Utc::now();
         Ok(Self {
             safe_note_id,
@@ -342,6 +405,33 @@ mod tests {
         let mut s = make_safe();
         s.cancel().unwrap();
         assert_eq!(s.status(), SafeStatus::Cancelled);
+    }
+
+    #[test]
+    fn serde_roundtrip() {
+        let s = make_safe();
+        let json = serde_json::to_string(&s).unwrap();
+        let parsed: SafeNote = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.safe_note_id(), s.safe_note_id());
+        assert_eq!(parsed.principal_amount_cents(), s.principal_amount_cents());
+    }
+
+    #[test]
+    fn deserialize_rejects_zero_principal() {
+        let s = make_safe();
+        let mut json: serde_json::Value = serde_json::to_value(&s).unwrap();
+        json["principal_amount_cents"] = serde_json::json!(0);
+        let result: Result<SafeNote, _> = serde_json::from_value(json);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn deserialize_rejects_bad_discount_rate() {
+        let s = make_safe();
+        let mut json: serde_json::Value = serde_json::to_value(&s).unwrap();
+        json["discount_rate"] = serde_json::json!(1.5);
+        let result: Result<SafeNote, _> = serde_json::from_value(json);
+        assert!(result.is_err());
     }
 
     #[test]
