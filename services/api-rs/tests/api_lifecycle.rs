@@ -4,18 +4,24 @@
 //! then sends requests directly via `tower::ServiceExt::oneshot` — no
 //! actual TCP listener is needed.
 
+use axum::Router;
 use axum::body::Body;
 use axum::http::{Method, Request, StatusCode};
 use axum::routing::get;
-use axum::Router;
-use serde_json::{json, Value};
+use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+use serde_json::{Value, json};
 use std::sync::Arc;
 use tempfile::TempDir;
 use tower::ServiceExt; // oneshot
 
 use api_rs::domain::auth::claims::{Claims, PrincipalType, encode_token};
 use api_rs::domain::auth::scopes::Scope;
-use api_rs::domain::ids::WorkspaceId;
+use api_rs::domain::equity::conversion_execution::ConversionExecution;
+use api_rs::domain::equity::round::{EquityRound, EquityRoundStatus};
+use api_rs::domain::execution::intent::Intent;
+use api_rs::domain::execution::types::IntentStatus;
+use api_rs::domain::ids::{ConversionExecutionId, EntityId, EquityRoundId, IntentId, WorkspaceId};
+use api_rs::store::entity_store::EntityStore;
 
 // ── Helpers ──────────────────────────────────────────────────────────────
 
@@ -39,6 +45,7 @@ fn make_token(ws_id: WorkspaceId) -> String {
 fn build_app(tmp: &TempDir) -> Router {
     // Ensure JWT_SECRET is set for the auth middleware
     unsafe { std::env::set_var("JWT_SECRET", "test-secret-for-integration-tests") };
+    unsafe { std::env::set_var("TERMINAL_AUTH_SECRET", "chat-ws-test-secret") };
 
     let layout = Arc::new(api_rs::store::RepoLayout::new(tmp.path().to_path_buf()));
     let state = api_rs::routes::AppState {
@@ -84,6 +91,22 @@ async fn post_json(app: &Router, path: &str, body: Value, token: &str) -> (Statu
         .uri(path)
         .header("content-type", "application/json")
         .header("authorization", format!("Bearer {token}"))
+        .body(Body::from(serde_json::to_vec(&body).unwrap()))
+        .unwrap();
+    let response = app.clone().oneshot(req).await.unwrap();
+    let status = response.status();
+    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let value: Value = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
+    (status, value)
+}
+
+async fn post_json_no_auth(app: &Router, path: &str, body: Value) -> (StatusCode, Value) {
+    let req = Request::builder()
+        .method(Method::POST)
+        .uri(path)
+        .header("content-type", "application/json")
         .body(Body::from(serde_json::to_vec(&body).unwrap()))
         .unwrap();
     let response = app.clone().oneshot(req).await.unwrap();
@@ -162,6 +185,277 @@ async fn create_entity(app: &Router) -> (WorkspaceId, String, String) {
     (ws_id, entity_id, token)
 }
 
+async fn create_round_with_terms(app: &Router, entity_id: &str, token: &str) -> (String, String) {
+    let (status, legal_entity) = post_json(
+        app,
+        "/v1/equity/entities",
+        json!({
+            "entity_id": entity_id,
+            "linked_entity_id": entity_id,
+            "name": "Validation Corp",
+            "role": "operating",
+        }),
+        token,
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "create legal entity failed: {legal_entity}"
+    );
+    let issuer_legal_entity_id = legal_entity["legal_entity_id"].as_str().unwrap();
+
+    let (status, target_instrument) = post_json(
+        app,
+        "/v1/equity/instruments",
+        json!({
+            "entity_id": entity_id,
+            "issuer_legal_entity_id": issuer_legal_entity_id,
+            "symbol": "SERIES_A",
+            "kind": "preferred_equity",
+            "terms": {},
+        }),
+        token,
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "create target instrument failed: {target_instrument}"
+    );
+    let target_instrument_id = target_instrument["instrument_id"].as_str().unwrap();
+
+    let (status, round) = post_json(
+        app,
+        "/v1/equity/rounds",
+        json!({
+            "entity_id": entity_id,
+            "issuer_legal_entity_id": issuer_legal_entity_id,
+            "name": "Series A",
+            "round_price_cents": 100_i64,
+            "target_raise_cents": 10000000_i64,
+            "conversion_target_instrument_id": target_instrument_id,
+            "metadata": {},
+        }),
+        token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "create round failed: {round}");
+    let round_id = round["round_id"].as_str().unwrap();
+
+    let (status, apply_terms) = post_json(
+        app,
+        &format!("/v1/equity/rounds/{round_id}/apply-terms"),
+        json!({
+            "entity_id": entity_id,
+            "anti_dilution_method": "none",
+            "conversion_precedence": ["safe"],
+            "protective_provisions": {},
+        }),
+        token,
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "apply round terms failed: {apply_terms}"
+    );
+
+    (issuer_legal_entity_id.to_owned(), round_id.to_owned())
+}
+
+async fn create_resolution_for_body(
+    app: &Router,
+    entity_id: &str,
+    token: &str,
+    body_type: &str,
+    vote_values: &[&str],
+) -> (String, String) {
+    let e_query = format!("entity_id={entity_id}");
+
+    let (status, body) = post_json(
+        app,
+        "/v1/governance-bodies",
+        json!({
+            "entity_id": entity_id,
+            "body_type": body_type,
+            "name": format!("{} body", body_type),
+            "quorum_rule": "majority",
+            "voting_method": "per_capita",
+        }),
+        token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "create governance body: {body}");
+    let body_id = body["body_id"].as_str().unwrap();
+
+    let mut contact_ids = Vec::new();
+    let mut seat_ids = Vec::new();
+    for (idx, _) in vote_values.iter().enumerate() {
+        let (status, contact) = post_json(
+            app,
+            "/v1/contacts",
+            json!({
+                "entity_id": entity_id,
+                "contact_type": "individual",
+                "name": format!("Director {idx}"),
+                "email": format!("director{idx}@example.com"),
+                "category": "board_member",
+            }),
+            token,
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "create contact {idx}: {contact}");
+        let contact_id = contact["contact_id"].as_str().unwrap().to_owned();
+        contact_ids.push(contact_id.clone());
+
+        let role = if idx == 0 { "chair" } else { "member" };
+        let (status, seat) = post_json(
+            app,
+            &format!("/v1/governance-bodies/{body_id}/seats?{e_query}"),
+            json!({
+                "holder_id": contact_id,
+                "role": role,
+                "voting_power": 1,
+            }),
+            token,
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "create seat {idx}: {seat}");
+        seat_ids.push(seat["seat_id"].as_str().unwrap().to_owned());
+    }
+
+    let meeting_type = if body_type == "board_of_directors" {
+        "board_meeting"
+    } else {
+        "member_meeting"
+    };
+    let (status, meeting) = post_json(
+        app,
+        "/v1/meetings",
+        json!({
+            "entity_id": entity_id,
+            "body_id": body_id,
+            "meeting_type": meeting_type,
+            "title": "Approval Meeting",
+            "scheduled_date": "2026-03-15",
+            "location": "Virtual",
+            "notice_days": 0,
+            "agenda_item_titles": ["Approve round"],
+        }),
+        token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "schedule meeting: {meeting}");
+    let meeting_id = meeting["meeting_id"].as_str().unwrap();
+
+    let (status, notice) = post_json(
+        app,
+        &format!("/v1/meetings/{meeting_id}/notice?{e_query}"),
+        json!({}),
+        token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "notice meeting: {notice}");
+
+    let (status, convene) = post_json(
+        app,
+        &format!("/v1/meetings/{meeting_id}/convene?{e_query}"),
+        json!({
+            "present_seat_ids": seat_ids,
+        }),
+        token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "convene meeting: {convene}");
+
+    let (status, agenda_items) = get_json(
+        app,
+        &format!("/v1/meetings/{meeting_id}/agenda-items?{e_query}"),
+        token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "list agenda items: {agenda_items}");
+    let agenda_item_id = agenda_items.as_array().unwrap()[0]["agenda_item_id"]
+        .as_str()
+        .unwrap();
+
+    for (idx, vote_value) in vote_values.iter().enumerate() {
+        let (status, vote) = post_json(
+            app,
+            &format!("/v1/meetings/{meeting_id}/agenda-items/{agenda_item_id}/vote?{e_query}"),
+            json!({
+                "voter_id": contact_ids[idx],
+                "vote_value": vote_value,
+            }),
+            token,
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "cast vote {idx}: {vote}");
+    }
+
+    let (status, resolution) = post_json(
+        app,
+        &format!("/v1/meetings/{meeting_id}/agenda-items/{agenda_item_id}/resolution?{e_query}"),
+        json!({
+            "resolution_text": "Resolved: approve financing round.",
+        }),
+        token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "compute resolution: {resolution}");
+
+    (
+        meeting_id.to_owned(),
+        resolution["resolution_id"].as_str().unwrap().to_owned(),
+    )
+}
+
+async fn create_authorized_round_intent(
+    app: &Router,
+    entity_id: &str,
+    token: &str,
+    intent_type: &str,
+    metadata_round_id: &str,
+) -> String {
+    let (status, intent) = post_json(
+        app,
+        "/v1/execution/intents",
+        json!({
+            "entity_id": entity_id,
+            "intent_type": intent_type,
+            "authority_tier": "tier_2",
+            "description": format!("{} test intent", intent_type),
+            "metadata": {"round_id": metadata_round_id},
+        }),
+        token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "create intent: {intent}");
+    let intent_id = intent["intent_id"].as_str().unwrap().to_owned();
+    let e_query = format!("entity_id={entity_id}");
+
+    let (status, evaluate) = post_json(
+        app,
+        &format!("/v1/intents/{intent_id}/evaluate?{e_query}"),
+        json!({}),
+        token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "evaluate intent: {evaluate}");
+
+    let (status, authorize) = post_json(
+        app,
+        &format!("/v1/intents/{intent_id}/authorize?{e_query}"),
+        json!({}),
+        token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "authorize intent: {authorize}");
+
+    intent_id
+}
+
 // ── 1. Health check ──────────────────────────────────────────────────────
 
 #[tokio::test]
@@ -172,6 +466,44 @@ async fn test_health() {
     let (status, body) = get_json(&app, "/health", &token).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["status"], "ok");
+}
+
+#[tokio::test]
+async fn test_public_chat_session_mints_ws_token() {
+    let tmp = TempDir::new().unwrap();
+    let app = build_app(&tmp);
+
+    let (status, body) = post_json_no_auth(
+        &app,
+        "/v1/chat/session",
+        json!({ "email": "founder@example.com" }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "create chat session: {body}");
+    let ws_token = body["ws_token"].as_str().unwrap_or_default();
+    assert!(
+        ws_token.contains('.'),
+        "ws_token should contain payload.signature"
+    );
+    assert!(body["expires_at"].is_string());
+
+    let mut parts = ws_token.split('.');
+    let payload_b64 = parts.next().unwrap_or_default();
+    let sig_b64 = parts.next().unwrap_or_default();
+    assert!(!payload_b64.is_empty());
+    assert!(!sig_b64.is_empty());
+
+    let payload = URL_SAFE_NO_PAD.decode(payload_b64).expect("decode payload");
+    let payload_json: Value = serde_json::from_slice(&payload).expect("parse payload");
+    assert_eq!(payload_json["email"], "founder@example.com");
+    assert!(payload_json["workspace_id"].is_string());
+    assert!(
+        payload_json["api_key"]
+            .as_str()
+            .unwrap_or_default()
+            .starts_with("sk_")
+    );
+    assert!(payload_json["exp"].is_number());
 }
 
 // ── 2. Formation lifecycle ───────────────────────────────────────────────
@@ -220,12 +552,7 @@ async fn test_formation_lifecycle() {
     assert!(!doc_ids.is_empty(), "should have at least one document");
 
     // 2. GET formation status
-    let (status, body) = get_json(
-        &app,
-        &format!("/v1/formations/{entity_id}"),
-        &token,
-    )
-    .await;
+    let (status, body) = get_json(&app, &format!("/v1/formations/{entity_id}"), &token).await;
     assert_eq!(status, StatusCode::OK, "get formation: {body}");
     assert_eq!(body["legal_name"], "FormCo Inc.");
     assert_eq!(body["entity_type"], "corporation");
@@ -273,21 +600,70 @@ async fn test_formation_lifecycle() {
     assert!(!body["signatures"].as_array().unwrap().is_empty());
     assert_eq!(body["entity_id"], entity_id);
 
-    // NOTE: The formation FSM requires intermediate transitions
-    // (DocumentsGenerated -> DocumentsSigned -> FilingSubmitted -> Filed -> Active)
-    // that aren't all exposed as HTTP endpoints. The filing-confirmation endpoint
-    // expects the entity to be at FilingSubmitted status. Testing confirm-filing
-    // and confirm-EIN would require direct store manipulation to advance
-    // intermediate states, so we verify the formation status is still
-    // documents_generated and the API correctly reports it.
-    let (status, body) = get_json(
+    // 6. Mark all documents signed (DocumentsGenerated -> DocumentsSigned)
+    let (status, body) = post_json(
         &app,
-        &format!("/v1/formations/{entity_id}"),
+        &format!("/v1/formations/{entity_id}/mark-documents-signed"),
+        json!({}),
         &token,
     )
     .await;
-    assert_eq!(status, StatusCode::OK, "get formation post-signing: {body}");
-    assert_eq!(body["formation_status"], "documents_generated");
+    assert_eq!(status, StatusCode::OK, "mark documents signed: {body}");
+    assert_eq!(body["formation_status"], "documents_signed");
+
+    // 7. Submit filing (DocumentsSigned -> FilingSubmitted)
+    let (status, body) = post_json(
+        &app,
+        &format!("/v1/formations/{entity_id}/submit-filing"),
+        json!({}),
+        &token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "submit filing: {body}");
+    assert_eq!(body["formation_status"], "filing_submitted");
+
+    // 8. Confirm filing (FilingSubmitted -> Filed)
+    let (status, body) = post_json(
+        &app,
+        &format!("/v1/formations/{entity_id}/filing-confirmation"),
+        json!({
+            "external_filing_id": "DE-STATE-12345",
+            "receipt_reference": "RCPT-98765"
+        }),
+        &token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "confirm filing: {body}");
+    assert_eq!(body["formation_status"], "filed");
+
+    // 9. Apply for EIN (Filed -> EinApplied)
+    let (status, body) = post_json(
+        &app,
+        &format!("/v1/formations/{entity_id}/apply-ein"),
+        json!({}),
+        &token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "apply ein: {body}");
+    assert_eq!(body["formation_status"], "ein_applied");
+
+    // 10. Confirm EIN (EinApplied -> Active)
+    let (status, body) = post_json(
+        &app,
+        &format!("/v1/formations/{entity_id}/ein-confirmation"),
+        json!({
+            "ein": "12-3456789"
+        }),
+        &token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "confirm ein: {body}");
+    assert_eq!(body["formation_status"], "active");
+
+    // 11. Verify final formation status is active
+    let (status, body) = get_json(&app, &format!("/v1/formations/{entity_id}"), &token).await;
+    assert_eq!(status, StatusCode::OK, "get active formation: {body}");
+    assert_eq!(body["formation_status"], "active");
 }
 
 // ── 3. Equity lifecycle ──────────────────────────────────────────────────
@@ -297,218 +673,722 @@ async fn test_equity_lifecycle() {
     let tmp = TempDir::new().unwrap();
     let app = build_app(&tmp);
     let (ws_id, entity_id, token) = create_entity(&app).await;
-    let _ = ws_id;
 
-    // 1. Get cap table — initial state (no share classes created by formation)
-    let (status, body) = get_json(
+    // 1. Create operating legal entity linked to formation entity.
+    let (status, legal_entity) = post_json(
         &app,
-        &format!("/v1/entities/{entity_id}/cap-table"),
-        &token,
-    )
-    .await;
-    assert_eq!(status, StatusCode::OK, "get cap table: {body}");
-    assert_eq!(body["entity_id"], entity_id);
-
-    // Use a synthetic share_class_id since formation doesn't create share classes.
-    // The grant endpoint accepts any share_class_id without validation.
-    let share_class_id = uuid::Uuid::new_v4().to_string();
-
-    // 2. Issue equity grant
-    let (status, body) = post_json(
-        &app,
-        "/v1/equity/grants",
+        "/v1/equity/entities",
         json!({
             "entity_id": entity_id,
-            "shares": 1000,
-            "recipient_name": "Charlie Employee",
-            "recipient_type": "natural_person",
-            "grant_type": "common_stock",
-            "share_class_id": share_class_id,
+            "linked_entity_id": entity_id,
+            "name": "Test Corp, Inc.",
+            "role": "operating",
         }),
         &token,
     )
     .await;
-    assert_eq!(status, StatusCode::OK, "create grant: {body}");
-    assert!(body["grant_id"].as_str().is_some());
-    assert_eq!(body["shares"], 1000);
-    assert_eq!(body["recipient_name"], "Charlie Employee");
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "create legal entity: {legal_entity}"
+    );
+    let issuer_legal_entity_id = legal_entity["legal_entity_id"].as_str().unwrap();
 
-    // 3. Create SAFE note
-    let (status, body) = post_json(
-        &app,
-        "/v1/safe-notes",
-        json!({
-            "entity_id": entity_id,
-            "investor_name": "Seed Ventures",
-            "principal_amount_cents": 500000_i64,
-            "safe_type": "post_money",
-            "valuation_cap_cents": 10000000_i64,
-        }),
-        &token,
-    )
-    .await;
-    assert_eq!(status, StatusCode::OK, "create SAFE: {body}");
-    let safe_note_id = body["safe_note_id"].as_str().unwrap();
-    assert_eq!(body["investor_name"], "Seed Ventures");
-    assert_eq!(body["principal_amount_cents"], 500000);
-
-    // 4. List SAFE notes
-    let (status, body) = get_json(
-        &app,
-        &format!("/v1/entities/{entity_id}/safe-notes"),
-        &token,
-    )
-    .await;
-    assert_eq!(status, StatusCode::OK, "list SAFEs: {body}");
-    let safes = body.as_array().unwrap();
-    assert_eq!(safes.len(), 1);
-    assert_eq!(safes[0]["safe_note_id"], safe_note_id);
-
-    // 5. Create 409A valuation
-    let (status, body) = post_json(
-        &app,
-        "/v1/valuations",
-        json!({
-            "entity_id": entity_id,
-            "valuation_type": "four_oh_nine_a",
-            "methodology": "market",
-            "fmv_per_share_cents": 100_i64,
-            "enterprise_value_cents": 5000000_i64,
-            "effective_date": "2026-01-15",
-        }),
-        &token,
-    )
-    .await;
-    assert_eq!(status, StatusCode::OK, "create valuation: {body}");
-    assert!(body["valuation_id"].as_str().is_some());
-
-    // 6. Create contacts for transfer
-    let (status, from_contact) = post_json(
+    // 2. Create founder and SAFE investor contacts + holders.
+    let (status, founder_contact) = post_json(
         &app,
         "/v1/contacts",
         json!({
             "entity_id": entity_id,
             "contact_type": "individual",
-            "name": "Alice Seller",
-            "email": "alice@test.com",
+            "name": "Alice Founder",
+            "email": "alice@founder.com",
             "category": "employee",
         }),
         &token,
     )
     .await;
-    assert_eq!(status, StatusCode::OK, "create from_contact: {from_contact}");
-    let from_contact_id = from_contact["contact_id"].as_str().unwrap();
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "create founder contact: {founder_contact}"
+    );
+    let founder_contact_id = founder_contact["contact_id"].as_str().unwrap();
 
-    let (status, to_contact) = post_json(
+    let (status, founder_holder) = post_json(
+        &app,
+        "/v1/equity/holders",
+        json!({
+            "entity_id": entity_id,
+            "contact_id": founder_contact_id,
+            "name": "Alice Founder",
+            "holder_type": "individual",
+        }),
+        &token,
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "create founder holder: {founder_holder}"
+    );
+    let founder_holder_id = founder_holder["holder_id"].as_str().unwrap();
+
+    let (status, investor_contact) = post_json(
         &app,
         "/v1/contacts",
         json!({
             "entity_id": entity_id,
-            "contact_type": "individual",
-            "name": "Dave Buyer",
-            "email": "dave@test.com",
+            "contact_type": "organization",
+            "name": "Seed Ventures",
+            "email": "ops@seedventures.com",
             "category": "investor",
         }),
         &token,
     )
     .await;
-    assert_eq!(status, StatusCode::OK, "create to_contact: {to_contact}");
-    let to_contact_id = to_contact["contact_id"].as_str().unwrap();
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "create investor contact: {investor_contact}"
+    );
+    let investor_contact_id = investor_contact["contact_id"].as_str().unwrap();
 
-    // 7. Create share transfer
-    let (status, body) = post_json(
+    let (status, investor_holder) = post_json(
         &app,
-        "/v1/share-transfers",
+        "/v1/equity/holders",
         json!({
             "entity_id": entity_id,
-            "share_class_id": share_class_id,
-            "from_contact_id": from_contact_id,
-            "to_contact_id": to_contact_id,
-            "transfer_type": "secondary_sale",
-            "shares": 500,
-            "price_per_share_cents": 100,
+            "contact_id": investor_contact_id,
+            "name": "Seed Ventures",
+            "holder_type": "fund",
         }),
         &token,
     )
     .await;
-    assert_eq!(status, StatusCode::OK, "create transfer: {body}");
-    let transfer_id = body["transfer_id"].as_str().unwrap();
-    assert_eq!(body["status"], "draft");
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "create investor holder: {investor_holder}"
+    );
+    let investor_holder_id = investor_holder["holder_id"].as_str().unwrap();
 
-    // 8. Walk transfer through FSM
+    // 3. Create instruments for common, SAFE, and Series A preferred.
+    let (status, common) = post_json(
+        &app,
+        "/v1/equity/instruments",
+        json!({
+            "entity_id": entity_id,
+            "issuer_legal_entity_id": issuer_legal_entity_id,
+            "symbol": "COMMON",
+            "kind": "common_equity",
+            "authorized_units": 10000000_i64,
+            "issue_price_cents": 1_i64,
+            "terms": {},
+        }),
+        &token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "create common instrument: {common}");
+    let common_instrument_id = common["instrument_id"].as_str().unwrap();
+
+    let (status, safe) = post_json(
+        &app,
+        "/v1/equity/instruments",
+        json!({
+            "entity_id": entity_id,
+            "issuer_legal_entity_id": issuer_legal_entity_id,
+            "symbol": "SAFE-PM",
+            "kind": "safe",
+            "terms": {
+                "discount_bps": 2000,
+                "cap_price_cents": 80
+            },
+        }),
+        &token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "create safe instrument: {safe}");
+    let safe_instrument_id = safe["instrument_id"].as_str().unwrap();
+
+    let (status, series_a) = post_json(
+        &app,
+        "/v1/equity/instruments",
+        json!({
+            "entity_id": entity_id,
+            "issuer_legal_entity_id": issuer_legal_entity_id,
+            "symbol": "SERIES_A",
+            "kind": "preferred_equity",
+            "authorized_units": 5000000_i64,
+            "issue_price_cents": 100_i64,
+            "terms": {},
+        }),
+        &token,
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "create preferred instrument: {series_a}"
+    );
+    let series_a_instrument_id = series_a["instrument_id"].as_str().unwrap();
+
+    // 4. Seed positions.
+    let (status, founder_position) = post_json(
+        &app,
+        "/v1/equity/positions/adjust",
+        json!({
+            "entity_id": entity_id,
+            "issuer_legal_entity_id": issuer_legal_entity_id,
+            "holder_id": founder_holder_id,
+            "instrument_id": common_instrument_id,
+            "quantity_delta": 8000000_i64,
+        }),
+        &token,
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "create founder position: {founder_position}"
+    );
+
+    let (status, safe_position) = post_json(
+        &app,
+        "/v1/equity/positions/adjust",
+        json!({
+            "entity_id": entity_id,
+            "issuer_legal_entity_id": issuer_legal_entity_id,
+            "holder_id": investor_holder_id,
+            "instrument_id": safe_instrument_id,
+            "quantity_delta": 0_i64,
+            "principal_delta_cents": 2000000_i64,
+            "source_reference": "SAFE-2026-001",
+        }),
+        &token,
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "create safe position: {safe_position}"
+    );
+
+    // 5. Create round and apply terms.
+    let (status, round) = post_json(
+        &app,
+        "/v1/equity/rounds",
+        json!({
+            "entity_id": entity_id,
+            "issuer_legal_entity_id": issuer_legal_entity_id,
+            "name": "Series A",
+            "pre_money_cents": 800000000_i64,
+            "round_price_cents": 100_i64,
+            "target_raise_cents": 100000000_i64,
+            "conversion_target_instrument_id": series_a_instrument_id,
+            "metadata": {"lead": "OpenAlpha Capital"},
+        }),
+        &token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "create round: {round}");
+    let round_id = round["round_id"].as_str().unwrap();
+
+    let (status, rules) = post_json(
+        &app,
+        &format!("/v1/equity/rounds/{round_id}/apply-terms"),
+        json!({
+            "entity_id": entity_id,
+            "anti_dilution_method": "none",
+            "conversion_precedence": ["safe"],
+            "protective_provisions": {},
+        }),
+        &token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "apply round terms: {rules}");
+    assert!(rules["rule_set_id"].as_str().is_some());
+
+    // 6. Set up board meeting + passed resolution for board approval gating.
+    let (status, director_one) = post_json(
+        &app,
+        "/v1/contacts",
+        json!({
+            "entity_id": entity_id,
+            "contact_type": "individual",
+            "name": "Director One",
+            "category": "board_member",
+        }),
+        &token,
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "create director one: {director_one}"
+    );
+    let director_one_id = director_one["contact_id"].as_str().unwrap();
+
+    let (status, director_two) = post_json(
+        &app,
+        "/v1/contacts",
+        json!({
+            "entity_id": entity_id,
+            "contact_type": "individual",
+            "name": "Director Two",
+            "category": "board_member",
+        }),
+        &token,
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "create director two: {director_two}"
+    );
+    let director_two_id = director_two["contact_id"].as_str().unwrap();
+
+    let (status, gov_body) = post_json(
+        &app,
+        "/v1/governance-bodies",
+        json!({
+            "entity_id": entity_id,
+            "body_type": "board_of_directors",
+            "name": "Board of Directors",
+            "quorum_rule": "majority",
+            "voting_method": "per_capita",
+        }),
+        &token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "create board body: {gov_body}");
+    let body_id = gov_body["body_id"].as_str().unwrap();
     let e_query = format!("entity_id={entity_id}");
 
-    // submit-review
-    let (status, body) = post_json(
+    let (status, seat_one) = post_json(
         &app,
-        &format!("/v1/share-transfers/{transfer_id}/submit-review?{e_query}"),
-        json!({}),
-        &token,
-    )
-    .await;
-    assert_eq!(status, StatusCode::OK, "submit-review: {body}");
-    assert_eq!(body["status"], "pending_bylaws_review");
-
-    // bylaws-review
-    let (status, body) = post_json(
-        &app,
-        &format!("/v1/share-transfers/{transfer_id}/bylaws-review?{e_query}"),
-        json!({ "approved": true, "reviewer": "Legal Team" }),
-        &token,
-    )
-    .await;
-    assert_eq!(status, StatusCode::OK, "bylaws-review: {body}");
-    assert_eq!(body["status"], "pending_rofr");
-
-    // rofr-decision (waive ROFR)
-    let (status, body) = post_json(
-        &app,
-        &format!("/v1/share-transfers/{transfer_id}/rofr-decision?{e_query}"),
-        json!({ "offered": true, "waived": true }),
-        &token,
-    )
-    .await;
-    assert_eq!(status, StatusCode::OK, "rofr-decision: {body}");
-    assert_eq!(body["status"], "pending_board_approval");
-    assert_eq!(body["rofr_waived"], true);
-
-    // approve
-    let (status, body) = post_json(
-        &app,
-        &format!("/v1/share-transfers/{transfer_id}/approve?{e_query}"),
-        json!({}),
-        &token,
-    )
-    .await;
-    assert_eq!(status, StatusCode::OK, "approve: {body}");
-    assert_eq!(body["status"], "approved");
-
-    // execute
-    let (status, body) = post_json(
-        &app,
-        &format!("/v1/share-transfers/{transfer_id}/execute?{e_query}"),
-        json!({}),
-        &token,
-    )
-    .await;
-    assert_eq!(status, StatusCode::OK, "execute transfer: {body}");
-    assert_eq!(body["status"], "executed");
-
-    // 9. Create funding round
-    let (status, body) = post_json(
-        &app,
-        "/v1/funding-rounds",
+        &format!("/v1/governance-bodies/{body_id}/seats?{e_query}"),
         json!({
-            "entity_id": entity_id,
-            "round_name": "Seed Round",
-            "pre_money_valuation_cents": 10000000_i64,
+            "holder_id": director_one_id,
+            "role": "chair",
+            "voting_power": 1,
         }),
         &token,
     )
     .await;
-    assert_eq!(status, StatusCode::OK, "create funding round: {body}");
-    assert!(body["funding_round_id"].as_str().is_some());
-    assert_eq!(body["round_name"], "Seed Round");
+    assert_eq!(status, StatusCode::OK, "create seat one: {seat_one}");
+    let seat_one_id = seat_one["seat_id"].as_str().unwrap();
+
+    let (status, seat_two) = post_json(
+        &app,
+        &format!("/v1/governance-bodies/{body_id}/seats?{e_query}"),
+        json!({
+            "holder_id": director_two_id,
+            "role": "member",
+            "voting_power": 1,
+        }),
+        &token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "create seat two: {seat_two}");
+    let seat_two_id = seat_two["seat_id"].as_str().unwrap();
+
+    let (status, meeting) = post_json(
+        &app,
+        "/v1/meetings",
+        json!({
+            "entity_id": entity_id,
+            "body_id": body_id,
+            "meeting_type": "board_meeting",
+            "title": "Series A Approval Meeting",
+            "scheduled_date": "2026-03-15",
+            "location": "Virtual",
+            "notice_days": 0,
+            "agenda_item_titles": ["Approve Series A round"],
+        }),
+        &token,
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "schedule approval meeting: {meeting}"
+    );
+    let meeting_id = meeting["meeting_id"].as_str().unwrap();
+
+    let (status, notice) = post_json(
+        &app,
+        &format!("/v1/meetings/{meeting_id}/notice?{e_query}"),
+        json!({}),
+        &token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "notice meeting: {notice}");
+
+    let (status, convene) = post_json(
+        &app,
+        &format!("/v1/meetings/{meeting_id}/convene?{e_query}"),
+        json!({
+            "present_seat_ids": [seat_one_id, seat_two_id]
+        }),
+        &token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "convene meeting: {convene}");
+
+    let (status, agenda_items) = get_json(
+        &app,
+        &format!("/v1/meetings/{meeting_id}/agenda-items?{e_query}"),
+        &token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "list agenda items: {agenda_items}");
+    let agenda_item_id = agenda_items.as_array().unwrap()[0]["agenda_item_id"]
+        .as_str()
+        .unwrap();
+
+    let (status, vote_one) = post_json(
+        &app,
+        &format!("/v1/meetings/{meeting_id}/agenda-items/{agenda_item_id}/vote?{e_query}"),
+        json!({
+            "voter_id": director_one_id,
+            "vote_value": "for",
+        }),
+        &token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "cast vote one: {vote_one}");
+
+    let (status, vote_two) = post_json(
+        &app,
+        &format!("/v1/meetings/{meeting_id}/agenda-items/{agenda_item_id}/vote?{e_query}"),
+        json!({
+            "voter_id": director_two_id,
+            "vote_value": "for",
+        }),
+        &token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "cast vote two: {vote_two}");
+
+    let (status, resolution) = post_json(
+        &app,
+        &format!("/v1/meetings/{meeting_id}/agenda-items/{agenda_item_id}/resolution?{e_query}"),
+        json!({
+            "resolution_text": "Resolved: approve Series A financing",
+        }),
+        &token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "compute resolution: {resolution}");
+    assert_eq!(resolution["passed"], true);
+    let resolution_id = resolution["resolution_id"].as_str().unwrap();
+
+    let (status, round_after_board_approval) = post_json(
+        &app,
+        &format!("/v1/equity/rounds/{round_id}/board-approve"),
+        json!({
+            "entity_id": entity_id,
+            "meeting_id": meeting_id,
+            "resolution_id": resolution_id,
+        }),
+        &token,
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "board approve round: {round_after_board_approval}"
+    );
+    assert_eq!(round_after_board_approval["status"], "board_approved");
+    assert_eq!(
+        round_after_board_approval["board_approval_resolution_id"],
+        resolution_id
+    );
+
+    // 7. Accept round with an authorized intent.
+    let (status, accept_intent) = post_json(
+        &app,
+        "/v1/execution/intents",
+        json!({
+            "entity_id": entity_id,
+            "intent_type": "equity.round.accept",
+            "authority_tier": "tier_2",
+            "description": "Accept approved Series A round",
+            "metadata": {"round_id": round_id},
+        }),
+        &token,
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "create accept intent: {accept_intent}"
+    );
+    let accept_intent_id = accept_intent["intent_id"].as_str().unwrap();
+
+    let (status, _) = post_json(
+        &app,
+        &format!("/v1/intents/{accept_intent_id}/evaluate?{e_query}"),
+        json!({}),
+        &token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    let (status, _) = post_json(
+        &app,
+        &format!("/v1/intents/{accept_intent_id}/authorize?{e_query}"),
+        json!({}),
+        &token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    let (status, accepted_round) = post_json(
+        &app,
+        &format!("/v1/equity/rounds/{round_id}/accept"),
+        json!({
+            "entity_id": entity_id,
+            "intent_id": accept_intent_id,
+            "accepted_by_contact_id": founder_contact_id,
+        }),
+        &token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "accept round: {accepted_round}");
+    assert_eq!(accepted_round["status"], "accepted");
+
+    let (status, preview) = post_json(
+        &app,
+        "/v1/equity/conversions/preview",
+        json!({
+            "entity_id": entity_id,
+            "round_id": round_id,
+        }),
+        &token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "preview conversion: {preview}");
+    assert_eq!(preview["round_id"], round_id);
+    assert_eq!(preview["target_instrument_id"], series_a_instrument_id);
+    assert!(!preview["lines"].as_array().unwrap().is_empty());
+    assert!(preview["total_new_units"].as_i64().unwrap_or(0) > 0);
+
+    // 8. Execute conversion with authorized execute intent.
+    let (status, execute_intent) = post_json(
+        &app,
+        "/v1/execution/intents",
+        json!({
+            "entity_id": entity_id,
+            "intent_type": "equity.round.execute_conversion",
+            "authority_tier": "tier_2",
+            "description": "Execute Series A conversion",
+            "metadata": {"round_id": round_id},
+        }),
+        &token,
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "create execute intent: {execute_intent}"
+    );
+    let execute_intent_id = execute_intent["intent_id"].as_str().unwrap();
+
+    let (status, _) = post_json(
+        &app,
+        &format!("/v1/intents/{execute_intent_id}/evaluate?{e_query}"),
+        json!({}),
+        &token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    let (status, _) = post_json(
+        &app,
+        &format!("/v1/intents/{execute_intent_id}/authorize?{e_query}"),
+        json!({}),
+        &token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    let (status, execution) = post_json(
+        &app,
+        "/v1/equity/conversions/execute",
+        json!({
+            "entity_id": entity_id,
+            "round_id": round_id,
+            "intent_id": execute_intent_id,
+            "source_reference": "series-a-close-2026-02-01",
+        }),
+        &token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "execute conversion: {execution}");
+    assert!(execution["conversion_execution_id"].as_str().is_some());
+    assert!(
+        execution["total_new_units"].as_i64().unwrap_or(0)
+            >= preview["total_new_units"].as_i64().unwrap_or(0)
+    );
+
+    // 9. Read cap table in as-converted basis.
+    let (status, cap_table) = get_json(
+        &app,
+        &format!("/v1/entities/{entity_id}/cap-table?basis=as_converted"),
+        &token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "get cap table: {cap_table}");
+    assert_eq!(cap_table["entity_id"], entity_id);
+    assert_eq!(cap_table["issuer_legal_entity_id"], issuer_legal_entity_id);
+    assert_eq!(cap_table["basis"], "as_converted");
+    assert!(cap_table["total_units"].as_i64().unwrap_or(0) >= 8020000_i64);
+    assert!(cap_table["holders"].as_array().unwrap().len() >= 2);
+
+    // 10. Persisted state checks: round closed, intents executed, conversion record stored.
+    let layout = api_rs::store::RepoLayout::new(tmp.path().to_path_buf());
+    let parsed_entity_id: EntityId = entity_id.parse().unwrap();
+    let store = EntityStore::open(&layout, ws_id, parsed_entity_id).unwrap();
+
+    let parsed_round_id: EquityRoundId = round_id.parse().unwrap();
+    let persisted_round = store.read::<EquityRound>("main", parsed_round_id).unwrap();
+    assert_eq!(persisted_round.status(), EquityRoundStatus::Closed);
+
+    let parsed_accept_intent_id: IntentId = accept_intent_id.parse().unwrap();
+    let persisted_accept_intent = store
+        .read::<Intent>("main", parsed_accept_intent_id)
+        .unwrap();
+    assert_eq!(persisted_accept_intent.status(), IntentStatus::Executed);
+
+    let parsed_execute_intent_id: IntentId = execute_intent_id.parse().unwrap();
+    let persisted_execute_intent = store
+        .read::<Intent>("main", parsed_execute_intent_id)
+        .unwrap();
+    assert_eq!(persisted_execute_intent.status(), IntentStatus::Executed);
+
+    let parsed_conversion_id: ConversionExecutionId = execution["conversion_execution_id"]
+        .as_str()
+        .unwrap()
+        .parse()
+        .unwrap();
+    let persisted_conversion = store
+        .read::<ConversionExecution>("main", parsed_conversion_id)
+        .unwrap();
+    assert_eq!(persisted_conversion.equity_round_id(), parsed_round_id);
+}
+
+#[tokio::test]
+async fn test_cap_table_100_investors() {
+    let tmp = TempDir::new().unwrap();
+    let app = build_app(&tmp);
+    let (ws_id, entity_id, token) = create_entity(&app).await;
+    let _ = ws_id;
+
+    let (status, legal_entity) = post_json(
+        &app,
+        "/v1/equity/entities",
+        json!({
+            "entity_id": entity_id,
+            "linked_entity_id": entity_id,
+            "name": "OpenAI HoldCo",
+            "role": "operating",
+        }),
+        &token,
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "create legal entity: {legal_entity}"
+    );
+    let issuer_legal_entity_id = legal_entity["legal_entity_id"].as_str().unwrap();
+
+    let (status, common) = post_json(
+        &app,
+        "/v1/equity/instruments",
+        json!({
+            "entity_id": entity_id,
+            "issuer_legal_entity_id": issuer_legal_entity_id,
+            "symbol": "COMMON",
+            "kind": "common_equity",
+            "authorized_units": 50000000_i64,
+            "terms": {
+                "example_structure": "openai_hybrid_like_control_plus_economic_entities"
+            },
+        }),
+        &token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "create common instrument: {common}");
+    let common_instrument_id = common["instrument_id"].as_str().unwrap();
+
+    let mut expected_total: i64 = 0;
+    for i in 0..100_i64 {
+        let investor_name = format!("Investor {i:03}");
+        let investor_email = format!("investor{i:03}@example.com");
+
+        let (status, contact) = post_json(
+            &app,
+            "/v1/contacts",
+            json!({
+                "entity_id": entity_id,
+                "contact_type": "organization",
+                "name": investor_name,
+                "email": investor_email,
+                "category": "investor",
+            }),
+            &token,
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "create contact {i}: {contact}");
+        let contact_id = contact["contact_id"].as_str().unwrap();
+
+        let (status, holder) = post_json(
+            &app,
+            "/v1/equity/holders",
+            json!({
+                "entity_id": entity_id,
+                "contact_id": contact_id,
+                "name": format!("Investor {i:03}"),
+                "holder_type": "fund",
+            }),
+            &token,
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "create holder {i}: {holder}");
+        let holder_id = holder["holder_id"].as_str().unwrap();
+
+        let shares = 1000_i64 + i;
+        expected_total += shares;
+        let (status, position) = post_json(
+            &app,
+            "/v1/equity/positions/adjust",
+            json!({
+                "entity_id": entity_id,
+                "issuer_legal_entity_id": issuer_legal_entity_id,
+                "holder_id": holder_id,
+                "instrument_id": common_instrument_id,
+                "quantity_delta": shares,
+                "source_reference": format!("seed-allocation-{i:03}"),
+            }),
+            &token,
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "create position {i}: {position}");
+    }
+
+    let (status, cap_table) =
+        get_json(&app, &format!("/v1/entities/{entity_id}/cap-table"), &token).await;
+    assert_eq!(status, StatusCode::OK, "get cap table: {cap_table}");
+    assert_eq!(cap_table["entity_id"], entity_id);
+    assert_eq!(cap_table["issuer_legal_entity_id"], issuer_legal_entity_id);
+    assert_eq!(
+        cap_table["total_units"].as_i64().unwrap_or(-1),
+        expected_total
+    );
+    assert_eq!(cap_table["holders"].as_array().unwrap().len(), 100);
 }
 
 // ── 4. Governance lifecycle ──────────────────────────────────────────────
@@ -618,6 +1498,7 @@ async fn test_governance_lifecycle() {
     let meeting_id = meeting_body["meeting_id"].as_str().unwrap();
     assert_eq!(meeting_body["title"], "Q1 Board Meeting");
     assert_eq!(meeting_body["status"], "draft");
+    assert_eq!(meeting_body["agenda_item_ids"].as_array().unwrap().len(), 2);
 
     // 5. Send notice
     let (status, body) = post_json(
@@ -644,25 +1525,64 @@ async fn test_governance_lifecycle() {
     assert_eq!(body["status"], "convened");
     assert_eq!(body["quorum_met"], "met");
 
-    // Get agenda items by listing the meeting — we need agenda item IDs.
-    // The agenda items were written into the git store. We need to find them.
-    // We'll use a GET on list_meetings to indirectly find them, but actually the
-    // agenda items aren't returned in the meeting list response. We need to look
-    // at the formation docs to find agenda items. For this test, we'll read the
-    // meeting's agenda items from the governance API if available. Since there's
-    // no direct agenda-item-list endpoint, we'll use the vote/resolution routes
-    // which take item_id as a path param. We need to discover the item IDs.
-    //
-    // Workaround: We know the meeting was created with agenda items. Let's list
-    // votes endpoint to find item IDs — but that won't give us IDs either.
-    // In practice, the agenda item IDs are generated server-side and not returned.
-    //
-    // Since the schedule_meeting response doesn't include agenda item IDs, and
-    // there's no list-agenda-items endpoint, we skip per-item voting and just
-    // test adjourn. In a real scenario the client would store item IDs from
-    // another call.
+    // 7. List agenda items and grab the first item ID
+    let (status, agenda) = get_json(
+        &app,
+        &format!("/v1/meetings/{meeting_id}/agenda-items?{e_query}"),
+        &token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "list agenda items: {agenda}");
+    let agenda_items = agenda.as_array().unwrap();
+    assert_eq!(agenda_items.len(), 2);
+    let agenda_item_id = agenda_items[0]["agenda_item_id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
 
-    // 7. Adjourn meeting
+    // 8. Cast votes on the first agenda item
+    let (status, vote_body) = post_json(
+        &app,
+        &format!("/v1/meetings/{meeting_id}/agenda-items/{agenda_item_id}/vote?{e_query}"),
+        json!({
+            "voter_id": contact_id_1,
+            "vote_value": "for"
+        }),
+        &token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "cast vote 1: {vote_body}");
+
+    let (status, vote_body) = post_json(
+        &app,
+        &format!("/v1/meetings/{meeting_id}/agenda-items/{agenda_item_id}/vote?{e_query}"),
+        json!({
+            "voter_id": contact_id_2,
+            "vote_value": "for"
+        }),
+        &token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "cast vote 2: {vote_body}");
+
+    // 9. Compute resolution from votes
+    let (status, resolution_body) = post_json(
+        &app,
+        &format!("/v1/meetings/{meeting_id}/agenda-items/{agenda_item_id}/resolution?{e_query}"),
+        json!({
+            "resolution_text": "Resolved: approve FY budget."
+        }),
+        &token,
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "compute resolution: {resolution_body}"
+    );
+    assert_eq!(resolution_body["passed"], true);
+
+    // 10. Adjourn meeting
     let (status, body) = post_json(
         &app,
         &format!("/v1/meetings/{meeting_id}/adjourn?{e_query}"),
@@ -713,12 +1633,8 @@ async fn test_treasury_lifecycle() {
     let rev_id = rev_acct["account_id"].as_str().unwrap();
 
     // 2. List accounts
-    let (status, accounts) = get_json(
-        &app,
-        &format!("/v1/entities/{entity_id}/accounts"),
-        &token,
-    )
-    .await;
+    let (status, accounts) =
+        get_json(&app, &format!("/v1/entities/{entity_id}/accounts"), &token).await;
     assert_eq!(status, StatusCode::OK, "list accounts: {accounts}");
     assert_eq!(accounts.as_array().unwrap().len(), 2);
 
@@ -957,12 +1873,8 @@ async fn test_contacts() {
     assert_eq!(status, StatusCode::OK, "create contact 2: {c2}");
 
     // 2. List contacts
-    let (status, contacts) = get_json(
-        &app,
-        &format!("/v1/entities/{entity_id}/contacts"),
-        &token,
-    )
-    .await;
+    let (status, contacts) =
+        get_json(&app, &format!("/v1/entities/{entity_id}/contacts"), &token).await;
     assert_eq!(status, StatusCode::OK, "list contacts: {contacts}");
     let arr = contacts.as_array().unwrap();
     assert_eq!(arr.len(), 2);
@@ -1047,24 +1959,14 @@ async fn test_not_found_errors() {
     let token = make_token(WorkspaceId::new());
 
     // GET formation for nonexistent entity
-    let (status, body) = get_json(
-        &app,
-        &format!("/v1/formations/{fake_id}"),
-        &token,
-    )
-    .await;
+    let (status, body) = get_json(&app, &format!("/v1/formations/{fake_id}"), &token).await;
     assert!(
         status == StatusCode::NOT_FOUND || status == StatusCode::UNPROCESSABLE_ENTITY,
         "expected 404 or 422 for missing entity, got {status}: {body}"
     );
 
     // GET cap table for nonexistent entity
-    let (status, body) = get_json(
-        &app,
-        &format!("/v1/entities/{fake_id}/cap-table"),
-        &token,
-    )
-    .await;
+    let (status, body) = get_json(&app, &format!("/v1/entities/{fake_id}/cap-table"), &token).await;
     assert!(
         status == StatusCode::NOT_FOUND || status == StatusCode::INTERNAL_SERVER_ERROR,
         "expected 404 or 500 for missing cap table, got {status}: {body}"
@@ -1127,74 +2029,464 @@ async fn test_unbalanced_journal_entry_rejected() {
 }
 
 #[tokio::test]
-async fn test_invalid_transfer_fsm_transition() {
+async fn test_conversion_preview_requires_round_terms() {
+    let tmp = TempDir::new().unwrap();
+    let app = build_app(&tmp);
+    let (ws_id, entity_id, token) = create_entity(&app).await;
+    let _ = ws_id;
+
+    let (_, legal_entity) = post_json(
+        &app,
+        "/v1/equity/entities",
+        json!({
+            "entity_id": entity_id,
+            "linked_entity_id": entity_id,
+            "name": "Validation Corp",
+            "role": "operating",
+        }),
+        &token,
+    )
+    .await;
+    let issuer_legal_entity_id = legal_entity["legal_entity_id"].as_str().unwrap();
+
+    let (_, target_instrument) = post_json(
+        &app,
+        "/v1/equity/instruments",
+        json!({
+            "entity_id": entity_id,
+            "issuer_legal_entity_id": issuer_legal_entity_id,
+            "symbol": "SERIES_A",
+            "kind": "preferred_equity",
+            "terms": {},
+        }),
+        &token,
+    )
+    .await;
+    let target_instrument_id = target_instrument["instrument_id"].as_str().unwrap();
+
+    let (_, round) = post_json(
+        &app,
+        "/v1/equity/rounds",
+        json!({
+            "entity_id": entity_id,
+            "issuer_legal_entity_id": issuer_legal_entity_id,
+            "name": "Series A",
+            "round_price_cents": 100_i64,
+            "target_raise_cents": 10000000_i64,
+            "conversion_target_instrument_id": target_instrument_id,
+            "metadata": {},
+        }),
+        &token,
+    )
+    .await;
+    let round_id = round["round_id"].as_str().unwrap();
+
+    // Preview conversion without round terms applied should fail.
+    let (status, body) = post_json(
+        &app,
+        "/v1/equity/conversions/preview",
+        json!({
+            "entity_id": entity_id,
+            "round_id": round_id,
+        }),
+        &token,
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::BAD_REQUEST,
+        "preview without terms should be 400: {body}"
+    );
+}
+
+#[tokio::test]
+async fn test_execute_conversion_requires_round_acceptance() {
     let tmp = TempDir::new().unwrap();
     let app = build_app(&tmp);
     let (ws_id, entity_id, token) = create_entity(&app).await;
     let _ = ws_id;
     let e_query = format!("entity_id={entity_id}");
 
-    // Use a synthetic share class ID (formation doesn't create share classes)
-    let sc_id = uuid::Uuid::new_v4().to_string();
-
-    // Create contacts
-    let (_, from_c) = post_json(
+    let (_, legal_entity) = post_json(
         &app,
-        "/v1/contacts",
+        "/v1/equity/entities",
         json!({
             "entity_id": entity_id,
-            "contact_type": "individual",
-            "name": "Seller",
-            "category": "employee",
+            "linked_entity_id": entity_id,
+            "name": "Acceptance Validation Corp",
+            "role": "operating",
         }),
         &token,
     )
     .await;
-    let from_id = from_c["contact_id"].as_str().unwrap();
+    let issuer_legal_entity_id = legal_entity["legal_entity_id"].as_str().unwrap();
 
-    let (_, to_c) = post_json(
+    let (_, target_instrument) = post_json(
         &app,
-        "/v1/contacts",
+        "/v1/equity/instruments",
         json!({
             "entity_id": entity_id,
-            "contact_type": "individual",
-            "name": "Buyer",
-            "category": "investor",
+            "issuer_legal_entity_id": issuer_legal_entity_id,
+            "symbol": "SERIES_A",
+            "kind": "preferred_equity",
+            "terms": {},
         }),
         &token,
     )
     .await;
-    let to_id = to_c["contact_id"].as_str().unwrap();
+    let target_instrument_id = target_instrument["instrument_id"].as_str().unwrap();
 
-    // Create transfer (in draft status)
-    let (_, transfer) = post_json(
+    let (_, round) = post_json(
         &app,
-        "/v1/share-transfers",
+        "/v1/equity/rounds",
         json!({
             "entity_id": entity_id,
-            "share_class_id": sc_id,
-            "from_contact_id": from_id,
-            "to_contact_id": to_id,
-            "transfer_type": "secondary_sale",
-            "shares": 100,
+            "issuer_legal_entity_id": issuer_legal_entity_id,
+            "name": "Series A",
+            "round_price_cents": 100_i64,
+            "target_raise_cents": 10000000_i64,
+            "conversion_target_instrument_id": target_instrument_id,
+            "metadata": {},
         }),
         &token,
     )
     .await;
-    let transfer_id = transfer["transfer_id"].as_str().unwrap();
+    let round_id = round["round_id"].as_str().unwrap();
 
-    // Try to execute a draft transfer (should fail — must go through review first)
+    let (status, _) = post_json(
+        &app,
+        &format!("/v1/equity/rounds/{round_id}/apply-terms"),
+        json!({
+            "entity_id": entity_id,
+            "anti_dilution_method": "none",
+            "conversion_precedence": ["safe"],
+            "protective_provisions": {},
+        }),
+        &token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    let (status, execute_intent) = post_json(
+        &app,
+        "/v1/execution/intents",
+        json!({
+            "entity_id": entity_id,
+            "intent_type": "equity.round.execute_conversion",
+            "authority_tier": "tier_2",
+            "description": "Execute Series A conversion",
+            "metadata": {"round_id": round_id},
+        }),
+        &token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let execute_intent_id = execute_intent["intent_id"].as_str().unwrap();
+
+    let (status, _) = post_json(
+        &app,
+        &format!("/v1/intents/{execute_intent_id}/evaluate?{e_query}"),
+        json!({}),
+        &token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    let (status, _) = post_json(
+        &app,
+        &format!("/v1/intents/{execute_intent_id}/authorize?{e_query}"),
+        json!({}),
+        &token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    // Execute conversion without board approval/acceptance should fail.
     let (status, body) = post_json(
         &app,
-        &format!("/v1/share-transfers/{transfer_id}/execute?{e_query}"),
-        json!({}),
+        "/v1/equity/conversions/execute",
+        json!({
+            "entity_id": entity_id,
+            "round_id": round_id,
+            "intent_id": execute_intent_id,
+        }),
         &token,
     )
     .await;
     assert_eq!(
         status,
         StatusCode::UNPROCESSABLE_ENTITY,
-        "executing draft transfer should be 422: {body}"
+        "execute before round acceptance should be 422: {body}"
+    );
+}
+
+#[tokio::test]
+async fn test_board_approve_round_validation_guards() {
+    let tmp = TempDir::new().unwrap();
+    let app = build_app(&tmp);
+    let (_ws_id, entity_id, token) = create_entity(&app).await;
+    let (_issuer_legal_entity_id, round_id) =
+        create_round_with_terms(&app, &entity_id, &token).await;
+
+    let (llc_meeting_id, llc_resolution_id) =
+        create_resolution_for_body(&app, &entity_id, &token, "llc_member_vote", &["for"]).await;
+
+    let (status, non_board_body) = post_json(
+        &app,
+        &format!("/v1/equity/rounds/{round_id}/board-approve"),
+        json!({
+            "entity_id": entity_id,
+            "meeting_id": llc_meeting_id,
+            "resolution_id": llc_resolution_id,
+        }),
+        &token,
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "board approval with non-board body should fail: {non_board_body}"
+    );
+
+    let (failed_meeting_id, failed_resolution_id) = create_resolution_for_body(
+        &app,
+        &entity_id,
+        &token,
+        "board_of_directors",
+        &["for", "against"],
+    )
+    .await;
+
+    let (status, failed_resolution) = post_json(
+        &app,
+        &format!("/v1/equity/rounds/{round_id}/board-approve"),
+        json!({
+            "entity_id": entity_id,
+            "meeting_id": failed_meeting_id,
+            "resolution_id": failed_resolution_id,
+        }),
+        &token,
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "board approval with failed resolution should fail: {failed_resolution}"
+    );
+
+    let (meeting_id, _resolution_id) =
+        create_resolution_for_body(&app, &entity_id, &token, "board_of_directors", &["for"]).await;
+    let missing_resolution_id = "00000000-0000-0000-0000-000000000001";
+    let (status, missing_resolution) = post_json(
+        &app,
+        &format!("/v1/equity/rounds/{round_id}/board-approve"),
+        json!({
+            "entity_id": entity_id,
+            "meeting_id": meeting_id,
+            "resolution_id": missing_resolution_id,
+        }),
+        &token,
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::NOT_FOUND,
+        "board approval with missing resolution should be 404: {missing_resolution}"
+    );
+}
+
+#[tokio::test]
+async fn test_accept_round_requires_board_approval_and_valid_intent() {
+    let tmp = TempDir::new().unwrap();
+    let app = build_app(&tmp);
+    let (_ws_id, entity_id, token) = create_entity(&app).await;
+    let (_issuer_legal_entity_id, round_id) =
+        create_round_with_terms(&app, &entity_id, &token).await;
+
+    let authorized_accept_intent_id =
+        create_authorized_round_intent(&app, &entity_id, &token, "equity.round.accept", &round_id)
+            .await;
+
+    let (status, pre_approval_accept) = post_json(
+        &app,
+        &format!("/v1/equity/rounds/{round_id}/accept"),
+        json!({
+            "entity_id": entity_id,
+            "intent_id": authorized_accept_intent_id,
+        }),
+        &token,
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "accept before board approval should fail: {pre_approval_accept}"
+    );
+
+    let (meeting_id, resolution_id) =
+        create_resolution_for_body(&app, &entity_id, &token, "board_of_directors", &["for"]).await;
+    let (status, board_approved_round) = post_json(
+        &app,
+        &format!("/v1/equity/rounds/{round_id}/board-approve"),
+        json!({
+            "entity_id": entity_id,
+            "meeting_id": meeting_id,
+            "resolution_id": resolution_id,
+        }),
+        &token,
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "board approval should succeed: {board_approved_round}"
+    );
+
+    let (status, draft_intent) = post_json(
+        &app,
+        "/v1/execution/intents",
+        json!({
+            "entity_id": entity_id,
+            "intent_type": "equity.round.accept",
+            "authority_tier": "tier_2",
+            "description": "Draft accept intent",
+            "metadata": {"round_id": round_id},
+        }),
+        &token,
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "create draft intent: {draft_intent}"
+    );
+    let draft_intent_id = draft_intent["intent_id"].as_str().unwrap();
+
+    let (status, unauthorized_accept) = post_json(
+        &app,
+        &format!("/v1/equity/rounds/{round_id}/accept"),
+        json!({
+            "entity_id": entity_id,
+            "intent_id": draft_intent_id,
+        }),
+        &token,
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "accept with non-authorized intent should fail: {unauthorized_accept}"
+    );
+
+    let wrong_type_intent_id = create_authorized_round_intent(
+        &app,
+        &entity_id,
+        &token,
+        "equity.round.execute_conversion",
+        &round_id,
+    )
+    .await;
+    let (status, wrong_type_accept) = post_json(
+        &app,
+        &format!("/v1/equity/rounds/{round_id}/accept"),
+        json!({
+            "entity_id": entity_id,
+            "intent_id": wrong_type_intent_id,
+        }),
+        &token,
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "accept with wrong intent type should fail: {wrong_type_accept}"
+    );
+
+    let wrong_round_accept_intent_id = create_authorized_round_intent(
+        &app,
+        &entity_id,
+        &token,
+        "equity.round.accept",
+        "00000000-0000-0000-0000-000000000002",
+    )
+    .await;
+    let (status, wrong_round_accept) = post_json(
+        &app,
+        &format!("/v1/equity/rounds/{round_id}/accept"),
+        json!({
+            "entity_id": entity_id,
+            "intent_id": wrong_round_accept_intent_id,
+        }),
+        &token,
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "accept with wrong round metadata should fail: {wrong_round_accept}"
+    );
+}
+
+#[tokio::test]
+async fn test_execute_conversion_requires_execute_intent_type() {
+    let tmp = TempDir::new().unwrap();
+    let app = build_app(&tmp);
+    let (_ws_id, entity_id, token) = create_entity(&app).await;
+    let (_issuer_legal_entity_id, round_id) =
+        create_round_with_terms(&app, &entity_id, &token).await;
+
+    let (meeting_id, resolution_id) =
+        create_resolution_for_body(&app, &entity_id, &token, "board_of_directors", &["for"]).await;
+    let (status, board_approved_round) = post_json(
+        &app,
+        &format!("/v1/equity/rounds/{round_id}/board-approve"),
+        json!({
+            "entity_id": entity_id,
+            "meeting_id": meeting_id,
+            "resolution_id": resolution_id,
+        }),
+        &token,
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "board approval should succeed: {board_approved_round}"
+    );
+
+    let accept_intent_id =
+        create_authorized_round_intent(&app, &entity_id, &token, "equity.round.accept", &round_id)
+            .await;
+    let (status, accepted_round) = post_json(
+        &app,
+        &format!("/v1/equity/rounds/{round_id}/accept"),
+        json!({
+            "entity_id": entity_id,
+            "intent_id": accept_intent_id,
+        }),
+        &token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "accept round: {accepted_round}");
+
+    let wrong_execute_intent_id =
+        create_authorized_round_intent(&app, &entity_id, &token, "equity.round.accept", &round_id)
+            .await;
+    let (status, wrong_execute_intent) = post_json(
+        &app,
+        "/v1/equity/conversions/execute",
+        json!({
+            "entity_id": entity_id,
+            "round_id": round_id,
+            "intent_id": wrong_execute_intent_id,
+        }),
+        &token,
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "execute with wrong intent type should fail: {wrong_execute_intent}"
     );
 }
 
@@ -1311,21 +2603,11 @@ async fn test_full_cross_domain_lifecycle() {
     assert_eq!(status, StatusCode::OK);
 
     // Verify all entities visible via list endpoints
-    let (s, contacts) = get_json(
-        &app,
-        &format!("/v1/entities/{entity_id}/contacts"),
-        &token,
-    )
-    .await;
+    let (s, contacts) = get_json(&app, &format!("/v1/entities/{entity_id}/contacts"), &token).await;
     assert_eq!(s, StatusCode::OK);
     assert!(!contacts.as_array().unwrap().is_empty());
 
-    let (s, intents) = get_json(
-        &app,
-        &format!("/v1/entities/{entity_id}/intents"),
-        &token,
-    )
-    .await;
+    let (s, intents) = get_json(&app, &format!("/v1/entities/{entity_id}/intents"), &token).await;
     assert_eq!(s, StatusCode::OK);
     assert!(!intents.as_array().unwrap().is_empty());
 
@@ -1366,7 +2648,10 @@ async fn test_webhook_lifecycle() {
     let app = build_app(&tmp);
     unsafe {
         std::env::set_var("STRIPE_WEBHOOK_SECRET", "stripe-secret-test");
-        std::env::set_var("STRIPE_BILLING_WEBHOOK_SECRET", "stripe-billing-secret-test");
+        std::env::set_var(
+            "STRIPE_BILLING_WEBHOOK_SECRET",
+            "stripe-billing-secret-test",
+        );
     }
 
     // 1. Stripe webhook
@@ -1386,7 +2671,9 @@ async fn test_webhook_lifecycle() {
         .unwrap();
     let response = app.clone().oneshot(req).await.unwrap();
     let status = response.status();
-    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
     let body: Value = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
     assert_eq!(status, StatusCode::OK, "stripe webhook: {body}");
     assert_eq!(body["received"], true);
@@ -1409,7 +2696,9 @@ async fn test_webhook_lifecycle() {
         .unwrap();
     let response = app.clone().oneshot(req).await.unwrap();
     let status = response.status();
-    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
     let body: Value = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
     assert_eq!(status, StatusCode::OK, "stripe billing webhook: {body}");
     assert_eq!(body["received"], true);
@@ -1425,7 +2714,9 @@ async fn test_webhook_lifecycle() {
         .unwrap();
     let response = app.clone().oneshot(req).await.unwrap();
     let status = response.status();
-    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
     let body: Value = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
     assert_eq!(status, StatusCode::OK, "empty webhook: {body}");
     assert_eq!(body["received"], true);
@@ -1458,6 +2749,11 @@ async fn test_auth_workspace_lifecycle() {
     let api_key = body["api_key"].as_str().unwrap().to_owned();
     let _key_id = body["api_key_id"].as_str().unwrap();
 
+    // 1b. Direct API-key bearer auth works without token exchange.
+    let (status, body) = get_json(&app, "/v1/api-keys", &api_key).await;
+    assert_eq!(status, StatusCode::OK, "direct api-key auth failed: {body}");
+    assert_eq!(body.as_array().unwrap().len(), 1);
+
     // Create a token for this specific workspace
     let ws_id: WorkspaceId = ws_id_str.parse().unwrap();
     let ws_token = make_token(ws_id);
@@ -1479,12 +2775,7 @@ async fn test_auth_workspace_lifecycle() {
     let second_key_id = body["key_id"].as_str().unwrap().to_owned();
 
     // 3. List API keys
-    let (status, body) = get_json(
-        &app,
-        "/v1/api-keys",
-        &ws_token,
-    )
-    .await;
+    let (status, body) = get_json(&app, "/v1/api-keys", &ws_token).await;
     assert_eq!(status, StatusCode::OK, "list api keys: {body}");
     let keys = body.as_array().unwrap();
     assert_eq!(keys.len(), 2, "should have 2 keys");
@@ -1568,12 +2859,7 @@ async fn test_agent_lifecycle() {
     assert_eq!(body["model"], "claude-sonnet-4-6");
 
     // 3. List agents
-    let (status, body) = get_json(
-        &app,
-        "/v1/agents",
-        &ws_token,
-    )
-    .await;
+    let (status, body) = get_json(&app, "/v1/agents", &ws_token).await;
     assert_eq!(status, StatusCode::OK, "list agents: {body}");
     let agents = body.as_array().unwrap();
     assert_eq!(agents.len(), 1);
@@ -1743,12 +3029,7 @@ async fn test_billing_lifecycle() {
     assert_eq!(body["plan_id"], "pro");
 
     // 4. Billing status
-    let (status, body) = get_json(
-        &app,
-        "/v1/billing/status",
-        &ws_token,
-    )
-    .await;
+    let (status, body) = get_json(&app, "/v1/billing/status", &ws_token).await;
     assert_eq!(status, StatusCode::OK, "billing status: {body}");
     assert_eq!(body["plan"], "pro");
 
@@ -1768,24 +3049,13 @@ async fn test_billing_lifecycle() {
     assert_eq!(body["status"], "active");
 
     // 6. Get subscription
-    let (status, body) = get_json(
-        &app,
-        &format!("/v1/subscriptions/{sub_id}"),
-        &ws_token,
-    )
-    .await;
+    let (status, body) = get_json(&app, &format!("/v1/subscriptions/{sub_id}"), &ws_token).await;
     assert_eq!(status, StatusCode::OK, "get subscription: {body}");
     assert_eq!(body["subscription_id"], sub_id);
     assert_eq!(body["plan"], "enterprise");
 
     // 7. Tick subscriptions
-    let (status, body) = post_json(
-        &app,
-        "/v1/subscriptions/tick",
-        json!({}),
-        &ws_token,
-    )
-    .await;
+    let (status, body) = post_json(&app, "/v1/subscriptions/tick", json!({}), &ws_token).await;
     assert_eq!(status, StatusCode::OK, "tick subscriptions: {body}");
     assert!(body["workspaces_processed"].as_i64().is_some());
 
@@ -1898,13 +3168,7 @@ async fn test_admin_endpoints() {
     assert_eq!(status, StatusCode::OK, "config: {body}");
 
     // 9. Demo seed
-    let (status, body) = post_json(
-        &app,
-        "/v1/demo/seed",
-        json!({}),
-        &ws_token,
-    )
-    .await;
+    let (status, body) = post_json(&app, "/v1/demo/seed", json!({}), &ws_token).await;
     assert_eq!(status, StatusCode::OK, "demo seed: {body}");
 
     // 10. Digests
@@ -1938,12 +3202,7 @@ async fn test_branch_prune() {
     assert_eq!(status, StatusCode::CREATED, "create branch: {body}");
 
     // 2. Verify it exists
-    let (status, body) = get_json(
-        &app,
-        &format!("/v1/branches?{e_query}"),
-        &token,
-    )
-    .await;
+    let (status, body) = get_json(&app, &format!("/v1/branches?{e_query}"), &token).await;
     assert_eq!(status, StatusCode::OK);
     let branches: Vec<&Value> = body
         .as_array()
@@ -1964,12 +3223,7 @@ async fn test_branch_prune() {
     assert_eq!(status, StatusCode::NO_CONTENT, "prune branch");
 
     // 4. Verify it's gone
-    let (status, body) = get_json(
-        &app,
-        &format!("/v1/branches?{e_query}"),
-        &token,
-    )
-    .await;
+    let (status, body) = get_json(&app, &format!("/v1/branches?{e_query}"), &token).await;
     assert_eq!(status, StatusCode::OK);
     let branches: Vec<&Value> = body
         .as_array()
@@ -2005,7 +3259,8 @@ async fn test_three_way_merge_via_api() {
         let layout = api_rs::store::RepoLayout::new(tmp.path().to_path_buf());
         let ws: uuid::Uuid = ws_id.into_uuid();
         let eid: uuid::Uuid = entity_id.parse().unwrap();
-        let store = api_rs::store::entity_store::EntityStore::open(&layout, ws.into(), eid.into()).unwrap();
+        let store =
+            api_rs::store::entity_store::EntityStore::open(&layout, ws.into(), eid.into()).unwrap();
 
         // Commit a new file on main.
         store
@@ -2060,9 +3315,19 @@ async fn test_openapi_spec() {
     assert_eq!(spec["info"]["title"], "The Corporation API");
 
     let paths = spec["paths"].as_object().unwrap();
-    assert!(paths.len() >= 100, "expected >= 100 paths, got {}", paths.len());
+    assert!(
+        paths.len() >= 100,
+        "expected >= 100 paths, got {}",
+        paths.len()
+    );
 
     // Count total operations (each path can have multiple methods)
-    let total_ops: usize = paths.values().map(|v| v.as_object().map_or(0, |m| m.len())).sum();
-    assert!(total_ops >= 115, "expected >= 115 operations, got {total_ops}");
+    let total_ops: usize = paths
+        .values()
+        .map(|v| v.as_object().map_or(0, |m| m.len()))
+        .sum();
+    assert!(
+        total_ops >= 115,
+        "expected >= 115 operations, got {total_ops}"
+    );
 }

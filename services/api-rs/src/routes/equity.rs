@@ -1,299 +1,377 @@
 //! Equity HTTP routes.
 //!
-//! Endpoints for cap tables, equity grants, SAFE notes, valuations,
-//! share transfers, and funding rounds.
+//! Canonical cap-table operations for holders, legal entities, control links,
+//! instruments, positions, rounds, and conversion previews/execution.
 
 use axum::{
+    Json, Router,
     extract::{Path, Query, State},
     routing::{get, post},
-    Json, Router,
 };
-use chrono::NaiveDate;
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
+use std::collections::{HashMap, HashSet};
 
 use super::AppState;
-use crate::auth::{RequireEquityRead, RequireEquityWrite, RequireEquityTransfer};
+use crate::auth::{RequireEquityRead, RequireEquityWrite};
 use crate::domain::equity::{
-    funding_round::FundingRound,
-    grant::EquityGrant,
-    safe_note::SafeNote,
-    share_class::ShareClass,
-    transfer::ShareTransfer,
-    types::*,
-    valuation::Valuation,
+    control_link::{ControlLink, ControlType},
+    conversion_execution::ConversionExecution,
+    holder::{Holder, HolderType},
+    instrument::{Instrument, InstrumentKind, InstrumentStatus},
+    legal_entity::{LegalEntity, LegalEntityRole},
+    position::{Position, PositionStatus},
+    round::{EquityRound, EquityRoundStatus},
+    rule_set::{AntiDilutionMethod, EquityRuleSet},
+};
+use crate::domain::execution::{intent::Intent, types::IntentStatus};
+use crate::domain::governance::{
+    body::GovernanceBody, meeting::Meeting, resolution::Resolution, types::BodyType,
 };
 use crate::domain::ids::{
-    ContactId, EntityId, EquityGrantId, FundingRoundId, SafeNoteId, ShareClassId, TransferId,
-    ValuationId, WorkspaceId,
+    ContactId, ControlLinkId, ConversionExecutionId, EntityId, EquityRoundId, EquityRuleSetId,
+    HolderId, InstrumentId, IntentId, LegalEntityId, MeetingId, PositionId, ResolutionId,
+    WorkspaceId,
 };
-use crate::domain::treasury::types::Cents;
 use crate::error::AppError;
+use crate::git::commit::FileWrite;
 use crate::store::entity_store::EntityStore;
+use crate::store::stored_entity::StoredEntity;
 
-// ── Request types ────────────────────────────────────────────────────
+// ── Queries ──────────────────────────────────────────────────────────
 
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct CreateGrantRequest {
-    pub entity_id: EntityId,
-    #[serde(default)]
-    pub grant_type: Option<GrantType>,
-    pub shares: i64,
-    pub recipient_name: String,
-    #[serde(default)]
-    pub recipient_type: Option<RecipientType>,
-    #[serde(default)]
-    pub share_class_id: Option<ShareClassId>,
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum CapTableBasis {
+    #[default]
+    Outstanding,
+    AsConverted,
+    FullyDiluted,
 }
 
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct CreateSafeNoteRequest {
-    pub entity_id: EntityId,
-    pub investor_name: String,
-    pub principal_amount_cents: i64,
-    pub safe_type: SafeType,
+#[derive(Debug, Deserialize)]
+pub struct CapTableQuery {
     #[serde(default)]
-    pub valuation_cap_cents: Option<i64>,
+    pub basis: CapTableBasis,
     #[serde(default)]
-    pub discount_rate: Option<f64>,
-    #[serde(default)]
-    pub pro_rata_rights: Option<bool>,
+    pub issuer_legal_entity_id: Option<LegalEntityId>,
 }
 
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct CreateValuationRequest {
+#[derive(Debug, Deserialize)]
+pub struct ControlMapQuery {
     pub entity_id: EntityId,
-    pub valuation_type: ValuationType,
-    pub methodology: ValuationMethodology,
-    #[serde(default)]
-    pub fmv_per_share_cents: Option<i64>,
-    #[serde(default)]
-    pub enterprise_value_cents: Option<i64>,
-    pub effective_date: NaiveDate,
+    pub root_entity_id: LegalEntityId,
 }
 
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct CreateTransferRequest {
+#[derive(Debug, Deserialize)]
+pub struct DilutionPreviewQuery {
     pub entity_id: EntityId,
-    pub share_class_id: ShareClassId,
-    pub from_contact_id: ContactId,
-    pub to_contact_id: ContactId,
-    pub transfer_type: TransferType,
-    pub shares: i64,
-    #[serde(default)]
-    pub price_per_share_cents: Option<i64>,
-    #[serde(default)]
-    pub governing_doc_type: Option<GoverningDocType>,
-    #[serde(default)]
-    pub transferee_rights: Option<TransfereeRights>,
+    pub round_id: EquityRoundId,
 }
 
-#[derive(Deserialize)]
+// ── Request types ───────────────────────────────────────────────────
+
+#[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct CreateFundingRoundRequest {
+pub struct CreateHolderRequest {
     pub entity_id: EntityId,
-    pub round_name: String,
+    pub contact_id: ContactId,
     #[serde(default)]
-    pub pre_money_valuation_cents: Option<i64>,
+    pub linked_entity_id: Option<EntityId>,
+    pub name: String,
+    pub holder_type: HolderType,
     #[serde(default)]
-    pub lead_investor_id: Option<ContactId>,
+    pub external_reference: Option<String>,
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct BylawsReviewRequest {
-    pub approved: bool,
+pub struct CreateLegalEntityRequest {
+    pub entity_id: EntityId,
+    #[serde(default)]
+    pub linked_entity_id: Option<EntityId>,
+    pub name: String,
+    pub role: LegalEntityRole,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CreateControlLinkRequest {
+    pub entity_id: EntityId,
+    pub parent_legal_entity_id: LegalEntityId,
+    pub child_legal_entity_id: LegalEntityId,
+    pub control_type: ControlType,
+    #[serde(default)]
+    pub voting_power_bps: Option<u32>,
     #[serde(default)]
     pub notes: Option<String>,
-    #[serde(default)]
-    pub reviewer: Option<String>,
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct RofrDecisionRequest {
+pub struct CreateInstrumentRequest {
+    pub entity_id: EntityId,
+    pub issuer_legal_entity_id: LegalEntityId,
+    pub symbol: String,
+    pub kind: InstrumentKind,
     #[serde(default)]
-    pub offered: bool,
+    pub authorized_units: Option<i64>,
     #[serde(default)]
-    pub waived: bool,
+    pub issue_price_cents: Option<i64>,
+    #[serde(default)]
+    pub terms: serde_json::Value,
 }
 
-// ── Response types ───────────────────────────────────────────────────
-
-#[derive(Serialize)]
-pub struct ShareClassSummary {
-    pub share_class_id: ShareClassId,
-    pub class_code: String,
-    pub stock_type: StockType,
-    pub authorized: i64,
-    pub outstanding: i64,
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AdjustPositionRequest {
+    pub entity_id: EntityId,
+    pub issuer_legal_entity_id: LegalEntityId,
+    pub holder_id: HolderId,
+    pub instrument_id: InstrumentId,
+    pub quantity_delta: i64,
+    #[serde(default)]
+    pub principal_delta_cents: i64,
+    #[serde(default)]
+    pub source_reference: Option<String>,
 }
 
-#[derive(Serialize)]
-pub struct HolderSummary {
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CreateRoundRequest {
+    pub entity_id: EntityId,
+    pub issuer_legal_entity_id: LegalEntityId,
     pub name: String,
-    pub recipient_type: RecipientType,
-    pub shares: i64,
-    pub share_class_id: ShareClassId,
+    #[serde(default)]
+    pub pre_money_cents: Option<i64>,
+    #[serde(default)]
+    pub round_price_cents: Option<i64>,
+    #[serde(default)]
+    pub target_raise_cents: Option<i64>,
+    #[serde(default)]
+    pub conversion_target_instrument_id: Option<InstrumentId>,
+    #[serde(default)]
+    pub metadata: serde_json::Value,
 }
 
-#[derive(Serialize)]
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ApplyRoundTermsRequest {
+    pub entity_id: EntityId,
+    pub anti_dilution_method: AntiDilutionMethod,
+    #[serde(default)]
+    pub conversion_precedence: Vec<InstrumentKind>,
+    #[serde(default)]
+    pub protective_provisions: serde_json::Value,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BoardApproveRoundRequest {
+    pub entity_id: EntityId,
+    pub meeting_id: MeetingId,
+    pub resolution_id: ResolutionId,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AcceptRoundRequest {
+    pub entity_id: EntityId,
+    pub intent_id: IntentId,
+    #[serde(default)]
+    pub accepted_by_contact_id: Option<ContactId>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PreviewConversionRequest {
+    pub entity_id: EntityId,
+    pub round_id: EquityRoundId,
+    #[serde(default)]
+    pub source_reference: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ExecuteConversionRequest {
+    pub entity_id: EntityId,
+    pub round_id: EquityRoundId,
+    pub intent_id: IntentId,
+    #[serde(default)]
+    pub source_reference: Option<String>,
+}
+
+// ── Response types ──────────────────────────────────────────────────
+
+#[derive(Debug, Serialize)]
+pub struct HolderResponse {
+    pub holder_id: HolderId,
+    pub contact_id: ContactId,
+    pub linked_entity_id: Option<EntityId>,
+    pub name: String,
+    pub holder_type: HolderType,
+    pub created_at: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct LegalEntityResponse {
+    pub legal_entity_id: LegalEntityId,
+    pub workspace_id: WorkspaceId,
+    pub linked_entity_id: Option<EntityId>,
+    pub name: String,
+    pub role: LegalEntityRole,
+    pub created_at: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ControlLinkResponse {
+    pub control_link_id: ControlLinkId,
+    pub parent_legal_entity_id: LegalEntityId,
+    pub child_legal_entity_id: LegalEntityId,
+    pub control_type: ControlType,
+    pub voting_power_bps: Option<u32>,
+    pub created_at: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct InstrumentResponse {
+    pub instrument_id: InstrumentId,
+    pub issuer_legal_entity_id: LegalEntityId,
+    pub symbol: String,
+    pub kind: InstrumentKind,
+    pub authorized_units: Option<i64>,
+    pub issue_price_cents: Option<i64>,
+    pub status: InstrumentStatus,
+    pub created_at: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct PositionResponse {
+    pub position_id: PositionId,
+    pub issuer_legal_entity_id: LegalEntityId,
+    pub holder_id: HolderId,
+    pub instrument_id: InstrumentId,
+    pub quantity_units: i64,
+    pub principal_cents: i64,
+    pub status: PositionStatus,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct RoundResponse {
+    pub round_id: EquityRoundId,
+    pub issuer_legal_entity_id: LegalEntityId,
+    pub name: String,
+    pub pre_money_cents: Option<i64>,
+    pub round_price_cents: Option<i64>,
+    pub target_raise_cents: Option<i64>,
+    pub conversion_target_instrument_id: Option<InstrumentId>,
+    pub rule_set_id: Option<EquityRuleSetId>,
+    pub board_approval_meeting_id: Option<MeetingId>,
+    pub board_approval_resolution_id: Option<ResolutionId>,
+    pub board_approved_at: Option<String>,
+    pub accepted_by_contact_id: Option<ContactId>,
+    pub accepted_at: Option<String>,
+    pub status: EquityRoundStatus,
+    pub created_at: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct RuleSetResponse {
+    pub rule_set_id: EquityRuleSetId,
+    pub anti_dilution_method: AntiDilutionMethod,
+    pub conversion_precedence: Vec<InstrumentKind>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct CapTableInstrumentSummary {
+    pub instrument_id: InstrumentId,
+    pub symbol: String,
+    pub kind: InstrumentKind,
+    pub authorized_units: Option<i64>,
+    pub issued_units: i64,
+    pub diluted_units: i64,
+}
+
+#[derive(Debug, Serialize)]
+pub struct CapTableHolderSummary {
+    pub holder_id: HolderId,
+    pub name: String,
+    pub outstanding_units: i64,
+    pub as_converted_units: i64,
+    pub fully_diluted_units: i64,
+    pub outstanding_bps: u32,
+    pub as_converted_bps: u32,
+    pub fully_diluted_bps: u32,
+}
+
+#[derive(Debug, Serialize)]
 pub struct CapTableResponse {
     pub entity_id: EntityId,
-    pub share_classes: Vec<ShareClassSummary>,
-    pub total_authorized: i64,
-    pub total_outstanding: i64,
-    pub holders: Vec<HolderSummary>,
-    pub outstanding_safes: usize,
+    pub issuer_legal_entity_id: LegalEntityId,
+    pub basis: CapTableBasis,
+    pub total_units: i64,
+    pub instruments: Vec<CapTableInstrumentSummary>,
+    pub holders: Vec<CapTableHolderSummary>,
+    pub generated_at: String,
 }
 
-#[derive(Serialize)]
-pub struct GrantResponse {
-    pub grant_id: EquityGrantId,
+#[derive(Debug, Serialize)]
+pub struct ConversionPreviewLine {
+    pub source_position_id: PositionId,
+    pub holder_id: HolderId,
+    pub instrument_id: InstrumentId,
+    pub principal_cents: i64,
+    pub conversion_price_cents: i64,
+    pub new_units: i64,
+    pub basis: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ConversionPreviewResponse {
     pub entity_id: EntityId,
-    pub share_class_id: ShareClassId,
-    pub grant_type: Option<GrantType>,
-    pub shares: i64,
-    pub recipient_name: String,
-    pub recipient_type: RecipientType,
-    pub status: GrantStatus,
-    pub created_at: String,
+    pub round_id: EquityRoundId,
+    pub target_instrument_id: InstrumentId,
+    pub lines: Vec<ConversionPreviewLine>,
+    pub anti_dilution_adjustment_units: i64,
+    pub total_new_units: i64,
 }
 
-#[derive(Serialize)]
-pub struct SafeNoteResponse {
-    pub safe_note_id: SafeNoteId,
-    pub entity_id: EntityId,
-    pub investor_name: String,
-    pub principal_amount_cents: i64,
-    pub safe_type: SafeType,
-    pub valuation_cap_cents: Option<i64>,
-    pub discount_rate: Option<f64>,
-    pub status: SafeStatus,
-    pub created_at: String,
+#[derive(Debug, Serialize)]
+pub struct ConversionExecuteResponse {
+    pub conversion_execution_id: ConversionExecutionId,
+    pub round_id: EquityRoundId,
+    pub converted_positions: usize,
+    pub target_positions_touched: usize,
+    pub total_new_units: i64,
 }
 
-#[derive(Serialize)]
-pub struct ValuationResponse {
-    pub valuation_id: ValuationId,
-    pub entity_id: EntityId,
-    pub valuation_type: ValuationType,
-    pub methodology: ValuationMethodology,
-    pub fmv_per_share_cents: Option<i64>,
-    pub enterprise_value_cents: Option<i64>,
-    pub effective_date: NaiveDate,
-    pub expiration_date: Option<NaiveDate>,
-    pub status: ValuationStatus,
-    pub created_at: String,
+#[derive(Debug, Serialize)]
+pub struct ControlMapEdge {
+    pub parent_legal_entity_id: LegalEntityId,
+    pub child_legal_entity_id: LegalEntityId,
+    pub control_type: ControlType,
+    pub voting_power_bps: Option<u32>,
 }
 
-#[derive(Serialize)]
-pub struct TransferResponse {
-    pub transfer_id: TransferId,
-    pub entity_id: EntityId,
-    pub share_class_id: ShareClassId,
-    pub from_contact_id: ContactId,
-    pub to_contact_id: ContactId,
-    pub transfer_type: TransferType,
-    pub shares: i64,
-    pub price_per_share_cents: Option<i64>,
-    pub status: TransferStatus,
-    pub rofr_waived: bool,
-    pub created_at: String,
+#[derive(Debug, Serialize)]
+pub struct ControlMapResponse {
+    pub root_entity_id: LegalEntityId,
+    pub traversed_entities: Vec<LegalEntityId>,
+    pub edges: Vec<ControlMapEdge>,
 }
 
-#[derive(Serialize)]
-pub struct FundingRoundResponse {
-    pub funding_round_id: FundingRoundId,
-    pub entity_id: EntityId,
-    pub round_name: String,
-    pub pre_money_valuation_cents: Option<i64>,
-    pub price_per_share_cents: Option<i64>,
-    pub shares_issued: Option<i64>,
-    pub status: FundingRoundStatus,
-    pub lead_investor_id: Option<ContactId>,
-    pub created_at: String,
+#[derive(Debug, Serialize)]
+pub struct DilutionPreviewResponse {
+    pub round_id: EquityRoundId,
+    pub issuer_legal_entity_id: LegalEntityId,
+    pub pre_round_outstanding_units: i64,
+    pub projected_new_units: i64,
+    pub projected_post_outstanding_units: i64,
+    pub projected_dilution_bps: u32,
 }
 
-// ── Conversion helpers ───────────────────────────────────────────────
-
-fn grant_to_response(g: &EquityGrant) -> GrantResponse {
-    GrantResponse {
-        grant_id: g.grant_id(),
-        entity_id: g.entity_id(),
-        share_class_id: g.share_class_id(),
-        grant_type: g.grant_type(),
-        shares: g.share_count().raw(),
-        recipient_name: g.recipient_name().to_owned(),
-        recipient_type: g.recipient_type(),
-        status: g.status(),
-        created_at: g.created_at().to_rfc3339(),
-    }
-}
-
-fn safe_to_response(s: &SafeNote) -> SafeNoteResponse {
-    SafeNoteResponse {
-        safe_note_id: s.safe_note_id(),
-        entity_id: s.entity_id(),
-        investor_name: s.investor_name().to_owned(),
-        principal_amount_cents: s.principal_amount_cents().raw(),
-        safe_type: s.safe_type(),
-        valuation_cap_cents: s.valuation_cap_cents().map(|c| c.raw()),
-        discount_rate: s.discount_rate(),
-        status: s.status(),
-        created_at: s.created_at().to_rfc3339(),
-    }
-}
-
-fn valuation_to_response(v: &Valuation) -> ValuationResponse {
-    ValuationResponse {
-        valuation_id: v.valuation_id(),
-        entity_id: v.entity_id(),
-        valuation_type: v.valuation_type(),
-        methodology: v.methodology(),
-        fmv_per_share_cents: v.fmv_per_share_cents().map(|c| c.raw()),
-        enterprise_value_cents: v.enterprise_value_cents().map(|c| c.raw()),
-        effective_date: v.effective_date(),
-        expiration_date: v.expiration_date(),
-        status: v.status(),
-        created_at: v.created_at().to_rfc3339(),
-    }
-}
-
-fn transfer_to_response(t: &ShareTransfer) -> TransferResponse {
-    TransferResponse {
-        transfer_id: t.transfer_id(),
-        entity_id: t.entity_id(),
-        share_class_id: t.share_class_id(),
-        from_contact_id: t.sender_contact_id(),
-        to_contact_id: t.to_contact_id(),
-        transfer_type: t.transfer_type(),
-        shares: t.share_count().raw(),
-        price_per_share_cents: t.price_per_share_cents().map(|c| c.raw()),
-        status: t.status(),
-        rofr_waived: t.rofr_waived(),
-        created_at: t.created_at().to_rfc3339(),
-    }
-}
-
-fn funding_round_to_response(r: &FundingRound) -> FundingRoundResponse {
-    FundingRoundResponse {
-        funding_round_id: r.funding_round_id(),
-        entity_id: r.entity_id(),
-        round_name: r.round_name().to_owned(),
-        pre_money_valuation_cents: r.pre_money_valuation_cents().map(|c| c.raw()),
-        price_per_share_cents: r.price_per_share_cents().map(|c| c.raw()),
-        shares_issued: r.shares_issued().map(|s| s.raw()),
-        status: r.status(),
-        lead_investor_id: r.lead_investor_id(),
-        created_at: r.created_at().to_rfc3339(),
-    }
-}
-
-// ── Helper to open a store ───────────────────────────────────────────
+// ── Helpers ──────────────────────────────────────────────────────────
 
 fn open_store<'a>(
     layout: &'a crate::store::RepoLayout,
@@ -308,940 +386,926 @@ fn open_store<'a>(
     })
 }
 
-// ── Handlers: Cap table ──────────────────────────────────────────────
+fn read_all<T: StoredEntity>(store: &EntityStore<'_>) -> Result<Vec<T>, AppError> {
+    let ids = store
+        .list_ids::<T>("main")
+        .map_err(|e| AppError::Internal(format!("list {}: {e}", T::storage_dir())))?;
 
-async fn get_cap_table(
-    RequireEquityRead(auth): RequireEquityRead,
-    State(state): State<AppState>,
-    Path(entity_id): Path<EntityId>,
-) -> Result<Json<CapTableResponse>, AppError> {
-    let workspace_id = auth.workspace_id();
-    if !auth.allows_entity(entity_id) {
-        return Err(AppError::Forbidden("entity access denied".to_owned()));
+    let mut out = Vec::new();
+    for id in ids {
+        let rec = store
+            .read::<T>("main", id)
+            .map_err(|e| AppError::Internal(format!("read {} {}: {e}", T::storage_dir(), id)))?;
+        out.push(rec);
+    }
+    Ok(out)
+}
+
+fn checked_bps(part: i64, total: i64) -> u32 {
+    if part <= 0 || total <= 0 {
+        return 0;
+    }
+    let p = i128::from(part) * 10_000_i128;
+    let t = i128::from(total);
+    let v = (p / t).clamp(0, i128::from(u32::MAX));
+    u32::try_from(v).unwrap_or(0)
+}
+
+fn hash_json<T: Serialize>(value: &T) -> String {
+    let bytes = serde_json::to_vec(value).unwrap_or_default();
+    let mut hasher = Sha256::new();
+    hasher.update(bytes);
+    hex::encode(hasher.finalize())
+}
+
+fn infer_issuer(
+    entity_id: EntityId,
+    legal_entities: &[LegalEntity],
+    explicit: Option<LegalEntityId>,
+) -> Result<LegalEntityId, AppError> {
+    if let Some(id) = explicit {
+        return Ok(id);
     }
 
-    let resp = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
-
-            // Read share classes
-            let class_ids = store.list_ids::<ShareClass>("main").map_err(|e| {
-                AppError::Internal(format!("list share classes: {e}"))
-            })?;
-
-            let mut classes = Vec::new();
-            for id in &class_ids {
-                let sc = store.read::<ShareClass>("main",*id).map_err(|e| {
-                    AppError::Internal(format!("read share class {id}: {e}"))
-                })?;
-                classes.push(sc);
-            }
-
-            // Read grants
-            let grant_ids = store.list_ids::<EquityGrant>("main").unwrap_or_default();
-            let mut grants = Vec::new();
-            for id in &grant_ids {
-                if let Ok(g) = store.read::<EquityGrant>("main",*id) {
-                    grants.push(g);
-                }
-            }
-
-            // Compute outstanding per class
-            let mut class_summaries = Vec::new();
-            let mut total_authorized: i64 = 0;
-            let mut total_outstanding: i64 = 0;
-
-            for sc in &classes {
-                let outstanding: i64 = grants
-                    .iter()
-                    .filter(|g| {
-                        g.share_class_id() == sc.share_class_id()
-                            && g.status() == GrantStatus::Issued
-                    })
-                    .map(|g| g.share_count().raw())
-                    .try_fold(0i64, |acc, v| acc.checked_add(v))
-                    .ok_or_else(|| AppError::Internal("integer overflow computing outstanding shares".to_owned()))?;
-
-                total_authorized = total_authorized
-                    .checked_add(sc.authorized_shares().raw())
-                    .ok_or_else(|| AppError::Internal("integer overflow computing total authorized shares".to_owned()))?;
-                total_outstanding = total_outstanding
-                    .checked_add(outstanding)
-                    .ok_or_else(|| AppError::Internal("integer overflow computing total outstanding shares".to_owned()))?;
-
-                class_summaries.push(ShareClassSummary {
-                    share_class_id: sc.share_class_id(),
-                    class_code: sc.class_code().to_owned(),
-                    stock_type: sc.stock_type(),
-                    authorized: sc.authorized_shares().raw(),
-                    outstanding,
-                });
-            }
-
-            // Build holder summaries
-            let holders: Vec<HolderSummary> = grants
+    legal_entities
+        .iter()
+        .find(|le| {
+            le.linked_entity_id() == Some(entity_id) && le.role() == LegalEntityRole::Operating
+        })
+        .or_else(|| {
+            legal_entities
                 .iter()
-                .filter(|g| g.status() == GrantStatus::Issued)
-                .map(|g| HolderSummary {
-                    name: g.recipient_name().to_owned(),
-                    recipient_type: g.recipient_type(),
-                    shares: g.share_count().raw(),
-                    share_class_id: g.share_class_id(),
-                })
-                .collect();
+                .find(|le| le.linked_entity_id() == Some(entity_id))
+        })
+        .map(|le| le.legal_entity_id())
+        .ok_or_else(|| {
+            AppError::NotFound(
+                "no legal entity linked to this entity_id; create one via POST /v1/equity/entities"
+                    .to_owned(),
+            )
+        })
+}
 
-            // Count outstanding SAFEs
-            let safe_ids = store.list_ids::<SafeNote>("main").unwrap_or_default();
-            let mut outstanding_safes = 0usize;
-            for id in &safe_ids {
-                if let Ok(s) = store.read::<SafeNote>("main",*id) {
-                    if s.status() == SafeStatus::Issued {
-                        outstanding_safes += 1;
+fn units_for_basis(kind: InstrumentKind, qty: i64, basis: CapTableBasis) -> i64 {
+    match basis {
+        CapTableBasis::Outstanding => match kind {
+            InstrumentKind::CommonEquity | InstrumentKind::PreferredEquity => qty,
+            _ => 0,
+        },
+        CapTableBasis::AsConverted => match kind {
+            InstrumentKind::CommonEquity
+            | InstrumentKind::PreferredEquity
+            | InstrumentKind::Safe
+            | InstrumentKind::ConvertibleNote
+            | InstrumentKind::Warrant => qty,
+            InstrumentKind::OptionGrant => 0,
+        },
+        CapTableBasis::FullyDiluted => qty,
+    }
+}
+
+fn compute_cap_table(
+    entity_id: EntityId,
+    issuer_legal_entity_id: LegalEntityId,
+    basis: CapTableBasis,
+    holders: &[Holder],
+    instruments: &[Instrument],
+    positions: &[Position],
+) -> CapTableResponse {
+    let issuer_instruments: Vec<&Instrument> = instruments
+        .iter()
+        .filter(|i| i.issuer_legal_entity_id() == issuer_legal_entity_id)
+        .collect();
+
+    let issuer_positions: Vec<&Position> = positions
+        .iter()
+        .filter(|p| p.issuer_legal_entity_id() == issuer_legal_entity_id)
+        .collect();
+
+    let mut holder_units_outstanding: HashMap<HolderId, i64> = HashMap::new();
+    let mut holder_units_as_converted: HashMap<HolderId, i64> = HashMap::new();
+    let mut holder_units_fully_diluted: HashMap<HolderId, i64> = HashMap::new();
+
+    let instrument_map: HashMap<InstrumentId, &Instrument> = issuer_instruments
+        .iter()
+        .map(|i| (i.instrument_id(), *i))
+        .collect();
+
+    for p in &issuer_positions {
+        let Some(inst) = instrument_map.get(&p.instrument_id()) else {
+            continue;
+        };
+        let qty = p.quantity_units().max(0);
+
+        *holder_units_outstanding.entry(p.holder_id()).or_insert(0) +=
+            units_for_basis(inst.kind(), qty, CapTableBasis::Outstanding);
+        *holder_units_as_converted.entry(p.holder_id()).or_insert(0) +=
+            units_for_basis(inst.kind(), qty, CapTableBasis::AsConverted);
+        *holder_units_fully_diluted.entry(p.holder_id()).or_insert(0) +=
+            units_for_basis(inst.kind(), qty, CapTableBasis::FullyDiluted);
+    }
+
+    // Include unallocated option reserves in fully diluted denominator only.
+    let mut unallocated_option_reserve: i64 = 0;
+    for inst in &issuer_instruments {
+        if inst.kind() == InstrumentKind::OptionGrant {
+            let issued = issuer_positions
+                .iter()
+                .filter(|p| p.instrument_id() == inst.instrument_id())
+                .map(|p| p.quantity_units().max(0))
+                .sum::<i64>();
+            if let Some(auth) = inst.authorized_units() {
+                unallocated_option_reserve += (auth - issued).max(0);
+            }
+        }
+    }
+
+    let total_outstanding = holder_units_outstanding.values().copied().sum::<i64>();
+    let total_as_converted = holder_units_as_converted.values().copied().sum::<i64>();
+    let total_fully_diluted =
+        holder_units_fully_diluted.values().copied().sum::<i64>() + unallocated_option_reserve;
+
+    let total_units = match basis {
+        CapTableBasis::Outstanding => total_outstanding,
+        CapTableBasis::AsConverted => total_as_converted,
+        CapTableBasis::FullyDiluted => total_fully_diluted,
+    };
+
+    let holder_name: HashMap<HolderId, String> = holders
+        .iter()
+        .map(|h| (h.holder_id(), h.name().to_owned()))
+        .collect();
+
+    let all_holder_ids: HashSet<HolderId> = holder_units_fully_diluted
+        .keys()
+        .chain(holder_units_as_converted.keys())
+        .chain(holder_units_outstanding.keys())
+        .copied()
+        .collect();
+
+    let mut holder_rows: Vec<CapTableHolderSummary> = all_holder_ids
+        .into_iter()
+        .map(|hid| {
+            let outstanding_units = *holder_units_outstanding.get(&hid).unwrap_or(&0);
+            let as_converted_units = *holder_units_as_converted.get(&hid).unwrap_or(&0);
+            let fully_diluted_units = *holder_units_fully_diluted.get(&hid).unwrap_or(&0);
+
+            CapTableHolderSummary {
+                holder_id: hid,
+                name: holder_name
+                    .get(&hid)
+                    .cloned()
+                    .unwrap_or_else(|| "unknown holder".to_owned()),
+                outstanding_units,
+                as_converted_units,
+                fully_diluted_units,
+                outstanding_bps: checked_bps(outstanding_units, total_outstanding),
+                as_converted_bps: checked_bps(as_converted_units, total_as_converted),
+                fully_diluted_bps: checked_bps(fully_diluted_units, total_fully_diluted),
+            }
+        })
+        .collect();
+    holder_rows.sort_by(|a, b| a.name.cmp(&b.name));
+
+    let mut instrument_rows = Vec::new();
+    for inst in issuer_instruments {
+        let issued_units = issuer_positions
+            .iter()
+            .filter(|p| p.instrument_id() == inst.instrument_id())
+            .map(|p| p.quantity_units().max(0))
+            .sum::<i64>();
+
+        let diluted_units = match inst.kind() {
+            InstrumentKind::OptionGrant => inst.authorized_units().unwrap_or(issued_units),
+            _ => issued_units,
+        };
+
+        instrument_rows.push(CapTableInstrumentSummary {
+            instrument_id: inst.instrument_id(),
+            symbol: inst.symbol().to_owned(),
+            kind: inst.kind(),
+            authorized_units: inst.authorized_units(),
+            issued_units,
+            diluted_units,
+        });
+    }
+    instrument_rows.sort_by(|a, b| a.symbol.cmp(&b.symbol));
+
+    CapTableResponse {
+        entity_id,
+        issuer_legal_entity_id,
+        basis,
+        total_units,
+        instruments: instrument_rows,
+        holders: holder_rows,
+        generated_at: chrono::Utc::now().to_rfc3339(),
+    }
+}
+
+fn compute_conversion_preview(
+    round: &EquityRound,
+    rule_set: &EquityRuleSet,
+    instruments: &[Instrument],
+    positions: &[Position],
+) -> Result<(Vec<ConversionPreviewLine>, i64), AppError> {
+    let round_price = round.round_price_cents().ok_or_else(|| {
+        AppError::BadRequest("round_price_cents is required before conversion".to_owned())
+    })?;
+    if round_price <= 0 {
+        return Err(AppError::BadRequest(
+            "round_price_cents must be positive".to_owned(),
+        ));
+    }
+
+    let inst_map: HashMap<InstrumentId, &Instrument> =
+        instruments.iter().map(|i| (i.instrument_id(), i)).collect();
+
+    let precedence: Vec<InstrumentKind> = if rule_set.conversion_precedence().is_empty() {
+        vec![
+            InstrumentKind::Safe,
+            InstrumentKind::ConvertibleNote,
+            InstrumentKind::Warrant,
+        ]
+    } else {
+        rule_set.conversion_precedence().to_vec()
+    };
+
+    let precedence_rank: HashMap<InstrumentKind, usize> = precedence
+        .iter()
+        .enumerate()
+        .map(|(idx, k)| (*k, idx))
+        .collect();
+
+    let mut lines: Vec<ConversionPreviewLine> = positions
+        .iter()
+        .filter_map(|p| {
+            let inst = inst_map.get(&p.instrument_id())?;
+            if inst.issuer_legal_entity_id() != round.issuer_legal_entity_id() {
+                return None;
+            }
+            match inst.kind() {
+                InstrumentKind::Safe
+                | InstrumentKind::ConvertibleNote
+                | InstrumentKind::Warrant => {}
+                _ => return None,
+            }
+
+            let terms = inst.terms();
+            let discount_bps = terms
+                .get("discount_bps")
+                .and_then(|v| v.as_u64())
+                .and_then(|v| u32::try_from(v).ok())
+                .unwrap_or(0)
+                .min(10_000);
+            let cap_price_cents = terms
+                .get("cap_price_cents")
+                .and_then(|v| v.as_i64())
+                .filter(|v| *v > 0);
+
+            let discounted_price = ((i128::from(round_price)
+                * i128::from(10_000_u32 - discount_bps))
+                / i128::from(10_000_u32)) as i64;
+            let discounted_price = discounted_price.max(1);
+
+            let mut conversion_price = round_price;
+            let mut basis = "round_price".to_owned();
+            if discount_bps > 0 && discounted_price < conversion_price {
+                conversion_price = discounted_price;
+                basis = "discount".to_owned();
+            }
+            if let Some(cap) = cap_price_cents {
+                if cap < conversion_price {
+                    conversion_price = cap;
+                    basis = "cap_price".to_owned();
+                }
+            }
+
+            let new_units = if p.principal_cents() > 0 {
+                p.principal_cents() / conversion_price
+            } else {
+                p.quantity_units().max(0)
+            }
+            .max(0);
+
+            Some(ConversionPreviewLine {
+                source_position_id: p.position_id(),
+                holder_id: p.holder_id(),
+                instrument_id: p.instrument_id(),
+                principal_cents: p.principal_cents(),
+                conversion_price_cents: conversion_price,
+                new_units,
+                basis,
+            })
+        })
+        .collect();
+
+    lines.sort_by_key(|line| {
+        let inst_kind = inst_map
+            .get(&line.instrument_id)
+            .map(|i| i.kind())
+            .unwrap_or(InstrumentKind::Safe);
+        *precedence_rank.get(&inst_kind).unwrap_or(&usize::MAX)
+    });
+
+    // Anti-dilution: compute additional preferred units under configured method.
+    let anti_dilution_adjustment_units = match rule_set.anti_dilution_method() {
+        AntiDilutionMethod::None => 0,
+        AntiDilutionMethod::FullRatchet => {
+            let mut adj = 0i64;
+            for p in positions {
+                let Some(inst) = inst_map.get(&p.instrument_id()) else {
+                    continue;
+                };
+                if inst.issuer_legal_entity_id() != round.issuer_legal_entity_id()
+                    || inst.kind() != InstrumentKind::PreferredEquity
+                {
+                    continue;
+                }
+                let Some(old_price) = inst.issue_price_cents() else {
+                    continue;
+                };
+                if old_price <= round_price {
+                    continue;
+                }
+                let qty = i128::from(p.quantity_units().max(0));
+                let old = i128::from(old_price);
+                let newp = i128::from(round_price);
+                let adjusted_qty = (qty * old) / newp;
+                let add = (adjusted_qty - qty).max(0);
+                adj = adj.saturating_add(i64::try_from(add).unwrap_or(i64::MAX));
+            }
+            adj
+        }
+        AntiDilutionMethod::BroadBasedWeightedAverage
+        | AntiDilutionMethod::NarrowBasedWeightedAverage => {
+            // Simplified WA preview using aggregate shares.
+            let mut existing = 0f64;
+            let mut existing_broad = 0f64;
+            for p in positions {
+                let Some(inst) = inst_map.get(&p.instrument_id()) else {
+                    continue;
+                };
+                if inst.issuer_legal_entity_id() != round.issuer_legal_entity_id() {
+                    continue;
+                }
+                match inst.kind() {
+                    InstrumentKind::CommonEquity | InstrumentKind::PreferredEquity => {
+                        existing += p.quantity_units().max(0) as f64;
+                        existing_broad += p.quantity_units().max(0) as f64;
+                    }
+                    InstrumentKind::OptionGrant => {
+                        if let Some(auth) = inst.authorized_units() {
+                            existing_broad += auth.max(0) as f64;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            let a = if rule_set.anti_dilution_method()
+                == AntiDilutionMethod::BroadBasedWeightedAverage
+            {
+                existing_broad
+            } else {
+                existing
+            };
+            if a <= 0.0 {
+                0
+            } else {
+                let c = round
+                    .target_raise_cents()
+                    .and_then(|raise| {
+                        if round_price > 0 {
+                            Some((raise as f64) / (round_price as f64))
+                        } else {
+                            None
+                        }
+                    })
+                    .unwrap_or(0.0);
+
+                // B approximates shares purchasable at prior preferred issue prices.
+                let mut adjustment = 0f64;
+                for p in positions {
+                    let Some(inst) = inst_map.get(&p.instrument_id()) else {
+                        continue;
+                    };
+                    if inst.issuer_legal_entity_id() != round.issuer_legal_entity_id()
+                        || inst.kind() != InstrumentKind::PreferredEquity
+                    {
+                        continue;
+                    }
+                    let Some(cp1) = inst.issue_price_cents() else {
+                        continue;
+                    };
+                    if cp1 <= 0 {
+                        continue;
+                    }
+                    let b = (round.target_raise_cents().unwrap_or(0) as f64) / (cp1 as f64);
+                    let cp2 = (cp1 as f64) * ((a + b) / (a + c).max(1.0));
+                    if cp2 <= 0.0 || cp2 >= (cp1 as f64) {
+                        continue;
+                    }
+                    let existing_qty = p.quantity_units().max(0) as f64;
+                    let add = existing_qty * ((cp1 as f64 / cp2) - 1.0);
+                    if add.is_finite() && add > 0.0 {
+                        adjustment += add;
                     }
                 }
+                adjustment.floor() as i64
             }
-
-            Ok::<_, AppError>(CapTableResponse {
-                entity_id,
-                share_classes: class_summaries,
-                total_authorized,
-                total_outstanding,
-                holders,
-                outstanding_safes,
-            })
         }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
-    ?;
+    };
 
-    Ok(Json(resp))
+    Ok((lines, anti_dilution_adjustment_units.max(0)))
 }
 
-// ── Handlers: Equity grants ──────────────────────────────────────────
+fn ensure_authorized_round_intent(
+    intent: &Intent,
+    entity_id: EntityId,
+    round_id: EquityRoundId,
+    expected_intent_type: &str,
+) -> Result<(), AppError> {
+    if intent.entity_id() != entity_id {
+        return Err(AppError::Forbidden(format!(
+            "intent {} belongs to a different entity",
+            intent.intent_id()
+        )));
+    }
+    if intent.status() != IntentStatus::Authorized {
+        return Err(AppError::UnprocessableEntity(format!(
+            "intent {} must be authorized",
+            intent.intent_id()
+        )));
+    }
+    if intent.intent_type() != expected_intent_type {
+        return Err(AppError::UnprocessableEntity(format!(
+            "intent {} must have type {}",
+            intent.intent_id(),
+            expected_intent_type
+        )));
+    }
+    let metadata_round_id = intent
+        .metadata()
+        .get("round_id")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| {
+            AppError::UnprocessableEntity(format!(
+                "intent {} metadata must include round_id",
+                intent.intent_id()
+            ))
+        })?;
+    if metadata_round_id != round_id.to_string() {
+        return Err(AppError::UnprocessableEntity(format!(
+            "intent {} round_id mismatch",
+            intent.intent_id()
+        )));
+    }
+    Ok(())
+}
 
-async fn create_grant(
+fn validate_board_resolution_for_round(
+    store: &EntityStore<'_>,
+    entity_id: EntityId,
+    meeting_id: MeetingId,
+    resolution_id: ResolutionId,
+) -> Result<(), AppError> {
+    let meeting = store
+        .read::<Meeting>("main", meeting_id)
+        .map_err(|_| AppError::NotFound(format!("meeting {} not found", meeting_id)))?;
+
+    let body = store
+        .read::<GovernanceBody>("main", meeting.body_id())
+        .map_err(|_| {
+            AppError::NotFound(format!("governance body {} not found", meeting.body_id()))
+        })?;
+
+    if body.entity_id() != entity_id {
+        return Err(AppError::BadRequest(format!(
+            "meeting {} does not belong to entity {}",
+            meeting_id, entity_id
+        )));
+    }
+    if body.body_type() != BodyType::BoardOfDirectors {
+        return Err(AppError::UnprocessableEntity(format!(
+            "meeting {} is not associated with a board_of_directors body",
+            meeting_id
+        )));
+    }
+
+    let resolution: Resolution = store
+        .read_resolution("main", meeting_id, resolution_id)
+        .map_err(|_| AppError::NotFound(format!("resolution {} not found", resolution_id)))?;
+    if !resolution.passed() {
+        return Err(AppError::UnprocessableEntity(format!(
+            "resolution {} did not pass",
+            resolution_id
+        )));
+    }
+
+    Ok(())
+}
+
+// ── Converters ───────────────────────────────────────────────────────
+
+fn holder_to_response(h: &Holder) -> HolderResponse {
+    HolderResponse {
+        holder_id: h.holder_id(),
+        contact_id: h.contact_id(),
+        linked_entity_id: h.linked_entity_id(),
+        name: h.name().to_owned(),
+        holder_type: h.holder_type(),
+        created_at: h.created_at().to_rfc3339(),
+    }
+}
+
+fn legal_entity_to_response(le: &LegalEntity) -> LegalEntityResponse {
+    LegalEntityResponse {
+        legal_entity_id: le.legal_entity_id(),
+        workspace_id: le.workspace_id(),
+        linked_entity_id: le.linked_entity_id(),
+        name: le.name().to_owned(),
+        role: le.role(),
+        created_at: le.created_at().to_rfc3339(),
+    }
+}
+
+fn control_link_to_response(l: &ControlLink) -> ControlLinkResponse {
+    ControlLinkResponse {
+        control_link_id: l.control_link_id(),
+        parent_legal_entity_id: l.parent_legal_entity_id(),
+        child_legal_entity_id: l.child_legal_entity_id(),
+        control_type: l.control_type(),
+        voting_power_bps: l.voting_power_bps(),
+        created_at: l.created_at().to_rfc3339(),
+    }
+}
+
+fn instrument_to_response(i: &Instrument) -> InstrumentResponse {
+    InstrumentResponse {
+        instrument_id: i.instrument_id(),
+        issuer_legal_entity_id: i.issuer_legal_entity_id(),
+        symbol: i.symbol().to_owned(),
+        kind: i.kind(),
+        authorized_units: i.authorized_units(),
+        issue_price_cents: i.issue_price_cents(),
+        status: i.status(),
+        created_at: i.created_at().to_rfc3339(),
+    }
+}
+
+fn position_to_response(p: &Position) -> PositionResponse {
+    PositionResponse {
+        position_id: p.position_id(),
+        issuer_legal_entity_id: p.issuer_legal_entity_id(),
+        holder_id: p.holder_id(),
+        instrument_id: p.instrument_id(),
+        quantity_units: p.quantity_units(),
+        principal_cents: p.principal_cents(),
+        status: p.status(),
+        updated_at: p.updated_at().to_rfc3339(),
+    }
+}
+
+fn round_to_response(r: &EquityRound) -> RoundResponse {
+    RoundResponse {
+        round_id: r.equity_round_id(),
+        issuer_legal_entity_id: r.issuer_legal_entity_id(),
+        name: r.name().to_owned(),
+        pre_money_cents: r.pre_money_cents(),
+        round_price_cents: r.round_price_cents(),
+        target_raise_cents: r.target_raise_cents(),
+        conversion_target_instrument_id: r.conversion_target_instrument_id(),
+        rule_set_id: r.rule_set_id(),
+        board_approval_meeting_id: r.board_approval_meeting_id(),
+        board_approval_resolution_id: r.board_approval_resolution_id(),
+        board_approved_at: r.board_approved_at().map(|v| v.to_rfc3339()),
+        accepted_by_contact_id: r.accepted_by_contact_id(),
+        accepted_at: r.accepted_at().map(|v| v.to_rfc3339()),
+        status: r.status(),
+        created_at: r.created_at().to_rfc3339(),
+    }
+}
+
+fn rule_set_to_response(r: &EquityRuleSet) -> RuleSetResponse {
+    RuleSetResponse {
+        rule_set_id: r.rule_set_id(),
+        anti_dilution_method: r.anti_dilution_method(),
+        conversion_precedence: r.conversion_precedence().to_vec(),
+    }
+}
+
+// ── Handlers ─────────────────────────────────────────────────────────
+
+async fn create_holder(
     RequireEquityWrite(auth): RequireEquityWrite,
     State(state): State<AppState>,
-    Json(req): Json<CreateGrantRequest>,
-) -> Result<Json<GrantResponse>, AppError> {
+    Json(req): Json<CreateHolderRequest>,
+) -> Result<Json<HolderResponse>, AppError> {
+    if req.name.trim().is_empty() {
+        return Err(AppError::BadRequest("holder name is required".to_owned()));
+    }
+
     let workspace_id = auth.workspace_id();
     let entity_id = req.entity_id;
     if !auth.allows_entity(entity_id) {
         return Err(AppError::Forbidden("entity access denied".to_owned()));
     }
 
-    let grant = tokio::task::spawn_blocking({
+    let holder = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
-
-            // Determine share class (use provided or find the first one)
-            let share_class_id = match req.share_class_id {
-                Some(id) => id,
-                None => {
-                    let ids = store.list_ids::<ShareClass>("main").map_err(|e| {
-                        AppError::Internal(format!("list share classes: {e}"))
-                    })?;
-                    *ids.first().ok_or_else(|| {
-                        AppError::BadRequest(
-                            "no share classes exist; provide share_class_id".into(),
-                        )
-                    })?
-                }
-            };
-
-            if req.shares <= 0 {
-                return Err(AppError::BadRequest("shares must be positive".to_owned()));
-            }
-
-            let grant_id = EquityGrantId::new();
-            let issuance_id = format!("grant-{}", grant_id);
-            let grant = EquityGrant::new(
-                grant_id,
-                entity_id,
-                share_class_id,
-                issuance_id,
-                req.recipient_name,
-                req.recipient_type.unwrap_or(RecipientType::NaturalPerson),
-                req.grant_type,
-                ShareCount::new(req.shares),
-                None,
-                None,
-                None,
-                None,
-                VotingRights::Granted,
-            )?;
-
-            let path = format!("cap-table/grants/{}.json", grant_id);
-            store
-                .write_json(
-                    "main",
-                    &path,
-                    &grant,
-                    &format!("Issue equity grant {grant_id}"),
-                )
-                .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
-
-            Ok::<_, AppError>(grant)
-        }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
-    ?;
-
-    Ok(Json(grant_to_response(&grant)))
-}
-
-// ── Handlers: SAFE notes ─────────────────────────────────────────────
-
-async fn create_safe_note(
-    RequireEquityWrite(auth): RequireEquityWrite,
-    State(state): State<AppState>,
-    Json(req): Json<CreateSafeNoteRequest>,
-) -> Result<Json<SafeNoteResponse>, AppError> {
-    let workspace_id = auth.workspace_id();
-    let entity_id = req.entity_id;
-    if !auth.allows_entity(entity_id) {
-        return Err(AppError::Forbidden("entity access denied".to_owned()));
-    }
-
-    let safe = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
-
-            let safe_id = SafeNoteId::new();
-            let valuation_cap = req.valuation_cap_cents.map(Cents::new);
-
-            let safe = SafeNote::new(
-                safe_id,
-                entity_id,
-                req.investor_name,
-                None, // investor_id
-                Cents::new(req.principal_amount_cents),
-                valuation_cap,
-                req.discount_rate,
-                req.safe_type,
-                req.pro_rata_rights.unwrap_or(false),
-                None, // document_id
-                "shares".to_string(),
-            )?;
-
-            let path = format!("safe-notes/{}.json", safe_id);
-            store
-                .write_json(
-                    "main",
-                    &path,
-                    &safe,
-                    &format!("Issue SAFE note {safe_id}"),
-                )
-                .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
-
-            Ok::<_, AppError>(safe)
-        }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
-    ?;
-
-    Ok(Json(safe_to_response(&safe)))
-}
-
-async fn list_safe_notes(
-    RequireEquityRead(auth): RequireEquityRead,
-    State(state): State<AppState>,
-    Path(entity_id): Path<EntityId>,
-) -> Result<Json<Vec<SafeNoteResponse>>, AppError> {
-    let workspace_id = auth.workspace_id();
-
-    let safes = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
-            let ids = store.list_ids::<SafeNote>("main").map_err(|e| {
-                AppError::Internal(format!("list safe notes: {e}"))
-            })?;
-
-            let mut results = Vec::new();
-            for id in ids {
-                let s = store.read::<SafeNote>("main",id).map_err(|e| {
-                    AppError::Internal(format!("read safe note {id}: {e}"))
-                })?;
-                results.push(safe_to_response(&s));
-            }
-            Ok::<_, AppError>(results)
-        }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
-    ?;
-
-    Ok(Json(safes))
-}
-
-async fn get_safe_note(
-    RequireEquityRead(auth): RequireEquityRead,
-    State(state): State<AppState>,
-    Path(safe_note_id): Path<SafeNoteId>,
-    Query(query): Query<super::EntityIdQuery>,
-) -> Result<Json<SafeNoteResponse>, AppError> {
-    let workspace_id = auth.workspace_id();
-    let entity_id = query.entity_id;
-    if !auth.allows_entity(entity_id) {
-        return Err(AppError::Forbidden("entity access denied".to_owned()));
-    }
-
-    let safe = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
-            store.read::<SafeNote>("main",safe_note_id).map_err(|_| {
-                AppError::NotFound(format!("safe note {} not found", safe_note_id))
-            })
-        }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
-    ?;
-
-    Ok(Json(safe_to_response(&safe)))
-}
-
-// ── Handlers: Valuations ─────────────────────────────────────────────
-
-async fn create_valuation(
-    RequireEquityWrite(auth): RequireEquityWrite,
-    State(state): State<AppState>,
-    Json(req): Json<CreateValuationRequest>,
-) -> Result<Json<ValuationResponse>, AppError> {
-    let workspace_id = auth.workspace_id();
-    let entity_id = req.entity_id;
-    if !auth.allows_entity(entity_id) {
-        return Err(AppError::Forbidden("entity access denied".to_owned()));
-    }
-
-    let val = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
-
-            let val_id = ValuationId::new();
-            let val = Valuation::new(
-                val_id,
-                entity_id,
-                workspace_id,
-                req.valuation_type,
-                req.effective_date,
-                req.fmv_per_share_cents.map(Cents::new),
-                req.enterprise_value_cents.map(Cents::new),
-                None, // hurdle_amount_cents
-                req.methodology,
-                None, // provider_contact_id
-                None, // report_document_id
+            let holder = Holder::new(
+                HolderId::new(),
+                req.contact_id,
+                req.linked_entity_id,
+                req.name,
+                req.holder_type,
+                req.external_reference,
             );
-
-            let path = format!("valuations/{}.json", val_id);
+            let path = format!("cap-table/holders/{}.json", holder.holder_id());
             store
                 .write_json(
                     "main",
                     &path,
-                    &val,
-                    &format!("Create valuation {val_id}"),
+                    &holder,
+                    &format!("Create holder {}", holder.holder_id()),
                 )
                 .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
-
-            Ok::<_, AppError>(val)
+            Ok::<_, AppError>(holder)
         }
     })
     .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
-    ?;
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
 
-    Ok(Json(valuation_to_response(&val)))
+    Ok(Json(holder_to_response(&holder)))
 }
 
-async fn list_valuations(
-    RequireEquityRead(auth): RequireEquityRead,
-    State(state): State<AppState>,
-    Path(entity_id): Path<EntityId>,
-) -> Result<Json<Vec<ValuationResponse>>, AppError> {
-    let workspace_id = auth.workspace_id();
-
-    let vals = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
-            let ids = store.list_ids::<Valuation>("main").map_err(|e| {
-                AppError::Internal(format!("list valuations: {e}"))
-            })?;
-
-            let mut results = Vec::new();
-            for id in ids {
-                let v = store.read::<Valuation>("main",id).map_err(|e| {
-                    AppError::Internal(format!("read valuation {id}: {e}"))
-                })?;
-                results.push(valuation_to_response(&v));
-            }
-            Ok::<_, AppError>(results)
-        }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
-    ?;
-
-    Ok(Json(vals))
-}
-
-async fn get_current_409a(
-    RequireEquityRead(auth): RequireEquityRead,
-    State(state): State<AppState>,
-    Path(entity_id): Path<EntityId>,
-) -> Result<Json<Option<ValuationResponse>>, AppError> {
-    let workspace_id = auth.workspace_id();
-
-    let result = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
-            let ids = store.list_ids::<Valuation>("main").map_err(|e| {
-                AppError::Internal(format!("list valuations: {e}"))
-            })?;
-
-            let mut current: Option<Valuation> = None;
-
-            for id in ids {
-                if let Ok(v) = store.read::<Valuation>("main",id) {
-                    if v.is_current_409a() {
-                        match &current {
-                            Some(existing) if v.effective_date() > existing.effective_date() => {
-                                current = Some(v);
-                            }
-                            None => {
-                                current = Some(v);
-                            }
-                            _ => {}
-                        }
-                    }
-                }
-            }
-
-            Ok::<_, AppError>(current.map(|v| valuation_to_response(&v)))
-        }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
-    ?;
-
-    Ok(Json(result))
-}
-
-async fn get_valuation(
-    RequireEquityRead(auth): RequireEquityRead,
-    State(state): State<AppState>,
-    Path(valuation_id): Path<ValuationId>,
-    Query(query): Query<super::EntityIdQuery>,
-) -> Result<Json<ValuationResponse>, AppError> {
-    let workspace_id = auth.workspace_id();
-    let entity_id = query.entity_id;
-    if !auth.allows_entity(entity_id) {
-        return Err(AppError::Forbidden("entity access denied".to_owned()));
-    }
-
-    let val = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
-            store.read::<Valuation>("main",valuation_id).map_err(|_| {
-                AppError::NotFound(format!("valuation {} not found", valuation_id))
-            })
-        }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
-    ?;
-
-    Ok(Json(valuation_to_response(&val)))
-}
-
-async fn approve_valuation(
+async fn create_legal_entity(
     RequireEquityWrite(auth): RequireEquityWrite,
     State(state): State<AppState>,
-    Path(valuation_id): Path<ValuationId>,
-    Query(query): Query<super::EntityIdQuery>,
-) -> Result<Json<ValuationResponse>, AppError> {
-    let workspace_id = auth.workspace_id();
-    let entity_id = query.entity_id;
-    if !auth.allows_entity(entity_id) {
-        return Err(AppError::Forbidden("entity access denied".to_owned()));
+    Json(req): Json<CreateLegalEntityRequest>,
+) -> Result<Json<LegalEntityResponse>, AppError> {
+    if req.name.trim().is_empty() {
+        return Err(AppError::BadRequest(
+            "legal entity name is required".to_owned(),
+        ));
     }
 
-    let val = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
-            let mut val = store.read::<Valuation>("main",valuation_id).map_err(|_| {
-                AppError::NotFound(format!("valuation {} not found", valuation_id))
-            })?;
-
-            val.approve(None)?;
-
-            let path = format!("valuations/{}.json", valuation_id);
-            store
-                .write_json("main", &path, &val, &format!("Approve valuation {valuation_id}"))
-                .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
-
-            Ok::<_, AppError>(val)
-        }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
-    ?;
-
-    Ok(Json(valuation_to_response(&val)))
-}
-
-async fn expire_valuation(
-    RequireEquityWrite(auth): RequireEquityWrite,
-    State(state): State<AppState>,
-    Path(valuation_id): Path<ValuationId>,
-    Query(query): Query<super::EntityIdQuery>,
-) -> Result<Json<ValuationResponse>, AppError> {
-    let workspace_id = auth.workspace_id();
-    let entity_id = query.entity_id;
-    if !auth.allows_entity(entity_id) {
-        return Err(AppError::Forbidden("entity access denied".to_owned()));
-    }
-
-    let val = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
-            let mut val = store.read::<Valuation>("main",valuation_id).map_err(|_| {
-                AppError::NotFound(format!("valuation {} not found", valuation_id))
-            })?;
-
-            val.expire()?;
-
-            let path = format!("valuations/{}.json", valuation_id);
-            store
-                .write_json("main", &path, &val, &format!("Expire valuation {valuation_id}"))
-                .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
-
-            Ok::<_, AppError>(val)
-        }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
-    ?;
-
-    Ok(Json(valuation_to_response(&val)))
-}
-
-#[derive(Serialize)]
-pub struct ExercisePriceCheckResponse {
-    pub entity_id: EntityId,
-    pub exercise_price_cents: i64,
-    pub current_fmv_cents: Option<i64>,
-    pub is_valid: bool,
-    pub message: String,
-}
-
-#[derive(Deserialize)]
-pub struct CheckExercisePriceRequest {
-    pub exercise_price_cents: i64,
-}
-
-async fn check_exercise_price(
-    RequireEquityRead(auth): RequireEquityRead,
-    State(state): State<AppState>,
-    Path(entity_id): Path<EntityId>,
-    Json(req): Json<CheckExercisePriceRequest>,
-) -> Result<Json<ExercisePriceCheckResponse>, AppError> {
-    let workspace_id = auth.workspace_id();
-
-    let response = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let exercise_cents = req.exercise_price_cents;
-        move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
-            let ids = store.list_ids::<Valuation>("main").map_err(|e| {
-                AppError::Internal(format!("list valuations: {e}"))
-            })?;
-
-            // Find current 409A
-            let mut current_fmv: Option<i64> = None;
-            for id in ids {
-                if let Ok(v) = store.read::<Valuation>("main",id) {
-                    if v.is_current_409a() {
-                        if let Some(fmv) = v.fmv_per_share_cents() {
-                            current_fmv = Some(fmv.raw());
-                        }
-                    }
-                }
-            }
-
-            let (is_valid, message) = match current_fmv {
-                Some(fmv) if exercise_cents >= fmv => (
-                    true,
-                    format!("Exercise price {} >= FMV {}: valid", exercise_cents, fmv),
-                ),
-                Some(fmv) => (
-                    false,
-                    format!(
-                        "Exercise price {} < FMV {}: must be at or above 409A FMV",
-                        exercise_cents, fmv
-                    ),
-                ),
-                None => (
-                    false,
-                    "No approved 409A valuation found — cannot validate exercise price".to_owned(),
-                ),
-            };
-
-            Ok::<_, AppError>(ExercisePriceCheckResponse {
-                entity_id,
-                exercise_price_cents: exercise_cents,
-                current_fmv_cents: current_fmv,
-                is_valid,
-                message,
-            })
-        }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
-    ?;
-
-    Ok(Json(response))
-}
-
-// ── Handlers: Share transfers ────────────────────────────────────────
-
-async fn create_transfer(
-    RequireEquityTransfer(auth): RequireEquityTransfer,
-    State(state): State<AppState>,
-    Json(req): Json<CreateTransferRequest>,
-) -> Result<Json<TransferResponse>, AppError> {
     let workspace_id = auth.workspace_id();
     let entity_id = req.entity_id;
     if !auth.allows_entity(entity_id) {
         return Err(AppError::Forbidden("entity access denied".to_owned()));
     }
 
-    let transfer = tokio::task::spawn_blocking({
+    let legal_entity = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
-
-            let transfer_id = TransferId::new();
-            let price = req.price_per_share_cents.map(Cents::new);
-            let transfer = ShareTransfer::new(
-                transfer_id,
-                entity_id,
+            let le = LegalEntity::new(
+                LegalEntityId::new(),
                 workspace_id,
-                req.share_class_id,
-                req.from_contact_id,
-                req.to_contact_id,
-                req.transfer_type,
-                ShareCount::new(req.shares),
-                price,
-                None, // relationship_to_holder
-                req.governing_doc_type
-                    .unwrap_or(GoverningDocType::Bylaws),
-                req.transferee_rights
-                    .unwrap_or(TransfereeRights::FullMember),
-            )?;
-
-            let path = format!("cap-table/transfers/{}.json", transfer_id);
+                req.linked_entity_id,
+                req.name,
+                req.role,
+            );
+            let path = format!("cap-table/entities/{}.json", le.legal_entity_id());
             store
                 .write_json(
                     "main",
                     &path,
-                    &transfer,
-                    &format!("Create transfer {transfer_id}"),
+                    &le,
+                    &format!("Create legal entity {}", le.legal_entity_id()),
                 )
                 .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
-
-            Ok::<_, AppError>(transfer)
+            Ok::<_, AppError>(le)
         }
     })
     .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
-    ?;
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
 
-    Ok(Json(transfer_to_response(&transfer)))
+    Ok(Json(legal_entity_to_response(&legal_entity)))
 }
 
-async fn get_transfer(
-    RequireEquityRead(auth): RequireEquityRead,
-    State(state): State<AppState>,
-    Path(transfer_id): Path<TransferId>,
-    Query(query): Query<super::EntityIdQuery>,
-) -> Result<Json<TransferResponse>, AppError> {
-    let workspace_id = auth.workspace_id();
-    let entity_id = query.entity_id;
-    if !auth.allows_entity(entity_id) {
-        return Err(AppError::Forbidden("entity access denied".to_owned()));
-    }
-
-    let transfer = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
-            let t = store.read::<ShareTransfer>("main",transfer_id).map_err(|e| {
-                AppError::NotFound(format!("transfer {transfer_id} not found: {e}"))
-            })?;
-            Ok::<_, AppError>(transfer_to_response(&t))
-        }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
-    ?;
-
-    Ok(Json(transfer))
-}
-
-async fn list_transfers(
-    RequireEquityRead(auth): RequireEquityRead,
-    State(state): State<AppState>,
-    Path(entity_id): Path<EntityId>,
-) -> Result<Json<Vec<TransferResponse>>, AppError> {
-    let workspace_id = auth.workspace_id();
-    if !auth.allows_entity(entity_id) {
-        return Err(AppError::Forbidden("entity access denied".to_owned()));
-    }
-
-    let transfers = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
-            let ids = store.list_ids::<ShareTransfer>("main").map_err(|e| {
-                AppError::Internal(format!("list transfers: {e}"))
-            })?;
-
-            let mut results = Vec::new();
-            for id in ids {
-                let t = store.read::<ShareTransfer>("main",id).map_err(|e| {
-                    AppError::Internal(format!("read transfer {id}: {e}"))
-                })?;
-                results.push(transfer_to_response(&t));
-            }
-            Ok::<_, AppError>(results)
-        }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
-    ?;
-
-    Ok(Json(transfers))
-}
-
-async fn submit_transfer_review(
-    RequireEquityTransfer(auth): RequireEquityTransfer,
-    State(state): State<AppState>,
-    Path(transfer_id): Path<TransferId>,
-    Query(query): Query<super::EntityIdQuery>,
-) -> Result<Json<TransferResponse>, AppError> {
-    let workspace_id = auth.workspace_id();
-    let entity_id = query.entity_id;
-    if !auth.allows_entity(entity_id) {
-        return Err(AppError::Forbidden("entity access denied".to_owned()));
-    }
-
-    let transfer = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
-            let mut t = store.read::<ShareTransfer>("main",transfer_id).map_err(|e| {
-                AppError::NotFound(format!("transfer {transfer_id} not found: {e}"))
-            })?;
-            t.submit_for_review()?;
-            let path = format!("cap-table/transfers/{}.json", transfer_id);
-            store
-                .write_json(
-                    "main",
-                    &path,
-                    &t,
-                    &format!("Submit transfer {transfer_id} for review"),
-                )
-                .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
-            Ok::<_, AppError>(transfer_to_response(&t))
-        }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
-    ?;
-
-    Ok(Json(transfer))
-}
-
-async fn record_bylaws_review(
-    RequireEquityTransfer(auth): RequireEquityTransfer,
-    State(state): State<AppState>,
-    Path(transfer_id): Path<TransferId>,
-    Query(query): Query<super::EntityIdQuery>,
-    Json(req): Json<BylawsReviewRequest>,
-) -> Result<Json<TransferResponse>, AppError> {
-    let workspace_id = auth.workspace_id();
-    let entity_id = query.entity_id;
-    if !auth.allows_entity(entity_id) {
-        return Err(AppError::Forbidden("entity access denied".to_owned()));
-    }
-
-    let transfer = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
-            let mut t = store.read::<ShareTransfer>("main",transfer_id).map_err(|e| {
-                AppError::NotFound(format!("transfer {transfer_id} not found: {e}"))
-            })?;
-            t.record_bylaws_review(
-                req.approved,
-                req.notes.unwrap_or_default(),
-                req.reviewer.unwrap_or_else(|| "system".to_string()),
-            )?;
-            let path = format!("cap-table/transfers/{}.json", transfer_id);
-            store
-                .write_json(
-                    "main",
-                    &path,
-                    &t,
-                    &format!("Bylaws review for transfer {transfer_id}"),
-                )
-                .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
-            Ok::<_, AppError>(transfer_to_response(&t))
-        }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
-    ?;
-
-    Ok(Json(transfer))
-}
-
-async fn record_rofr_decision(
-    RequireEquityTransfer(auth): RequireEquityTransfer,
-    State(state): State<AppState>,
-    Path(transfer_id): Path<TransferId>,
-    Query(query): Query<super::EntityIdQuery>,
-    Json(req): Json<RofrDecisionRequest>,
-) -> Result<Json<TransferResponse>, AppError> {
-    let workspace_id = auth.workspace_id();
-    let entity_id = query.entity_id;
-    if !auth.allows_entity(entity_id) {
-        return Err(AppError::Forbidden("entity access denied".to_owned()));
-    }
-
-    let transfer = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
-            let mut t = store.read::<ShareTransfer>("main",transfer_id).map_err(|e| {
-                AppError::NotFound(format!("transfer {transfer_id} not found: {e}"))
-            })?;
-            t.record_rofr_decision(req.offered, req.waived)?;
-            let path = format!("cap-table/transfers/{}.json", transfer_id);
-            store
-                .write_json(
-                    "main",
-                    &path,
-                    &t,
-                    &format!("ROFR decision for transfer {transfer_id}"),
-                )
-                .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
-            Ok::<_, AppError>(transfer_to_response(&t))
-        }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
-    ?;
-
-    Ok(Json(transfer))
-}
-
-async fn approve_transfer(
-    RequireEquityTransfer(auth): RequireEquityTransfer,
-    State(state): State<AppState>,
-    Path(transfer_id): Path<TransferId>,
-    Query(query): Query<super::EntityIdQuery>,
-) -> Result<Json<TransferResponse>, AppError> {
-    let workspace_id = auth.workspace_id();
-    let entity_id = query.entity_id;
-    if !auth.allows_entity(entity_id) {
-        return Err(AppError::Forbidden("entity access denied".to_owned()));
-    }
-
-    let transfer = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
-            let mut t = store.read::<ShareTransfer>("main",transfer_id).map_err(|e| {
-                AppError::NotFound(format!("transfer {transfer_id} not found: {e}"))
-            })?;
-            t.approve(None)?;
-            let path = format!("cap-table/transfers/{}.json", transfer_id);
-            store
-                .write_json(
-                    "main",
-                    &path,
-                    &t,
-                    &format!("Approve transfer {transfer_id}"),
-                )
-                .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
-            Ok::<_, AppError>(transfer_to_response(&t))
-        }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
-    ?;
-
-    Ok(Json(transfer))
-}
-
-async fn execute_transfer(
-    RequireEquityTransfer(auth): RequireEquityTransfer,
-    State(state): State<AppState>,
-    Path(transfer_id): Path<TransferId>,
-    Query(query): Query<super::EntityIdQuery>,
-) -> Result<Json<TransferResponse>, AppError> {
-    let workspace_id = auth.workspace_id();
-    let entity_id = query.entity_id;
-
-    let transfer = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
-            let mut t = store.read::<ShareTransfer>("main",transfer_id).map_err(|e| {
-                AppError::NotFound(format!("transfer {transfer_id} not found: {e}"))
-            })?;
-            t.execute()?;
-            let path = format!("cap-table/transfers/{}.json", transfer_id);
-            store
-                .write_json(
-                    "main",
-                    &path,
-                    &t,
-                    &format!("Execute transfer {transfer_id}"),
-                )
-                .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
-            Ok::<_, AppError>(transfer_to_response(&t))
-        }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
-    ?;
-
-    Ok(Json(transfer))
-}
-
-// ── Handlers: Funding rounds ─────────────────────────────────────────
-
-async fn create_funding_round(
+async fn create_control_link(
     RequireEquityWrite(auth): RequireEquityWrite,
     State(state): State<AppState>,
-    Json(req): Json<CreateFundingRoundRequest>,
-) -> Result<Json<FundingRoundResponse>, AppError> {
+    Json(req): Json<CreateControlLinkRequest>,
+) -> Result<Json<ControlLinkResponse>, AppError> {
+    let workspace_id = auth.workspace_id();
+    let entity_id = req.entity_id;
+    if !auth.allows_entity(entity_id) {
+        return Err(AppError::Forbidden("entity access denied".to_owned()));
+    }
+
+    let link = tokio::task::spawn_blocking({
+        let layout = state.layout.clone();
+        move || {
+            let store = open_store(&layout, workspace_id, entity_id)?;
+            let entities = read_all::<LegalEntity>(&store)?;
+            let known: HashSet<LegalEntityId> =
+                entities.iter().map(|e| e.legal_entity_id()).collect();
+            if !known.contains(&req.parent_legal_entity_id)
+                || !known.contains(&req.child_legal_entity_id)
+            {
+                return Err(AppError::BadRequest(
+                    "parent_legal_entity_id and child_legal_entity_id must exist".to_owned(),
+                ));
+            }
+
+            let link = ControlLink::new(
+                ControlLinkId::new(),
+                req.parent_legal_entity_id,
+                req.child_legal_entity_id,
+                req.control_type,
+                req.voting_power_bps,
+                req.notes,
+            );
+            let path = format!("cap-table/control-links/{}.json", link.control_link_id());
+            store
+                .write_json(
+                    "main",
+                    &path,
+                    &link,
+                    &format!("Create control link {}", link.control_link_id()),
+                )
+                .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
+            Ok::<_, AppError>(link)
+        }
+    })
+    .await
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+
+    Ok(Json(control_link_to_response(&link)))
+}
+
+async fn create_instrument(
+    RequireEquityWrite(auth): RequireEquityWrite,
+    State(state): State<AppState>,
+    Json(req): Json<CreateInstrumentRequest>,
+) -> Result<Json<InstrumentResponse>, AppError> {
+    if req.symbol.trim().is_empty() {
+        return Err(AppError::BadRequest(
+            "instrument symbol is required".to_owned(),
+        ));
+    }
+    if req.authorized_units.is_some_and(|v| v < 0) {
+        return Err(AppError::BadRequest(
+            "authorized_units cannot be negative".to_owned(),
+        ));
+    }
+
+    let workspace_id = auth.workspace_id();
+    let entity_id = req.entity_id;
+    if !auth.allows_entity(entity_id) {
+        return Err(AppError::Forbidden("entity access denied".to_owned()));
+    }
+
+    let instrument = tokio::task::spawn_blocking({
+        let layout = state.layout.clone();
+        move || {
+            let store = open_store(&layout, workspace_id, entity_id)?;
+            let entities = read_all::<LegalEntity>(&store)?;
+            if !entities
+                .iter()
+                .any(|e| e.legal_entity_id() == req.issuer_legal_entity_id)
+            {
+                return Err(AppError::BadRequest(
+                    "issuer_legal_entity_id does not exist".to_owned(),
+                ));
+            }
+
+            let instrument = Instrument::new(
+                InstrumentId::new(),
+                req.issuer_legal_entity_id,
+                req.symbol,
+                req.kind,
+                req.authorized_units,
+                req.issue_price_cents,
+                req.terms,
+            );
+            let path = format!("cap-table/instruments/{}.json", instrument.instrument_id());
+            store
+                .write_json(
+                    "main",
+                    &path,
+                    &instrument,
+                    &format!("Create instrument {}", instrument.instrument_id()),
+                )
+                .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
+            Ok::<_, AppError>(instrument)
+        }
+    })
+    .await
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+
+    Ok(Json(instrument_to_response(&instrument)))
+}
+
+async fn adjust_position(
+    RequireEquityWrite(auth): RequireEquityWrite,
+    State(state): State<AppState>,
+    Json(req): Json<AdjustPositionRequest>,
+) -> Result<Json<PositionResponse>, AppError> {
+    let workspace_id = auth.workspace_id();
+    let entity_id = req.entity_id;
+    if !auth.allows_entity(entity_id) {
+        return Err(AppError::Forbidden("entity access denied".to_owned()));
+    }
+
+    let position = tokio::task::spawn_blocking({
+        let layout = state.layout.clone();
+        move || {
+            let store = open_store(&layout, workspace_id, entity_id)?;
+
+            let holders = read_all::<Holder>(&store)?;
+            if !holders.iter().any(|h| h.holder_id() == req.holder_id) {
+                return Err(AppError::BadRequest("holder_id does not exist".to_owned()));
+            }
+
+            let instruments = read_all::<Instrument>(&store)?;
+            let instrument = instruments
+                .iter()
+                .find(|i| i.instrument_id() == req.instrument_id)
+                .ok_or_else(|| AppError::BadRequest("instrument_id does not exist".to_owned()))?;
+            if instrument.issuer_legal_entity_id() != req.issuer_legal_entity_id {
+                return Err(AppError::BadRequest(
+                    "instrument issuer does not match issuer_legal_entity_id".to_owned(),
+                ));
+            }
+
+            let all_positions = read_all::<Position>(&store)?;
+            let existing = all_positions.into_iter().find(|p| {
+                p.issuer_legal_entity_id() == req.issuer_legal_entity_id
+                    && p.holder_id() == req.holder_id
+                    && p.instrument_id() == req.instrument_id
+            });
+
+            let mut position = if let Some(mut p) = existing {
+                p.apply_delta(
+                    req.quantity_delta,
+                    req.principal_delta_cents,
+                    req.source_reference.clone(),
+                    None,
+                    None,
+                )?;
+                p
+            } else {
+                if req.quantity_delta < 0 || req.principal_delta_cents < 0 {
+                    return Err(AppError::BadRequest(
+                        "cannot create a new position with negative deltas".to_owned(),
+                    ));
+                }
+                Position::new(
+                    PositionId::new(),
+                    req.issuer_legal_entity_id,
+                    req.holder_id,
+                    req.instrument_id,
+                    req.quantity_delta,
+                    req.principal_delta_cents,
+                    req.source_reference,
+                    None,
+                    None,
+                )?
+            };
+
+            // Keep a deterministic hash of current position values for traceability.
+            let hash = hash_json(&serde_json::json!({
+                "quantity_units": position.quantity_units(),
+                "principal_cents": position.principal_cents(),
+                "holder_id": position.holder_id(),
+                "instrument_id": position.instrument_id(),
+            }));
+            position.apply_delta(
+                0,
+                0,
+                position.source_reference().map(str::to_owned),
+                None,
+                Some(hash),
+            )?;
+
+            let path = format!("cap-table/positions/{}.json", position.position_id());
+            store
+                .write_json(
+                    "main",
+                    &path,
+                    &position,
+                    &format!("Adjust position {}", position.position_id()),
+                )
+                .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
+            Ok::<_, AppError>(position)
+        }
+    })
+    .await
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+
+    Ok(Json(position_to_response(&position)))
+}
+
+async fn create_round(
+    RequireEquityWrite(auth): RequireEquityWrite,
+    State(state): State<AppState>,
+    Json(req): Json<CreateRoundRequest>,
+) -> Result<Json<RoundResponse>, AppError> {
     let workspace_id = auth.workspace_id();
     let entity_id = req.entity_id;
     if !auth.allows_entity(entity_id) {
@@ -1252,23 +1316,202 @@ async fn create_funding_round(
         let layout = state.layout.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
+            let entities = read_all::<LegalEntity>(&store)?;
+            if !entities
+                .iter()
+                .any(|e| e.legal_entity_id() == req.issuer_legal_entity_id)
+            {
+                return Err(AppError::BadRequest(
+                    "issuer_legal_entity_id does not exist".to_owned(),
+                ));
+            }
 
-            let round_id = FundingRoundId::new();
-            let round = FundingRound::new(
-                round_id,
-                entity_id,
-                req.round_name,
-                req.pre_money_valuation_cents.map(Cents::new),
-                req.lead_investor_id,
+            if let Some(target) = req.conversion_target_instrument_id {
+                let instruments = read_all::<Instrument>(&store)?;
+                if !instruments.iter().any(|i| i.instrument_id() == target) {
+                    return Err(AppError::BadRequest(
+                        "conversion_target_instrument_id does not exist".to_owned(),
+                    ));
+                }
+            }
+
+            let round = EquityRound::new(
+                EquityRoundId::new(),
+                req.issuer_legal_entity_id,
+                req.name,
+                req.pre_money_cents,
+                req.round_price_cents,
+                req.target_raise_cents,
+                req.conversion_target_instrument_id,
+                req.metadata,
             );
-
-            let path = format!("funding-rounds/{}.json", round_id);
+            let path = format!("cap-table/rounds/{}.json", round.equity_round_id());
             store
                 .write_json(
                     "main",
                     &path,
                     &round,
-                    &format!("Create funding round {round_id}"),
+                    &format!("Create equity round {}", round.equity_round_id()),
+                )
+                .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
+            Ok::<_, AppError>(round)
+        }
+    })
+    .await
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+
+    Ok(Json(round_to_response(&round)))
+}
+
+async fn apply_round_terms(
+    RequireEquityWrite(auth): RequireEquityWrite,
+    State(state): State<AppState>,
+    Path(round_id): Path<EquityRoundId>,
+    Json(req): Json<ApplyRoundTermsRequest>,
+) -> Result<Json<RuleSetResponse>, AppError> {
+    let workspace_id = auth.workspace_id();
+    let entity_id = req.entity_id;
+    if !auth.allows_entity(entity_id) {
+        return Err(AppError::Forbidden("entity access denied".to_owned()));
+    }
+
+    let rules = tokio::task::spawn_blocking({
+        let layout = state.layout.clone();
+        move || {
+            let store = open_store(&layout, workspace_id, entity_id)?;
+            let mut round = store
+                .read::<EquityRound>("main", round_id)
+                .map_err(|_| AppError::NotFound(format!("equity round {} not found", round_id)))?;
+
+            let rules = EquityRuleSet::new(
+                EquityRuleSetId::new(),
+                req.anti_dilution_method,
+                req.conversion_precedence,
+                req.protective_provisions,
+            );
+            round.apply_terms(rules.rule_set_id())?;
+
+            let files = vec![
+                FileWrite::json(
+                    format!("cap-table/rules/{}.json", rules.rule_set_id()),
+                    &rules,
+                )
+                .map_err(|e| AppError::Internal(format!("serialize rules: {e}")))?,
+                FileWrite::json(
+                    format!("cap-table/rounds/{}.json", round.equity_round_id()),
+                    &round,
+                )
+                .map_err(|e| AppError::Internal(format!("serialize round: {e}")))?,
+            ];
+
+            store
+                .commit(
+                    "main",
+                    &format!("Apply terms to round {}", round.equity_round_id()),
+                    files,
+                )
+                .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
+
+            Ok::<_, AppError>(rules)
+        }
+    })
+    .await
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+
+    Ok(Json(rule_set_to_response(&rules)))
+}
+
+async fn board_approve_round(
+    RequireEquityWrite(auth): RequireEquityWrite,
+    State(state): State<AppState>,
+    Path(round_id): Path<EquityRoundId>,
+    Json(req): Json<BoardApproveRoundRequest>,
+) -> Result<Json<RoundResponse>, AppError> {
+    let workspace_id = auth.workspace_id();
+    let entity_id = req.entity_id;
+    if !auth.allows_entity(entity_id) {
+        return Err(AppError::Forbidden("entity access denied".to_owned()));
+    }
+
+    let round = tokio::task::spawn_blocking({
+        let layout = state.layout.clone();
+        move || {
+            let store = open_store(&layout, workspace_id, entity_id)?;
+            let mut round = store
+                .read::<EquityRound>("main", round_id)
+                .map_err(|_| AppError::NotFound(format!("equity round {} not found", round_id)))?;
+
+            validate_board_resolution_for_round(
+                &store,
+                entity_id,
+                req.meeting_id,
+                req.resolution_id,
+            )?;
+            round.record_board_approval(req.meeting_id, req.resolution_id)?;
+
+            let path = format!("cap-table/rounds/{}.json", round.equity_round_id());
+            store
+                .write_json(
+                    "main",
+                    &path,
+                    &round,
+                    &format!("Board approve round {}", round.equity_round_id()),
+                )
+                .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
+            Ok::<_, AppError>(round)
+        }
+    })
+    .await
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+
+    Ok(Json(round_to_response(&round)))
+}
+
+async fn accept_round(
+    RequireEquityWrite(auth): RequireEquityWrite,
+    State(state): State<AppState>,
+    Path(round_id): Path<EquityRoundId>,
+    Json(req): Json<AcceptRoundRequest>,
+) -> Result<Json<RoundResponse>, AppError> {
+    let workspace_id = auth.workspace_id();
+    let entity_id = req.entity_id;
+    if !auth.allows_entity(entity_id) {
+        return Err(AppError::Forbidden("entity access denied".to_owned()));
+    }
+
+    let round = tokio::task::spawn_blocking({
+        let layout = state.layout.clone();
+        move || {
+            let store = open_store(&layout, workspace_id, entity_id)?;
+            let mut round = store
+                .read::<EquityRound>("main", round_id)
+                .map_err(|_| AppError::NotFound(format!("equity round {} not found", round_id)))?;
+            let mut intent = store
+                .read::<Intent>("main", req.intent_id)
+                .map_err(|_| AppError::NotFound(format!("intent {} not found", req.intent_id)))?;
+
+            ensure_authorized_round_intent(&intent, entity_id, round_id, "equity.round.accept")?;
+            round.accept(req.accepted_by_contact_id)?;
+            intent.mark_executed()?;
+
+            let files = vec![
+                FileWrite::json(
+                    format!("cap-table/rounds/{}.json", round.equity_round_id()),
+                    &round,
+                )
+                .map_err(|e| AppError::Internal(format!("serialize round: {e}")))?,
+                FileWrite::json(
+                    format!("execution/intents/{}.json", intent.intent_id()),
+                    &intent,
+                )
+                .map_err(|e| AppError::Internal(format!("serialize intent: {e}")))?,
+            ];
+
+            store
+                .commit(
+                    "main",
+                    &format!("Accept round {}", round.equity_round_id()),
+                    files,
                 )
                 .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
 
@@ -1276,107 +1519,523 @@ async fn create_funding_round(
         }
     })
     .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
-    ?;
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
 
-    Ok(Json(funding_round_to_response(&round)))
+    Ok(Json(round_to_response(&round)))
 }
 
-async fn list_funding_rounds(
+async fn get_cap_table(
     RequireEquityRead(auth): RequireEquityRead,
     State(state): State<AppState>,
     Path(entity_id): Path<EntityId>,
-) -> Result<Json<Vec<FundingRoundResponse>>, AppError> {
+    Query(query): Query<CapTableQuery>,
+) -> Result<Json<CapTableResponse>, AppError> {
     let workspace_id = auth.workspace_id();
+    if !auth.allows_entity(entity_id) {
+        return Err(AppError::Forbidden("entity access denied".to_owned()));
+    }
 
-    let rounds = tokio::task::spawn_blocking({
+    let response = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
-            let ids = store.list_ids::<FundingRound>("main").map_err(|e| {
-                AppError::Internal(format!("list funding rounds: {e}"))
-            })?;
+            let holders = read_all::<Holder>(&store)?;
+            let legal_entities = read_all::<LegalEntity>(&store)?;
+            let instruments = read_all::<Instrument>(&store)?;
+            let positions = read_all::<Position>(&store)?;
 
-            let mut results = Vec::new();
-            for id in ids {
-                let r = store.read::<FundingRound>("main",id).map_err(|e| {
-                    AppError::Internal(format!("read funding round {id}: {e}"))
-                })?;
-                results.push(funding_round_to_response(&r));
-            }
-            Ok::<_, AppError>(results)
+            let issuer_legal_entity_id =
+                infer_issuer(entity_id, &legal_entities, query.issuer_legal_entity_id)?;
+
+            Ok::<_, AppError>(compute_cap_table(
+                entity_id,
+                issuer_legal_entity_id,
+                query.basis,
+                &holders,
+                &instruments,
+                &positions,
+            ))
         }
     })
     .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
-    ?;
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
 
-    Ok(Json(rounds))
+    Ok(Json(response))
+}
+
+async fn preview_conversion(
+    RequireEquityRead(auth): RequireEquityRead,
+    State(state): State<AppState>,
+    Json(req): Json<PreviewConversionRequest>,
+) -> Result<Json<ConversionPreviewResponse>, AppError> {
+    let workspace_id = auth.workspace_id();
+    let entity_id = req.entity_id;
+    if !auth.allows_entity(entity_id) {
+        return Err(AppError::Forbidden("entity access denied".to_owned()));
+    }
+
+    let preview = tokio::task::spawn_blocking({
+        let layout = state.layout.clone();
+        move || {
+            let store = open_store(&layout, workspace_id, entity_id)?;
+            let round = store
+                .read::<EquityRound>("main", req.round_id)
+                .map_err(|_| {
+                    AppError::NotFound(format!("equity round {} not found", req.round_id))
+                })?;
+            let rule_set_id = round
+                .rule_set_id()
+                .ok_or_else(|| AppError::BadRequest("round terms are not applied".to_owned()))?;
+            let rules = store
+                .read::<EquityRuleSet>("main", rule_set_id)
+                .map_err(|_| AppError::NotFound(format!("rule set {} not found", rule_set_id)))?;
+
+            let instruments = read_all::<Instrument>(&store)?;
+            let positions = read_all::<Position>(&store)?;
+
+            let target_instrument_id =
+                round.conversion_target_instrument_id().ok_or_else(|| {
+                    AppError::BadRequest("conversion_target_instrument_id is required".to_owned())
+                })?;
+
+            let (lines, anti_dilution_adjustment_units) =
+                compute_conversion_preview(&round, &rules, &instruments, &positions)?;
+
+            let total_new_units = lines
+                .iter()
+                .map(|l| l.new_units)
+                .sum::<i64>()
+                .saturating_add(anti_dilution_adjustment_units);
+
+            Ok::<_, AppError>(ConversionPreviewResponse {
+                entity_id,
+                round_id: req.round_id,
+                target_instrument_id,
+                lines,
+                anti_dilution_adjustment_units,
+                total_new_units,
+            })
+        }
+    })
+    .await
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+
+    Ok(Json(preview))
+}
+
+async fn execute_conversion(
+    RequireEquityWrite(auth): RequireEquityWrite,
+    State(state): State<AppState>,
+    Json(req): Json<ExecuteConversionRequest>,
+) -> Result<Json<ConversionExecuteResponse>, AppError> {
+    let workspace_id = auth.workspace_id();
+    let entity_id = req.entity_id;
+    if !auth.allows_entity(entity_id) {
+        return Err(AppError::Forbidden("entity access denied".to_owned()));
+    }
+
+    let result = tokio::task::spawn_blocking({
+        let layout = state.layout.clone();
+        move || {
+            let store = open_store(&layout, workspace_id, entity_id)?;
+            let mut round = store
+                .read::<EquityRound>("main", req.round_id)
+                .map_err(|_| {
+                    AppError::NotFound(format!("equity round {} not found", req.round_id))
+                })?;
+            let rule_set_id = round
+                .rule_set_id()
+                .ok_or_else(|| AppError::BadRequest("round terms are not applied".to_owned()))?;
+            let rules = store
+                .read::<EquityRuleSet>("main", rule_set_id)
+                .map_err(|_| AppError::NotFound(format!("rule set {} not found", rule_set_id)))?;
+            let mut intent = store
+                .read::<Intent>("main", req.intent_id)
+                .map_err(|_| AppError::NotFound(format!("intent {} not found", req.intent_id)))?;
+            ensure_authorized_round_intent(
+                &intent,
+                entity_id,
+                req.round_id,
+                "equity.round.execute_conversion",
+            )?;
+
+            let target_instrument_id =
+                round.conversion_target_instrument_id().ok_or_else(|| {
+                    AppError::BadRequest("conversion_target_instrument_id is required".to_owned())
+                })?;
+
+            let instruments = read_all::<Instrument>(&store)?;
+            let mut positions = read_all::<Position>(&store)?;
+            let (lines, anti_dilution_adjustment_units) =
+                compute_conversion_preview(&round, &rules, &instruments, &positions)?;
+
+            let mut modified_paths = Vec::new();
+            let mut touched_targets: HashSet<PositionId> = HashSet::new();
+
+            for line in &lines {
+                let Some(src_idx) = positions
+                    .iter()
+                    .position(|p| p.position_id() == line.source_position_id)
+                else {
+                    continue;
+                };
+
+                let src = &mut positions[src_idx];
+                let close_hash = hash_json(&serde_json::json!({
+                    "round_id": req.round_id,
+                    "conversion_price_cents": line.conversion_price_cents,
+                    "new_units": line.new_units,
+                }));
+                src.apply_delta(
+                    -src.quantity_units(),
+                    -src.principal_cents(),
+                    req.source_reference.clone(),
+                    None,
+                    Some(close_hash),
+                )?;
+                modified_paths.push(
+                    FileWrite::json(
+                        format!("cap-table/positions/{}.json", src.position_id()),
+                        src,
+                    )
+                    .map_err(|e| AppError::Internal(format!("serialize source position: {e}")))?,
+                );
+
+                // Find or create the target position.
+                let existing_target_idx = positions.iter().position(|p| {
+                    p.issuer_legal_entity_id() == round.issuer_legal_entity_id()
+                        && p.holder_id() == line.holder_id
+                        && p.instrument_id() == target_instrument_id
+                });
+
+                if let Some(idx) = existing_target_idx {
+                    let target = &mut positions[idx];
+                    let hash = hash_json(&serde_json::json!({
+                        "round_id": req.round_id,
+                        "source_position_id": line.source_position_id,
+                        "new_units": line.new_units,
+                    }));
+                    target.apply_delta(
+                        line.new_units,
+                        0,
+                        req.source_reference.clone(),
+                        None,
+                        Some(hash),
+                    )?;
+                    touched_targets.insert(target.position_id());
+                    modified_paths.push(
+                        FileWrite::json(
+                            format!("cap-table/positions/{}.json", target.position_id()),
+                            target,
+                        )
+                        .map_err(|e| {
+                            AppError::Internal(format!("serialize target position: {e}"))
+                        })?,
+                    );
+                } else {
+                    let hash = hash_json(&serde_json::json!({
+                        "round_id": req.round_id,
+                        "source_position_id": line.source_position_id,
+                        "new_units": line.new_units,
+                    }));
+                    let target = Position::new(
+                        PositionId::new(),
+                        round.issuer_legal_entity_id(),
+                        line.holder_id,
+                        target_instrument_id,
+                        line.new_units,
+                        0,
+                        req.source_reference.clone(),
+                        None,
+                        Some(hash),
+                    )?;
+                    touched_targets.insert(target.position_id());
+                    modified_paths.push(
+                        FileWrite::json(
+                            format!("cap-table/positions/{}.json", target.position_id()),
+                            &target,
+                        )
+                        .map_err(|e| {
+                            AppError::Internal(format!("serialize new target position: {e}"))
+                        })?,
+                    );
+                    positions.push(target);
+                }
+            }
+
+            // Anti-dilution adjustment units are added to a synthetic holder-neutral position only
+            // if positive and target instrument exists.
+            if anti_dilution_adjustment_units > 0 {
+                let mut anti_holder = read_all::<Holder>(&store)?
+                    .into_iter()
+                    .find(|h| h.external_reference() == Some("anti_dilution_pool"));
+                if anti_holder.is_none() {
+                    let generated = Holder::new(
+                        HolderId::new(),
+                        ContactId::new(),
+                        None,
+                        "Anti-Dilution Pool".to_owned(),
+                        HolderType::Other,
+                        Some("anti_dilution_pool".to_owned()),
+                    );
+                    modified_paths.push(
+                        FileWrite::json(
+                            format!("cap-table/holders/{}.json", generated.holder_id()),
+                            &generated,
+                        )
+                        .map_err(|e| AppError::Internal(format!("serialize anti holder: {e}")))?,
+                    );
+                    anti_holder = Some(generated);
+                }
+                if let Some(holder) = anti_holder {
+                    let target = Position::new(
+                        PositionId::new(),
+                        round.issuer_legal_entity_id(),
+                        holder.holder_id(),
+                        target_instrument_id,
+                        anti_dilution_adjustment_units,
+                        0,
+                        Some("anti_dilution_adjustment".to_owned()),
+                        None,
+                        Some(hash_json(&serde_json::json!({
+                            "round_id": req.round_id,
+                            "anti_dilution_adjustment_units": anti_dilution_adjustment_units,
+                        }))),
+                    )?;
+                    touched_targets.insert(target.position_id());
+                    modified_paths.push(
+                        FileWrite::json(
+                            format!("cap-table/positions/{}.json", target.position_id()),
+                            &target,
+                        )
+                        .map_err(|e| AppError::Internal(format!("serialize anti position: {e}")))?,
+                    );
+                }
+            }
+
+            round.close()?;
+            intent.mark_executed()?;
+            modified_paths.push(
+                FileWrite::json(format!("cap-table/rounds/{}.json", req.round_id), &round)
+                    .map_err(|e| AppError::Internal(format!("serialize round: {e}")))?,
+            );
+            modified_paths.push(
+                FileWrite::json(
+                    format!("execution/intents/{}.json", intent.intent_id()),
+                    &intent,
+                )
+                .map_err(|e| AppError::Internal(format!("serialize intent: {e}")))?,
+            );
+
+            let total_new_units = lines
+                .iter()
+                .map(|l| l.new_units)
+                .sum::<i64>()
+                .saturating_add(anti_dilution_adjustment_units);
+
+            let execution = ConversionExecution::new(
+                ConversionExecutionId::new(),
+                entity_id,
+                req.round_id,
+                serde_json::json!({
+                    "line_count": lines.len(),
+                    "anti_dilution_adjustment_units": anti_dilution_adjustment_units,
+                    "total_new_units": total_new_units,
+                    "rule_set_id": rule_set_id,
+                    "target_instrument_id": target_instrument_id,
+                }),
+                req.source_reference,
+            );
+
+            modified_paths.push(
+                FileWrite::json(
+                    format!(
+                        "cap-table/conversions/{}.json",
+                        execution.conversion_execution_id()
+                    ),
+                    &execution,
+                )
+                .map_err(|e| AppError::Internal(format!("serialize conversion execution: {e}")))?,
+            );
+
+            store
+                .commit(
+                    "main",
+                    &format!("Execute conversions for round {}", req.round_id),
+                    modified_paths,
+                )
+                .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
+
+            Ok::<_, AppError>(ConversionExecuteResponse {
+                conversion_execution_id: execution.conversion_execution_id(),
+                round_id: req.round_id,
+                converted_positions: lines.len(),
+                target_positions_touched: touched_targets.len(),
+                total_new_units,
+            })
+        }
+    })
+    .await
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+
+    Ok(Json(result))
+}
+
+async fn get_control_map(
+    RequireEquityRead(auth): RequireEquityRead,
+    State(state): State<AppState>,
+    Query(query): Query<ControlMapQuery>,
+) -> Result<Json<ControlMapResponse>, AppError> {
+    let workspace_id = auth.workspace_id();
+    if !auth.allows_entity(query.entity_id) {
+        return Err(AppError::Forbidden("entity access denied".to_owned()));
+    }
+
+    let response = tokio::task::spawn_blocking({
+        let layout = state.layout.clone();
+        move || {
+            let store = open_store(&layout, workspace_id, query.entity_id)?;
+            let links = read_all::<ControlLink>(&store)?;
+            let entities = read_all::<LegalEntity>(&store)?;
+            let entity_ids: HashSet<LegalEntityId> =
+                entities.iter().map(|e| e.legal_entity_id()).collect();
+            if !entity_ids.contains(&query.root_entity_id) {
+                return Err(AppError::NotFound(format!(
+                    "root_entity_id {} not found",
+                    query.root_entity_id
+                )));
+            }
+
+            let mut visited: HashSet<LegalEntityId> = HashSet::new();
+            let mut stack = vec![query.root_entity_id];
+            let mut edges = Vec::new();
+
+            while let Some(node) = stack.pop() {
+                if !visited.insert(node) {
+                    continue;
+                }
+                for link in links.iter().filter(|l| l.parent_legal_entity_id() == node) {
+                    edges.push(ControlMapEdge {
+                        parent_legal_entity_id: link.parent_legal_entity_id(),
+                        child_legal_entity_id: link.child_legal_entity_id(),
+                        control_type: link.control_type(),
+                        voting_power_bps: link.voting_power_bps(),
+                    });
+                    stack.push(link.child_legal_entity_id());
+                }
+            }
+
+            let mut traversed_entities: Vec<LegalEntityId> = visited.into_iter().collect();
+            traversed_entities.sort_by_key(|id| id.to_string());
+
+            Ok::<_, AppError>(ControlMapResponse {
+                root_entity_id: query.root_entity_id,
+                traversed_entities,
+                edges,
+            })
+        }
+    })
+    .await
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+
+    Ok(Json(response))
+}
+
+async fn get_dilution_preview(
+    RequireEquityRead(auth): RequireEquityRead,
+    State(state): State<AppState>,
+    Query(query): Query<DilutionPreviewQuery>,
+) -> Result<Json<DilutionPreviewResponse>, AppError> {
+    let workspace_id = auth.workspace_id();
+    if !auth.allows_entity(query.entity_id) {
+        return Err(AppError::Forbidden("entity access denied".to_owned()));
+    }
+
+    let response = tokio::task::spawn_blocking({
+        let layout = state.layout.clone();
+        move || {
+            let store = open_store(&layout, workspace_id, query.entity_id)?;
+            let round = store
+                .read::<EquityRound>("main", query.round_id)
+                .map_err(|_| {
+                    AppError::NotFound(format!("equity round {} not found", query.round_id))
+                })?;
+
+            let instruments = read_all::<Instrument>(&store)?;
+            let positions = read_all::<Position>(&store)?;
+
+            let pre_round_outstanding_units = positions
+                .iter()
+                .filter(|p| p.issuer_legal_entity_id() == round.issuer_legal_entity_id())
+                .filter_map(|p| {
+                    instruments
+                        .iter()
+                        .find(|i| i.instrument_id() == p.instrument_id())
+                        .map(|i| (i, p))
+                })
+                .map(|(i, p)| {
+                    units_for_basis(
+                        i.kind(),
+                        p.quantity_units().max(0),
+                        CapTableBasis::Outstanding,
+                    )
+                })
+                .sum::<i64>();
+
+            let projected_new_units = round
+                .target_raise_cents()
+                .and_then(|raise| round.round_price_cents().map(|price| (raise, price)))
+                .and_then(
+                    |(raise, price)| {
+                        if price > 0 { Some(raise / price) } else { None }
+                    },
+                )
+                .unwrap_or(0)
+                .max(0);
+
+            let projected_post_outstanding_units =
+                pre_round_outstanding_units.saturating_add(projected_new_units);
+            let projected_dilution_bps =
+                checked_bps(projected_new_units, projected_post_outstanding_units);
+
+            Ok::<_, AppError>(DilutionPreviewResponse {
+                round_id: query.round_id,
+                issuer_legal_entity_id: round.issuer_legal_entity_id(),
+                pre_round_outstanding_units,
+                projected_new_units,
+                projected_post_outstanding_units,
+                projected_dilution_bps,
+            })
+        }
+    })
+    .await
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+
+    Ok(Json(response))
 }
 
 // ── Router ───────────────────────────────────────────────────────────
 
 pub fn equity_routes() -> Router<AppState> {
     Router::new()
-        // Cap table
+        .route("/v1/equity/holders", post(create_holder))
+        .route("/v1/equity/entities", post(create_legal_entity))
+        .route("/v1/equity/control-links", post(create_control_link))
+        .route("/v1/equity/instruments", post(create_instrument))
+        .route("/v1/equity/positions/adjust", post(adjust_position))
+        .route("/v1/equity/rounds", post(create_round))
+        .route(
+            "/v1/equity/rounds/{round_id}/apply-terms",
+            post(apply_round_terms),
+        )
+        .route(
+            "/v1/equity/rounds/{round_id}/board-approve",
+            post(board_approve_round),
+        )
+        .route("/v1/equity/rounds/{round_id}/accept", post(accept_round))
+        .route("/v1/equity/conversions/preview", post(preview_conversion))
+        .route("/v1/equity/conversions/execute", post(execute_conversion))
         .route("/v1/entities/{entity_id}/cap-table", get(get_cap_table))
-        // Equity grants
-        .route("/v1/equity/grants", post(create_grant))
-        // SAFE notes
-        .route("/v1/safe-notes", post(create_safe_note))
-        .route("/v1/safe-notes/{safe_note_id}", get(get_safe_note))
-        .route("/v1/entities/{entity_id}/safe-notes", get(list_safe_notes))
-        // Valuations
-        .route("/v1/valuations", post(create_valuation))
-        .route("/v1/valuations/{valuation_id}", get(get_valuation))
-        .route("/v1/entities/{entity_id}/valuations", get(list_valuations))
-        .route(
-            "/v1/entities/{entity_id}/current-409a",
-            get(get_current_409a),
-        )
-        .route(
-            "/v1/valuations/{valuation_id}/approve",
-            post(approve_valuation),
-        )
-        .route(
-            "/v1/valuations/{valuation_id}/expire",
-            post(expire_valuation),
-        )
-        .route(
-            "/v1/entities/{entity_id}/check-exercise-price",
-            post(check_exercise_price),
-        )
-        // Share transfers
-        .route("/v1/share-transfers", post(create_transfer))
-        .route("/v1/share-transfers/{transfer_id}", get(get_transfer))
-        .route(
-            "/v1/entities/{entity_id}/share-transfers",
-            get(list_transfers),
-        )
-        .route(
-            "/v1/share-transfers/{transfer_id}/submit-review",
-            post(submit_transfer_review),
-        )
-        .route(
-            "/v1/share-transfers/{transfer_id}/bylaws-review",
-            post(record_bylaws_review),
-        )
-        .route(
-            "/v1/share-transfers/{transfer_id}/rofr-decision",
-            post(record_rofr_decision),
-        )
-        .route(
-            "/v1/share-transfers/{transfer_id}/approve",
-            post(approve_transfer),
-        )
-        .route(
-            "/v1/share-transfers/{transfer_id}/execute",
-            post(execute_transfer),
-        )
-        // Funding rounds
-        .route("/v1/funding-rounds", post(create_funding_round))
-        .route(
-            "/v1/entities/{entity_id}/funding-rounds",
-            get(list_funding_rounds),
-        )
+        .route("/v1/equity/control-map", get(get_control_map))
+        .route("/v1/equity/dilution/preview", get(get_dilution_preview))
 }
