@@ -17,7 +17,7 @@
     "access": "public"
   },
   "dependencies": {
-    "@thecorporation/corp-tools": "file:../corp-tools",
+    "@thecorporation/corp-tools": "0.1.0",
     "commander": "^13.1.0",
     "chalk": "^5.4.1",
     "cli-table3": "^0.6.5",
@@ -27,7 +27,7 @@
     "openai": "^4.80.0"
   },
   "optionalDependencies": {
-    "@thecorporation/server": "file:../server"
+    "@thecorporation/server": "0.1.0"
   },
   "devDependencies": {
     "tsup": "^8.4.0",

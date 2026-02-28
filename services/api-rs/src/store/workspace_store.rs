@@ -136,6 +136,25 @@ impl<'a> WorkspaceStore<'a> {
         self.list_ids_in_dir(dir_path)
     }
 
+    /// List subdirectory names in a directory (for non-UUID-keyed directories like `secrets/`).
+    pub fn list_names_in_dir(&self, dir_path: &str) -> Result<Vec<String>, GitStorageError> {
+        let entries = match self.repo.list_dir("main", dir_path) {
+            Ok(entries) => entries,
+            Err(GitStorageError::NotFound(_)) => return Ok(Vec::new()),
+            Err(e) => return Err(e),
+        };
+        Ok(entries
+            .into_iter()
+            .filter(|(_, is_dir)| *is_dir)
+            .map(|(name, _)| name)
+            .collect())
+    }
+
+    /// Check if a path exists in the repo.
+    pub fn path_exists(&self, path: &str) -> Result<bool, GitStorageError> {
+        self.repo.path_exists("main", path)
+    }
+
     /// List UUID-style IDs from files in a directory.
     fn list_ids_in_dir<T: std::str::FromStr>(
         &self,

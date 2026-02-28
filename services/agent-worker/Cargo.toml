@@ -1,0 +1,67 @@
+[package]
+name = "agent-worker"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+
+[lib]
+name = "agent_worker"
+path = "src/lib.rs"
+
+[[bin]]
+name = "agent-worker"
+path = "src/bin/worker.rs"
+
+[dependencies]
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+
+# Redis
+redis = { version = "0.27", features = ["tokio-comp", "connection-manager"] }
+deadpool-redis = "0.18"
+
+# Docker — default features (http + pipe) plus rustls for TLS
+bollard = { version = "0.18", features = ["rustls"] }
+
+# HTTP client (fetching agent/message from api-rs, secrets proxy)
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Types
+uuid = { version = "1", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+
+# Encryption
+fernet = "0.2"
+
+# Cron
+cron = "0.15"
+
+# Error handling
+thiserror = "2"
+anyhow = "1"
+
+# Observability
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+
+# Config
+envy = "0.4"
+dotenvy = "0.15"
+
+# Misc
+rand = "0.8"
+hex = "0.4"
+regex = "1"
+tokio-util = "0.7"
+futures-util = "0.3"
+
+[dev-dependencies]
+tokio-test = "0.4"
+tempfile = "3"
+testcontainers = "0.23"
+mockall = "0.13"
+wiremock = "0.6"

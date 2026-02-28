@@ -72,10 +72,51 @@ async fn main() {
         }
     };
 
+    // Optional Redis pool for agent execution queue
+    let redis = match std::env::var("REDIS_URL") {
+        Ok(url) if !url.is_empty() => {
+            let cfg = deadpool_redis::Config::from_url(&url);
+            match cfg.create_pool(Some(deadpool_redis::Runtime::Tokio1)) {
+                Ok(pool) => {
+                    tracing::info!("redis pool connected");
+                    Some(pool)
+                }
+                Err(e) => {
+                    tracing::warn!("failed to create redis pool: {e} — agent dispatch disabled");
+                    None
+                }
+            }
+        }
+        _ => {
+            tracing::info!("REDIS_URL not set — agent dispatch disabled");
+            None
+        }
+    };
+
+    // Optional Fernet key for encrypting secrets at rest in workspace repos
+    let secrets_fernet = match std::env::var("SECRETS_MASTER_KEY") {
+        Ok(key) if !key.is_empty() => match fernet::Fernet::new(&key) {
+            Some(f) => {
+                tracing::info!("secrets encryption enabled");
+                Some(Arc::new(f))
+            }
+            None => {
+                tracing::error!("SECRETS_MASTER_KEY is not a valid Fernet key — secrets encryption disabled");
+                None
+            }
+        },
+        _ => {
+            tracing::info!("SECRETS_MASTER_KEY not set — secrets encryption disabled");
+            None
+        }
+    };
+
     let state = routes::AppState {
         layout,
         jwt_secret,
         commit_signer,
+        redis,
+        secrets_fernet,
     };
 
     let app = Router::new()
@@ -91,6 +132,9 @@ async fn main() {
         .merge(routes::compliance::compliance_routes())
         .merge(routes::auth::auth_routes())
         .merge(routes::agents::agent_routes())
+        .merge(routes::agent_executions::execution_routes())
+        .merge(routes::secrets_proxy::secrets_routes())
+        .merge(routes::secret_proxies::secret_proxy_routes())
         .merge(routes::billing::billing_routes())
         .merge(routes::admin::admin_routes())
         .merge(routes::webhooks::webhook_routes())

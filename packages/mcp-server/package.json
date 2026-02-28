@@ -13,7 +13,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.12.0",
-    "@thecorporation/corp-tools": "file:../corp-tools",
+    "@thecorporation/corp-tools": "0.1.0",
     "zod": "^3.24.0"
   },
   "devDependencies": {

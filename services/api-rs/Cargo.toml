@@ -43,8 +43,13 @@ anyhow = "1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 
-# Integrations — defer until needed, avoid OpenSSL build dep for now
-# redis = { version = "0.27", features = ["tokio-comp", "connection-manager"] }
+# Redis (agent execution queue + state)
+redis = { version = "0.27", features = ["tokio-comp", "connection-manager"] }
+deadpool-redis = "0.18"
+
+# Encryption (secrets at rest)
+fernet = "0.2"
+
 # reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 
 # Config

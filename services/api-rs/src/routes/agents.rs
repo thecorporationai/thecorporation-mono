@@ -13,9 +13,13 @@ use serde::{Deserialize, Serialize};
 use super::AppState;
 use crate::domain::agents::{
     agent::Agent,
-    types::{AgentSkill, AgentStatus},
+    resolve,
+    types::{
+        AgentSkill, AgentStatus, BudgetConfig, ChannelConfig, MCPServerSpec, SandboxConfig,
+        ToolSpec,
+    },
 };
-use crate::domain::ids::{AgentId, EntityId, WorkspaceId};
+use crate::domain::ids::{AgentId, EntityId, MessageId, WorkspaceId};
 use crate::error::AppError;
 use crate::store::workspace_store::WorkspaceStore;
 
@@ -31,6 +35,8 @@ pub struct CreateAgentRequest {
     pub model: Option<String>,
     #[serde(default)]
     pub entity_id: Option<EntityId>,
+    #[serde(default)]
+    pub parent_agent_id: Option<AgentId>,
 }
 
 #[derive(Deserialize)]
@@ -46,6 +52,18 @@ pub struct UpdateAgentRequest {
     pub status: Option<AgentStatus>,
     #[serde(default)]
     pub webhook_url: Option<String>,
+    #[serde(default)]
+    pub tools: Option<Vec<ToolSpec>>,
+    #[serde(default)]
+    pub mcp_servers: Option<Vec<MCPServerSpec>>,
+    #[serde(default)]
+    pub channels: Option<Vec<ChannelConfig>>,
+    #[serde(default)]
+    pub budget: Option<BudgetConfig>,
+    #[serde(default)]
+    pub sandbox: Option<SandboxConfig>,
+    #[serde(default)]
+    pub parent_agent_id: Option<AgentId>,
 }
 
 #[derive(Deserialize)]
@@ -76,7 +94,16 @@ pub struct AgentResponse {
     pub model: Option<String>,
     pub entity_id: Option<EntityId>,
     pub skills: Vec<AgentSkill>,
+    pub tools: Vec<ToolSpec>,
+    pub mcp_servers: Vec<MCPServerSpec>,
+    pub channels: Vec<ChannelConfig>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub budget: Option<BudgetConfig>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sandbox: Option<SandboxConfig>,
     pub status: AgentStatus,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parent_agent_id: Option<AgentId>,
     pub email_address: Option<String>,
     pub webhook_url: Option<String>,
     pub created_at: String,
@@ -85,7 +112,10 @@ pub struct AgentResponse {
 #[derive(Serialize)]
 pub struct MessageResponse {
     pub agent_id: AgentId,
+    pub message_id: MessageId,
     pub status: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub execution_id: Option<String>,
     pub message: String,
 }
 
@@ -98,7 +128,13 @@ fn agent_to_response(a: &Agent) -> AgentResponse {
         model: a.model().map(|s| s.to_owned()),
         entity_id: a.entity_id(),
         skills: a.skills().to_vec(),
+        tools: a.tools().to_vec(),
+        mcp_servers: a.mcp_servers().to_vec(),
+        channels: a.channels().to_vec(),
+        budget: a.budget().cloned(),
+        sandbox: a.sandbox().cloned(),
         status: a.status(),
+        parent_agent_id: a.parent_agent_id(),
         email_address: a.email_address().map(|s| s.to_owned()),
         webhook_url: a.webhook_url().map(|s| s.to_owned()),
         created_at: a.created_at().to_rfc3339(),
@@ -124,8 +160,13 @@ async fn create_agent(
             let ws_store = WorkspaceStore::open(&layout, workspace_id)
                 .map_err(|e| AppError::NotFound(format!("workspace not found: {e}")))?;
 
+            // Validate parent_agent_id if provided
+            if let Some(parent_id) = req.parent_agent_id {
+                validate_parent(&ws_store, parent_id, None)?;
+            }
+
             let agent_id = AgentId::new();
-            let agent = Agent::new(
+            let mut agent = Agent::new(
                 agent_id,
                 workspace_id,
                 req.name,
@@ -133,6 +174,7 @@ async fn create_agent(
                 req.model,
                 req.entity_id,
             );
+            agent.set_parent_agent_id(req.parent_agent_id);
 
             let path = format!("agents/{}.json", agent_id);
             ws_store
@@ -219,6 +261,25 @@ async fn update_agent(
             if req.webhook_url.is_some() {
                 agent.set_webhook_url(req.webhook_url);
             }
+            if let Some(tools) = req.tools {
+                agent.set_tools(tools);
+            }
+            if let Some(mcp_servers) = req.mcp_servers {
+                agent.set_mcp_servers(mcp_servers);
+            }
+            if let Some(channels) = req.channels {
+                agent.set_channels(channels);
+            }
+            if req.budget.is_some() {
+                agent.set_budget(req.budget);
+            }
+            if req.sandbox.is_some() {
+                agent.set_sandbox(req.sandbox);
+            }
+            if let Some(parent_id) = req.parent_agent_id {
+                validate_parent(&ws_store, parent_id, Some(agent_id))?;
+                agent.set_parent_agent_id(Some(parent_id));
+            }
 
             ws_store
                 .write_json(&path, &agent, &format!("Update agent {agent_id}"))
@@ -297,7 +358,7 @@ async fn send_agent_message(
                 .map_err(|_| AppError::NotFound(format!("agent {} not found", agent_id)))?;
 
             // Store the message
-            let message_id = crate::domain::ids::MessageId::new();
+            let message_id = MessageId::new();
             let msg = crate::domain::agents::message::AgentMessage::new(
                 message_id,
                 agent_id,
@@ -317,11 +378,168 @@ async fn send_agent_message(
     .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
     ?;
 
+    // Enqueue to Redis for worker dispatch (if Redis is configured)
+    let execution_id = if let Some(ref redis) = state.redis {
+        match enqueue_execution(redis, workspace_id, agent_id, msg.message_id()).await {
+            Ok(exec_id) => Some(exec_id),
+            Err(e) => {
+                tracing::error!(error = ?e, "failed to enqueue execution");
+                None
+            }
+        }
+    } else {
+        None
+    };
+
     Ok(Json(MessageResponse {
         agent_id,
-        status: msg.status().to_owned(),
-        message: format!("Message {} queued for agent {}", msg.message_id(), agent_id),
+        message_id: msg.message_id(),
+        status: if execution_id.is_some() { "accepted".to_owned() } else { msg.status().to_owned() },
+        execution_id,
+        message: format!("Message {} sent to agent {}", msg.message_id(), agent_id),
     }))
+}
+
+/// Enqueue an execution job to Redis and wait for worker acknowledgment.
+async fn enqueue_execution(
+    redis: &deadpool_redis::Pool,
+    workspace_id: WorkspaceId,
+    agent_id: AgentId,
+    message_id: MessageId,
+) -> Result<String, AppError> {
+    use deadpool_redis::redis::AsyncCommands;
+
+    let execution_id = uuid::Uuid::new_v4();
+    let job_id = uuid::Uuid::new_v4();
+
+    let job = serde_json::json!({
+        "job_id": job_id,
+        "execution_id": execution_id,
+        "agent_id": agent_id,
+        "workspace_id": workspace_id,
+        "message_id": message_id,
+        "enqueued_at": chrono::Utc::now().to_rfc3339(),
+    });
+    let job_json = serde_json::to_string(&job)
+        .map_err(|e| AppError::Internal(format!("serialize job: {e}")))?;
+
+    // Init execution state
+    let mut conn = redis.get().await
+        .map_err(|e| AppError::Internal(format!("redis pool: {e}")))?;
+
+    let exec_key = format!("aw:exec:{execution_id}");
+    conn.hset_multiple::<_, _, _, ()>(&exec_key, &[
+        ("status", "queued"),
+        ("agent_id", &agent_id.to_string()),
+        ("message_id", &message_id.to_string()),
+        ("created_at", &chrono::Utc::now().to_rfc3339()),
+    ]).await.map_err(|e| AppError::Internal(format!("redis hset: {e}")))?;
+
+    // Enqueue job
+    conn.rpush::<_, _, ()>("aw:queue:jobs", &job_json).await
+        .map_err(|e| AppError::Internal(format!("redis rpush: {e}")))?;
+
+    drop(conn);
+
+    // Wait for worker acknowledgment (2s timeout)
+    let reply_key = format!("aw:rpc:reply:{job_id}");
+    let mut conn = redis.get().await
+        .map_err(|e| AppError::Internal(format!("redis pool: {e}")))?;
+
+    let result: Option<(String, String)> = deadpool_redis::redis::cmd("BLPOP")
+        .arg(&reply_key)
+        .arg(2.0_f64)
+        .query_async(&mut *conn)
+        .await
+        .map_err(|e| AppError::Internal(format!("redis blpop: {e}")))?;
+
+    match result {
+        Some((_key, payload)) => {
+            // Worker acknowledged — check if accepted or rejected
+            if let Ok(reply) = serde_json::from_str::<serde_json::Value>(&payload) {
+                if reply.get("status").and_then(|s| s.as_str()) == Some("rejected") {
+                    let reason = reply.get("message")
+                        .and_then(|m| m.as_str())
+                        .unwrap_or("rejected by worker");
+                    return Err(AppError::Conflict(reason.to_owned()));
+                }
+            }
+            Ok(execution_id.to_string())
+        }
+        None => {
+            // No worker responded — job is queued but unconfirmed
+            tracing::warn!(execution_id = %execution_id, "no worker ack within timeout");
+            Ok(execution_id.to_string())
+        }
+    }
+}
+
+// ── Validation helpers ────────────────────────────────────────────────
+
+/// Validate that a parent agent exists and that setting it won't create
+/// a cycle or exceed the maximum chain depth.
+fn validate_parent(
+    ws_store: &WorkspaceStore,
+    parent_id: AgentId,
+    self_id: Option<AgentId>,
+) -> Result<(), AppError> {
+    // Parent must exist
+    let parent_path = format!("agents/{}.json", parent_id);
+    let _parent: Agent = ws_store
+        .read_json(&parent_path)
+        .map_err(|_| AppError::BadRequest(format!("parent agent {} not found", parent_id)))?;
+
+    // Check that setting this parent won't create a cycle.
+    // Walk the parent's chain; if we encounter self_id, it's a cycle.
+    if let Some(self_id) = self_id {
+        if parent_id == self_id {
+            return Err(AppError::BadRequest(
+                "agent cannot be its own parent".to_owned(),
+            ));
+        }
+        // Walk the parent chain to detect cycles and check depth
+        let chain = resolve::walk_parent_chain(ws_store, parent_id)?;
+        for ancestor in &chain {
+            if ancestor.agent_id() == self_id {
+                return Err(AppError::BadRequest(
+                    "setting this parent would create a cycle".to_owned(),
+                ));
+            }
+        }
+        // chain length + 1 (for the child itself) must not exceed max depth
+        if chain.len() >= 5 {
+            return Err(AppError::BadRequest(
+                "parent chain would exceed maximum depth of 5".to_owned(),
+            ));
+        }
+    }
+
+    Ok(())
+}
+
+// ── Resolved agent endpoint ──────────────────────────────────────────
+
+async fn get_resolved_agent(
+    State(state): State<AppState>,
+    Path(agent_id): Path<AgentId>,
+    Query(query): Query<WorkspaceQuery>,
+) -> Result<Json<AgentResponse>, AppError> {
+    let workspace_id = query.workspace_id;
+
+    let agent = tokio::task::spawn_blocking({
+        let layout = state.layout.clone();
+        move || {
+            let ws_store = WorkspaceStore::open(&layout, workspace_id)
+                .map_err(|e| AppError::NotFound(format!("workspace not found: {e}")))?;
+
+            resolve::resolve_agent(&ws_store, agent_id)
+        }
+    })
+    .await
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
+    ?;
+
+    Ok(Json(agent_to_response(&agent)))
 }
 
 // ── Router ───────────────────────────────────────────────────────────
@@ -330,6 +548,7 @@ pub fn agent_routes() -> Router<AppState> {
     Router::new()
         .route("/v1/agents", post(create_agent).get(list_agents))
         .route("/v1/agents/{agent_id}", patch(update_agent))
+        .route("/v1/agents/{agent_id}/resolved", axum::routing::get(get_resolved_agent))
         .route("/v1/agents/{agent_id}/skills", post(add_agent_skill))
         .route("/v1/agents/{agent_id}/messages", post(send_agent_message))
 }

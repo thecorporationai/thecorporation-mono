@@ -3,7 +3,9 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use super::types::{AgentSkill, AgentStatus};
+use super::types::{
+    AgentSkill, AgentStatus, BudgetConfig, ChannelConfig, MCPServerSpec, SandboxConfig, ToolSpec,
+};
 use crate::domain::ids::{AgentId, EntityId, WorkspaceId};
 
 /// An AI agent associated with a workspace.
@@ -21,6 +23,18 @@ pub struct Agent {
     #[serde(default)]
     skills: Vec<AgentSkill>,
     status: AgentStatus,
+    #[serde(default)]
+    tools: Vec<ToolSpec>,
+    #[serde(default)]
+    mcp_servers: Vec<MCPServerSpec>,
+    #[serde(default)]
+    channels: Vec<ChannelConfig>,
+    #[serde(default)]
+    budget: Option<BudgetConfig>,
+    #[serde(default)]
+    sandbox: Option<SandboxConfig>,
+    #[serde(default)]
+    parent_agent_id: Option<AgentId>,
     #[serde(default)]
     email_address: Option<String>,
     #[serde(default)]
@@ -45,7 +59,13 @@ impl Agent {
             model,
             entity_id,
             skills: Vec::new(),
+            tools: Vec::new(),
+            mcp_servers: Vec::new(),
+            channels: Vec::new(),
+            budget: None,
+            sandbox: None,
             status: AgentStatus::Active,
+            parent_agent_id: None,
             email_address: None,
             webhook_url: None,
             created_at: Utc::now(),
@@ -54,6 +74,10 @@ impl Agent {
 
     pub fn add_skill(&mut self, skill: AgentSkill) {
         self.skills.push(skill);
+    }
+
+    pub fn set_skills(&mut self, skills: Vec<AgentSkill>) {
+        self.skills = skills;
     }
 
     pub fn set_status(&mut self, status: AgentStatus) {
@@ -76,6 +100,30 @@ impl Agent {
         self.webhook_url = url;
     }
 
+    pub fn set_tools(&mut self, tools: Vec<ToolSpec>) {
+        self.tools = tools;
+    }
+
+    pub fn set_mcp_servers(&mut self, servers: Vec<MCPServerSpec>) {
+        self.mcp_servers = servers;
+    }
+
+    pub fn set_channels(&mut self, channels: Vec<ChannelConfig>) {
+        self.channels = channels;
+    }
+
+    pub fn set_budget(&mut self, budget: Option<BudgetConfig>) {
+        self.budget = budget;
+    }
+
+    pub fn set_sandbox(&mut self, sandbox: Option<SandboxConfig>) {
+        self.sandbox = sandbox;
+    }
+
+    pub fn set_parent_agent_id(&mut self, parent_agent_id: Option<AgentId>) {
+        self.parent_agent_id = parent_agent_id;
+    }
+
     // Accessors
     pub fn agent_id(&self) -> AgentId { self.agent_id }
     pub fn workspace_id(&self) -> WorkspaceId { self.workspace_id }
@@ -84,7 +132,13 @@ impl Agent {
     pub fn model(&self) -> Option<&str> { self.model.as_deref() }
     pub fn entity_id(&self) -> Option<EntityId> { self.entity_id }
     pub fn skills(&self) -> &[AgentSkill] { &self.skills }
+    pub fn tools(&self) -> &[ToolSpec] { &self.tools }
+    pub fn mcp_servers(&self) -> &[MCPServerSpec] { &self.mcp_servers }
+    pub fn channels(&self) -> &[ChannelConfig] { &self.channels }
+    pub fn budget(&self) -> Option<&BudgetConfig> { self.budget.as_ref() }
+    pub fn sandbox(&self) -> Option<&SandboxConfig> { self.sandbox.as_ref() }
     pub fn status(&self) -> AgentStatus { self.status }
+    pub fn parent_agent_id(&self) -> Option<AgentId> { self.parent_agent_id }
     pub fn email_address(&self) -> Option<&str> { self.email_address.as_deref() }
     pub fn webhook_url(&self) -> Option<&str> { self.webhook_url.as_deref() }
     pub fn created_at(&self) -> DateTime<Utc> { self.created_at }

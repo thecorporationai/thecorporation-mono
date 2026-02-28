@@ -21,6 +21,8 @@ fn build_app(tmp: &TempDir) -> Router {
         layout,
         jwt_secret: Arc::from(b"test-secret-for-integration-tests".as_slice()),
         commit_signer: None,
+        redis: None,
+        secrets_fernet: None,
     };
 
     Router::new()

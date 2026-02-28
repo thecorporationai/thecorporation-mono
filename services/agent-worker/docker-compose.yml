@@ -1,0 +1,48 @@
+services:
+  redis:
+    image: redis:7-alpine
+    command: redis-server --maxmemory 128mb --maxmemory-policy allkeys-lru
+    ports:
+      - "6379:6379"
+    deploy:
+      resources:
+        limits:
+          memory: 192M
+
+  api:
+    build:
+      context: ../api-rs
+    environment:
+      - REDIS_URL=redis://redis:6379
+      - JWT_SECRET=dev-secret-do-not-use-in-production
+      - DATA_DIR=/data/repos
+    ports:
+      - "8000:8000"
+    volumes:
+      - api-data:/data/repos
+    depends_on:
+      - redis
+
+  worker:
+    build:
+      context: .
+    environment:
+      - REDIS_URL=redis://redis:6379
+      - API_BASE_URL=http://api:8000
+      - DOCKER_HOST=unix:///var/run/docker.sock
+      - WORKSPACE_ROOT=/var/lib/agents/workspaces
+      - RUNTIME_IMAGE=agents-runtime:pi
+      - MAX_CONCURRENCY=4
+      - RUST_LOG=agent_worker=info
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - workspaces:/var/lib/agents/workspaces
+    depends_on:
+      - redis
+      - api
+    deploy:
+      replicas: 2
+
+volumes:
+  api-data:
+  workspaces:
