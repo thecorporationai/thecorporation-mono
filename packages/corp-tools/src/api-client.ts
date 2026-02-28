@@ -1,4 +1,15 @@
-import type { ApiRecord } from "./types.js";
+import type {
+  AcceptEquityRoundRequest,
+  ApiRecord,
+  ApplyEquityRoundTermsRequest,
+  BoardApproveEquityRoundRequest,
+  CreateEquityRoundRequest,
+  CreateExecutionIntentRequest,
+  EquityRoundResponse,
+  ExecuteRoundConversionRequest,
+  IntentResponse,
+  PreviewRoundConversionRequest,
+} from "./types.js";
 
 export class SessionExpiredError extends Error {
   constructor() {
@@ -124,6 +135,37 @@ export class CorpAPIClient {
   issueSafe(data: ApiRecord) { return this.post("/v1/safe-notes", data) as Promise<ApiRecord>; }
   transferShares(data: ApiRecord) { return this.post("/v1/share-transfers", data) as Promise<ApiRecord>; }
   calculateDistribution(data: ApiRecord) { return this.post("/v1/distributions", data) as Promise<ApiRecord>; }
+
+  // --- Equity rounds (v1) ---
+  createEquityRound(data: CreateEquityRoundRequest) {
+    return this.post("/v1/equity/rounds", data) as Promise<EquityRoundResponse>;
+  }
+  applyEquityRoundTerms(roundId: string, data: ApplyEquityRoundTermsRequest) {
+    return this.post(`/v1/equity/rounds/${roundId}/apply-terms`, data) as Promise<ApiRecord>;
+  }
+  boardApproveEquityRound(roundId: string, data: BoardApproveEquityRoundRequest) {
+    return this.post(`/v1/equity/rounds/${roundId}/board-approve`, data) as Promise<EquityRoundResponse>;
+  }
+  acceptEquityRound(roundId: string, data: AcceptEquityRoundRequest) {
+    return this.post(`/v1/equity/rounds/${roundId}/accept`, data) as Promise<EquityRoundResponse>;
+  }
+  previewRoundConversion(data: PreviewRoundConversionRequest) {
+    return this.post("/v1/equity/conversions/preview", data) as Promise<ApiRecord>;
+  }
+  executeRoundConversion(data: ExecuteRoundConversionRequest) {
+    return this.post("/v1/equity/conversions/execute", data) as Promise<ApiRecord>;
+  }
+
+  // --- Intent lifecycle helpers ---
+  createExecutionIntent(data: CreateExecutionIntentRequest) {
+    return this.post("/v1/execution/intents", data) as Promise<IntentResponse>;
+  }
+  evaluateIntent(intentId: string, entityId: string) {
+    return this.postWithParams(`/v1/intents/${intentId}/evaluate`, {}, { entity_id: entityId }) as Promise<ApiRecord>;
+  }
+  authorizeIntent(intentId: string, entityId: string) {
+    return this.postWithParams(`/v1/intents/${intentId}/authorize`, {}, { entity_id: entityId }) as Promise<ApiRecord>;
+  }
 
   // --- Governance ---
   listGovernanceBodies(entityId: string) { return this.get(`/v1/entities/${entityId}/governance-bodies`) as Promise<ApiRecord[]>; }

@@ -57,6 +57,10 @@ corp form --type llc --name "Acme"  # form a new entity
 | `corp cap-table valuations` | View valuation history |
 | `corp cap-table 409a` | Current 409A valuation |
 
+Round close gating (v1, February 28, 2026):
+- Conversion execution now requires an authorized execute intent (`equity.round.execute_conversion`) and `intent_id`.
+- Required sequence is: apply terms -> board approve -> accept round -> execute conversion.
+
 ### Finance
 
 | Command | Description |
