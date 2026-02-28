@@ -4,12 +4,15 @@
 //! These accept POST payloads and store events in workspace repos.
 
 use axum::{
+    body::Bytes,
+    http::HeaderMap,
     routing::post,
     Json, Router,
 };
 use serde::{Deserialize, Serialize};
 
 use super::AppState;
+use crate::error::AppError;
 
 // ── Request / Response types ──────────────────────────────────────────
 
@@ -32,36 +35,54 @@ pub struct WebhookAckResponse {
 // ── Handlers ──────────────────────────────────────────────────────────
 
 async fn stripe_webhook(
-    Json(payload): Json<StripeWebhookPayload>,
-) -> Json<WebhookAckResponse> {
-    // In production: verify Stripe signature, dispatch event to handler.
-    // For now: acknowledge receipt. Events would be stored in the
-    // relevant workspace repo as `webhooks/stripe/{event_id}.json`.
+    headers: HeaderMap,
+    body: Bytes,
+) -> Result<Json<WebhookAckResponse>, AppError> {
+    verify_webhook_secret(&headers, "STRIPE_WEBHOOK_SECRET")?;
+    let payload: StripeWebhookPayload = serde_json::from_slice(&body)
+        .map_err(|e| AppError::BadRequest(format!("invalid webhook JSON: {e}")))?;
     tracing::info!(
         event_type = ?payload.event_type,
         event_id = ?payload.id,
         "Received Stripe webhook"
     );
 
-    Json(WebhookAckResponse {
+    Ok(Json(WebhookAckResponse {
         received: true,
         event_id: payload.id,
-    })
+    }))
 }
 
 async fn stripe_billing_webhook(
-    Json(payload): Json<StripeWebhookPayload>,
-) -> Json<WebhookAckResponse> {
+    headers: HeaderMap,
+    body: Bytes,
+) -> Result<Json<WebhookAckResponse>, AppError> {
+    verify_webhook_secret(&headers, "STRIPE_BILLING_WEBHOOK_SECRET")?;
+    let payload: StripeWebhookPayload = serde_json::from_slice(&body)
+        .map_err(|e| AppError::BadRequest(format!("invalid webhook JSON: {e}")))?;
     tracing::info!(
         event_type = ?payload.event_type,
         event_id = ?payload.id,
         "Received Stripe billing webhook"
     );
 
-    Json(WebhookAckResponse {
+    Ok(Json(WebhookAckResponse {
         received: true,
         event_id: payload.id,
-    })
+    }))
+}
+
+fn verify_webhook_secret(headers: &HeaderMap, env_name: &str) -> Result<(), AppError> {
+    let expected = std::env::var(env_name)
+        .map_err(|_| AppError::Internal(format!("{env_name} is not configured")))?;
+    let provided = headers
+        .get("x-webhook-secret")
+        .and_then(|v| v.to_str().ok())
+        .ok_or_else(|| AppError::Unauthorized("missing webhook secret".to_owned()))?;
+    if provided != expected {
+        return Err(AppError::Unauthorized("invalid webhook secret".to_owned()));
+    }
+    Ok(())
 }
 
 // ── Router ────────────────────────────────────────────────────────────

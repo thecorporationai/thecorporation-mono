@@ -3,7 +3,9 @@
 //! Endpoints for accounts, journal entries, invoices, and bank accounts.
 
 use axum::{
+    body::Bytes,
     extract::{Path, Query, State},
+    http::HeaderMap,
     routing::{get, post},
     Json, Router,
 };
@@ -1797,13 +1799,26 @@ async fn create_payment_intent(
 }
 
 async fn treasury_stripe_webhook(
-    Json(payload): Json<serde_json::Value>,
-) -> Json<serde_json::Value> {
+    headers: HeaderMap,
+    body: Bytes,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let expected = std::env::var("TREASURY_STRIPE_WEBHOOK_SECRET")
+        .map_err(|_| AppError::Internal("TREASURY_STRIPE_WEBHOOK_SECRET is not configured".to_owned()))?;
+    let provided = headers
+        .get("x-webhook-secret")
+        .and_then(|v| v.to_str().ok())
+        .ok_or_else(|| AppError::Unauthorized("missing webhook secret".to_owned()))?;
+    if provided != expected {
+        return Err(AppError::Unauthorized("invalid webhook secret".to_owned()));
+    }
+
+    let payload: serde_json::Value = serde_json::from_slice(&body)
+        .map_err(|e| AppError::BadRequest(format!("invalid webhook JSON: {e}")))?;
     tracing::info!("Received treasury Stripe webhook");
-    Json(serde_json::json!({
+    Ok(Json(serde_json::json!({
         "received": true,
         "event_id": payload.get("id").and_then(|v| v.as_str()),
-    }))
+    })))
 }
 
 // ── Router ───────────────────────────────────────────────────────────

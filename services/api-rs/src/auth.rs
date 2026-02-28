@@ -9,9 +9,10 @@ use axum::Json;
 use serde_json::json;
 
 use crate::domain::auth::claims::decode_token;
+use crate::domain::auth::claims::PrincipalType;
 use crate::domain::auth::error::AuthError;
 use crate::domain::auth::scopes::{Scope, ScopeSet};
-use crate::domain::ids::{EntityId, WorkspaceId};
+use crate::domain::ids::{ContactId, EntityId, WorkspaceId};
 
 // ── Scoped extractors ──────────────────────────────────────────────────
 //
@@ -31,8 +32,23 @@ macro_rules! define_scoped_extractor {
             }
 
             #[allow(dead_code)]
+            pub fn contact_id(&self) -> Option<ContactId> {
+                self.0.contact_id()
+            }
+
+            #[allow(dead_code)]
             pub fn entity_id(&self) -> Option<EntityId> {
                 self.0.entity_id()
+            }
+
+            #[allow(dead_code)]
+            pub fn entity_ids(&self) -> Option<&[EntityId]> {
+                self.0.entity_ids()
+            }
+
+            #[allow(dead_code)]
+            pub fn allows_entity(&self, entity_id: EntityId) -> bool {
+                self.0.allows_entity(entity_id)
             }
 
             #[allow(dead_code)]
@@ -105,6 +121,9 @@ define_scoped_extractor!(RequireAdmin, Scope::Admin);
 pub struct Principal {
     workspace_id: WorkspaceId,
     entity_id: Option<EntityId>,
+    contact_id: Option<ContactId>,
+    entity_ids: Option<Vec<EntityId>>,
+    principal_type: PrincipalType,
     scopes: ScopeSet,
 }
 
@@ -117,6 +136,28 @@ impl Principal {
     /// Optional entity the principal represents (officer, member, etc.).
     pub fn entity_id(&self) -> Option<EntityId> {
         self.entity_id
+    }
+
+    /// Optional contact represented by the principal.
+    pub fn contact_id(&self) -> Option<ContactId> {
+        self.contact_id
+    }
+
+    /// Optional explicit entity scope for this principal.
+    pub fn entity_ids(&self) -> Option<&[EntityId]> {
+        self.entity_ids.as_deref()
+    }
+
+    /// Returns true if this principal can access `entity_id`.
+    pub fn allows_entity(&self, entity_id: EntityId) -> bool {
+        match self.entity_ids() {
+            Some(ids) => ids.contains(&entity_id),
+            None => true,
+        }
+    }
+
+    pub fn principal_type(&self) -> PrincipalType {
+        self.principal_type
     }
 
     /// The scopes granted to this principal.
@@ -178,6 +219,9 @@ where
             return Ok(Principal {
                 workspace_id: claims.workspace_id(),
                 entity_id: claims.entity_id(),
+                contact_id: claims.contact_id(),
+                entity_ids: claims.entity_ids().map(|ids| ids.to_vec()),
+                principal_type: claims.principal_type(),
                 scopes: ScopeSet::from_vec(claims.scopes().to_vec()),
             });
         }
@@ -192,6 +236,36 @@ where
         }
 
         Err(AuthRejection(AuthError::Unauthorized))
+    }
+}
+
+/// Extractor for internal worker traffic authenticated with a static bearer token.
+#[derive(Debug, Clone, Copy)]
+pub struct RequireInternalWorker;
+
+impl<S> FromRequestParts<S> for RequireInternalWorker
+where
+    S: Send + Sync,
+{
+    type Rejection = AuthRejection;
+
+    async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
+        let auth_header = parts
+            .headers
+            .get("authorization")
+            .and_then(|v| v.to_str().ok())
+            .ok_or(AuthRejection(AuthError::Unauthorized))?;
+
+        let token = auth_header
+            .strip_prefix("Bearer ")
+            .ok_or(AuthRejection(AuthError::Unauthorized))?;
+
+        let expected = std::env::var("INTERNAL_WORKER_TOKEN").unwrap_or_default();
+        if expected.is_empty() || token != expected {
+            return Err(AuthRejection(AuthError::Unauthorized));
+        }
+
+        Ok(Self)
     }
 }
 
@@ -229,7 +303,16 @@ mod tests {
 
         let ws = WorkspaceId::new();
         let now = Utc::now().timestamp();
-        let claims = Claims::new(ws, None, vec![Scope::Admin], now, now + 3600);
+        let claims = Claims::new(
+            ws,
+            None,
+            None,
+            None,
+            PrincipalType::User,
+            vec![Scope::Admin],
+            now,
+            now + 3600,
+        );
         let token = encode_token(&claims, secret.as_bytes()).expect("encode");
 
         let principal = extract_principal(&format!("Bearer {token}"))
@@ -239,6 +322,8 @@ mod tests {
         assert_eq!(principal.workspace_id(), ws);
         assert!(principal.scopes().has(Scope::Admin));
         assert!(principal.entity_id().is_none());
+        assert!(principal.contact_id().is_none());
+        assert!(principal.entity_ids().is_none());
     }
 
     #[tokio::test]
@@ -259,5 +344,18 @@ mod tests {
     async fn garbage_header_returns_unauthorized() {
         let result = extract_principal("Basic dXNlcjpwYXNz").await;
         assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn internal_worker_token_extracts() {
+        // SAFETY: test-only env mutation.
+        unsafe { std::env::set_var("INTERNAL_WORKER_TOKEN", "worker-token-test") };
+        let req = Request::builder()
+            .header("authorization", "Bearer worker-token-test")
+            .body(())
+            .expect("build request");
+        let (mut parts, _body) = req.into_parts();
+        let extracted = RequireInternalWorker::from_request_parts(&mut parts, &()).await;
+        assert!(extracted.is_ok());
     }
 }

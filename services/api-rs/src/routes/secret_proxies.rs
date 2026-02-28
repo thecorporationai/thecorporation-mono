@@ -16,6 +16,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 use super::AppState;
+use crate::auth::{RequireAdmin, RequireInternalWorker};
 use crate::domain::agents::secret_proxy::{EncryptedSecrets, SecretProxyConfig};
 use crate::domain::ids::WorkspaceId;
 use crate::error::AppError;
@@ -24,8 +25,8 @@ use crate::store::workspace_store::WorkspaceStore;
 // ── Request types ────────────────────────────────────────────────────
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct CreateProxyRequest {
-    pub workspace_id: WorkspaceId,
     pub name: String,
     /// `"self"` for local encrypted secrets, or an external URL.
     pub url: String,
@@ -34,13 +35,14 @@ pub struct CreateProxyRequest {
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct SetSecretsRequest {
-    pub workspace_id: WorkspaceId,
     /// Key-value pairs. Values are plaintext — the server encrypts before storing.
     pub secrets: HashMap<String, String>,
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ProxyPathParams {
     pub workspace_id: WorkspaceId,
     pub proxy_name: String,
@@ -67,6 +69,7 @@ pub struct SecretNamesResponse {
 // ── Internal resolve (called by worker) ──────────────────────────────
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ResolveSecretsRequest {
     pub workspace_id: WorkspaceId,
     pub proxy_name: String,
@@ -131,11 +134,15 @@ fn require_fernet(state: &AppState) -> Result<&fernet::Fernet, AppError> {
 // ── Handlers ─────────────────────────────────────────────────────────
 
 async fn create_proxy(
+    RequireAdmin(auth): RequireAdmin,
+    Path(workspace_id): Path<WorkspaceId>,
     State(state): State<AppState>,
     Json(req): Json<CreateProxyRequest>,
 ) -> Result<(StatusCode, Json<ProxyResponse>), AppError> {
+    if auth.workspace_id() != workspace_id {
+        return Err(AppError::Forbidden("workspace access denied".to_owned()));
+    }
     validate_proxy_name(&req.name)?;
-    let workspace_id = req.workspace_id;
     let name = req.name.clone();
 
     let config = tokio::task::spawn_blocking({
@@ -192,9 +199,14 @@ async fn create_proxy(
 }
 
 async fn list_proxies(
+    RequireAdmin(auth): RequireAdmin,
     State(state): State<AppState>,
     Path(workspace_id): Path<WorkspaceId>,
 ) -> Result<Json<Vec<ProxyResponse>>, AppError> {
+    if auth.workspace_id() != workspace_id {
+        return Err(AppError::Forbidden("workspace access denied".to_owned()));
+    }
+
     let proxies = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
@@ -232,9 +244,14 @@ async fn list_proxies(
 }
 
 async fn get_proxy(
+    RequireAdmin(auth): RequireAdmin,
     State(state): State<AppState>,
     Path(params): Path<ProxyPathParams>,
 ) -> Result<Json<ProxyResponse>, AppError> {
+    if auth.workspace_id() != params.workspace_id {
+        return Err(AppError::Forbidden("workspace access denied".to_owned()));
+    }
+
     let proxy = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
@@ -270,10 +287,15 @@ async fn get_proxy(
 }
 
 async fn set_secrets(
+    RequireAdmin(auth): RequireAdmin,
     State(state): State<AppState>,
     Path(params): Path<ProxyPathParams>,
     Json(req): Json<SetSecretsRequest>,
 ) -> Result<Json<SecretNamesResponse>, AppError> {
+    if auth.workspace_id() != params.workspace_id {
+        return Err(AppError::Forbidden("workspace access denied".to_owned()));
+    }
+
     let fernet = require_fernet(&state)?;
     let fernet = fernet.clone();
     let proxy_name = params.proxy_name.clone();
@@ -331,9 +353,14 @@ async fn set_secrets(
 }
 
 async fn list_secret_names(
+    RequireAdmin(auth): RequireAdmin,
     State(state): State<AppState>,
     Path(params): Path<ProxyPathParams>,
 ) -> Result<Json<SecretNamesResponse>, AppError> {
+    if auth.workspace_id() != params.workspace_id {
+        return Err(AppError::Forbidden("workspace access denied".to_owned()));
+    }
+
     let proxy_name = params.proxy_name.clone();
 
     let names = tokio::task::spawn_blocking({
@@ -375,6 +402,7 @@ async fn list_secret_names(
 /// For `"self"` proxies, decrypts from git. For external proxies, returns the URL
 /// so the worker can forward requests there.
 async fn resolve_secrets(
+    _worker: RequireInternalWorker,
     State(state): State<AppState>,
     Json(req): Json<ResolveSecretsRequest>,
 ) -> Result<Json<ResolveSecretsResponse>, AppError> {

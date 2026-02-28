@@ -319,6 +319,7 @@ pub struct TickResponse {
 }
 
 async fn tick_subscriptions(
+    RequireAdmin(_auth): RequireAdmin,
     State(state): State<AppState>,
 ) -> Result<Json<TickResponse>, AppError> {
     let result = tokio::task::spawn_blocking({

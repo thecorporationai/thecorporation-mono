@@ -641,7 +641,9 @@ pub struct ServiceTokenResponse {
     pub expires_in: u64,
 }
 
-async fn get_service_token() -> Json<ServiceTokenResponse> {
+async fn get_service_token(
+    RequireAdmin(_auth): RequireAdmin,
+) -> Json<ServiceTokenResponse> {
     let token = format!("svc_{}", uuid::Uuid::new_v4().simple());
     Json(ServiceTokenResponse {
         token,

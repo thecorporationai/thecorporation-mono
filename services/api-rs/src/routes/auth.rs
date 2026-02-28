@@ -5,15 +5,16 @@
 use axum::{
     extract::{Path, State},
     http::StatusCode,
-    routing::{delete, get, post},
+    routing::{delete, post},
     Json, Router,
 };
 use serde::{Deserialize, Serialize};
 
 use super::AppState;
+use crate::auth::RequireAdmin;
 use crate::domain::auth::{
     api_key::generate_api_key,
-    claims::{encode_token, Claims},
+    claims::{Claims, PrincipalType, encode_token},
     scopes::{Scope, ScopeSet},
 };
 use crate::domain::ids::{ApiKeyId, ContactId, EntityId, WorkspaceId};
@@ -23,6 +24,7 @@ use crate::store::workspace_store::WorkspaceStore;
 // ── Request types ────────────────────────────────────────────────────
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ProvisionWorkspaceRequest {
     pub name: String,
     #[serde(default)]
@@ -30,8 +32,8 @@ pub struct ProvisionWorkspaceRequest {
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct CreateApiKeyRequest {
-    pub workspace_id: WorkspaceId,
     pub name: String,
     #[serde(default = "default_scopes")]
     pub scopes: Vec<Scope>,
@@ -48,9 +50,9 @@ fn default_scopes() -> Vec<Scope> {
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct TokenExchangeRequest {
     pub api_key: String,
-    pub workspace_id: WorkspaceId,
     #[serde(default = "default_ttl")]
     pub ttl_seconds: i64,
 }
@@ -141,6 +143,7 @@ async fn provision_workspace(
 }
 
 async fn create_api_key(
+    RequireAdmin(auth): RequireAdmin,
     State(state): State<AppState>,
     Json(req): Json<CreateApiKeyRequest>,
 ) -> Result<(StatusCode, Json<ApiKeyResponse>), AppError> {
@@ -149,7 +152,7 @@ async fn create_api_key(
             "API key name must be between 1 and 128 characters".to_owned(),
         ));
     }
-    let workspace_id = req.workspace_id;
+    let workspace_id = auth.workspace_id();
 
     let (raw_key, record) = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
@@ -194,9 +197,11 @@ async fn create_api_key(
 }
 
 async fn list_api_keys(
+    RequireAdmin(auth): RequireAdmin,
     State(state): State<AppState>,
-    Path(workspace_id): Path<WorkspaceId>,
 ) -> Result<Json<Vec<ApiKeyResponse>>, AppError> {
+    let workspace_id = auth.workspace_id();
+
     let keys = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
@@ -235,9 +240,12 @@ async fn list_api_keys(
 }
 
 async fn revoke_api_key(
+    RequireAdmin(auth): RequireAdmin,
     State(state): State<AppState>,
-    Path((workspace_id, key_id)): Path<(WorkspaceId, ApiKeyId)>,
+    Path(key_id): Path<ApiKeyId>,
 ) -> Result<StatusCode, AppError> {
+    let workspace_id = auth.workspace_id();
+
     tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
@@ -266,9 +274,12 @@ async fn revoke_api_key(
 }
 
 async fn rotate_api_key(
+    RequireAdmin(auth): RequireAdmin,
     State(state): State<AppState>,
-    Path((workspace_id, key_id)): Path<(WorkspaceId, ApiKeyId)>,
+    Path(key_id): Path<ApiKeyId>,
 ) -> Result<Json<ApiKeyResponse>, AppError> {
+    let workspace_id = auth.workspace_id();
+
     let (raw_key, new_record) = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
@@ -337,28 +348,39 @@ async fn token_exchange(
         ));
     }
 
-    let workspace_id = req.workspace_id;
     let api_key = req.api_key.clone();
     let ttl = req.ttl_seconds;
 
-    // Verify the API key against workspace storage
-    let scopes = tokio::task::spawn_blocking({
+    // Verify the API key against all workspace storage (workspace is derived from key record).
+    let (workspace_id, scopes, contact_id, entity_ids, entity_id) = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
-            let ws_store = WorkspaceStore::open(&layout, workspace_id)
-                .map_err(|_| AppError::Unauthorized("workspace not found".to_owned()))?;
+            for workspace_id in layout.list_workspace_ids() {
+                let ws_store = match WorkspaceStore::open(&layout, workspace_id) {
+                    Ok(store) => store,
+                    Err(_) => continue,
+                };
+                let key_ids = match ws_store.list_api_key_ids() {
+                    Ok(ids) => ids,
+                    Err(_) => continue,
+                };
 
-            let key_ids = ws_store
-                .list_api_key_ids()
-                .map_err(|e| AppError::Internal(format!("list keys: {e}")))?;
-
-            for id in key_ids {
-                if let Ok(record) = ws_store.read_api_key(id) {
-                    if !record.is_valid() {
-                        continue;
-                    }
-                    if let Ok(true) = crate::domain::auth::api_key::verify_api_key(&api_key, record.key_hash()) {
-                        return Ok(record.scopes().to_vec());
+                for id in key_ids {
+                    if let Ok(record) = ws_store.read_api_key(id) {
+                        if !record.is_valid() {
+                            continue;
+                        }
+                        if let Ok(true) = crate::domain::auth::api_key::verify_api_key(&api_key, record.key_hash()) {
+                            let entity_ids = record.entity_ids().map(|ids| ids.to_vec());
+                            let entity_id = entity_ids.as_ref().and_then(|ids| ids.first()).copied();
+                            return Ok((
+                                record.workspace_id(),
+                                record.scopes().to_vec(),
+                                record.contact_id(),
+                                entity_ids,
+                                entity_id,
+                            ));
+                        }
                     }
                 }
             }
@@ -373,7 +395,16 @@ async fn token_exchange(
     let now = chrono::Utc::now().timestamp();
     let exp = now + ttl;
 
-    let claims = Claims::new(workspace_id, None, scopes, now, exp);
+    let claims = Claims::new(
+        workspace_id,
+        entity_id,
+        contact_id,
+        entity_ids,
+        PrincipalType::User,
+        scopes,
+        now,
+        exp,
+    );
 
     let token = encode_token(&claims, &state.jwt_secret)
         .map_err(|e| AppError::Internal(format!("token generation failed: {e}")))?;
@@ -390,14 +421,13 @@ async fn token_exchange(
 pub fn auth_routes() -> Router<AppState> {
     Router::new()
         .route("/v1/workspaces/provision", post(provision_workspace))
-        .route("/v1/api-keys", post(create_api_key))
-        .route("/v1/api-keys/{workspace_id}", get(list_api_keys))
+        .route("/v1/api-keys", post(create_api_key).get(list_api_keys))
         .route(
-            "/v1/api-keys/{workspace_id}/{key_id}",
+            "/v1/api-keys/{key_id}",
             delete(revoke_api_key),
         )
         .route(
-            "/v1/api-keys/{workspace_id}/{key_id}/rotate",
+            "/v1/api-keys/{key_id}/rotate",
             post(rotate_api_key),
         )
         .route("/v1/auth/token-exchange", post(token_exchange))

@@ -5,7 +5,15 @@ use serde::{Deserialize, Serialize};
 
 use super::error::AuthError;
 use super::scopes::Scope;
-use crate::domain::ids::{EntityId, WorkspaceId};
+use crate::domain::ids::{ContactId, EntityId, WorkspaceId};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum PrincipalType {
+    #[default]
+    User,
+    InternalWorker,
+}
 
 /// JWT claims payload.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -17,6 +25,15 @@ pub struct Claims {
     /// Optional entity ID (if the token represents a specific officer/member).
     #[serde(skip_serializing_if = "Option::is_none")]
     entity_id: Option<EntityId>,
+    /// Optional contact ID for contact-scoped keys.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    contact_id: Option<ContactId>,
+    /// Optional entity scope for entity-scoped keys.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    entity_ids: Option<Vec<EntityId>>,
+    /// The type of principal represented by this token.
+    #[serde(default)]
+    principal_type: PrincipalType,
     /// Granted scopes.
     scopes: Vec<Scope>,
     /// Issued-at (Unix timestamp).
@@ -30,6 +47,9 @@ impl Claims {
     pub fn new(
         workspace_id: WorkspaceId,
         entity_id: Option<EntityId>,
+        contact_id: Option<ContactId>,
+        entity_ids: Option<Vec<EntityId>>,
+        principal_type: PrincipalType,
         scopes: Vec<Scope>,
         iat: i64,
         exp: i64,
@@ -38,6 +58,9 @@ impl Claims {
             sub: workspace_id.to_string(),
             workspace_id,
             entity_id,
+            contact_id,
+            entity_ids,
+            principal_type,
             scopes,
             iat,
             exp,
@@ -56,6 +79,18 @@ impl Claims {
 
     pub fn entity_id(&self) -> Option<EntityId> {
         self.entity_id
+    }
+
+    pub fn contact_id(&self) -> Option<ContactId> {
+        self.contact_id
+    }
+
+    pub fn entity_ids(&self) -> Option<&[EntityId]> {
+        self.entity_ids.as_deref()
+    }
+
+    pub fn principal_type(&self) -> PrincipalType {
+        self.principal_type
     }
 
     pub fn scopes(&self) -> &[Scope] {
@@ -113,6 +148,9 @@ mod tests {
         let claims = Claims::new(
             ws,
             Some(entity),
+            None,
+            None,
+            PrincipalType::User,
             vec![Scope::FormationCreate, Scope::EquityRead],
             1000,
             2000,
@@ -121,6 +159,9 @@ mod tests {
         let parsed: Claims = serde_json::from_str(&json).expect("deserialize Claims");
         assert_eq!(parsed.workspace_id(), ws);
         assert_eq!(parsed.entity_id(), Some(entity));
+        assert_eq!(parsed.contact_id(), None);
+        assert_eq!(parsed.entity_ids(), None);
+        assert_eq!(parsed.principal_type(), PrincipalType::User);
         assert_eq!(parsed.scopes().len(), 2);
         assert_eq!(parsed.iat(), 1000);
         assert_eq!(parsed.exp(), 2000);
@@ -129,7 +170,16 @@ mod tests {
     #[test]
     fn claims_serde_without_entity() {
         let ws = WorkspaceId::new();
-        let claims = Claims::new(ws, None, vec![Scope::All], 1000, 2000);
+        let claims = Claims::new(
+            ws,
+            None,
+            None,
+            None,
+            PrincipalType::User,
+            vec![Scope::All],
+            1000,
+            2000,
+        );
         let json = serde_json::to_string(&claims).expect("serialize Claims");
         // entity_id should not appear in JSON
         assert!(!json.contains("entity_id"));
@@ -145,6 +195,9 @@ mod tests {
         let claims = Claims::new(
             ws,
             None,
+            None,
+            None,
+            PrincipalType::User,
             vec![Scope::Admin],
             now,
             now + 3600,
@@ -163,7 +216,16 @@ mod tests {
         let secret = test_secret();
         let ws = WorkspaceId::new();
         let now = Utc::now().timestamp();
-        let claims = Claims::new(ws, None, vec![Scope::All], now, now + 3600);
+        let claims = Claims::new(
+            ws,
+            None,
+            None,
+            None,
+            PrincipalType::User,
+            vec![Scope::All],
+            now,
+            now + 3600,
+        );
 
         let token = encode_token(&claims, &secret).expect("encode token");
 
@@ -177,7 +239,16 @@ mod tests {
         let secret = test_secret();
         let ws = WorkspaceId::new();
         let past = Utc::now().timestamp() - 7200;
-        let claims = Claims::new(ws, None, vec![Scope::All], past - 3600, past);
+        let claims = Claims::new(
+            ws,
+            None,
+            None,
+            None,
+            PrincipalType::User,
+            vec![Scope::All],
+            past - 3600,
+            past,
+        );
 
         let token = encode_token(&claims, &secret).expect("encode token");
         let result = decode_token(&token, &secret);
@@ -187,7 +258,16 @@ mod tests {
     #[test]
     fn sub_matches_workspace_id() {
         let ws = WorkspaceId::new();
-        let claims = Claims::new(ws, None, vec![], 100, 200);
+        let claims = Claims::new(
+            ws,
+            None,
+            None,
+            None,
+            PrincipalType::User,
+            vec![],
+            100,
+            200,
+        );
         assert_eq!(claims.sub(), ws.to_string());
     }
 }

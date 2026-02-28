@@ -44,6 +44,11 @@ pub enum Scope {
     // ── Admin ─────────────────────────────────────────────────────────
     Admin,
 
+    // ── Internal service-to-service ──────────────────────────────────
+    InternalWorkerRead,
+    InternalWorkerWrite,
+    SecretsManage,
+
     // ── Wildcard — all permissions ────────────────────────────────────
     All,
 }

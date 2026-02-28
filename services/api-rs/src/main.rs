@@ -186,6 +186,11 @@ async fn run_server(skip_validation: bool) {
         m
     };
 
+    let internal_worker_token = std::env::var("INTERNAL_WORKER_TOKEN").unwrap_or_default();
+    if internal_worker_token.trim().is_empty() {
+        panic!("INTERNAL_WORKER_TOKEN must be set");
+    }
+
     let state = routes::AppState {
         layout,
         jwt_secret,
