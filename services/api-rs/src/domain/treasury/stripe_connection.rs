@@ -30,9 +30,19 @@ impl StripeConnection {
         }
     }
 
-    pub fn connection_id(&self) -> StripeConnectionId { self.connection_id }
-    pub fn entity_id(&self) -> EntityId { self.entity_id }
-    pub fn stripe_account_id(&self) -> &str { &self.stripe_account_id }
-    pub fn status(&self) -> &str { &self.status }
-    pub fn created_at(&self) -> DateTime<Utc> { self.created_at }
+    pub fn connection_id(&self) -> StripeConnectionId {
+        self.connection_id
+    }
+    pub fn entity_id(&self) -> EntityId {
+        self.entity_id
+    }
+    pub fn stripe_account_id(&self) -> &str {
+        &self.stripe_account_id
+    }
+    pub fn status(&self) -> &str {
+        &self.status
+    }
+    pub fn created_at(&self) -> DateTime<Utc> {
+        self.created_at
+    }
 }

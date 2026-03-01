@@ -192,21 +192,18 @@ fn merge_three_way(
                 GitStorageError::SigningError(format!("commit buffer not UTF-8: {e}"))
             })?;
             let signature = signer.sign_commit(commit_str)?;
-            let signed_oid =
-                git.commit_signed(commit_str, &signature, Some("gpgsig"))?;
+            let signed_oid = git.commit_signed(commit_str, &signature, Some("gpgsig"))?;
             git.reference(&target_full, signed_oid, true, "signed merge commit")?;
             signed_oid
         }
-        None => {
-            git.commit(
-                Some(&target_full),
-                &sig,
-                &sig,
-                &final_message,
-                &merged_tree,
-                &[&target_commit, &source_commit],
-            )?
-        }
+        None => git.commit(
+            Some(&target_full),
+            &sig,
+            &sig,
+            &final_message,
+            &merged_tree,
+            &[&target_commit, &source_commit],
+        )?,
     };
 
     tracing::debug!(
@@ -272,8 +269,9 @@ fn resolve_json_conflict(
     // Parse all versions as JSON.
     let ancestor_val: Option<Value> = ancestor
         .map(|b| {
-            serde_json::from_slice(b)
-                .map_err(|e| GitStorageError::MergeConflict(format!("ancestor not valid JSON: {e}")))
+            serde_json::from_slice(b).map_err(|e| {
+                GitStorageError::MergeConflict(format!("ancestor not valid JSON: {e}"))
+            })
         })
         .transpose()?;
     let ours_val: Value = serde_json::from_slice(ours_bytes)
@@ -281,14 +279,16 @@ fn resolve_json_conflict(
     let theirs_val: Value = serde_json::from_slice(theirs_bytes)
         .map_err(|e| GitStorageError::MergeConflict(format!("theirs not valid JSON: {e}")))?;
 
-    let base = ancestor_val.as_ref().cloned().unwrap_or(Value::Object(
-        serde_json::Map::new(),
-    ));
+    let base = ancestor_val
+        .as_ref()
+        .cloned()
+        .unwrap_or(Value::Object(serde_json::Map::new()));
 
     let merged = merge_json_values(&base, &ours_val, &theirs_val);
 
-    serde_json::to_vec_pretty(&merged)
-        .map_err(|e| GitStorageError::MergeConflict(format!("failed to serialize merged JSON: {e}")))
+    serde_json::to_vec_pretty(&merged).map_err(|e| {
+        GitStorageError::MergeConflict(format!("failed to serialize merged JSON: {e}"))
+    })
 }
 
 /// Recursively merge JSON values using three-way diff logic.
@@ -387,7 +387,7 @@ fn merge_json_objects(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::git::commit::{commit_files, FileWrite};
+    use crate::git::commit::{FileWrite, commit_files};
     use tempfile::TempDir;
 
     /// Helper: init a repo and return (repo, tmp_dir).

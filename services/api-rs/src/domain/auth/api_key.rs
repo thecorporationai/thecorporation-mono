@@ -1,7 +1,7 @@
 //! API key generation, storage model, and verification.
 
-use argon2::password_hash::rand_core::OsRng;
 use argon2::password_hash::SaltString;
+use argon2::password_hash::rand_core::OsRng;
 use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier};
 use chrono::{DateTime, Utc};
 use rand::Rng;
@@ -160,8 +160,8 @@ mod tests {
     fn generated_key_has_sk_prefix() {
         let ws = WorkspaceId::new();
         let scopes = ScopeSet::from_vec(vec![Scope::All]);
-        let (raw, _record) =
-            generate_api_key(ws, "test-key".into(), scopes, None, None, None).expect("generate key");
+        let (raw, _record) = generate_api_key(ws, "test-key".into(), scopes, None, None, None)
+            .expect("generate key");
         assert!(raw.starts_with("sk_"));
     }
 
@@ -169,8 +169,8 @@ mod tests {
     fn generated_key_has_correct_length() {
         let ws = WorkspaceId::new();
         let scopes = ScopeSet::from_vec(vec![Scope::All]);
-        let (raw, _record) =
-            generate_api_key(ws, "test-key".into(), scopes, None, None, None).expect("generate key");
+        let (raw, _record) = generate_api_key(ws, "test-key".into(), scopes, None, None, None)
+            .expect("generate key");
         // "sk_" (3) + 64 hex chars = 67
         assert_eq!(raw.len(), 3 + KEY_RANDOM_BYTES * 2);
     }
@@ -179,8 +179,8 @@ mod tests {
     fn verify_correct_key() {
         let ws = WorkspaceId::new();
         let scopes = ScopeSet::from_vec(vec![Scope::FormationCreate]);
-        let (raw, record) =
-            generate_api_key(ws, "test-key".into(), scopes, None, None, None).expect("generate key");
+        let (raw, record) = generate_api_key(ws, "test-key".into(), scopes, None, None, None)
+            .expect("generate key");
         let ok = verify_api_key(&raw, record.key_hash()).expect("verify key");
         assert!(ok);
     }
@@ -189,8 +189,8 @@ mod tests {
     fn verify_wrong_key_fails() {
         let ws = WorkspaceId::new();
         let scopes = ScopeSet::from_vec(vec![Scope::FormationCreate]);
-        let (_raw, record) =
-            generate_api_key(ws, "test-key".into(), scopes, None, None, None).expect("generate key");
+        let (_raw, record) = generate_api_key(ws, "test-key".into(), scopes, None, None, None)
+            .expect("generate key");
         let ok = verify_api_key("sk_wrong", record.key_hash()).expect("verify key");
         assert!(!ok);
     }
@@ -199,8 +199,8 @@ mod tests {
     fn new_key_is_valid() {
         let ws = WorkspaceId::new();
         let scopes = ScopeSet::from_vec(vec![Scope::All]);
-        let (_raw, record) =
-            generate_api_key(ws, "test-key".into(), scopes, None, None, None).expect("generate key");
+        let (_raw, record) = generate_api_key(ws, "test-key".into(), scopes, None, None, None)
+            .expect("generate key");
         assert!(record.is_valid());
     }
 
@@ -208,8 +208,8 @@ mod tests {
     fn revoked_key_is_not_valid() {
         let ws = WorkspaceId::new();
         let scopes = ScopeSet::from_vec(vec![Scope::All]);
-        let (_raw, mut record) =
-            generate_api_key(ws, "test-key".into(), scopes, None, None, None).expect("generate key");
+        let (_raw, mut record) = generate_api_key(ws, "test-key".into(), scopes, None, None, None)
+            .expect("generate key");
         record.revoke();
         assert!(!record.is_valid());
     }
@@ -220,7 +220,8 @@ mod tests {
         let scopes = ScopeSet::from_vec(vec![Scope::All]);
         let past = Utc::now() - chrono::Duration::hours(1);
         let (_raw, record) =
-            generate_api_key(ws, "test-key".into(), scopes, Some(past), None, None).expect("generate key");
+            generate_api_key(ws, "test-key".into(), scopes, Some(past), None, None)
+                .expect("generate key");
         assert!(!record.is_valid());
     }
 

@@ -15,11 +15,15 @@ fn validate_safe(
     valuation_cap_cents: Option<Cents>,
 ) -> Result<(), EquityError> {
     if principal_amount_cents.raw() <= 0 {
-        return Err(EquityError::Validation("principal amount must be positive".into()));
+        return Err(EquityError::Validation(
+            "principal amount must be positive".into(),
+        ));
     }
     if let Some(rate) = discount_rate {
         if !(0.0..=1.0).contains(&rate) {
-            return Err(EquityError::Validation("discount_rate must be between 0.0 and 1.0".into()));
+            return Err(EquityError::Validation(
+                "discount_rate must be between 0.0 and 1.0".into(),
+            ));
         }
     }
     if let Some(cap) = valuation_cap_cents {
@@ -60,7 +64,11 @@ impl TryFrom<RawSafeNote> for SafeNote {
     type Error = EquityError;
 
     fn try_from(raw: RawSafeNote) -> Result<Self, Self::Error> {
-        validate_safe(raw.principal_amount_cents, raw.discount_rate, raw.valuation_cap_cents)?;
+        validate_safe(
+            raw.principal_amount_cents,
+            raw.discount_rate,
+            raw.valuation_cap_cents,
+        )?;
         Ok(SafeNote {
             safe_note_id: raw.safe_note_id,
             entity_id: raw.entity_id,
@@ -150,11 +158,7 @@ impl SafeNote {
     }
 
     /// Convert the SAFE into equity.
-    pub fn convert(
-        &mut self,
-        shares: ShareCount,
-        price_cents: Cents,
-    ) -> Result<(), EquityError> {
+    pub fn convert(&mut self, shares: ShareCount, price_cents: Cents) -> Result<(), EquityError> {
         if self.status != SafeStatus::Issued {
             return Err(EquityError::InvalidSafeTransition {
                 from: self.status,
@@ -279,8 +283,8 @@ pub fn calculate_safe_conversion(
             let cap_price = cap / post_money_shares_outstanding.raw();
 
             // Use discount if available
-            let discount_price = discount_rate
-                .map(|r| ((financing_price as f64) * (1.0 - r)) as i64);
+            let discount_price =
+                discount_rate.map(|r| ((financing_price as f64) * (1.0 - r)) as i64);
 
             let (price, basis) = match discount_price {
                 Some(dp) if dp < cap_price => (dp, "discount".to_string()),
@@ -302,8 +306,8 @@ pub fn calculate_safe_conversion(
                 .unwrap_or(financing_price * pre_money_shares_outstanding.raw());
             let cap_price = cap / pre_money_shares_outstanding.raw();
 
-            let discount_price = discount_rate
-                .map(|r| ((financing_price as f64) * (1.0 - r)) as i64);
+            let discount_price =
+                discount_rate.map(|r| ((financing_price as f64) * (1.0 - r)) as i64);
 
             let (price, basis) = match discount_price {
                 Some(dp) if dp < cap_price => (dp, "discount".to_string()),
@@ -320,12 +324,11 @@ pub fn calculate_safe_conversion(
         }
         SafeType::Mfn => {
             // MFN: convert at the most favorable (lowest) price for investor
-            let discount_price = discount_rate
-                .map(|r| ((financing_price as f64) * (1.0 - r)) as i64);
+            let discount_price =
+                discount_rate.map(|r| ((financing_price as f64) * (1.0 - r)) as i64);
 
-            let cap_price = valuation_cap_cents.map(|c| {
-                c.raw() / post_money_shares_outstanding.raw()
-            });
+            let cap_price =
+                valuation_cap_cents.map(|c| c.raw() / post_money_shares_outstanding.raw());
 
             let candidates: Vec<(i64, &str)> = [
                 Some((financing_price, "financing_price")),
@@ -362,7 +365,7 @@ mod tests {
             EntityId::new(),
             "Investor A".to_string(),
             None,
-            Cents::new(100_000_00), // $100,000
+            Cents::new(100_000_00),          // $100,000
             Some(Cents::new(10_000_000_00)), // $10M cap
             None,
             SafeType::PostMoney,
@@ -475,7 +478,7 @@ mod tests {
             SafeType::Mfn,
             Cents::new(100_000_00),
             Some(Cents::new(10_000_000_00)), // cap price = $1.00
-            Some(0.20),                     // discount price = $2.00 * 0.80 = $1.60
+            Some(0.20),                      // discount price = $2.00 * 0.80 = $1.60
             Cents::new(2_00),
             ShareCount::new(8_000_000),
             ShareCount::new(10_000_000),
@@ -492,8 +495,8 @@ mod tests {
             SafeType::PostMoney,
             Cents::new(100_000_00),
             Some(Cents::new(20_000_000_00)), // cap price = $2.00
-            Some(0.20),                     // discount = $2.50 * 0.80 = $2.00
-            Cents::new(2_50),                 // financing $2.50
+            Some(0.20),                      // discount = $2.50 * 0.80 = $2.00
+            Cents::new(2_50),                // financing $2.50
             ShareCount::new(8_000_000),
             ShareCount::new(10_000_000),
         );

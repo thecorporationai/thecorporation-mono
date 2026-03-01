@@ -64,13 +64,27 @@ impl Distribution {
     }
 
     // Accessors
-    pub fn distribution_id(&self) -> DistributionId { self.distribution_id }
-    pub fn entity_id(&self) -> EntityId { self.entity_id }
-    pub fn distribution_type(&self) -> DistributionType { self.distribution_type }
-    pub fn total_amount_cents(&self) -> Cents { self.total_amount_cents }
-    pub fn description(&self) -> &str { &self.description }
-    pub fn status(&self) -> DistributionStatus { self.status }
-    pub fn created_at(&self) -> DateTime<Utc> { self.created_at }
+    pub fn distribution_id(&self) -> DistributionId {
+        self.distribution_id
+    }
+    pub fn entity_id(&self) -> EntityId {
+        self.entity_id
+    }
+    pub fn distribution_type(&self) -> DistributionType {
+        self.distribution_type
+    }
+    pub fn total_amount_cents(&self) -> Cents {
+        self.total_amount_cents
+    }
+    pub fn description(&self) -> &str {
+        &self.description
+    }
+    pub fn status(&self) -> DistributionStatus {
+        self.status
+    }
+    pub fn created_at(&self) -> DateTime<Utc> {
+        self.created_at
+    }
 }
 
 #[cfg(test)]

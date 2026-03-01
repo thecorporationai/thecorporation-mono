@@ -60,14 +60,30 @@ impl ContractorClassification {
     }
 
     // Accessors
-    pub fn classification_id(&self) -> ClassificationId { self.classification_id }
-    pub fn entity_id(&self) -> EntityId { self.entity_id }
-    pub fn contractor_name(&self) -> &str { &self.contractor_name }
-    pub fn state(&self) -> &str { &self.state }
-    pub fn risk_level(&self) -> RiskLevel { self.risk_level }
-    pub fn flags(&self) -> &[String] { &self.flags }
-    pub fn classification(&self) -> ClassificationResult { self.classification }
-    pub fn created_at(&self) -> DateTime<Utc> { self.created_at }
+    pub fn classification_id(&self) -> ClassificationId {
+        self.classification_id
+    }
+    pub fn entity_id(&self) -> EntityId {
+        self.entity_id
+    }
+    pub fn contractor_name(&self) -> &str {
+        &self.contractor_name
+    }
+    pub fn state(&self) -> &str {
+        &self.state
+    }
+    pub fn risk_level(&self) -> RiskLevel {
+        self.risk_level
+    }
+    pub fn flags(&self) -> &[String] {
+        &self.flags
+    }
+    pub fn classification(&self) -> ClassificationResult {
+        self.classification
+    }
+    pub fn created_at(&self) -> DateTime<Utc> {
+        self.created_at
+    }
 }
 
 #[cfg(test)]

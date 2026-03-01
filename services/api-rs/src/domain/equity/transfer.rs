@@ -4,7 +4,10 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 use super::error::EquityError;
-use super::types::{BylawsReviewStatus, GoverningDocType, ShareCount, TransfereeRights, TransferStatus, TransferType};
+use super::types::{
+    BylawsReviewStatus, GoverningDocType, ShareCount, TransferStatus, TransferType,
+    TransfereeRights,
+};
 use crate::domain::ids::{
     ContactId, EntityId, ResolutionId, ShareClassId, TransferId, ValuationId, WorkspaceId,
 };
@@ -17,10 +20,14 @@ fn validate_transfer(
     to_contact_id: ContactId,
 ) -> Result<(), EquityError> {
     if share_count.raw() <= 0 {
-        return Err(EquityError::Validation("share_count must be positive".into()));
+        return Err(EquityError::Validation(
+            "share_count must be positive".into(),
+        ));
     }
     if from_contact_id == to_contact_id {
-        return Err(EquityError::Validation("from_holder and to_holder must be different".into()));
+        return Err(EquityError::Validation(
+            "from_holder and to_holder must be different".into(),
+        ));
     }
     Ok(())
 }
@@ -203,11 +210,7 @@ impl ShareTransfer {
     }
 
     /// Record ROFR decision. Must be PendingRofr -> PendingBoardApproval.
-    pub fn record_rofr_decision(
-        &mut self,
-        offered: bool,
-        waived: bool,
-    ) -> Result<(), EquityError> {
+    pub fn record_rofr_decision(&mut self, offered: bool, waived: bool) -> Result<(), EquityError> {
         if self.status != TransferStatus::PendingRofr {
             return Err(EquityError::InvalidTransferTransition {
                 from: self.status,
@@ -221,10 +224,7 @@ impl ShareTransfer {
     }
 
     /// Approve the transfer. Must be PendingBoardApproval.
-    pub fn approve(
-        &mut self,
-        resolution_id: Option<ResolutionId>,
-    ) -> Result<(), EquityError> {
+    pub fn approve(&mut self, resolution_id: Option<ResolutionId>) -> Result<(), EquityError> {
         if self.status != TransferStatus::PendingBoardApproval {
             return Err(EquityError::InvalidTransferTransition {
                 from: self.status,
@@ -428,8 +428,12 @@ mod tests {
     fn bylaws_review_denied() {
         let mut t = make_transfer();
         t.submit_for_review().unwrap();
-        t.record_bylaws_review(false, "violates restrictions".to_string(), "counsel".to_string())
-            .unwrap();
+        t.record_bylaws_review(
+            false,
+            "violates restrictions".to_string(),
+            "counsel".to_string(),
+        )
+        .unwrap();
         assert_eq!(t.status(), TransferStatus::Denied);
     }
 

@@ -118,6 +118,12 @@ define_id!(VoteId);
 define_id!(ResolutionId);
 define_id!(IncidentId);
 define_id!(ScheduleAmendmentId);
+define_id!(GovernanceDocBundleId);
+define_id!(GovernanceTriggerId);
+define_id!(GovernanceModeEventId);
+define_id!(GovernanceAuditEntryId);
+define_id!(GovernanceAuditCheckpointId);
+define_id!(GovernanceAuditVerificationId);
 
 // ── Contacts & Obligations ─────────────────────────────────────────────
 define_id!(ContactId);

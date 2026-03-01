@@ -397,8 +397,7 @@ mod tests {
         let status = MeetingStatus::Convened;
         let json = serde_json::to_string(&status).expect("serialize MeetingStatus");
         assert_eq!(json, "\"convened\"");
-        let parsed: MeetingStatus =
-            serde_json::from_str(&json).expect("deserialize MeetingStatus");
+        let parsed: MeetingStatus = serde_json::from_str(&json).expect("deserialize MeetingStatus");
         assert_eq!(status, parsed);
     }
 

@@ -23,11 +23,7 @@ pub struct Account {
 impl Account {
     /// Create a new GL account. Account type and normal balance are derived
     /// from the `GlAccountCode`.
-    pub fn new(
-        account_id: AccountId,
-        entity_id: EntityId,
-        account_code: GlAccountCode,
-    ) -> Self {
+    pub fn new(account_id: AccountId, entity_id: EntityId, account_code: GlAccountCode) -> Self {
         let account_type = account_code.account_type();
         Self {
             account_id,
@@ -91,11 +87,7 @@ mod tests {
     use super::*;
 
     fn make_account() -> Account {
-        Account::new(
-            AccountId::new(),
-            EntityId::new(),
-            GlAccountCode::Cash,
-        )
+        Account::new(AccountId::new(), EntityId::new(), GlAccountCode::Cash)
     }
 
     #[test]
@@ -109,11 +101,7 @@ mod tests {
 
     #[test]
     fn revenue_account_has_credit_normal_balance() {
-        let acct = Account::new(
-            AccountId::new(),
-            EntityId::new(),
-            GlAccountCode::Revenue,
-        );
+        let acct = Account::new(AccountId::new(), EntityId::new(), GlAccountCode::Revenue);
         assert_eq!(acct.account_type(), AccountType::Revenue);
         assert_eq!(acct.normal_balance(), Side::Credit);
     }

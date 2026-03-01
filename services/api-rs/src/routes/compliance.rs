@@ -20,6 +20,7 @@ use crate::domain::formation::{
     tax_filing::{TaxFiling, TaxFilingStatus},
 };
 use crate::domain::governance::incident::{GovernanceIncident, IncidentSeverity, IncidentStatus};
+use crate::domain::governance::trigger::{GovernanceTriggerSource, GovernanceTriggerType};
 use crate::domain::ids::*;
 use crate::domain::{
     execution::{
@@ -31,6 +32,7 @@ use crate::domain::{
 };
 use crate::error::AppError;
 use crate::git::commit::FileWrite;
+use crate::routes::governance_enforcement::{LockdownTriggerInput, apply_lockdown_trigger};
 use crate::store::entity_store::EntityStore;
 
 // ── Request types ────────────────────────────────────────────────────
@@ -498,27 +500,33 @@ async fn scan_compliance_escalations(
                             DeadlineSeverity::High => IncidentSeverity::High,
                             DeadlineSeverity::Critical => IncidentSeverity::Critical,
                         };
-                        let incident = GovernanceIncident::new(
-                            IncidentId::new(),
+                        let lockdown = apply_lockdown_trigger(
+                            &store,
                             entity_id,
-                            severity,
-                            format!("Compliance miss: {}", deadline.deadline_type()),
-                            format!(
-                                "Deadline {} missed by at least one day",
-                                deadline.deadline_id()
-                            ),
-                        );
-                        let incident_id = incident.incident_id();
-                        store
-                            .write_json(
-                                "main",
-                                &format!("governance/incidents/{}.json", incident_id),
-                                &incident,
-                                &format!("COMPLIANCE: create incident {incident_id}"),
-                            )
-                            .map_err(|e| AppError::Internal(format!("commit: {e}")))?;
-                        incidents_created += 1;
-                        Some(incident_id)
+                            LockdownTriggerInput {
+                                source: GovernanceTriggerSource::ComplianceScanner,
+                                trigger_type: GovernanceTriggerType::ComplianceDeadlineMissedDPlus1,
+                                severity,
+                                title: format!("Compliance miss: {}", deadline.deadline_type()),
+                                description: format!(
+                                    "Deadline {} missed by at least one day",
+                                    deadline.deadline_id()
+                                ),
+                                evidence_refs: vec![format!("deadline:{}", deadline.deadline_id())],
+                                linked_intent_id: None,
+                                linked_escalation_id: None,
+                                idempotency_key: Some(format!(
+                                    "compliance-d-plus-1:{}",
+                                    deadline.deadline_id()
+                                )),
+                                existing_incident_id: None,
+                                updated_by: None,
+                            },
+                        )?;
+                        if lockdown.incident_created {
+                            incidents_created += 1;
+                        }
+                        Some(lockdown.incident.incident_id())
                     } else {
                         None
                     };

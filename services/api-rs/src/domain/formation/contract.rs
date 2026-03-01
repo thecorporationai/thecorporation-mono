@@ -73,15 +73,33 @@ impl Contract {
     }
 
     // Accessors
-    pub fn contract_id(&self) -> ContractId { self.contract_id }
-    pub fn entity_id(&self) -> EntityId { self.entity_id }
-    pub fn template_type(&self) -> ContractTemplateType { self.template_type }
-    pub fn counterparty_name(&self) -> &str { &self.counterparty_name }
-    pub fn effective_date(&self) -> NaiveDate { self.effective_date }
-    pub fn parameters(&self) -> &serde_json::Value { &self.parameters }
-    pub fn status(&self) -> ContractStatus { self.status }
-    pub fn document_id(&self) -> DocumentId { self.document_id }
-    pub fn created_at(&self) -> DateTime<Utc> { self.created_at }
+    pub fn contract_id(&self) -> ContractId {
+        self.contract_id
+    }
+    pub fn entity_id(&self) -> EntityId {
+        self.entity_id
+    }
+    pub fn template_type(&self) -> ContractTemplateType {
+        self.template_type
+    }
+    pub fn counterparty_name(&self) -> &str {
+        &self.counterparty_name
+    }
+    pub fn effective_date(&self) -> NaiveDate {
+        self.effective_date
+    }
+    pub fn parameters(&self) -> &serde_json::Value {
+        &self.parameters
+    }
+    pub fn status(&self) -> ContractStatus {
+        self.status
+    }
+    pub fn document_id(&self) -> DocumentId {
+        self.document_id
+    }
+    pub fn created_at(&self) -> DateTime<Utc> {
+        self.created_at
+    }
 }
 
 #[cfg(test)]
@@ -134,6 +152,9 @@ mod tests {
         let json = serde_json::to_string(&c).unwrap();
         let parsed: Contract = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed.contract_id(), c.contract_id());
-        assert_eq!(parsed.template_type(), ContractTemplateType::EmploymentOffer);
+        assert_eq!(
+            parsed.template_type(),
+            ContractTemplateType::EmploymentOffer
+        );
     }
 }

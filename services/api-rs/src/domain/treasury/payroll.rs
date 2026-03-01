@@ -51,12 +51,24 @@ impl PayrollRun {
     }
 
     // Accessors
-    pub fn payroll_run_id(&self) -> PayrollRunId { self.payroll_run_id }
-    pub fn entity_id(&self) -> EntityId { self.entity_id }
-    pub fn pay_period_start(&self) -> NaiveDate { self.pay_period_start }
-    pub fn pay_period_end(&self) -> NaiveDate { self.pay_period_end }
-    pub fn status(&self) -> PayrollStatus { self.status }
-    pub fn created_at(&self) -> DateTime<Utc> { self.created_at }
+    pub fn payroll_run_id(&self) -> PayrollRunId {
+        self.payroll_run_id
+    }
+    pub fn entity_id(&self) -> EntityId {
+        self.entity_id
+    }
+    pub fn pay_period_start(&self) -> NaiveDate {
+        self.pay_period_start
+    }
+    pub fn pay_period_end(&self) -> NaiveDate {
+        self.pay_period_end
+    }
+    pub fn status(&self) -> PayrollStatus {
+        self.status
+    }
+    pub fn created_at(&self) -> DateTime<Utc> {
+        self.created_at
+    }
 }
 
 #[cfg(test)]

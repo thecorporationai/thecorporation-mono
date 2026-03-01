@@ -178,6 +178,17 @@ pub enum DocumentRequestStatus {
     Waived,
 }
 
+impl fmt::Display for DocumentRequestStatus {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Requested => write!(f, "requested"),
+            Self::Provided => write!(f, "provided"),
+            Self::NotApplicable => write!(f, "not_applicable"),
+            Self::Waived => write!(f, "waived"),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -187,8 +198,7 @@ mod tests {
         let status = IntentStatus::Authorized;
         let json = serde_json::to_string(&status).expect("serialize IntentStatus");
         assert_eq!(json, "\"authorized\"");
-        let parsed: IntentStatus =
-            serde_json::from_str(&json).expect("deserialize IntentStatus");
+        let parsed: IntentStatus = serde_json::from_str(&json).expect("deserialize IntentStatus");
         assert_eq!(status, parsed);
     }
 
@@ -204,8 +214,7 @@ mod tests {
         let tier = AuthorityTier::Tier2;
         let json = serde_json::to_string(&tier).expect("serialize AuthorityTier");
         assert_eq!(json, "\"tier_2\"");
-        let parsed: AuthorityTier =
-            serde_json::from_str(&json).expect("deserialize AuthorityTier");
+        let parsed: AuthorityTier = serde_json::from_str(&json).expect("deserialize AuthorityTier");
         assert_eq!(tier, parsed);
     }
 

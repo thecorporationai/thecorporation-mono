@@ -5,7 +5,7 @@
 //! and signature requirements.
 
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use crate::domain::formation::types::{DocumentType, EntityType};
 use crate::domain::ids::{AgentId, EntityId};
@@ -203,9 +203,7 @@ pub fn generate_operating_agreement(
     jurisdiction: &str,
     members: &[MemberInput],
 ) -> Value {
-    let has_manager = members
-        .iter()
-        .any(|m| m.role == Some(MemberRole::Manager));
+    let has_manager = members.iter().any(|m| m.role == Some(MemberRole::Manager));
     let management_structure = if has_manager {
         "manager-managed"
     } else {
@@ -689,13 +687,15 @@ mod tests {
 
     #[test]
     fn ss4_application_structure() {
-        let content =
-            generate_ss4_application("Test LLC", EntityType::Llc, "Delaware", &alice());
+        let content = generate_ss4_application("Test LLC", EntityType::Llc, "Delaware", &alice());
 
         assert_eq!(content["document_type"], "ss4_application");
         assert_eq!(content["filing_fee_cents"], 0);
         assert_eq!(content["fields"]["entity_type_irs"], "LLC");
-        assert_eq!(content["fields"]["responsible_party"]["name"], "Alice Smith");
+        assert_eq!(
+            content["fields"]["responsible_party"]["name"],
+            "Alice Smith"
+        );
         assert_eq!(content["fields"]["reason"], "started_new_business");
         assert_eq!(content["fields"]["expected_employees"], 0);
 
@@ -777,13 +777,8 @@ mod tests {
 
     #[test]
     fn statutory_reference_delaware() {
-        let content = generate_articles_of_organization(
-            "Test LLC",
-            "Delaware",
-            "RA",
-            "123 Main",
-            &alice(),
-        );
+        let content =
+            generate_articles_of_organization("Test LLC", "Delaware", "RA", "123 Main", &alice());
         let ref_str = content["fields"]["statutory_reference"].as_str().unwrap();
         assert!(ref_str.contains("Delaware Limited Liability Company Act"));
         assert!(ref_str.contains("6 Del. C."));

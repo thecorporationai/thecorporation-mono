@@ -69,10 +69,7 @@ impl CommitSigner {
             )));
         }
 
-        let fingerprint = key
-            .public_key()
-            .fingerprint(HashAlg::Sha256)
-            .to_string();
+        let fingerprint = key.public_key().fingerprint(HashAlg::Sha256).to_string();
 
         Ok(Self { key, fingerprint })
     }

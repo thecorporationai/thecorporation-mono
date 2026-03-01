@@ -53,32 +53,24 @@ impl CorpRepo {
 
             match ctx.and_then(|c| c.signer) {
                 Some(signer) => {
-                    let commit_buf = repo.commit_create_buffer(
-                        &sig,
-                        &sig,
-                        &message,
-                        &empty_tree,
-                        &[],
-                    )?;
+                    let commit_buf =
+                        repo.commit_create_buffer(&sig, &sig, &message, &empty_tree, &[])?;
                     let commit_str = std::str::from_utf8(&commit_buf).map_err(|e| {
                         GitStorageError::SigningError(format!("commit buffer not UTF-8: {e}"))
                     })?;
                     let signature = signer.sign_commit(commit_str)?;
-                    let signed_oid =
-                        repo.commit_signed(commit_str, &signature, Some("gpgsig"))?;
+                    let signed_oid = repo.commit_signed(commit_str, &signature, Some("gpgsig"))?;
                     repo.reference("refs/heads/main", signed_oid, true, "initial signed commit")?;
                     signed_oid
                 }
-                None => {
-                    repo.commit(
-                        Some("refs/heads/main"),
-                        &sig,
-                        &sig,
-                        &message,
-                        &empty_tree,
-                        &[],
-                    )?
-                }
+                None => repo.commit(
+                    Some("refs/heads/main"),
+                    &sig,
+                    &sig,
+                    &message,
+                    &empty_tree,
+                    &[],
+                )?,
             }
         };
 
@@ -129,9 +121,9 @@ impl CorpRepo {
     /// Read raw bytes from a path at a given ref.
     pub fn read_blob(&self, refname: &str, path: &str) -> Result<Vec<u8>, GitStorageError> {
         let tree = self.tree_at_ref(refname)?;
-        let entry = tree.get_path(Path::new(path)).map_err(|_| {
-            GitStorageError::NotFound(format!("{path} not found at ref {refname}"))
-        })?;
+        let entry = tree
+            .get_path(Path::new(path))
+            .map_err(|_| GitStorageError::NotFound(format!("{path} not found at ref {refname}")))?;
 
         let object = entry.to_object(&self.inner)?;
         let blob = object.as_blob().ok_or_else(|| {
@@ -158,13 +150,9 @@ impl CorpRepo {
                 GitStorageError::NotFound(format!("{dir_path} not found at ref {refname}"))
             })?;
             let object = entry.to_object(&self.inner)?;
-            object
-                .into_tree()
-                .map_err(|_| {
-                    GitStorageError::NotFound(format!(
-                        "{dir_path} is not a directory at ref {refname}"
-                    ))
-                })?
+            object.into_tree().map_err(|_| {
+                GitStorageError::NotFound(format!("{dir_path} is not a directory at ref {refname}"))
+            })?
         };
 
         let mut entries = Vec::new();
@@ -204,9 +192,10 @@ impl CorpRepo {
     /// or full refs like `"refs/heads/feature"`.
     pub fn resolve_ref(&self, refname: &str) -> Result<Oid, GitStorageError> {
         let full_ref = Self::normalize_ref(refname);
-        let reference = self.inner.find_reference(&full_ref).map_err(|_| {
-            GitStorageError::BranchNotFound(refname.to_owned())
-        })?;
+        let reference = self
+            .inner
+            .find_reference(&full_ref)
+            .map_err(|_| GitStorageError::BranchNotFound(refname.to_owned()))?;
         let oid = reference
             .target()
             .ok_or_else(|| GitStorageError::BranchNotFound(refname.to_owned()))?;

@@ -4,9 +4,7 @@ use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 
 use super::types::{InvestorLedgerEntryType, ShareCount};
-use crate::domain::ids::{
-    ContactId, EntityId, FundingRoundId, InvestorLedgerEntryId, SafeNoteId,
-};
+use crate::domain::ids::{ContactId, EntityId, FundingRoundId, InvestorLedgerEntryId, SafeNoteId};
 use crate::domain::treasury::types::Cents;
 
 /// A ledger entry tracking an investor's financial relationship with an entity.

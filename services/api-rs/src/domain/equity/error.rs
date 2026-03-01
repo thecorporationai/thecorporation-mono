@@ -1,7 +1,10 @@
 //! Equity domain errors.
 
-use super::types::{
-    FundingRoundStatus, GrantStatus, SafeStatus, ShareCount, TransferStatus, ValuationStatus,
+use super::{
+    round::EquityRoundStatus,
+    types::{
+        FundingRoundStatus, GrantStatus, SafeStatus, ShareCount, TransferStatus, ValuationStatus,
+    },
 };
 use crate::domain::ids::{
     CapTableId, EquityGrantId, FundingRoundId, RepurchaseRightId, SafeNoteId, ShareClassId,
@@ -88,25 +91,24 @@ pub enum EquityError {
         to: FundingRoundStatus,
     },
 
+    /// An equity round cannot transition between the given states.
+    #[error("invalid equity round transition from {from} to {to}")]
+    InvalidRoundTransition {
+        from: EquityRoundStatus,
+        to: EquityRoundStatus,
+    },
+
     /// The valuation has expired and can no longer be used.
     #[error("valuation {0} has expired")]
     ValuationExpired(ValuationId),
 
     /// Valuation cap is below the principal amount.
     #[error("valuation cap {cap} is below principal amount {principal}")]
-    ValuationCapBelowPrincipal {
-        cap: Cents,
-        principal: Cents,
-    },
+    ValuationCapBelowPrincipal { cap: Cents, principal: Cents },
 
     /// Exercise price is below the current fair market value (409A violation risk).
-    #[error(
-        "exercise price {exercise_price} is below FMV {fmv}"
-    )]
-    ExercisePriceBelowFmv {
-        exercise_price: Cents,
-        fmv: Cents,
-    },
+    #[error("exercise price {exercise_price} is below FMV {fmv}")]
+    ExercisePriceBelowFmv { exercise_price: Cents, fmv: Cents },
 
     /// The requested repurchase right does not exist.
     #[error("repurchase right {0} not found")]

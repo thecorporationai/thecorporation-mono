@@ -54,14 +54,30 @@ impl Reconciliation {
     }
 
     // Accessors
-    pub fn reconciliation_id(&self) -> ReconciliationId { self.reconciliation_id }
-    pub fn entity_id(&self) -> EntityId { self.entity_id }
-    pub fn as_of_date(&self) -> NaiveDate { self.as_of_date }
-    pub fn total_debits_cents(&self) -> Cents { self.total_debits_cents }
-    pub fn total_credits_cents(&self) -> Cents { self.total_credits_cents }
-    pub fn difference_cents(&self) -> Cents { self.difference_cents }
-    pub fn status(&self) -> ReconciliationStatus { self.status }
-    pub fn created_at(&self) -> DateTime<Utc> { self.created_at }
+    pub fn reconciliation_id(&self) -> ReconciliationId {
+        self.reconciliation_id
+    }
+    pub fn entity_id(&self) -> EntityId {
+        self.entity_id
+    }
+    pub fn as_of_date(&self) -> NaiveDate {
+        self.as_of_date
+    }
+    pub fn total_debits_cents(&self) -> Cents {
+        self.total_debits_cents
+    }
+    pub fn total_credits_cents(&self) -> Cents {
+        self.total_credits_cents
+    }
+    pub fn difference_cents(&self) -> Cents {
+        self.difference_cents
+    }
+    pub fn status(&self) -> ReconciliationStatus {
+        self.status
+    }
+    pub fn created_at(&self) -> DateTime<Utc> {
+        self.created_at
+    }
 }
 
 #[cfg(test)]

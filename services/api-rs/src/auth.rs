@@ -1,18 +1,21 @@
 //! Auth middleware — Axum extractor that resolves a `Principal` from the
 //! `Authorization` header (Bearer JWT or raw API key).
 
-use axum::extract::FromRequestParts;
-use axum::http::request::Parts;
-use axum::http::StatusCode;
-use axum::response::{IntoResponse, Response};
 use axum::Json;
+use axum::extract::FromRequestParts;
+use axum::http::StatusCode;
+use axum::http::request::Parts;
+use axum::response::{IntoResponse, Response};
 use serde_json::json;
+use std::any::Any;
 
-use crate::domain::auth::claims::decode_token;
 use crate::domain::auth::claims::PrincipalType;
+use crate::domain::auth::claims::decode_token;
 use crate::domain::auth::error::AuthError;
 use crate::domain::auth::scopes::{Scope, ScopeSet};
 use crate::domain::ids::{ContactId, EntityId, WorkspaceId};
+use crate::store::RepoLayout;
+use crate::store::workspace_store::WorkspaceStore;
 
 // ── Scoped extractors ──────────────────────────────────────────────────
 //
@@ -57,7 +60,7 @@ macro_rules! define_scoped_extractor {
             }
         }
 
-        impl<S: Send + Sync> FromRequestParts<S> for $name {
+        impl<S: Send + Sync + 'static> FromRequestParts<S> for $name {
             type Rejection = AuthRejection;
 
             async fn from_request_parts(
@@ -187,7 +190,7 @@ impl IntoResponse for AuthRejection {
 
 impl<S> FromRequestParts<S> for Principal
 where
-    S: Send + Sync,
+    S: Send + Sync + 'static,
 {
     type Rejection = AuthRejection;
 
@@ -199,6 +202,16 @@ where
             .ok_or(AuthRejection(AuthError::Unauthorized))?;
 
         if let Some(token) = auth_header.strip_prefix("Bearer ") {
+            if token.starts_with("sk_") {
+                // Direct API key path (Bearer sk_...) for integration parity.
+                let state_any = _state as &dyn Any;
+                let app_state = state_any
+                    .downcast_ref::<crate::routes::AppState>()
+                    .ok_or(AuthRejection(AuthError::InvalidApiKey))?;
+                return principal_from_api_key(app_state.layout.as_ref(), token)
+                    .map_err(AuthRejection);
+            }
+
             // JWT path — decode the token using the shared secret from env.
             // In production JWT_SECRET must be set; in debug builds we fall
             // back to an insecure dev secret (matching main.rs startup).
@@ -213,8 +226,7 @@ where
             if secret.is_empty() {
                 return Err(AuthRejection(AuthError::Unauthorized));
             }
-            let claims =
-                decode_token(token, secret.as_bytes()).map_err(AuthRejection)?;
+            let claims = decode_token(token, secret.as_bytes()).map_err(AuthRejection)?;
 
             return Ok(Principal {
                 workspace_id: claims.workspace_id(),
@@ -227,16 +239,61 @@ where
         }
 
         if auth_header.starts_with("sk_") {
-            // API key path — raw API keys cannot be verified in the middleware
-            // because keys are stored per-workspace and the middleware does not
-            // know which workspace to search. Callers must first exchange their
-            // API key for a JWT via POST /v1/auth/token-exchange, then use the
-            // returned Bearer token for subsequent requests.
-            return Err(AuthRejection(AuthError::InvalidApiKey));
+            // Also accept raw API key header (without Bearer prefix).
+            let state_any = _state as &dyn Any;
+            let app_state = state_any
+                .downcast_ref::<crate::routes::AppState>()
+                .ok_or(AuthRejection(AuthError::InvalidApiKey))?;
+            return principal_from_api_key(app_state.layout.as_ref(), auth_header)
+                .map_err(AuthRejection);
         }
 
         Err(AuthRejection(AuthError::Unauthorized))
     }
+}
+
+fn principal_from_api_key(layout: &RepoLayout, api_key: &str) -> Result<Principal, AuthError> {
+    for workspace_id in layout.list_workspace_ids() {
+        let ws_store = match WorkspaceStore::open(layout, workspace_id) {
+            Ok(s) => s,
+            Err(_) => continue,
+        };
+
+        let key_ids = match ws_store.list_api_key_ids() {
+            Ok(ids) => ids,
+            Err(_) => continue,
+        };
+
+        for key_id in key_ids {
+            let Ok(record) = ws_store.read_api_key(key_id) else {
+                continue;
+            };
+            if !record.is_valid() {
+                continue;
+            }
+            let Ok(matches) =
+                crate::domain::auth::api_key::verify_api_key(api_key, record.key_hash())
+            else {
+                continue;
+            };
+            if !matches {
+                continue;
+            }
+
+            let entity_ids = record.entity_ids().map(|ids| ids.to_vec());
+            let entity_id = entity_ids.as_ref().and_then(|ids| ids.first()).copied();
+            return Ok(Principal {
+                workspace_id: record.workspace_id(),
+                entity_id,
+                contact_id: record.contact_id(),
+                entity_ids,
+                principal_type: PrincipalType::User,
+                scopes: ScopeSet::from_vec(record.scopes().to_vec()),
+            });
+        }
+    }
+
+    Err(AuthError::InvalidApiKey)
 }
 
 /// Extractor for internal worker traffic authenticated with a static bearer token.
@@ -272,7 +329,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::auth::claims::{encode_token, Claims};
+    use crate::domain::auth::claims::{Claims, encode_token};
     use crate::domain::auth::scopes::Scope;
     use axum::http::Request;
     use chrono::Utc;

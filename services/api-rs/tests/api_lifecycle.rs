@@ -20,7 +20,9 @@ use api_rs::domain::equity::conversion_execution::ConversionExecution;
 use api_rs::domain::equity::round::{EquityRound, EquityRoundStatus};
 use api_rs::domain::execution::intent::Intent;
 use api_rs::domain::execution::types::IntentStatus;
-use api_rs::domain::ids::{ConversionExecutionId, EntityId, EquityRoundId, IntentId, WorkspaceId};
+use api_rs::domain::ids::{
+    ConversionExecutionId, EntityId, EquityRoundId, GovernanceAuditEntryId, IntentId, WorkspaceId,
+};
 use api_rs::store::entity_store::EntityStore;
 
 // ── Helpers ──────────────────────────────────────────────────────────────
@@ -46,6 +48,7 @@ fn build_app(tmp: &TempDir) -> Router {
     // Ensure JWT_SECRET is set for the auth middleware
     unsafe { std::env::set_var("JWT_SECRET", "test-secret-for-integration-tests") };
     unsafe { std::env::set_var("TERMINAL_AUTH_SECRET", "chat-ws-test-secret") };
+    unsafe { std::env::set_var("INTERNAL_WORKER_TOKEN", "internal-worker-test-token") };
 
     let layout = Arc::new(api_rs::store::RepoLayout::new(tmp.path().to_path_buf()));
     let state = api_rs::routes::AppState {
@@ -107,6 +110,45 @@ async fn post_json_no_auth(app: &Router, path: &str, body: Value) -> (StatusCode
         .method(Method::POST)
         .uri(path)
         .header("content-type", "application/json")
+        .body(Body::from(serde_json::to_vec(&body).unwrap()))
+        .unwrap();
+    let response = app.clone().oneshot(req).await.unwrap();
+    let status = response.status();
+    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let value: Value = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
+    (status, value)
+}
+
+async fn post_json_with_auth_header(
+    app: &Router,
+    path: &str,
+    body: Value,
+    auth_header: &str,
+) -> (StatusCode, Value) {
+    let req = Request::builder()
+        .method(Method::POST)
+        .uri(path)
+        .header("content-type", "application/json")
+        .header("authorization", auth_header)
+        .body(Body::from(serde_json::to_vec(&body).unwrap()))
+        .unwrap();
+    let response = app.clone().oneshot(req).await.unwrap();
+    let status = response.status();
+    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let value: Value = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
+    (status, value)
+}
+
+async fn put_json(app: &Router, path: &str, body: Value, token: &str) -> (StatusCode, Value) {
+    let req = Request::builder()
+        .method(Method::PUT)
+        .uri(path)
+        .header("content-type", "application/json")
+        .header("authorization", format!("Bearer {token}"))
         .body(Body::from(serde_json::to_vec(&body).unwrap()))
         .unwrap();
     let response = app.clone().oneshot(req).await.unwrap();
@@ -183,6 +225,169 @@ async fn create_entity(app: &Router) -> (WorkspaceId, String, String) {
     assert_eq!(status, StatusCode::OK, "create_formation failed: {body}");
     let entity_id = body["entity_id"].as_str().unwrap().to_owned();
     (ws_id, entity_id, token)
+}
+
+async fn sign_all_formation_documents(
+    app: &Router,
+    entity_id: &str,
+    token: &str,
+    signer_name: &str,
+    signer_email: &str,
+) {
+    let (status, docs) =
+        get_json(app, &format!("/v1/formations/{entity_id}/documents"), token).await;
+    assert_eq!(status, StatusCode::OK, "list documents failed: {docs}");
+    let docs = docs.as_array().unwrap();
+    for doc in docs {
+        let doc_id = doc["document_id"].as_str().unwrap();
+        let (status, full_doc) = get_json(
+            app,
+            &format!("/v1/documents/{doc_id}?entity_id={entity_id}"),
+            token,
+        )
+        .await;
+        assert_eq!(
+            status,
+            StatusCode::OK,
+            "get document {doc_id} failed: {full_doc}"
+        );
+        let signer_role = full_doc["content"]["signature_requirements"]
+            .as_array()
+            .and_then(|arr| arr.first())
+            .and_then(|req| req["role"].as_str())
+            .unwrap_or("incorporator");
+
+        let (status, body) = post_json(
+            app,
+            &format!("/v1/documents/{doc_id}/sign?entity_id={entity_id}"),
+            json!({
+                "signer_name": signer_name,
+                "signer_role": signer_role,
+                "signer_email": signer_email,
+                "signature_text": signer_name,
+            }),
+            token,
+        )
+        .await;
+        assert_eq!(
+            status,
+            StatusCode::OK,
+            "sign document {doc_id} failed: {body}"
+        );
+    }
+}
+
+async fn satisfy_filing_gates(
+    app: &Router,
+    entity_id: &str,
+    token: &str,
+    signer_name: &str,
+    signer_role: &str,
+    signer_email: &str,
+) {
+    let (status, attestation) = post_json(
+        app,
+        &format!("/v1/formations/{entity_id}/filing-attestation"),
+        json!({
+            "signer_name": signer_name,
+            "signer_role": signer_role,
+            "signer_email": signer_email,
+            "consent_text": "I attest the filing information is accurate.",
+        }),
+        token,
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "record filing attestation failed: {attestation}"
+    );
+
+    let (status, evidence) = post_json(
+        app,
+        &format!("/v1/formations/{entity_id}/registered-agent-consent-evidence"),
+        json!({
+            "evidence_uri": "s3://formation/ra-consent.pdf",
+            "evidence_type": "registered_agent_consent_pdf",
+            "notes": "registered agent engagement executed"
+        }),
+        token,
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "record registered-agent consent evidence failed: {evidence}"
+    );
+}
+
+async fn advance_entity_to_active(app: &Router, entity_id: &str, token: &str) {
+    sign_all_formation_documents(app, entity_id, token, "Alice Founder", "alice@test.com").await;
+
+    let (status, body) = post_json(
+        app,
+        &format!("/v1/formations/{entity_id}/mark-documents-signed"),
+        json!({}),
+        token,
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "mark documents signed failed: {body}"
+    );
+
+    satisfy_filing_gates(
+        app,
+        entity_id,
+        token,
+        "Alice Founder",
+        "director",
+        "alice@test.com",
+    )
+    .await;
+
+    let (status, body) = post_json(
+        app,
+        &format!("/v1/formations/{entity_id}/submit-filing"),
+        json!({}),
+        token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "submit filing failed: {body}");
+
+    let (status, body) = post_json(
+        app,
+        &format!("/v1/formations/{entity_id}/filing-confirmation"),
+        json!({
+            "external_filing_id": "DE-STATE-ACTIVE",
+            "receipt_reference": "RCPT-ACTIVE"
+        }),
+        token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "confirm filing failed: {body}");
+
+    let (status, body) = post_json(
+        app,
+        &format!("/v1/formations/{entity_id}/apply-ein"),
+        json!({}),
+        token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "apply ein failed: {body}");
+
+    let (status, body) = post_json(
+        app,
+        &format!("/v1/formations/{entity_id}/ein-confirmation"),
+        json!({
+            "ein": "12-3456789"
+        }),
+        token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "confirm ein failed: {body}");
+    assert_eq!(body["formation_status"], "active");
 }
 
 async fn create_round_with_terms(app: &Router, entity_id: &str, token: &str) -> (String, String) {
@@ -456,6 +661,59 @@ async fn create_authorized_round_intent(
     intent_id
 }
 
+fn set_schedule_last_reauthorized_at(
+    tmp: &TempDir,
+    workspace_id: WorkspaceId,
+    entity_id: &str,
+    timestamp_rfc3339: &str,
+) {
+    let layout = api_rs::store::RepoLayout::new(tmp.path().to_path_buf());
+    let parsed_entity_id: EntityId = entity_id.parse().unwrap();
+    let store = EntityStore::open(&layout, workspace_id, parsed_entity_id).unwrap();
+
+    let mut schedule_json: Value = store
+        .read_json("main", "governance/delegation-schedule/current.json")
+        .unwrap();
+    schedule_json["last_reauthorized_at"] = Value::String(timestamp_rfc3339.to_owned());
+    store
+        .write_json(
+            "main",
+            "governance/delegation-schedule/current.json",
+            &schedule_json,
+            "test: set delegation schedule reauth timestamp",
+        )
+        .unwrap();
+}
+
+fn tamper_governance_audit_entry_action(
+    tmp: &TempDir,
+    workspace_id: WorkspaceId,
+    entity_id: &str,
+    entry_id: &str,
+    tampered_action: &str,
+) {
+    let layout = api_rs::store::RepoLayout::new(tmp.path().to_path_buf());
+    let parsed_entity_id: EntityId = entity_id.parse().unwrap();
+    let parsed_entry_id: GovernanceAuditEntryId = entry_id.parse().unwrap();
+    let store = EntityStore::open(&layout, workspace_id, parsed_entity_id).unwrap();
+
+    let mut entry_json: Value = store
+        .read_json(
+            "main",
+            &format!("governance/audit/entries/{parsed_entry_id}.json"),
+        )
+        .unwrap();
+    entry_json["action"] = Value::String(tampered_action.to_owned());
+    store
+        .write_json(
+            "main",
+            &format!("governance/audit/entries/{parsed_entry_id}.json"),
+            &entry_json,
+            "test: tamper governance audit entry",
+        )
+        .unwrap();
+}
+
 // ── 1. Health check ──────────────────────────────────────────────────────
 
 #[tokio::test]
@@ -569,14 +827,27 @@ async fn test_formation_lifecycle() {
     let docs = body.as_array().unwrap();
     assert!(!docs.is_empty());
 
-    // 4. Sign each document
+    // 4. Sign each document with its required role
     for doc_id in &doc_ids {
+        let (status, full_doc) = get_json(
+            &app,
+            &format!("/v1/documents/{doc_id}?entity_id={entity_id}"),
+            &token,
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "get document {doc_id}: {full_doc}");
+        let signer_role = full_doc["content"]["signature_requirements"]
+            .as_array()
+            .and_then(|arr| arr.first())
+            .and_then(|req| req["role"].as_str())
+            .unwrap_or("incorporator");
+
         let (status, body) = post_json(
             &app,
             &format!("/v1/documents/{doc_id}/sign?entity_id={entity_id}"),
             json!({
                 "signer_name": "Alice Founder",
-                "signer_role": "Incorporator",
+                "signer_role": signer_role,
                 "signer_email": "alice@formco.com",
                 "signature_text": "Alice Founder"
             }),
@@ -611,7 +882,43 @@ async fn test_formation_lifecycle() {
     assert_eq!(status, StatusCode::OK, "mark documents signed: {body}");
     assert_eq!(body["formation_status"], "documents_signed");
 
-    // 7. Submit filing (DocumentsSigned -> FilingSubmitted)
+    // 7. Record filing attestation and RA consent evidence gates
+    let (status, gates) = post_json(
+        &app,
+        &format!("/v1/formations/{entity_id}/filing-attestation"),
+        json!({
+            "signer_name": "Alice Founder",
+            "signer_role": "director",
+            "signer_email": "alice@formco.com",
+            "consent_text": "I attest this filing is accurate and authorized."
+        }),
+        &token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "record attestation: {gates}");
+    assert_eq!(gates["attestation_recorded"], true);
+
+    let (status, gates) = post_json(
+        &app,
+        &format!("/v1/formations/{entity_id}/registered-agent-consent-evidence"),
+        json!({
+            "evidence_uri": "s3://evidence/formco-ra-consent.pdf",
+            "evidence_type": "registered_agent_consent_pdf",
+        }),
+        &token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "record RA evidence: {gates}");
+    assert_eq!(gates["registered_agent_consent_evidence_count"], 1);
+    assert_eq!(
+        gates["filing_submission_blockers"]
+            .as_array()
+            .unwrap()
+            .len(),
+        0
+    );
+
+    // 8. Submit filing (DocumentsSigned -> FilingSubmitted)
     let (status, body) = post_json(
         &app,
         &format!("/v1/formations/{entity_id}/submit-filing"),
@@ -622,7 +929,7 @@ async fn test_formation_lifecycle() {
     assert_eq!(status, StatusCode::OK, "submit filing: {body}");
     assert_eq!(body["formation_status"], "filing_submitted");
 
-    // 8. Confirm filing (FilingSubmitted -> Filed)
+    // 9. Confirm filing (FilingSubmitted -> Filed)
     let (status, body) = post_json(
         &app,
         &format!("/v1/formations/{entity_id}/filing-confirmation"),
@@ -636,7 +943,7 @@ async fn test_formation_lifecycle() {
     assert_eq!(status, StatusCode::OK, "confirm filing: {body}");
     assert_eq!(body["formation_status"], "filed");
 
-    // 9. Apply for EIN (Filed -> EinApplied)
+    // 10. Apply for EIN (Filed -> EinApplied)
     let (status, body) = post_json(
         &app,
         &format!("/v1/formations/{entity_id}/apply-ein"),
@@ -647,7 +954,7 @@ async fn test_formation_lifecycle() {
     assert_eq!(status, StatusCode::OK, "apply ein: {body}");
     assert_eq!(body["formation_status"], "ein_applied");
 
-    // 10. Confirm EIN (EinApplied -> Active)
+    // 11. Confirm EIN (EinApplied -> Active)
     let (status, body) = post_json(
         &app,
         &format!("/v1/formations/{entity_id}/ein-confirmation"),
@@ -660,10 +967,264 @@ async fn test_formation_lifecycle() {
     assert_eq!(status, StatusCode::OK, "confirm ein: {body}");
     assert_eq!(body["formation_status"], "active");
 
-    // 11. Verify final formation status is active
+    // 12. Verify final formation status is active
     let (status, body) = get_json(&app, &format!("/v1/formations/{entity_id}"), &token).await;
     assert_eq!(status, StatusCode::OK, "get active formation: {body}");
     assert_eq!(body["formation_status"], "active");
+}
+
+#[tokio::test]
+async fn test_submit_filing_requires_filing_gates() {
+    let tmp = TempDir::new().unwrap();
+    let app = build_app(&tmp);
+    let (_ws_id, entity_id, token) = create_entity(&app).await;
+
+    sign_all_formation_documents(&app, &entity_id, &token, "Alice Founder", "alice@test.com").await;
+    let (status, body) = post_json(
+        &app,
+        &format!("/v1/formations/{entity_id}/mark-documents-signed"),
+        json!({}),
+        &token,
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "mark documents signed failed: {body}"
+    );
+
+    let (status, blocked_submit) = post_json(
+        &app,
+        &format!("/v1/formations/{entity_id}/submit-filing"),
+        json!({}),
+        &token,
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "submit without gates should fail: {blocked_submit}"
+    );
+    assert!(
+        blocked_submit["error"]["detail"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("natural-person filing attestation")
+    );
+
+    let (status, _) = post_json(
+        &app,
+        &format!("/v1/formations/{entity_id}/filing-attestation"),
+        json!({
+            "signer_name": "Alice Founder",
+            "signer_role": "director",
+            "signer_email": "alice@test.com",
+            "consent_text": "I attest this filing information is accurate."
+        }),
+        &token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    let (status, blocked_submit) = post_json(
+        &app,
+        &format!("/v1/formations/{entity_id}/submit-filing"),
+        json!({}),
+        &token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(
+        blocked_submit["error"]["detail"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("registered agent consent evidence")
+    );
+
+    let (status, _) = post_json(
+        &app,
+        &format!("/v1/formations/{entity_id}/registered-agent-consent-evidence"),
+        json!({
+            "evidence_uri": "s3://evidence/test-ra-consent.pdf"
+        }),
+        &token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    let (status, gates) =
+        get_json(&app, &format!("/v1/formations/{entity_id}/gates"), &token).await;
+    assert_eq!(status, StatusCode::OK, "get gates failed: {gates}");
+    assert_eq!(
+        gates["filing_submission_blockers"]
+            .as_array()
+            .unwrap()
+            .len(),
+        0
+    );
+
+    let (status, submitted) = post_json(
+        &app,
+        &format!("/v1/formations/{entity_id}/submit-filing"),
+        json!({}),
+        &token,
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "submit with gates failed: {submitted}"
+    );
+    assert_eq!(submitted["formation_status"], "filing_submitted");
+}
+
+#[tokio::test]
+async fn test_filing_attestation_rejects_non_designated_signer() {
+    let tmp = TempDir::new().unwrap();
+    let app = build_app(&tmp);
+    let (_ws_id, entity_id, token) = create_entity(&app).await;
+
+    let (status, blocked) = post_json(
+        &app,
+        &format!("/v1/formations/{entity_id}/filing-attestation"),
+        json!({
+            "signer_name": "Bob Cofounder",
+            "signer_role": "member",
+            "signer_email": "bob@test.com",
+            "consent_text": "I attest this filing information is accurate."
+        }),
+        &token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(
+        blocked["error"]["detail"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("designated attestor")
+    );
+}
+
+#[tokio::test]
+async fn test_tier1_intent_blocked_without_service_agreement_for_active_entity() {
+    let tmp = TempDir::new().unwrap();
+    let app = build_app(&tmp);
+    let (_ws_id, entity_id, token) = create_entity(&app).await;
+    let e_query = format!("entity_id={entity_id}");
+
+    advance_entity_to_active(&app, &entity_id, &token).await;
+
+    let (status, intent) = post_json(
+        &app,
+        "/v1/execution/intents",
+        json!({
+            "entity_id": entity_id,
+            "intent_type": "maintain_books_records",
+            "authority_tier": "tier_1",
+            "description": "Prepare monthly close package",
+        }),
+        &token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "create intent failed: {intent}");
+    let intent_id = intent["intent_id"].as_str().unwrap();
+
+    let (status, evaluated) = post_json(
+        &app,
+        &format!("/v1/intents/{intent_id}/evaluate?{e_query}"),
+        json!({}),
+        &token,
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "evaluate intent failed: {evaluated}"
+    );
+    assert_eq!(evaluated["status"], "failed");
+    assert_eq!(evaluated["policy_decision"]["allowed"], false);
+    let blockers = evaluated["policy_decision"]["blockers"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|v| v.as_str())
+        .collect::<Vec<_>>()
+        .join(";");
+    assert!(blockers.contains("service agreement"));
+}
+
+#[tokio::test]
+async fn test_tier1_intent_allowed_after_service_agreement_execution() {
+    let tmp = TempDir::new().unwrap();
+    let app = build_app(&tmp);
+    let (_ws_id, entity_id, token) = create_entity(&app).await;
+    let e_query = format!("entity_id={entity_id}");
+
+    advance_entity_to_active(&app, &entity_id, &token).await;
+
+    let (status, gate_resp) = post_json(
+        &app,
+        &format!("/v1/formations/{entity_id}/service-agreement/execute"),
+        json!({
+            "notes": "MSA executed by founder"
+        }),
+        &token,
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "record service agreement failed: {gate_resp}"
+    );
+    assert_eq!(gate_resp["service_agreement_executed"], true);
+    assert_eq!(
+        gate_resp["service_agreement_required_for_tier1_autonomy"],
+        true
+    );
+
+    let (status, intent) = post_json(
+        &app,
+        "/v1/execution/intents",
+        json!({
+            "entity_id": entity_id,
+            "intent_type": "maintain_books_records",
+            "authority_tier": "tier_1",
+            "description": "Prepare monthly close package",
+        }),
+        &token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "create intent failed: {intent}");
+    let intent_id = intent["intent_id"].as_str().unwrap();
+
+    let (status, evaluated) = post_json(
+        &app,
+        &format!("/v1/intents/{intent_id}/evaluate?{e_query}"),
+        json!({}),
+        &token,
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "evaluate intent failed: {evaluated}"
+    );
+    assert_eq!(evaluated["status"], "evaluated");
+    assert_eq!(evaluated["policy_decision"]["allowed"], true);
+
+    let (status, authorized) = post_json(
+        &app,
+        &format!("/v1/intents/{intent_id}/authorize?{e_query}"),
+        json!({}),
+        &token,
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "authorize intent failed: {authorized}"
+    );
+    assert_eq!(authorized["status"], "authorized");
 }
 
 // ── 3. Equity lifecycle ──────────────────────────────────────────────────
@@ -2490,6 +3051,295 @@ async fn test_execute_conversion_requires_execute_intent_type() {
     );
 }
 
+#[tokio::test]
+async fn test_delegation_schedule_expansion_requires_passed_resolution() {
+    let tmp = TempDir::new().unwrap();
+    let app = build_app(&tmp);
+    let (_ws_id, entity_id, token) = create_entity(&app).await;
+
+    let (status, reduced) = post_json(
+        &app,
+        "/v1/governance/delegation-schedule/amend",
+        json!({
+            "entity_id": entity_id,
+            "tier1_max_amount_cents": 10000_i64,
+            "allowed_tier1_intent_types": ["authorize_expenditure"],
+            "rationale": "tighten autonomy while onboarding"
+        }),
+        &token,
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "non-expansion amendment should succeed: {reduced}"
+    );
+
+    let (status, blocked_expansion) = post_json(
+        &app,
+        "/v1/governance/delegation-schedule/amend",
+        json!({
+            "entity_id": entity_id,
+            "tier1_max_amount_cents": 20000_i64,
+            "rationale": "expand spend authority"
+        }),
+        &token,
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "expansion without passed resolution should fail: {blocked_expansion}"
+    );
+
+    let (meeting_id, resolution_id) =
+        create_resolution_for_body(&app, &entity_id, &token, "board_of_directors", &["for"]).await;
+    let (status, expanded) = post_json(
+        &app,
+        "/v1/governance/delegation-schedule/amend",
+        json!({
+            "entity_id": entity_id,
+            "tier1_max_amount_cents": 20000_i64,
+            "meeting_id": meeting_id,
+            "adopted_resolution_id": resolution_id,
+            "rationale": "board-approved expansion"
+        }),
+        &token,
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "expansion with passed board resolution should succeed: {expanded}"
+    );
+    assert_eq!(
+        expanded["schedule"]["tier1_max_amount_cents"],
+        json!(20000_i64)
+    );
+    assert_eq!(expanded["amendment"]["authority_expansion"], true);
+}
+
+#[tokio::test]
+async fn test_delegation_schedule_enforces_escalation_and_suspension() {
+    let tmp = TempDir::new().unwrap();
+    let app = build_app(&tmp);
+    let (ws_id, entity_id, token) = create_entity(&app).await;
+    let e_query = format!("entity_id={entity_id}");
+
+    let (status, tightened) = post_json(
+        &app,
+        "/v1/governance/delegation-schedule/amend",
+        json!({
+            "entity_id": entity_id,
+            "tier1_max_amount_cents": 5000_i64,
+            "allowed_tier1_intent_types": ["authorize_expenditure"],
+            "rationale": "temporary tighter guardrails"
+        }),
+        &token,
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "tightening schedule should succeed: {tightened}"
+    );
+
+    let (status, escalated_intent) = post_json(
+        &app,
+        "/v1/execution/intents",
+        json!({
+            "entity_id": entity_id,
+            "intent_type": "authorize_expenditure",
+            "authority_tier": "tier_1",
+            "description": "Purchase annual software plan",
+            "metadata": { "amount_cents": 7500_i64 }
+        }),
+        &token,
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "intent creation should succeed with escalated policy output: {escalated_intent}"
+    );
+    assert_eq!(escalated_intent["authority_tier"], "tier_2");
+    let escalated_intent_id = escalated_intent["intent_id"].as_str().unwrap();
+
+    let (status, evaluate) = post_json(
+        &app,
+        &format!("/v1/intents/{escalated_intent_id}/evaluate?{e_query}"),
+        json!({}),
+        &token,
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "evaluate escalated intent: {evaluate}"
+    );
+
+    let (status, blocked_authorize) = post_json(
+        &app,
+        &format!("/v1/intents/{escalated_intent_id}/authorize?{e_query}"),
+        json!({}),
+        &token,
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "escalated intent should require manual approval artifact: {blocked_authorize}"
+    );
+
+    set_schedule_last_reauthorized_at(&tmp, ws_id, &entity_id, "2000-01-01T00:00:00Z");
+
+    let (status, suspended_intent) = post_json(
+        &app,
+        "/v1/execution/intents",
+        json!({
+            "entity_id": entity_id,
+            "intent_type": "authorize_expenditure",
+            "authority_tier": "tier_1",
+            "description": "Small office supply expense",
+            "metadata": { "amount_cents": 100_i64 }
+        }),
+        &token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let suspended_intent_id = suspended_intent["intent_id"].as_str().unwrap();
+
+    let (status, blocked_eval) = post_json(
+        &app,
+        &format!("/v1/intents/{suspended_intent_id}/evaluate?{e_query}"),
+        json!({}),
+        &token,
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "evaluate should mark intent failed when reauth suspension is active: {blocked_eval}"
+    );
+    assert_eq!(blocked_eval["status"], "failed");
+    assert_eq!(blocked_eval["policy_decision"]["allowed"], false);
+}
+
+#[tokio::test]
+async fn test_intent_and_approval_artifact_capability_canonicalization() {
+    let tmp = TempDir::new().unwrap();
+    let app = build_app(&tmp);
+    let (_ws_id, entity_id, token) = create_entity(&app).await;
+    let e_query = format!("entity_id={entity_id}");
+
+    let (status, intent) = post_json(
+        &app,
+        "/v1/execution/intents",
+        json!({
+            "entity_id": entity_id,
+            "intent_type": "  hire_employee  ",
+            "authority_tier": "tier_1",
+            "description": "Hire operations lead"
+        }),
+        &token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "create intent: {intent}");
+    assert_eq!(intent["intent_type"], "hire_employee");
+    assert_eq!(intent["authority_tier"], "tier_2");
+    let intent_id = intent["intent_id"].as_str().unwrap();
+
+    let (status, evaluate) = post_json(
+        &app,
+        &format!("/v1/intents/{intent_id}/evaluate?{e_query}"),
+        json!({}),
+        &token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "evaluate intent: {evaluate}");
+
+    let (status, artifact) = post_json(
+        &app,
+        "/v1/execution/approval-artifacts",
+        json!({
+            "entity_id": entity_id,
+            "intent_type": "  hire_employee ",
+            "scope": "Approval to hire operations lead",
+            "approver_identity": "Board Chair",
+            "explicit": true,
+            "channel": "board_resolution"
+        }),
+        &token,
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "create approval artifact: {artifact}"
+    );
+    assert_eq!(artifact["intent_type"], "hire_employee");
+    let approval_artifact_id = artifact["approval_artifact_id"].as_str().unwrap();
+
+    let (status, bound) = post_json(
+        &app,
+        &format!("/v1/intents/{intent_id}/bind-approval-artifact"),
+        json!({
+            "entity_id": entity_id,
+            "approval_artifact_id": approval_artifact_id
+        }),
+        &token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "bind approval artifact: {bound}");
+
+    let (status, authorize) = post_json(
+        &app,
+        &format!("/v1/intents/{intent_id}/authorize?{e_query}"),
+        json!({}),
+        &token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "authorize intent: {authorize}");
+    assert_eq!(authorize["status"], "authorized");
+}
+
+#[tokio::test]
+async fn test_schedule_allowlist_canonicalizes_intent_types() {
+    let tmp = TempDir::new().unwrap();
+    let app = build_app(&tmp);
+    let (_ws_id, entity_id, token) = create_entity(&app).await;
+
+    let (status, amended) = post_json(
+        &app,
+        "/v1/governance/delegation-schedule/amend",
+        json!({
+            "entity_id": entity_id,
+            "tier1_max_amount_cents": 5000_i64,
+            "allowed_tier1_intent_types": ["  authorize_expenditure  "],
+            "rationale": "tight lane with canonicalized capability ids"
+        }),
+        &token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "amend schedule: {amended}");
+
+    let (status, intent) = post_json(
+        &app,
+        "/v1/execution/intents",
+        json!({
+            "entity_id": entity_id,
+            "intent_type": "authorize_expenditure",
+            "authority_tier": "tier_2",
+            "description": "Small software purchase",
+            "metadata": { "amount_cents": 1000_i64 }
+        }),
+        &token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "create intent: {intent}");
+    assert_eq!(intent["authority_tier"], "tier_1");
+}
+
 // ── 10. Cross-domain: full lifecycle ─────────────────────────────────────
 
 #[tokio::test]
@@ -3513,6 +4363,525 @@ async fn test_packet_routes_and_escalation_evidence_resolution() {
     assert_eq!(stored_link.packet_id(), Some(packet_id));
 }
 
+#[tokio::test]
+async fn test_governance_profile_and_doc_bundle_generation() {
+    let tmp = TempDir::new().unwrap();
+    let app = build_app(&tmp);
+    let (ws_id, entity_id, token) = create_entity(&app).await;
+
+    let (status, profile) = get_json(
+        &app,
+        &format!("/v1/entities/{entity_id}/governance/profile"),
+        &token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "get governance profile: {profile}");
+    assert_eq!(profile["entity_id"], entity_id);
+    assert_eq!(profile["entity_type"], "corporation");
+    assert_eq!(profile["incomplete_profile"], true);
+
+    let (status, updated_profile) = put_json(
+        &app,
+        &format!("/v1/entities/{entity_id}/governance/profile"),
+        json!({
+            "legal_name": "Parity Labs, Inc.",
+            "jurisdiction": "Delaware",
+            "effective_date": "2026-01-15",
+            "adopted_by": "Board of Directors",
+            "last_reviewed": "2026-01-15",
+            "next_mandatory_review": "2027-01-15",
+            "registered_agent_name": "Parity Registered Agent LLC",
+            "registered_agent_address": "251 Little Falls Dr, Wilmington, DE",
+            "board_size": 3,
+            "incorporator_name": "Alice Founder",
+            "incorporator_address": "251 Little Falls Dr, Wilmington, DE",
+            "principal_name": "Alice Founder",
+            "principal_title": "CEO",
+            "incomplete_profile": false
+        }),
+        &token,
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "update governance profile: {updated_profile}"
+    );
+    assert_eq!(updated_profile["legal_name"], "Parity Labs, Inc.");
+    assert_eq!(updated_profile["version"], 2);
+    assert_eq!(updated_profile["incomplete_profile"], false);
+
+    let (status, generated) = post_json(
+        &app,
+        &format!("/v1/entities/{entity_id}/governance/doc-bundles/generate"),
+        json!({
+            "template_version": "v1"
+        }),
+        &token,
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "generate governance doc bundle: {generated}"
+    );
+    let bundle_id = generated["manifest"]["bundle_id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert_eq!(generated["current"]["bundle_id"], bundle_id);
+    assert!(
+        generated["manifest"]["documents"]
+            .as_array()
+            .is_some_and(|docs| docs.len() >= 10)
+    );
+
+    let (status, current) = get_json(
+        &app,
+        &format!("/v1/entities/{entity_id}/governance/doc-bundles/current"),
+        &token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "get current bundle: {current}");
+    assert_eq!(current["bundle_id"], bundle_id);
+    assert_eq!(current["entity_id"], entity_id);
+
+    let (status, bundles) = get_json(
+        &app,
+        &format!("/v1/entities/{entity_id}/governance/doc-bundles"),
+        &token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "list bundles: {bundles}");
+    assert!(bundles.as_array().is_some_and(|items| {
+        items
+            .iter()
+            .any(|item| item["bundle_id"].as_str() == Some(&bundle_id))
+    }));
+
+    let (status, manifest) = get_json(
+        &app,
+        &format!("/v1/entities/{entity_id}/governance/doc-bundles/{bundle_id}"),
+        &token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "get bundle manifest: {manifest}");
+    assert_eq!(manifest["bundle_id"], bundle_id);
+    assert_eq!(manifest["entity_id"], entity_id);
+    assert_eq!(manifest["template_version"], "v1");
+
+    let layout = api_rs::store::RepoLayout::new(tmp.path().to_path_buf());
+    let parsed_entity_id: EntityId = entity_id.parse().unwrap();
+    let store = EntityStore::open(&layout, ws_id, parsed_entity_id).unwrap();
+    let current_bundle: api_rs::domain::governance::doc_generator::GovernanceDocBundleCurrent =
+        store
+            .read_json("main", "governance/doc-bundles/current.json")
+            .unwrap();
+    let bylaws_path = format!(
+        "governance/doc-bundles/{}/documents/corporation/bylaws.md",
+        current_bundle.bundle_id
+    );
+    let bylaws = String::from_utf8(store.repo().read_blob("main", &bylaws_path).unwrap()).unwrap();
+    assert!(bylaws.contains("Parity Labs, Inc."));
+    assert!(bylaws.contains("The Board shall consist of `3` director(s)."));
+}
+
+#[tokio::test]
+async fn test_compliance_d_plus_1_scan_triggers_lockdown() {
+    let tmp = TempDir::new().unwrap();
+    let app = build_app(&tmp);
+    let (_ws_id, entity_id, token) = create_entity(&app).await;
+
+    let (status, deadline) = post_json(
+        &app,
+        "/v1/deadlines",
+        json!({
+            "entity_id": entity_id,
+            "deadline_type": "annual_report",
+            "due_date": "2000-01-01",
+            "description": "legacy overdue filing",
+            "recurrence": "annual",
+            "severity": "high"
+        }),
+        &token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "create deadline: {deadline}");
+
+    let (status, scan) = post_json(
+        &app,
+        "/v1/compliance/escalations/scan",
+        json!({
+            "entity_id": entity_id
+        }),
+        &token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "scan escalations: {scan}");
+    assert_eq!(scan["incidents_created"], 1);
+
+    let (status, mode) = get_json(
+        &app,
+        &format!("/v1/governance/mode?entity_id={entity_id}"),
+        &token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "get mode: {mode}");
+    assert_eq!(mode["mode"], "incident_lockdown");
+
+    let (status, triggers) = get_json(
+        &app,
+        &format!("/v1/entities/{entity_id}/governance/triggers"),
+        &token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "list triggers: {triggers}");
+    assert!(triggers.as_array().is_some_and(|items| {
+        items
+            .iter()
+            .any(|item| item["trigger_type"] == "compliance_deadline_missed_d_plus_1")
+    }));
+}
+
+#[tokio::test]
+async fn test_policy_evidence_mismatch_triggers_lockdown() {
+    let tmp = TempDir::new().unwrap();
+    let app = build_app(&tmp);
+    let (_ws_id, entity_id, token) = create_entity(&app).await;
+    let e_query = format!("entity_id={entity_id}");
+
+    let (status, created_intent) = post_json(
+        &app,
+        "/v1/execution/intents",
+        json!({
+            "entity_id": entity_id,
+            "intent_type": "hire_employee",
+            "description": "Hire operations lead",
+            "metadata": {}
+        }),
+        &token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "create intent: {created_intent}");
+    let intent_id = created_intent["intent_id"].as_str().unwrap().to_owned();
+
+    let (status, evaluated) = post_json(
+        &app,
+        &format!("/v1/intents/{intent_id}/evaluate?{e_query}"),
+        json!({}),
+        &token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "evaluate intent: {evaluated}");
+
+    let (status, artifact) = post_json(
+        &app,
+        "/v1/execution/approval-artifacts",
+        json!({
+            "entity_id": entity_id,
+            "intent_type": "authorize_expenditure",
+            "scope": "Wrong scope",
+            "approver_identity": "Board Chair",
+            "channel": "board_resolution",
+            "explicit": true
+        }),
+        &token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "create artifact: {artifact}");
+    let artifact_id = artifact["approval_artifact_id"].as_str().unwrap();
+
+    let (status, bound) = post_json(
+        &app,
+        &format!("/v1/intents/{intent_id}/bind-approval-artifact"),
+        json!({
+            "entity_id": entity_id,
+            "approval_artifact_id": artifact_id
+        }),
+        &token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "bind artifact: {bound}");
+
+    let (status, authorize) = post_json(
+        &app,
+        &format!("/v1/intents/{intent_id}/authorize?{e_query}"),
+        json!({}),
+        &token,
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "authorize should fail on evidence mismatch: {authorize}"
+    );
+
+    let (status, mode) = get_json(
+        &app,
+        &format!("/v1/governance/mode?entity_id={entity_id}"),
+        &token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "get mode: {mode}");
+    assert_eq!(mode["mode"], "incident_lockdown");
+
+    let (status, triggers) = get_json(
+        &app,
+        &format!("/v1/entities/{entity_id}/governance/triggers"),
+        &token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "list triggers: {triggers}");
+    assert!(triggers.as_array().is_some_and(|items| {
+        items.iter().any(|item| {
+            item["trigger_type"] == "policy_evidence_mismatch"
+                && item["linked_intent_id"] == intent_id
+        })
+    }));
+}
+
+#[tokio::test]
+async fn test_governance_audit_chain_checkpoint_and_verify() {
+    let tmp = TempDir::new().unwrap();
+    let app = build_app(&tmp);
+    let (ws_id, entity_id, token) = create_entity(&app).await;
+
+    let (status, mode_update) = post_json(
+        &app,
+        "/v1/governance/mode",
+        json!({
+            "entity_id": entity_id,
+            "mode": "principal_unavailable",
+            "reason": "principal traveling"
+        }),
+        &token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "set mode 1: {mode_update}");
+
+    let (status, mode_update) = post_json(
+        &app,
+        "/v1/governance/mode",
+        json!({
+            "entity_id": entity_id,
+            "mode": "normal",
+            "reason": "principal returned"
+        }),
+        &token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "set mode 2: {mode_update}");
+
+    let (status, audit_event) = post_json(
+        &app,
+        "/v1/governance/audit/events",
+        json!({
+            "entity_id": entity_id,
+            "event_type": "manual_event",
+            "action": "attached external legal memo",
+            "details": {"memo_id": "memo-001"},
+            "evidence_refs": ["memo:001"]
+        }),
+        &token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "append audit event: {audit_event}");
+
+    let (status, entries) = get_json(
+        &app,
+        &format!("/v1/entities/{entity_id}/governance/audit/entries"),
+        &token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "list audit entries: {entries}");
+    let entries_arr = entries.as_array().expect("entries array");
+    assert!(
+        entries_arr.len() >= 3,
+        "expected >=3 entries, got {entries}"
+    );
+    let oldest_entry_id = entries_arr.last().unwrap()["audit_entry_id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+
+    let (status, checkpoint) = post_json(
+        &app,
+        "/v1/governance/audit/checkpoints",
+        json!({
+            "entity_id": entity_id
+        }),
+        &token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "write checkpoint: {checkpoint}");
+    assert!(checkpoint["total_entries"].as_u64().unwrap_or_default() >= 3);
+
+    let (status, verify_ok) = post_json(
+        &app,
+        "/v1/governance/audit/verify",
+        json!({
+            "entity_id": entity_id
+        }),
+        &token,
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "verify chain (clean) should succeed: {verify_ok}"
+    );
+    assert_eq!(verify_ok["ok"], true);
+    assert_eq!(verify_ok["triggered_lockdown"], false);
+
+    tamper_governance_audit_entry_action(
+        &tmp,
+        ws_id,
+        &entity_id,
+        &oldest_entry_id,
+        "tampered action body",
+    );
+
+    let (status, verify_failed) = post_json(
+        &app,
+        "/v1/governance/audit/verify",
+        json!({
+            "entity_id": entity_id
+        }),
+        &token,
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "verify chain (tampered): {verify_failed}"
+    );
+    assert_eq!(verify_failed["ok"], false);
+    assert_eq!(verify_failed["triggered_lockdown"], true);
+    assert!(verify_failed["trigger_id"].is_string());
+    assert!(verify_failed["incident_id"].is_string());
+
+    let (status, mode) = get_json(
+        &app,
+        &format!("/v1/governance/mode?entity_id={entity_id}"),
+        &token,
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "get mode after failed verify: {mode}"
+    );
+    assert_eq!(mode["mode"], "incident_lockdown");
+
+    let (status, triggers) = get_json(
+        &app,
+        &format!("/v1/entities/{entity_id}/governance/triggers"),
+        &token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "list triggers: {triggers}");
+    assert!(triggers.as_array().is_some_and(|items| {
+        items
+            .iter()
+            .any(|item| item["trigger_type"] == "audit_chain_verification_failed")
+    }));
+}
+
+#[tokio::test]
+async fn test_internal_trigger_ingestion_idempotency_and_manual_unlock_rules() {
+    let tmp = TempDir::new().unwrap();
+    let app = build_app(&tmp);
+    let (ws_id, entity_id, token) = create_entity(&app).await;
+
+    let internal_auth = "Bearer internal-worker-test-token";
+    let trigger_path = format!(
+        "/v1/internal/workspaces/{ws_id}/entities/{entity_id}/governance/triggers/lockdown"
+    );
+
+    let (status, first) = post_json_with_auth_header(
+        &app,
+        &trigger_path,
+        json!({
+            "idempotency_key": "lockdown-key-1",
+            "trigger_type": "external_signal",
+            "severity": "high",
+            "title": "External alert",
+            "description": "provider alert",
+            "evidence_refs": ["provider:alert:1"]
+        }),
+        internal_auth,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "first ingestion: {first}");
+    assert_eq!(first["idempotent_replay"], false);
+    let incident_id = first["incident_id"].as_str().unwrap().to_owned();
+    let trigger_id = first["trigger_id"].as_str().unwrap().to_owned();
+
+    let (status, second) = post_json_with_auth_header(
+        &app,
+        &trigger_path,
+        json!({
+            "idempotency_key": "lockdown-key-1",
+            "trigger_type": "external_signal",
+            "severity": "high",
+            "title": "External alert",
+            "description": "provider alert",
+            "evidence_refs": ["provider:alert:1"]
+        }),
+        internal_auth,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "second ingestion: {second}");
+    assert_eq!(second["idempotent_replay"], true);
+    assert_eq!(second["trigger_id"], trigger_id);
+    assert_eq!(second["incident_id"], incident_id);
+
+    let (status, blocked_unlock) = post_json(
+        &app,
+        "/v1/governance/mode",
+        json!({
+            "entity_id": entity_id,
+            "mode": "normal"
+        }),
+        &token,
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "unlock without incident context should fail: {blocked_unlock}"
+    );
+
+    let (status, unlocked) = post_json(
+        &app,
+        "/v1/governance/mode",
+        json!({
+            "entity_id": entity_id,
+            "mode": "normal",
+            "reason": "incident remediated by human review",
+            "incident_ids": [incident_id],
+            "evidence_refs": ["postmortem:1"]
+        }),
+        &token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "unlock with context: {unlocked}");
+    assert_eq!(unlocked["mode"], "normal");
+
+    let (status, history) = get_json(
+        &app,
+        &format!("/v1/entities/{entity_id}/governance/mode-history"),
+        &token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "mode history: {history}");
+    assert!(
+        history
+            .as_array()
+            .is_some_and(|items| items.iter().any(|item| item["to_mode"] == "normal"))
+    );
+}
+
 // ── OpenAPI ──────────────────────────────────────────────────────────
 
 #[tokio::test]
@@ -3527,6 +4896,19 @@ async fn test_openapi_spec() {
     assert_eq!(spec["info"]["title"], "The Corporation API");
 
     let paths = spec["paths"].as_object().unwrap();
+    assert!(paths.contains_key("/v1/entities/{entity_id}/governance/profile"));
+    assert!(paths.contains_key("/v1/entities/{entity_id}/governance/doc-bundles/generate"));
+    assert!(paths.contains_key("/v1/entities/{entity_id}/governance/triggers"));
+    assert!(paths.contains_key("/v1/entities/{entity_id}/governance/mode-history"));
+    assert!(paths.contains_key("/v1/entities/{entity_id}/governance/audit/entries"));
+    assert!(paths.contains_key("/v1/governance/audit/events"));
+    assert!(paths.contains_key("/v1/governance/audit/checkpoints"));
+    assert!(paths.contains_key("/v1/entities/{entity_id}/governance/audit/checkpoints"));
+    assert!(paths.contains_key("/v1/governance/audit/verify"));
+    assert!(paths.contains_key("/v1/entities/{entity_id}/governance/audit/verifications"));
+    assert!(paths.contains_key(
+        "/v1/internal/workspaces/{workspace_id}/entities/{entity_id}/governance/triggers/lockdown"
+    ));
     assert!(
         paths.len() >= 100,
         "expected >= 100 paths, got {}",

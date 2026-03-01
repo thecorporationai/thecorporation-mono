@@ -5,17 +5,19 @@ use serde::{Deserialize, Serialize};
 
 use super::error::EquityError;
 use super::types::{GrantStatus, GrantType, RecipientType, ShareCount, VotingRights};
-use crate::domain::ids::{
-    AgentId, ContactId, EntityId, EquityGrantId, FilingId, ShareClassId,
-};
+use crate::domain::ids::{AgentId, ContactId, EntityId, EquityGrantId, FilingId, ShareClassId};
 
 /// Validate data-integrity invariants shared by constructors and deserialization.
 fn validate_grant(share_count: &ShareCount, recipient_name: &str) -> Result<(), EquityError> {
     if share_count.raw() <= 0 {
-        return Err(EquityError::Validation("share_count must be positive".into()));
+        return Err(EquityError::Validation(
+            "share_count must be positive".into(),
+        ));
     }
     if recipient_name.is_empty() {
-        return Err(EquityError::Validation("recipient_name must not be empty".into()));
+        return Err(EquityError::Validation(
+            "recipient_name must not be empty".into(),
+        ));
     }
     Ok(())
 }
@@ -192,10 +194,10 @@ impl EquityGrant {
         let valid = matches!(
             (self.status, to),
             (GrantStatus::Issued, GrantStatus::Vested)
-            | (GrantStatus::Issued, GrantStatus::Forfeited)
-            | (GrantStatus::Issued, GrantStatus::Cancelled)
-            | (GrantStatus::Vested, GrantStatus::Exercised)
-            | (GrantStatus::Vested, GrantStatus::Forfeited)
+                | (GrantStatus::Issued, GrantStatus::Forfeited)
+                | (GrantStatus::Issued, GrantStatus::Cancelled)
+                | (GrantStatus::Vested, GrantStatus::Exercised)
+                | (GrantStatus::Vested, GrantStatus::Forfeited)
         );
         if !valid {
             return Err(EquityError::InvalidGrantTransition {

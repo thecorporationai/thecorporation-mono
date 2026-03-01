@@ -3,11 +3,11 @@
 //! Endpoints for accounts, journal entries, invoices, and bank accounts.
 
 use axum::{
+    Json, Router,
     body::Bytes,
     extract::{Path, Query, State},
     http::HeaderMap,
     routing::{get, post},
-    Json, Router,
 };
 use chrono::NaiveDate;
 use serde::{Deserialize, Serialize};
@@ -225,8 +225,7 @@ async fn create_account(
         }
     })
     .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
-    ?;
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
 
     Ok(Json(account_to_response(&account)))
 }
@@ -242,23 +241,22 @@ async fn list_accounts(
         let layout = state.layout.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
-            let ids = store.list_ids::<Account>("main").map_err(|e| {
-                AppError::Internal(format!("list accounts: {e}"))
-            })?;
+            let ids = store
+                .list_ids::<Account>("main")
+                .map_err(|e| AppError::Internal(format!("list accounts: {e}")))?;
 
             let mut results = Vec::new();
             for id in ids {
-                let a = store.read::<Account>("main", id).map_err(|e| {
-                    AppError::Internal(format!("read account {id}: {e}"))
-                })?;
+                let a = store
+                    .read::<Account>("main", id)
+                    .map_err(|e| AppError::Internal(format!("read account {id}: {e}")))?;
                 results.push(account_to_response(&a));
             }
             Ok::<_, AppError>(results)
         }
     })
     .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
-    ?;
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
 
     Ok(Json(accounts))
 }
@@ -275,7 +273,9 @@ async fn create_journal_entry(
 
     for line in &req.lines {
         if line.amount_cents < 0 {
-            return Err(AppError::BadRequest("journal entry line amounts must be non-negative".to_owned()));
+            return Err(AppError::BadRequest(
+                "journal entry line amounts must be non-negative".to_owned(),
+            ));
         }
     }
 
@@ -321,8 +321,7 @@ async fn create_journal_entry(
         }
     })
     .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
-    ?;
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
 
     Ok(Json(journal_entry_to_response(&entry)))
 }
@@ -338,23 +337,22 @@ async fn list_journal_entries(
         let layout = state.layout.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
-            let ids = store.list_ids::<JournalEntry>("main").map_err(|e| {
-                AppError::Internal(format!("list journal entries: {e}"))
-            })?;
+            let ids = store
+                .list_ids::<JournalEntry>("main")
+                .map_err(|e| AppError::Internal(format!("list journal entries: {e}")))?;
 
             let mut results = Vec::new();
             for id in ids {
-                let je = store.read::<JournalEntry>("main", id).map_err(|e| {
-                    AppError::Internal(format!("read journal entry {id}: {e}"))
-                })?;
+                let je = store
+                    .read::<JournalEntry>("main", id)
+                    .map_err(|e| AppError::Internal(format!("read journal entry {id}: {e}")))?;
                 results.push(journal_entry_to_response(&je));
             }
             Ok::<_, AppError>(results)
         }
     })
     .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
-    ?;
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
 
     Ok(Json(entries))
 }
@@ -372,9 +370,9 @@ async fn post_journal_entry(
         let layout = state.layout.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
-            let mut entry = store.read::<JournalEntry>("main", entry_id).map_err(|_| {
-                AppError::NotFound(format!("journal entry {} not found", entry_id))
-            })?;
+            let mut entry = store
+                .read::<JournalEntry>("main", entry_id)
+                .map_err(|_| AppError::NotFound(format!("journal entry {} not found", entry_id)))?;
 
             entry.post()?;
 
@@ -392,8 +390,7 @@ async fn post_journal_entry(
         }
     })
     .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
-    ?;
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
 
     Ok(Json(journal_entry_to_response(&entry)))
 }
@@ -411,9 +408,9 @@ async fn void_journal_entry(
         let layout = state.layout.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
-            let mut entry = store.read::<JournalEntry>("main", entry_id).map_err(|_| {
-                AppError::NotFound(format!("journal entry {} not found", entry_id))
-            })?;
+            let mut entry = store
+                .read::<JournalEntry>("main", entry_id)
+                .map_err(|_| AppError::NotFound(format!("journal entry {} not found", entry_id)))?;
 
             entry.void()?;
 
@@ -431,8 +428,7 @@ async fn void_journal_entry(
         }
     })
     .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
-    ?;
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
 
     Ok(Json(journal_entry_to_response(&entry)))
 }
@@ -448,7 +444,9 @@ async fn create_invoice(
     let entity_id = req.entity_id;
 
     if req.amount_cents <= 0 {
-        return Err(AppError::BadRequest("amount_cents must be positive".to_owned()));
+        return Err(AppError::BadRequest(
+            "amount_cents must be positive".to_owned(),
+        ));
     }
 
     let invoice = tokio::task::spawn_blocking({
@@ -480,8 +478,7 @@ async fn create_invoice(
         }
     })
     .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
-    ?;
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
 
     Ok(Json(invoice_to_response(&invoice)))
 }
@@ -497,23 +494,22 @@ async fn list_invoices(
         let layout = state.layout.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
-            let ids = store.list_ids::<Invoice>("main").map_err(|e| {
-                AppError::Internal(format!("list invoices: {e}"))
-            })?;
+            let ids = store
+                .list_ids::<Invoice>("main")
+                .map_err(|e| AppError::Internal(format!("list invoices: {e}")))?;
 
             let mut results = Vec::new();
             for id in ids {
-                let inv = store.read::<Invoice>("main", id).map_err(|e| {
-                    AppError::Internal(format!("read invoice {id}: {e}"))
-                })?;
+                let inv = store
+                    .read::<Invoice>("main", id)
+                    .map_err(|e| AppError::Internal(format!("read invoice {id}: {e}")))?;
                 results.push(invoice_to_response(&inv));
             }
             Ok::<_, AppError>(results)
         }
     })
     .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
-    ?;
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
 
     Ok(Json(invoices))
 }
@@ -531,9 +527,9 @@ async fn send_invoice(
         let layout = state.layout.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
-            let mut invoice = store.read::<Invoice>("main", invoice_id).map_err(|_| {
-                AppError::NotFound(format!("invoice {} not found", invoice_id))
-            })?;
+            let mut invoice = store
+                .read::<Invoice>("main", invoice_id)
+                .map_err(|_| AppError::NotFound(format!("invoice {} not found", invoice_id)))?;
 
             invoice.send()?;
 
@@ -551,8 +547,7 @@ async fn send_invoice(
         }
     })
     .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
-    ?;
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
 
     Ok(Json(invoice_to_response(&invoice)))
 }
@@ -570,9 +565,9 @@ async fn mark_invoice_paid(
         let layout = state.layout.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
-            let mut invoice = store.read::<Invoice>("main", invoice_id).map_err(|_| {
-                AppError::NotFound(format!("invoice {} not found", invoice_id))
-            })?;
+            let mut invoice = store
+                .read::<Invoice>("main", invoice_id)
+                .map_err(|_| AppError::NotFound(format!("invoice {} not found", invoice_id)))?;
 
             invoice.mark_paid()?;
 
@@ -590,8 +585,7 @@ async fn mark_invoice_paid(
         }
     })
     .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
-    ?;
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
 
     Ok(Json(invoice_to_response(&invoice)))
 }
@@ -609,14 +603,13 @@ async fn get_invoice_status(
         let layout = state.layout.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
-            store.read::<Invoice>("main", invoice_id).map_err(|_| {
-                AppError::NotFound(format!("invoice {} not found", invoice_id))
-            })
+            store
+                .read::<Invoice>("main", invoice_id)
+                .map_err(|_| AppError::NotFound(format!("invoice {} not found", invoice_id)))
         }
     })
     .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
-    ?;
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
 
     Ok(Json(invoice_to_response(&invoice)))
 }
@@ -643,14 +636,13 @@ async fn get_pay_instructions(
         let layout = state.layout.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
-            store.read::<Invoice>("main", invoice_id).map_err(|_| {
-                AppError::NotFound(format!("invoice {} not found", invoice_id))
-            })
+            store
+                .read::<Invoice>("main", invoice_id)
+                .map_err(|_| AppError::NotFound(format!("invoice {} not found", invoice_id)))
         }
     })
     .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
-    ?;
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
 
     Ok(Json(PayInstructionsResponse {
         invoice_id: invoice.invoice_id(),
@@ -703,8 +695,7 @@ async fn create_bank_account(
         }
     })
     .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
-    ?;
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
 
     Ok(Json(bank_account_to_response(&bank_account)))
 }
@@ -720,23 +711,22 @@ async fn list_bank_accounts(
         let layout = state.layout.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
-            let ids = store.list_ids::<BankAccount>("main").map_err(|e| {
-                AppError::Internal(format!("list bank accounts: {e}"))
-            })?;
+            let ids = store
+                .list_ids::<BankAccount>("main")
+                .map_err(|e| AppError::Internal(format!("list bank accounts: {e}")))?;
 
             let mut results = Vec::new();
             for id in ids {
-                let ba = store.read::<BankAccount>("main", id).map_err(|e| {
-                    AppError::Internal(format!("read bank account {id}: {e}"))
-                })?;
+                let ba = store
+                    .read::<BankAccount>("main", id)
+                    .map_err(|e| AppError::Internal(format!("read bank account {id}: {e}")))?;
                 results.push(bank_account_to_response(&ba));
             }
             Ok::<_, AppError>(results)
         }
     })
     .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
-    ?;
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
 
     Ok(Json(bank_accounts))
 }
@@ -754,9 +744,11 @@ async fn activate_bank_account(
         let layout = state.layout.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
-            let mut ba = store.read::<BankAccount>("main", bank_account_id).map_err(|_| {
-                AppError::NotFound(format!("bank account {} not found", bank_account_id))
-            })?;
+            let mut ba = store
+                .read::<BankAccount>("main", bank_account_id)
+                .map_err(|_| {
+                    AppError::NotFound(format!("bank account {} not found", bank_account_id))
+                })?;
 
             ba.activate()?;
 
@@ -774,8 +766,7 @@ async fn activate_bank_account(
         }
     })
     .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
-    ?;
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
 
     Ok(Json(bank_account_to_response(&bank_account)))
 }
@@ -793,9 +784,11 @@ async fn close_bank_account(
         let layout = state.layout.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
-            let mut ba = store.read::<BankAccount>("main", bank_account_id).map_err(|_| {
-                AppError::NotFound(format!("bank account {} not found", bank_account_id))
-            })?;
+            let mut ba = store
+                .read::<BankAccount>("main", bank_account_id)
+                .map_err(|_| {
+                    AppError::NotFound(format!("bank account {} not found", bank_account_id))
+                })?;
 
             ba.close()?;
 
@@ -813,8 +806,7 @@ async fn close_bank_account(
         }
     })
     .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
-    ?;
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
 
     Ok(Json(bank_account_to_response(&bank_account)))
 }
@@ -946,15 +938,19 @@ async fn submit_payment(
 
             let path = format!("treasury/payments/{}.json", payment_id);
             store
-                .write_json("main", &path, &payment, &format!("Submit payment {payment_id}"))
+                .write_json(
+                    "main",
+                    &path,
+                    &payment,
+                    &format!("Submit payment {payment_id}"),
+                )
                 .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
 
             Ok::<_, AppError>(payment)
         }
     })
     .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
-    ?;
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
 
     Ok(Json(PaymentResponse {
         payment_id: payment.payment_id(),
@@ -994,15 +990,19 @@ async fn execute_payment(
 
             let path = format!("treasury/payments/{}.json", payment_id);
             store
-                .write_json("main", &path, &payment, &format!("Execute payment {payment_id}"))
+                .write_json(
+                    "main",
+                    &path,
+                    &payment,
+                    &format!("Execute payment {payment_id}"),
+                )
                 .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
 
             Ok::<_, AppError>(payment)
         }
     })
     .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
-    ?;
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
 
     Ok(Json(PaymentResponse {
         payment_id: payment.payment_id(),
@@ -1043,8 +1043,7 @@ async fn create_payroll_run(
         }
     })
     .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
-    ?;
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
 
     Ok(Json(PayrollRunResponse {
         payroll_run_id: run.payroll_run_id(),
@@ -1082,15 +1081,19 @@ async fn create_distribution(
 
             let path = format!("treasury/distributions/{}.json", dist_id);
             store
-                .write_json("main", &path, &dist, &format!("Create distribution {dist_id}"))
+                .write_json(
+                    "main",
+                    &path,
+                    &dist,
+                    &format!("Create distribution {dist_id}"),
+                )
                 .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
 
             Ok::<_, AppError>(dist)
         }
     })
     .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
-    ?;
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
 
     Ok(Json(DistributionResponse {
         distribution_id: dist.distribution_id(),
@@ -1112,7 +1115,9 @@ async fn reconcile_ledger(
 ) -> Result<Json<ReconciliationResponse>, AppError> {
     let workspace_id = auth.workspace_id();
     let entity_id = req.entity_id;
-    let as_of_date = req.as_of_date.unwrap_or_else(|| chrono::Utc::now().date_naive());
+    let as_of_date = req
+        .as_of_date
+        .unwrap_or_else(|| chrono::Utc::now().date_naive());
 
     let recon = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
@@ -1140,15 +1145,19 @@ async fn reconcile_ledger(
 
             let path = format!("treasury/reconciliations/{}.json", recon_id);
             store
-                .write_json("main", &path, &recon, &format!("Reconcile ledger {recon_id}"))
+                .write_json(
+                    "main",
+                    &path,
+                    &recon,
+                    &format!("Reconcile ledger {recon_id}"),
+                )
                 .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
 
             Ok::<_, AppError>(recon)
         }
     })
     .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
-    ?;
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
 
     Ok(Json(ReconciliationResponse {
         reconciliation_id: recon.reconciliation_id(),
@@ -1164,9 +1173,9 @@ async fn reconcile_ledger(
 
 // ── Treasury Advanced ──────────────────────────────────────────────
 
+use crate::domain::ids::StripeConnectionId;
 use crate::domain::treasury::spending_limit::SpendingLimit;
 use crate::domain::treasury::stripe_connection::StripeConnection;
-use crate::domain::ids::StripeConnectionId;
 
 #[derive(Serialize)]
 pub struct StripeAccountResponse {
@@ -1199,7 +1208,12 @@ async fn get_stripe_account(
                         format!("acct_{}", uuid::Uuid::new_v4().simple()),
                     );
                     store
-                        .write_json("main", "treasury/stripe-connection.json", &conn, "Create Stripe connection")
+                        .write_json(
+                            "main",
+                            "treasury/stripe-connection.json",
+                            &conn,
+                            "Create Stripe connection",
+                        )
                         .map_err(|e| AppError::Internal(format!("commit: {e}")))?;
                     Ok(conn)
                 }
@@ -1207,8 +1221,7 @@ async fn get_stripe_account(
         }
     })
     .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
-    ?;
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
 
     Ok(Json(StripeAccountResponse {
         entity_id: conn.entity_id(),
@@ -1260,17 +1273,22 @@ async fn create_spending_limit(
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
             let sl_id = SpendingLimitId::new();
-            let sl = SpendingLimit::new(sl_id, entity_id, req.amount_cents, req.period, req.category);
+            let sl =
+                SpendingLimit::new(sl_id, entity_id, req.amount_cents, req.period, req.category);
             let path = format!("treasury/spending-limits/{}.json", sl_id);
             store
-                .write_json("main", &path, &sl, &format!("Create spending limit {sl_id}"))
+                .write_json(
+                    "main",
+                    &path,
+                    &sl,
+                    &format!("Create spending limit {sl_id}"),
+                )
                 .map_err(|e| AppError::Internal(format!("commit: {e}")))?;
             Ok::<_, AppError>(sl)
         }
     })
     .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
-    ?;
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
 
     Ok(Json(spending_limit_to_response(&sl)))
 }
@@ -1301,8 +1319,7 @@ async fn list_spending_limits(
         }
     })
     .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
-    ?;
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
 
     Ok(Json(limits))
 }
@@ -1393,8 +1410,7 @@ async fn get_financial_statements(
         }
     })
     .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
-    ?;
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
 
     Ok(Json(statement))
 }
@@ -1454,8 +1470,7 @@ async fn seed_chart_of_accounts(
         }
     })
     .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
-    ?;
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
 
     Ok(Json(SeedChartOfAccountsResponse {
         entity_id,
@@ -1479,14 +1494,13 @@ async fn get_invoice(
         let layout = state.layout.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
-            store.read::<Invoice>("main", invoice_id).map_err(|_| {
-                AppError::NotFound(format!("invoice {} not found", invoice_id))
-            })
+            store
+                .read::<Invoice>("main", invoice_id)
+                .map_err(|_| AppError::NotFound(format!("invoice {} not found", invoice_id)))
         }
     })
     .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
-    ?;
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
 
     Ok(Json(invoice_to_response(&invoice)))
 }
@@ -1520,7 +1534,9 @@ async fn from_agent_request(
     let entity_id = req.entity_id;
 
     if req.amount_cents <= 0 {
-        return Err(AppError::BadRequest("amount_cents must be positive".to_owned()));
+        return Err(AppError::BadRequest(
+            "amount_cents must be positive".to_owned(),
+        ));
     }
 
     let invoice = tokio::task::spawn_blocking({
@@ -1543,15 +1559,19 @@ async fn from_agent_request(
 
             let path = format!("treasury/invoices/{}.json", invoice_id);
             store
-                .write_json("main", &path, &invoice, &format!("Agent-created invoice {invoice_id}"))
+                .write_json(
+                    "main",
+                    &path,
+                    &invoice,
+                    &format!("Agent-created invoice {invoice_id}"),
+                )
                 .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
 
             Ok::<_, AppError>(invoice)
         }
     })
     .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
-    ?;
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
 
     Ok(Json(PaymentOfferResponse {
         invoice_id: invoice.invoice_id(),
@@ -1587,14 +1607,18 @@ async fn create_stripe_account(
                 format!("acct_{}", uuid::Uuid::new_v4().simple()),
             );
             store
-                .write_json("main", "treasury/stripe-connection.json", &conn, "Create Stripe connection")
+                .write_json(
+                    "main",
+                    "treasury/stripe-connection.json",
+                    &conn,
+                    "Create Stripe connection",
+                )
                 .map_err(|e| AppError::Internal(format!("commit: {e}")))?;
             Ok::<_, AppError>(conn)
         }
     })
     .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
-    ?;
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
 
     Ok(Json(StripeAccountResponse {
         entity_id: conn.entity_id(),
@@ -1621,23 +1645,22 @@ async fn get_chart_of_accounts(
         let layout = state.layout.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
-            let ids = store.list_ids::<Account>("main").map_err(|e| {
-                AppError::Internal(format!("list accounts: {e}"))
-            })?;
+            let ids = store
+                .list_ids::<Account>("main")
+                .map_err(|e| AppError::Internal(format!("list accounts: {e}")))?;
 
             let mut results = Vec::new();
             for id in ids {
-                let a = store.read::<Account>("main",id).map_err(|e| {
-                    AppError::Internal(format!("read account {id}: {e}"))
-                })?;
+                let a = store
+                    .read::<Account>("main", id)
+                    .map_err(|e| AppError::Internal(format!("read account {id}: {e}")))?;
                 results.push(account_to_response(&a));
             }
             Ok::<_, AppError>(results)
         }
     })
     .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
-    ?;
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
 
     Ok(Json(ChartOfAccountsResponse {
         entity_id,
@@ -1673,7 +1696,9 @@ async fn create_payout(
     let entity_id = req.entity_id;
 
     if req.amount_cents <= 0 {
-        return Err(AppError::BadRequest("amount_cents must be positive".to_owned()));
+        return Err(AppError::BadRequest(
+            "amount_cents must be positive".to_owned(),
+        ));
     }
 
     let payout_id = uuid::Uuid::new_v4().to_string();
@@ -1706,8 +1731,7 @@ async fn create_payout(
         }
     })
     .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
-    ?;
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
 
     Ok(Json(PayoutResponse {
         payout_id,
@@ -1747,7 +1771,9 @@ async fn create_payment_intent(
     let entity_id = req.entity_id;
 
     if req.amount_cents <= 0 {
-        return Err(AppError::BadRequest("amount_cents must be positive".to_owned()));
+        return Err(AppError::BadRequest(
+            "amount_cents must be positive".to_owned(),
+        ));
     }
 
     let pi_id = format!("pi_{}", uuid::Uuid::new_v4().simple());
@@ -1784,8 +1810,7 @@ async fn create_payment_intent(
         }
     })
     .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
-    ?;
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
 
     Ok(Json(PaymentIntentResponse {
         payment_intent_id: pi_id,
@@ -1802,8 +1827,9 @@ async fn treasury_stripe_webhook(
     headers: HeaderMap,
     body: Bytes,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    let expected = std::env::var("TREASURY_STRIPE_WEBHOOK_SECRET")
-        .map_err(|_| AppError::Internal("TREASURY_STRIPE_WEBHOOK_SECRET is not configured".to_owned()))?;
+    let expected = std::env::var("TREASURY_STRIPE_WEBHOOK_SECRET").map_err(|_| {
+        AppError::Internal("TREASURY_STRIPE_WEBHOOK_SECRET is not configured".to_owned())
+    })?;
     let provided = headers
         .get("x-webhook-secret")
         .and_then(|v| v.to_str().ok())
@@ -1829,10 +1855,7 @@ pub fn treasury_routes() -> Router<AppState> {
         .route("/v1/treasury/accounts", post(create_account))
         .route("/v1/entities/{entity_id}/accounts", get(list_accounts))
         // Journal entries
-        .route(
-            "/v1/treasury/journal-entries",
-            post(create_journal_entry),
-        )
+        .route("/v1/treasury/journal-entries", post(create_journal_entry))
         .route(
             "/v1/entities/{entity_id}/journal-entries",
             get(list_journal_entries),
@@ -1853,19 +1876,13 @@ pub fn treasury_routes() -> Router<AppState> {
             "/v1/invoices/{invoice_id}/mark-paid",
             post(mark_invoice_paid),
         )
-        .route(
-            "/v1/invoices/{invoice_id}/status",
-            get(get_invoice_status),
-        )
+        .route("/v1/invoices/{invoice_id}/status", get(get_invoice_status))
         .route(
             "/v1/invoices/{invoice_id}/pay-instructions",
             get(get_pay_instructions),
         )
         // Bank accounts
-        .route(
-            "/v1/treasury/bank-accounts",
-            post(create_bank_account),
-        )
+        .route("/v1/treasury/bank-accounts", post(create_bank_account))
         .route(
             "/v1/entities/{entity_id}/bank-accounts",
             get(list_bank_accounts),
@@ -1888,21 +1905,39 @@ pub fn treasury_routes() -> Router<AppState> {
         // Reconciliation
         .route("/v1/ledger/reconcile", post(reconcile_ledger))
         // Treasury advanced
-        .route("/v1/entities/{entity_id}/stripe-account", get(get_stripe_account))
+        .route(
+            "/v1/entities/{entity_id}/stripe-account",
+            get(get_stripe_account),
+        )
         .route("/v1/spending-limits", post(create_spending_limit))
-        .route("/v1/entities/{entity_id}/spending-limits", get(list_spending_limits))
-        .route("/v1/entities/{entity_id}/financial-statements", get(get_financial_statements))
-        .route("/v1/treasury/seed-chart-of-accounts", post(seed_chart_of_accounts))
+        .route(
+            "/v1/entities/{entity_id}/spending-limits",
+            get(list_spending_limits),
+        )
+        .route(
+            "/v1/entities/{entity_id}/financial-statements",
+            get(get_financial_statements),
+        )
+        .route(
+            "/v1/treasury/seed-chart-of-accounts",
+            post(seed_chart_of_accounts),
+        )
         // Get single invoice
         .route("/v1/invoices/{invoice_id}", get(get_invoice))
         // Agent invoice creation
         .route("/v1/invoices/from-agent-request", post(from_agent_request))
         // Treasury advanced
         .route("/v1/treasury/stripe-accounts", post(create_stripe_account))
-        .route("/v1/treasury/chart-of-accounts/{entity_id}", get(get_chart_of_accounts))
+        .route(
+            "/v1/treasury/chart-of-accounts/{entity_id}",
+            get(get_chart_of_accounts),
+        )
         .route("/v1/treasury/payouts", post(create_payout))
         .route("/v1/treasury/payment-intents", post(create_payment_intent))
-        .route("/v1/treasury/webhooks/stripe", post(treasury_stripe_webhook))
+        .route(
+            "/v1/treasury/webhooks/stripe",
+            post(treasury_stripe_webhook),
+        )
         // Alias: bank-accounts
         .route("/v1/bank-accounts", post(create_bank_account))
 }

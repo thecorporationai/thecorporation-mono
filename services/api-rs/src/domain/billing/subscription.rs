@@ -17,11 +17,7 @@ pub struct Subscription {
 }
 
 impl Subscription {
-    pub fn new(
-        subscription_id: SubscriptionId,
-        workspace_id: WorkspaceId,
-        plan: String,
-    ) -> Self {
+    pub fn new(subscription_id: SubscriptionId, workspace_id: WorkspaceId, plan: String) -> Self {
         Self {
             subscription_id,
             workspace_id,
@@ -32,14 +28,32 @@ impl Subscription {
         }
     }
 
-    pub fn subscription_id(&self) -> SubscriptionId { self.subscription_id }
-    pub fn workspace_id(&self) -> WorkspaceId { self.workspace_id }
-    pub fn plan(&self) -> &str { &self.plan }
-    pub fn status(&self) -> &str { &self.status }
-    pub fn current_period_end(&self) -> Option<&str> { self.current_period_end.as_deref() }
-    pub fn created_at(&self) -> DateTime<Utc> { self.created_at }
+    pub fn subscription_id(&self) -> SubscriptionId {
+        self.subscription_id
+    }
+    pub fn workspace_id(&self) -> WorkspaceId {
+        self.workspace_id
+    }
+    pub fn plan(&self) -> &str {
+        &self.plan
+    }
+    pub fn status(&self) -> &str {
+        &self.status
+    }
+    pub fn current_period_end(&self) -> Option<&str> {
+        self.current_period_end.as_deref()
+    }
+    pub fn created_at(&self) -> DateTime<Utc> {
+        self.created_at
+    }
 
-    pub fn set_plan(&mut self, plan: String) { self.plan = plan; }
-    pub fn set_status(&mut self, status: String) { self.status = status; }
-    pub fn set_current_period_end(&mut self, end: String) { self.current_period_end = Some(end); }
+    pub fn set_plan(&mut self, plan: String) {
+        self.plan = plan;
+    }
+    pub fn set_status(&mut self, status: String) {
+        self.status = status;
+    }
+    pub fn set_current_period_end(&mut self, end: String) {
+        self.current_period_end = Some(end);
+    }
 }

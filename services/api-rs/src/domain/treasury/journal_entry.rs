@@ -189,9 +189,7 @@ impl JournalEntry {
     pub fn void(&mut self) -> Result<(), TreasuryError> {
         match self.status {
             JournalEntryStatus::Draft => Err(TreasuryError::CannotVoidDraft),
-            JournalEntryStatus::Voided => {
-                Err(TreasuryError::AlreadyVoided(self.journal_entry_id))
-            }
+            JournalEntryStatus::Voided => Err(TreasuryError::AlreadyVoided(self.journal_entry_id)),
             JournalEntryStatus::Posted => {
                 self.status = JournalEntryStatus::Voided;
                 self.voided_at = Some(Utc::now());

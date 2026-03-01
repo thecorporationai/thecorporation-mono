@@ -7,10 +7,10 @@
 //! Otherwise, the worker forwards resolution to the external URL.
 
 use axum::{
+    Json, Router,
     extract::{Path, State},
     http::StatusCode,
     routing::{get, post, put},
-    Json, Router,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -152,7 +152,10 @@ async fn create_proxy(
                 .map_err(|e| AppError::NotFound(format!("workspace not found: {e}")))?;
 
             // Check if proxy already exists
-            if ws_store.path_exists(&config_path(&req.name)).unwrap_or(false) {
+            if ws_store
+                .path_exists(&config_path(&req.name))
+                .unwrap_or(false)
+            {
                 return Err(AppError::Conflict(format!(
                     "secret proxy '{}' already exists",
                     req.name
@@ -163,7 +166,7 @@ async fn create_proxy(
             let empty_secrets = EncryptedSecrets::default();
 
             // Atomic commit: config + empty secrets
-            use crate::git::commit::{commit_files, FileWrite};
+            use crate::git::commit::{FileWrite, commit_files};
             let files = vec![
                 FileWrite::json(config_path(&req.name), &config)
                     .map_err(|e| AppError::Internal(format!("serialize config: {e}")))?,
@@ -183,8 +186,7 @@ async fn create_proxy(
         }
     })
     .await
-    .map_err(|e| AppError::Internal(format!("task join: {e}")))?
-    ?;
+    .map_err(|e| AppError::Internal(format!("task join: {e}")))??;
 
     Ok((
         StatusCode::CREATED,
@@ -237,8 +239,7 @@ async fn list_proxies(
         }
     })
     .await
-    .map_err(|e| AppError::Internal(format!("task join: {e}")))?
-    ?;
+    .map_err(|e| AppError::Internal(format!("task join: {e}")))??;
 
     Ok(Json(proxies))
 }
@@ -261,10 +262,7 @@ async fn get_proxy(
             let config: SecretProxyConfig = ws_store
                 .read_json(&config_path(&params.proxy_name))
                 .map_err(|_| {
-                    AppError::NotFound(format!(
-                        "secret proxy '{}' not found",
-                        params.proxy_name
-                    ))
+                    AppError::NotFound(format!("secret proxy '{}' not found", params.proxy_name))
                 })?;
             let secrets: EncryptedSecrets = ws_store
                 .read_json(&secrets_path(&params.proxy_name))
@@ -280,8 +278,7 @@ async fn get_proxy(
         }
     })
     .await
-    .map_err(|e| AppError::Internal(format!("task join: {e}")))?
-    ?;
+    .map_err(|e| AppError::Internal(format!("task join: {e}")))??;
 
     Ok(Json(proxy))
 }
@@ -310,11 +307,8 @@ async fn set_secrets(
             let _config: SecretProxyConfig = ws_store
                 .read_json(&config_path(&params.proxy_name))
                 .map_err(|_| {
-                    AppError::NotFound(format!(
-                        "secret proxy '{}' not found",
-                        params.proxy_name
-                    ))
-                })?;
+                AppError::NotFound(format!("secret proxy '{}' not found", params.proxy_name))
+            })?;
 
             // Read existing secrets and merge
             let mut secrets: EncryptedSecrets = ws_store
@@ -332,10 +326,7 @@ async fn set_secrets(
                 .write_json(
                     &secrets_path(&params.proxy_name),
                     &secrets,
-                    &format!(
-                        "Update secrets for proxy '{}'",
-                        params.proxy_name
-                    ),
+                    &format!("Update secrets for proxy '{}'", params.proxy_name),
                 )
                 .map_err(|e| AppError::Internal(format!("commit: {e}")))?;
 
@@ -343,13 +334,9 @@ async fn set_secrets(
         }
     })
     .await
-    .map_err(|e| AppError::Internal(format!("task join: {e}")))?
-    ?;
+    .map_err(|e| AppError::Internal(format!("task join: {e}")))??;
 
-    Ok(Json(SecretNamesResponse {
-        proxy_name,
-        names,
-    }))
+    Ok(Json(SecretNamesResponse { proxy_name, names }))
 }
 
 async fn list_secret_names(
@@ -373,11 +360,8 @@ async fn list_secret_names(
             let _config: SecretProxyConfig = ws_store
                 .read_json(&config_path(&params.proxy_name))
                 .map_err(|_| {
-                    AppError::NotFound(format!(
-                        "secret proxy '{}' not found",
-                        params.proxy_name
-                    ))
-                })?;
+                AppError::NotFound(format!("secret proxy '{}' not found", params.proxy_name))
+            })?;
 
             let secrets: EncryptedSecrets = ws_store
                 .read_json(&secrets_path(&params.proxy_name))
@@ -387,13 +371,9 @@ async fn list_secret_names(
         }
     })
     .await
-    .map_err(|e| AppError::Internal(format!("task join: {e}")))?
-    ?;
+    .map_err(|e| AppError::Internal(format!("task join: {e}")))??;
 
-    Ok(Json(SecretNamesResponse {
-        proxy_name,
-        names,
-    }))
+    Ok(Json(SecretNamesResponse { proxy_name, names }))
 }
 
 /// Internal endpoint: resolve encrypted secrets for agent execution.
@@ -418,10 +398,7 @@ async fn resolve_secrets(
             let config: SecretProxyConfig = ws_store
                 .read_json(&config_path(&req.proxy_name))
                 .map_err(|_| {
-                    AppError::NotFound(format!(
-                        "secret proxy '{}' not found",
-                        req.proxy_name
-                    ))
+                    AppError::NotFound(format!("secret proxy '{}' not found", req.proxy_name))
                 })?;
 
             if !config.is_self() {
@@ -462,8 +439,7 @@ async fn resolve_secrets(
         }
     })
     .await
-    .map_err(|e| AppError::Internal(format!("task join: {e}")))?
-    ?;
+    .map_err(|e| AppError::Internal(format!("task join: {e}")))??;
 
     Ok(Json(result))
 }

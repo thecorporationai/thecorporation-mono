@@ -42,10 +42,12 @@ use crate::domain::ids::{
     AccountId, ApprovalArtifactId, BankAccountId, ClassificationId, ComplianceEscalationId,
     ComplianceEvidenceLinkId, ContactId, ContractId, ControlLinkId, ConversionExecutionId,
     DeadlineId, DistributionId, EquityGrantId, EquityRoundId, EquityRuleSetId, FundingRoundId,
-    FundraisingWorkflowId, GovernanceBodyId, GovernanceSeatId, HolderId, IncidentId, InstrumentId,
-    IntentId, InvoiceId, JournalEntryId, LegalEntityId, MeetingId, ObligationId, PacketId,
-    PaymentId, PayrollRunId, PositionId, ReceiptId, ReconciliationId, SafeNoteId,
-    ScheduleAmendmentId, ShareClassId, TaxFilingId, TransferId, TransferWorkflowId, ValuationId,
+    FundraisingWorkflowId, GovernanceAuditCheckpointId, GovernanceAuditEntryId,
+    GovernanceAuditVerificationId, GovernanceBodyId, GovernanceModeEventId, GovernanceSeatId,
+    GovernanceTriggerId, HolderId, IncidentId, InstrumentId, IntentId, InvoiceId, JournalEntryId,
+    LegalEntityId, MeetingId, ObligationId, PacketId, PaymentId, PayrollRunId, PositionId,
+    ReceiptId, ReconciliationId, SafeNoteId, ScheduleAmendmentId, ShareClassId, TaxFilingId,
+    TransferId, TransferWorkflowId, ValuationId,
 };
 
 impl StoredEntity for ShareClass {
@@ -162,11 +164,16 @@ impl StoredEntity for FundraisingWorkflow {
 
 // ── Governance ──────────────────────────────────────────────────────────
 
+use crate::domain::governance::audit::{
+    GovernanceAuditCheckpoint, GovernanceAuditEntry, GovernanceAuditVerificationReport,
+};
 use crate::domain::governance::body::GovernanceBody;
 use crate::domain::governance::delegation_schedule::ScheduleAmendment;
 use crate::domain::governance::incident::GovernanceIncident;
 use crate::domain::governance::meeting::Meeting;
+use crate::domain::governance::mode_history::GovernanceModeChangeEvent;
 use crate::domain::governance::seat::GovernanceSeat;
+use crate::domain::governance::trigger::GovernanceTriggerEvent;
 
 impl StoredEntity for GovernanceBody {
     type Id = GovernanceBodyId;
@@ -203,6 +210,41 @@ impl StoredEntity for ScheduleAmendment {
     type Id = ScheduleAmendmentId;
     fn storage_dir() -> &'static str {
         "governance/delegation-schedule/amendments"
+    }
+}
+
+impl StoredEntity for GovernanceTriggerEvent {
+    type Id = GovernanceTriggerId;
+    fn storage_dir() -> &'static str {
+        "governance/triggers"
+    }
+}
+
+impl StoredEntity for GovernanceModeChangeEvent {
+    type Id = GovernanceModeEventId;
+    fn storage_dir() -> &'static str {
+        "governance/mode-history"
+    }
+}
+
+impl StoredEntity for GovernanceAuditEntry {
+    type Id = GovernanceAuditEntryId;
+    fn storage_dir() -> &'static str {
+        "governance/audit/entries"
+    }
+}
+
+impl StoredEntity for GovernanceAuditCheckpoint {
+    type Id = GovernanceAuditCheckpointId;
+    fn storage_dir() -> &'static str {
+        "governance/audit/checkpoints"
+    }
+}
+
+impl StoredEntity for GovernanceAuditVerificationReport {
+    type Id = GovernanceAuditVerificationId;
+    fn storage_dir() -> &'static str {
+        "governance/audit/verifications"
     }
 }
 

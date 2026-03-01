@@ -110,10 +110,11 @@ impl Document {
             return !self.signatures.is_empty();
         }
 
-        required.iter().all(|role| {
+        required.iter().all(|required_role| {
+            let required_normalized = normalize_role(required_role);
             self.signatures
                 .iter()
-                .any(|sig| sig.signer_role == *role)
+                .any(|sig| normalize_role(sig.signer_role()) == required_normalized)
         })
     }
 
@@ -135,11 +136,7 @@ impl Document {
             .and_then(|v| v.as_array())
             .map(|arr| {
                 arr.iter()
-                    .filter_map(|item| {
-                        item.get("role")
-                            .and_then(|r| r.as_str())
-                            .map(String::from)
-                    })
+                    .filter_map(|item| item.get("role").and_then(|r| r.as_str()).map(String::from))
                     .collect()
             })
             .unwrap_or_default()
@@ -208,6 +205,10 @@ impl Document {
         self.superseded_by_document_id = Some(doc_id);
         self.status = DocumentStatus::Amended;
     }
+}
+
+fn normalize_role(role: &str) -> String {
+    role.trim().to_ascii_lowercase()
 }
 
 // ── Signature ────────────────────────────────────────────────────────────
@@ -354,6 +355,15 @@ mod tests {
         let mut doc = make_document();
         doc.sign(make_sig_request("incorporator")).unwrap();
         doc.sign(make_sig_request("registered_agent")).unwrap();
+        assert_eq!(doc.status(), DocumentStatus::Signed);
+        assert!(doc.is_fully_signed());
+    }
+
+    #[test]
+    fn required_roles_match_case_insensitively() {
+        let mut doc = make_document();
+        doc.sign(make_sig_request("Incorporator")).unwrap();
+        doc.sign(make_sig_request("REGISTERED_AGENT")).unwrap();
         assert_eq!(doc.status(), DocumentStatus::Signed);
         assert!(doc.is_fully_signed());
     }

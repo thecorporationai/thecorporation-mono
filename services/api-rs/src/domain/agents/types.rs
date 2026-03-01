@@ -58,7 +58,10 @@ mod tests {
         let sandbox = SandboxConfig::default();
         assert_eq!(sandbox.memory_mb, 512);
         assert_eq!(sandbox.cpu_limit, 0.5);
-        assert_eq!(sandbox.network_egress, agent_types::NetworkEgress::Restricted);
+        assert_eq!(
+            sandbox.network_egress,
+            agent_types::NetworkEgress::Restricted
+        );
     }
 
     #[test]

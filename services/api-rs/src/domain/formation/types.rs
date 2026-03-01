@@ -286,13 +286,19 @@ mod tests {
         ];
         for status in &non_terminal {
             assert!(
-                status.allowed_transitions().contains(&FormationStatus::Rejected),
+                status
+                    .allowed_transitions()
+                    .contains(&FormationStatus::Rejected),
                 "{status} should allow transition to Rejected"
             );
         }
 
         // Active can only transition to Dissolved
-        assert!(FormationStatus::Active.allowed_transitions().contains(&FormationStatus::Dissolved));
+        assert!(
+            FormationStatus::Active
+                .allowed_transitions()
+                .contains(&FormationStatus::Dissolved)
+        );
         // Terminal states have no transitions
         assert!(FormationStatus::Rejected.allowed_transitions().is_empty());
         assert!(FormationStatus::Dissolved.allowed_transitions().is_empty());
@@ -328,8 +334,7 @@ mod tests {
         let dt = DocumentType::Ss4Application;
         let json = serde_json::to_string(&dt).expect("serialize DocumentType");
         assert_eq!(json, "\"ss4_application\"");
-        let parsed: DocumentType =
-            serde_json::from_str(&json).expect("deserialize DocumentType");
+        let parsed: DocumentType = serde_json::from_str(&json).expect("deserialize DocumentType");
         assert_eq!(dt, parsed);
     }
 

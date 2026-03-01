@@ -4,7 +4,7 @@ use serde::Serialize;
 
 use crate::domain::auth::api_key::ApiKeyRecord;
 use crate::domain::ids::{ApiKeyId, WorkspaceId};
-use crate::git::commit::{commit_files, FileWrite};
+use crate::git::commit::{FileWrite, commit_files};
 use crate::git::error::GitStorageError;
 use crate::git::repo::CorpRepo;
 
@@ -83,10 +83,7 @@ impl<'a> WorkspaceStore<'a> {
     }
 
     /// Read an API key record by ID.
-    pub fn read_api_key(
-        &self,
-        key_id: ApiKeyId,
-    ) -> Result<ApiKeyRecord, GitStorageError> {
+    pub fn read_api_key(&self, key_id: ApiKeyId) -> Result<ApiKeyRecord, GitStorageError> {
         self.repo
             .read_json("main", &format!("api-keys/{}.json", key_id))
     }
@@ -124,7 +121,10 @@ impl<'a> WorkspaceStore<'a> {
     }
 
     /// Read any deserializable JSON from a path.
-    pub fn read_json<T: serde::de::DeserializeOwned>(&self, path: &str) -> Result<T, GitStorageError> {
+    pub fn read_json<T: serde::de::DeserializeOwned>(
+        &self,
+        path: &str,
+    ) -> Result<T, GitStorageError> {
         self.repo.read_json("main", path)
     }
 

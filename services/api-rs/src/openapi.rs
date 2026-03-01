@@ -657,6 +657,157 @@ fn add_equity_paths(paths: &mut Map<String, Value>) {
 fn add_governance_paths(paths: &mut Map<String, Value>) {
     add_path(
         paths,
+        "/v1/entities/{entity_id}/governance/profile",
+        "get",
+        op(
+            "governance",
+            "get_governance_profile",
+            "Get governance profile",
+        ),
+    );
+    add_path(
+        paths,
+        "/v1/entities/{entity_id}/governance/profile",
+        "put",
+        op(
+            "governance",
+            "update_governance_profile",
+            "Update governance profile",
+        ),
+    );
+    add_path(
+        paths,
+        "/v1/entities/{entity_id}/governance/doc-bundles/generate",
+        "post",
+        op(
+            "governance",
+            "generate_governance_doc_bundle",
+            "Generate governance doc bundle",
+        ),
+    );
+    add_path(
+        paths,
+        "/v1/entities/{entity_id}/governance/doc-bundles/current",
+        "get",
+        op(
+            "governance",
+            "get_current_governance_doc_bundle",
+            "Get current governance doc bundle",
+        ),
+    );
+    add_path(
+        paths,
+        "/v1/entities/{entity_id}/governance/doc-bundles",
+        "get",
+        op(
+            "governance",
+            "list_governance_doc_bundles",
+            "List governance doc bundles",
+        ),
+    );
+    add_path(
+        paths,
+        "/v1/entities/{entity_id}/governance/doc-bundles/{bundle_id}",
+        "get",
+        op(
+            "governance",
+            "get_governance_doc_bundle",
+            "Get governance doc bundle manifest",
+        ),
+    );
+    add_path(
+        paths,
+        "/v1/entities/{entity_id}/governance/triggers",
+        "get",
+        op(
+            "governance",
+            "list_governance_triggers",
+            "List governance triggers",
+        ),
+    );
+    add_path(
+        paths,
+        "/v1/entities/{entity_id}/governance/mode-history",
+        "get",
+        op(
+            "governance",
+            "list_governance_mode_history",
+            "List governance mode history",
+        ),
+    );
+    add_path(
+        paths,
+        "/v1/entities/{entity_id}/governance/audit/entries",
+        "get",
+        op(
+            "governance",
+            "list_governance_audit_entries",
+            "List governance audit entries",
+        ),
+    );
+    add_path(
+        paths,
+        "/v1/governance/audit/events",
+        "post",
+        op(
+            "governance",
+            "create_governance_audit_event",
+            "Append governance audit entry",
+        ),
+    );
+    add_path(
+        paths,
+        "/v1/governance/audit/checkpoints",
+        "post",
+        op(
+            "governance",
+            "write_governance_audit_checkpoint",
+            "Write governance audit checkpoint",
+        ),
+    );
+    add_path(
+        paths,
+        "/v1/entities/{entity_id}/governance/audit/checkpoints",
+        "get",
+        op(
+            "governance",
+            "list_governance_audit_checkpoints",
+            "List governance audit checkpoints",
+        ),
+    );
+    add_path(
+        paths,
+        "/v1/governance/audit/verify",
+        "post",
+        op(
+            "governance",
+            "verify_governance_audit_chain",
+            "Verify governance audit chain",
+        ),
+    );
+    add_path(
+        paths,
+        "/v1/entities/{entity_id}/governance/audit/verifications",
+        "get",
+        op(
+            "governance",
+            "list_governance_audit_verifications",
+            "List governance audit verifications",
+        ),
+    );
+    add_path(
+        paths,
+        "/v1/internal/workspaces/{workspace_id}/entities/{entity_id}/governance/triggers/lockdown",
+        "post",
+        op(
+            "governance",
+            "ingest_lockdown_trigger",
+            "Ingest lockdown trigger (internal)",
+        ),
+    );
+
+    add_path(
+        paths,
         "/v1/governance/mode",
         "get",
         op("governance", "get_governance_mode", "Get governance mode"),
@@ -1661,13 +1812,21 @@ fn add_services_paths(paths: &mut Map<String, Value>) {
         paths,
         "/v1/services/requests",
         "post",
-        op("services", "create_service_request", "Create service request"),
+        op(
+            "services",
+            "create_service_request",
+            "Create service request",
+        ),
     );
     add_path(
         paths,
         "/v1/entities/{entity_id}/services/requests",
         "get",
-        op("services", "list_service_requests", "List service requests for entity"),
+        op(
+            "services",
+            "list_service_requests",
+            "List service requests for entity",
+        ),
     );
     add_path(
         paths,
@@ -1691,7 +1850,11 @@ fn add_services_paths(paths: &mut Map<String, Value>) {
         paths,
         "/v1/services/requests/{entity_id}/{request_id}/fulfill",
         "post",
-        op("services", "fulfill_service_request", "Fulfill service request"),
+        op(
+            "services",
+            "fulfill_service_request",
+            "Fulfill service request",
+        ),
     );
     add_path(
         paths,
@@ -1703,13 +1866,21 @@ fn add_services_paths(paths: &mut Map<String, Value>) {
         paths,
         "/v1/services/pending",
         "get",
-        op("services", "list_pending_fulfillment", "List pending fulfillment requests"),
+        op(
+            "services",
+            "list_pending_fulfillment",
+            "List pending fulfillment requests",
+        ),
     );
     add_path(
         paths,
         "/v1/services/webhooks/stripe",
         "post",
-        op("services", "stripe_webhook", "Stripe webhook for service payments"),
+        op(
+            "services",
+            "stripe_webhook",
+            "Stripe webhook for service payments",
+        ),
     );
 }
 

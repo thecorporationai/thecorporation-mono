@@ -5,9 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use super::error::EquityError;
 use super::types::{ValuationMethodology, ValuationStatus, ValuationType};
-use crate::domain::ids::{
-    ContactId, DocumentId, EntityId, ResolutionId, ValuationId, WorkspaceId,
-};
+use crate::domain::ids::{ContactId, DocumentId, EntityId, ResolutionId, ValuationId, WorkspaceId};
 use crate::domain::treasury::types::Cents;
 
 /// A valuation record (409A, FMV, profits interest, etc.).
@@ -86,10 +84,7 @@ impl Valuation {
     }
 
     /// Approve the valuation. Must be PendingApproval.
-    pub fn approve(
-        &mut self,
-        resolution_id: Option<ResolutionId>,
-    ) -> Result<(), EquityError> {
+    pub fn approve(&mut self, resolution_id: Option<ResolutionId>) -> Result<(), EquityError> {
         if self.status != ValuationStatus::PendingApproval {
             return Err(EquityError::InvalidValuationTransition {
                 from: self.status,

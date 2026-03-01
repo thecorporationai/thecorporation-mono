@@ -6,20 +6,16 @@ use crate::domain::equity::cap_table::CapTable;
 use crate::domain::formation::{
     document::Document, entity::Entity, filing::Filing, tax_profile::TaxProfile,
 };
-use crate::domain::governance::{
-    agenda_item::AgendaItem,
-    resolution::Resolution,
-    vote::Vote,
-};
+use crate::domain::governance::{agenda_item::AgendaItem, resolution::Resolution, vote::Vote};
 use crate::domain::ids::{
     AgendaItemId, DocumentId, EntityId, MeetingId, ResolutionId, VoteId, WorkspaceId,
 };
-use crate::git::commit::{commit_files, FileWrite};
+use crate::git::commit::{FileWrite, commit_files};
 use crate::git::error::GitStorageError;
 use crate::git::repo::CorpRepo;
 
-use super::stored_entity::StoredEntity;
 use super::RepoLayout;
+use super::stored_entity::StoredEntity;
 
 /// Operations on a single entity's git repo.
 pub struct EntityStore<'a> {
@@ -225,10 +221,7 @@ impl<'a> EntityStore<'a> {
         branch: &str,
         meeting_id: MeetingId,
     ) -> Result<Vec<VoteId>, GitStorageError> {
-        self.list_ids_in_dir(
-            branch,
-            &format!("governance/meetings/{}/votes", meeting_id),
-        )
+        self.list_ids_in_dir(branch, &format!("governance/meetings/{}/votes", meeting_id))
     }
 
     /// Read a resolution from a meeting.
@@ -240,10 +233,7 @@ impl<'a> EntityStore<'a> {
     ) -> Result<Resolution, GitStorageError> {
         self.repo.read_json(
             branch,
-            &format!(
-                "governance/meetings/{}/resolutions/{}.json",
-                meeting_id, id
-            ),
+            &format!("governance/meetings/{}/resolutions/{}.json", meeting_id, id),
         )
     }
 

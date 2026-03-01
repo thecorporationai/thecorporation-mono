@@ -77,8 +77,14 @@ impl Vote {
         // belt-and-suspenders check so the constructor is self-documenting.
         debug_assert!(voting_power_applied.raw() > 0);
         let cast_at = Utc::now();
-        let signature_hash =
-            Self::compute_hash(vote_id, meeting_id, agenda_item_id, voter_id, vote_value, cast_at);
+        let signature_hash = Self::compute_hash(
+            vote_id,
+            meeting_id,
+            agenda_item_id,
+            voter_id,
+            vote_value,
+            cast_at,
+        );
         Ok(Self {
             vote_id,
             meeting_id,

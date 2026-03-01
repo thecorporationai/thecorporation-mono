@@ -5,10 +5,10 @@
 //! `X-Corp-Branch` header (defaulting to `"main"`).
 
 use axum::{
-    extract::{FromRequestParts, Path, Query, State},
-    http::{request::Parts, StatusCode},
-    routing::{delete, post},
     Json, Router,
+    extract::{FromRequestParts, Path, Query, State},
+    http::{StatusCode, request::Parts},
+    routing::{delete, post},
 };
 use serde::{Deserialize, Serialize};
 
@@ -55,9 +55,8 @@ where
             .get("X-Corp-Branch")
             .and_then(|v| v.to_str().ok())
             .unwrap_or("main");
-        let branch = BranchName::new(raw).map_err(|e: BranchNameError| {
-            (StatusCode::BAD_REQUEST, e.to_string())
-        })?;
+        let branch = BranchName::new(raw)
+            .map_err(|e: BranchNameError| (StatusCode::BAD_REQUEST, e.to_string()))?;
         Ok(BranchTarget(branch))
     }
 }
@@ -166,20 +165,15 @@ async fn create_branch(
         let name = req.name.clone();
         let from = req.from.clone();
         move || {
-            let store = crate::store::entity_store::EntityStore::open(
-                &layout,
-                workspace_id,
-                entity_id,
-            )
-            .map_err(|e| AppError::Internal(e.to_string()))?;
+            let store =
+                crate::store::entity_store::EntityStore::open(&layout, workspace_id, entity_id)
+                    .map_err(|e| AppError::Internal(e.to_string()))?;
 
-            crate::git::branch::create_branch(store.repo(), &name, &from)
-                .map_err(AppError::from)
+            crate::git::branch::create_branch(store.repo(), &name, &from).map_err(AppError::from)
         }
     })
     .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
-    ?;
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
 
     Ok((
         StatusCode::CREATED,
@@ -201,19 +195,15 @@ async fn list_branches(
     let branches = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
-            let store = crate::store::entity_store::EntityStore::open(
-                &layout,
-                workspace_id,
-                entity_id,
-            )
-            .map_err(|e| AppError::Internal(e.to_string()))?;
+            let store =
+                crate::store::entity_store::EntityStore::open(&layout, workspace_id, entity_id)
+                    .map_err(|e| AppError::Internal(e.to_string()))?;
 
             crate::git::branch::list_branches(store.repo()).map_err(AppError::from)
         }
     })
     .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
-    ?;
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
 
     let entries = branches
         .into_iter()
@@ -242,20 +232,16 @@ async fn merge_branch(
         let layout = state.layout.clone();
         let target = req.into.clone();
         move || {
-            let store = crate::store::entity_store::EntityStore::open(
-                &layout,
-                workspace_id,
-                entity_id,
-            )
-            .map_err(|e| AppError::Internal(e.to_string()))?;
+            let store =
+                crate::store::entity_store::EntityStore::open(&layout, workspace_id, entity_id)
+                    .map_err(|e| AppError::Internal(e.to_string()))?;
 
             crate::git::merge::merge_branch(store.repo(), &source, &target, None)
                 .map_err(AppError::from)
         }
     })
     .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
-    ?;
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
 
     let response = match result {
         MergeResult::FastForward { new_oid } => MergeBranchResponse {
@@ -291,20 +277,15 @@ async fn delete_branch_handler(
     tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
-            let store = crate::store::entity_store::EntityStore::open(
-                &layout,
-                workspace_id,
-                entity_id,
-            )
-            .map_err(|e| AppError::Internal(e.to_string()))?;
+            let store =
+                crate::store::entity_store::EntityStore::open(&layout, workspace_id, entity_id)
+                    .map_err(|e| AppError::Internal(e.to_string()))?;
 
-            crate::git::branch::delete_branch(store.repo(), &branch)
-                .map_err(AppError::from)
+            crate::git::branch::delete_branch(store.repo(), &branch).map_err(AppError::from)
         }
     })
     .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
-    ?;
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
 
     Ok(StatusCode::NO_CONTENT)
 }
@@ -316,7 +297,13 @@ async fn prune_branch(
     Path(name): Path<String>,
     Query(query): Query<super::EntityIdQuery>,
 ) -> Result<StatusCode, AppError> {
-    delete_branch_handler(RequireBranchDelete(auth), State(state), Path(name), Query(query)).await
+    delete_branch_handler(
+        RequireBranchDelete(auth),
+        State(state),
+        Path(name),
+        Query(query),
+    )
+    .await
 }
 
 // ── Router ──────────────────────────────────────────────────────────────
@@ -339,21 +326,27 @@ mod tests {
     #[tokio::test]
     async fn branch_target_defaults_to_main() {
         let mut parts = request_parts_without_header();
-        let target = BranchTarget::from_request_parts(&mut parts, &()).await.unwrap();
+        let target = BranchTarget::from_request_parts(&mut parts, &())
+            .await
+            .unwrap();
         assert_eq!(target.name(), "main");
     }
 
     #[tokio::test]
     async fn branch_target_reads_header() {
         let mut parts = request_parts_with_header("feature/equity-grants");
-        let target = BranchTarget::from_request_parts(&mut parts, &()).await.unwrap();
+        let target = BranchTarget::from_request_parts(&mut parts, &())
+            .await
+            .unwrap();
         assert_eq!(target.name(), "feature/equity-grants");
     }
 
     #[tokio::test]
     async fn branch_target_into_inner() {
         let mut parts = request_parts_with_header("dev");
-        let target = BranchTarget::from_request_parts(&mut parts, &()).await.unwrap();
+        let target = BranchTarget::from_request_parts(&mut parts, &())
+            .await
+            .unwrap();
         assert_eq!(target.into_inner(), "dev");
     }
 

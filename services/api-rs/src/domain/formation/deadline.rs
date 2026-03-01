@@ -25,6 +25,16 @@ pub enum DeadlineStatus {
     Overdue,
 }
 
+/// Risk severity of missing a deadline.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DeadlineSeverity {
+    Low,
+    Medium,
+    High,
+    Critical,
+}
+
 /// A compliance or filing deadline.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Deadline {
@@ -34,7 +44,9 @@ pub struct Deadline {
     due_date: NaiveDate,
     description: String,
     recurrence: Recurrence,
+    severity: DeadlineSeverity,
     status: DeadlineStatus,
+    completed_at: Option<DateTime<Utc>>,
     created_at: DateTime<Utc>,
 }
 
@@ -46,6 +58,7 @@ impl Deadline {
         due_date: NaiveDate,
         description: String,
         recurrence: Recurrence,
+        severity: DeadlineSeverity,
     ) -> Self {
         Self {
             deadline_id,
@@ -54,24 +67,49 @@ impl Deadline {
             due_date,
             description,
             recurrence,
+            severity,
             status: DeadlineStatus::Upcoming,
+            completed_at: None,
             created_at: Utc::now(),
         }
     }
 
     pub fn mark_completed(&mut self) {
         self.status = DeadlineStatus::Completed;
+        self.completed_at = Some(Utc::now());
     }
 
     // Accessors
-    pub fn deadline_id(&self) -> DeadlineId { self.deadline_id }
-    pub fn entity_id(&self) -> EntityId { self.entity_id }
-    pub fn deadline_type(&self) -> &str { &self.deadline_type }
-    pub fn due_date(&self) -> NaiveDate { self.due_date }
-    pub fn description(&self) -> &str { &self.description }
-    pub fn recurrence(&self) -> Recurrence { self.recurrence }
-    pub fn status(&self) -> DeadlineStatus { self.status }
-    pub fn created_at(&self) -> DateTime<Utc> { self.created_at }
+    pub fn deadline_id(&self) -> DeadlineId {
+        self.deadline_id
+    }
+    pub fn entity_id(&self) -> EntityId {
+        self.entity_id
+    }
+    pub fn deadline_type(&self) -> &str {
+        &self.deadline_type
+    }
+    pub fn due_date(&self) -> NaiveDate {
+        self.due_date
+    }
+    pub fn description(&self) -> &str {
+        &self.description
+    }
+    pub fn recurrence(&self) -> Recurrence {
+        self.recurrence
+    }
+    pub fn severity(&self) -> DeadlineSeverity {
+        self.severity
+    }
+    pub fn status(&self) -> DeadlineStatus {
+        self.status
+    }
+    pub fn completed_at(&self) -> Option<DateTime<Utc>> {
+        self.completed_at
+    }
+    pub fn created_at(&self) -> DateTime<Utc> {
+        self.created_at
+    }
 }
 
 #[cfg(test)]
@@ -87,9 +125,11 @@ mod tests {
             NaiveDate::from_ymd_opt(2026, 4, 15).unwrap(),
             "File annual report".to_owned(),
             Recurrence::Annual,
+            DeadlineSeverity::Medium,
         );
         assert_eq!(d.status(), DeadlineStatus::Upcoming);
         assert_eq!(d.recurrence(), Recurrence::Annual);
+        assert_eq!(d.severity(), DeadlineSeverity::Medium);
     }
 
     #[test]
@@ -101,9 +141,11 @@ mod tests {
             NaiveDate::from_ymd_opt(2026, 6, 15).unwrap(),
             "Q2 estimated tax".to_owned(),
             Recurrence::Quarterly,
+            DeadlineSeverity::High,
         );
         let json = serde_json::to_string(&d).unwrap();
         let parsed: Deadline = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed.deadline_id(), d.deadline_id());
+        assert_eq!(parsed.severity(), DeadlineSeverity::High);
     }
 }

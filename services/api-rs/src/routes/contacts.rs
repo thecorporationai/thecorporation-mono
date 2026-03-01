@@ -3,9 +3,9 @@
 //! Endpoints for creating and listing contacts.
 
 use axum::{
+    Json, Router,
     extract::{Path, Query, State},
     routing::{get, post},
-    Json, Router,
 };
 use serde::{Deserialize, Serialize};
 
@@ -125,8 +125,7 @@ async fn create_contact(
         }
     })
     .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
-    ?;
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
 
     Ok(Json(contact_to_response(&contact)))
 }
@@ -145,23 +144,22 @@ async fn list_contacts(
         let layout = state.layout.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
-            let ids = store.list_ids::<Contact>("main").map_err(|e| {
-                AppError::Internal(format!("list contacts: {e}"))
-            })?;
+            let ids = store
+                .list_ids::<Contact>("main")
+                .map_err(|e| AppError::Internal(format!("list contacts: {e}")))?;
 
             let mut results = Vec::new();
             for id in ids {
-                let c = store.read::<Contact>("main",id).map_err(|e| {
-                    AppError::Internal(format!("read contact {id}: {e}"))
-                })?;
+                let c = store
+                    .read::<Contact>("main", id)
+                    .map_err(|e| AppError::Internal(format!("read contact {id}: {e}")))?;
                 results.push(contact_to_response(&c));
             }
             Ok::<_, AppError>(results)
         }
     })
     .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
-    ?;
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
 
     Ok(Json(contacts))
 }
@@ -184,14 +182,13 @@ async fn get_contact(
         let layout = state.layout.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
-            store.read::<Contact>("main",contact_id).map_err(|_| {
-                AppError::NotFound(format!("contact {} not found", contact_id))
-            })
+            store
+                .read::<Contact>("main", contact_id)
+                .map_err(|_| AppError::NotFound(format!("contact {} not found", contact_id)))
         }
     })
     .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
-    ?;
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
 
     Ok(Json(contact_to_response(&contact)))
 }
@@ -234,9 +231,9 @@ async fn update_contact(
         let layout = state.layout.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
-            let mut contact = store.read::<Contact>("main",contact_id).map_err(|_| {
-                AppError::NotFound(format!("contact {} not found", contact_id))
-            })?;
+            let mut contact = store
+                .read::<Contact>("main", contact_id)
+                .map_err(|_| AppError::NotFound(format!("contact {} not found", contact_id)))?;
 
             if let Some(name) = req.name {
                 contact.set_name(name);
@@ -256,15 +253,19 @@ async fn update_contact(
 
             let path = format!("contacts/{}.json", contact_id);
             store
-                .write_json("main", &path, &contact, &format!("Update contact {contact_id}"))
+                .write_json(
+                    "main",
+                    &path,
+                    &contact,
+                    &format!("Update contact {contact_id}"),
+                )
                 .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
 
             Ok::<_, AppError>(contact)
         }
     })
     .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
-    ?;
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
 
     Ok(Json(contact_to_response(&contact)))
 }
@@ -295,14 +296,13 @@ async fn get_contact_profile(
         let layout = state.layout.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
-            store.read::<Contact>("main",contact_id).map_err(|_| {
-                AppError::NotFound(format!("contact {} not found", contact_id))
-            })
+            store
+                .read::<Contact>("main", contact_id)
+                .map_err(|_| AppError::NotFound(format!("contact {} not found", contact_id)))
         }
     })
     .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
-    ?;
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
 
     Ok(Json(ContactProfileResponse {
         contact_id: contact.contact_id(),
@@ -358,12 +358,17 @@ async fn get_notification_prefs(
                 Ok(p) => Ok::<_, AppError>(p),
                 Err(_) => {
                     // Verify the contact exists first
-                    store.read::<Contact>("main",contact_id).map_err(|_| {
+                    store.read::<Contact>("main", contact_id).map_err(|_| {
                         AppError::NotFound(format!("contact {} not found", contact_id))
                     })?;
                     let p = NotifPrefsRecord::new(contact_id);
                     store
-                        .write_json("main", &path, &p, &format!("Init notification prefs for {contact_id}"))
+                        .write_json(
+                            "main",
+                            &path,
+                            &p,
+                            &format!("Init notification prefs for {contact_id}"),
+                        )
                         .map_err(|e| AppError::Internal(format!("commit: {e}")))?;
                     Ok(p)
                 }
@@ -371,8 +376,7 @@ async fn get_notification_prefs(
         }
     })
     .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
-    ?;
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
 
     Ok(Json(prefs_to_response(&prefs)))
 }
@@ -411,27 +415,37 @@ async fn update_notification_prefs(
             let mut prefs = match store.read_json::<NotifPrefsRecord>("main", &path) {
                 Ok(p) => p,
                 Err(_) => {
-                    store.read::<Contact>("main",contact_id).map_err(|_| {
+                    store.read::<Contact>("main", contact_id).map_err(|_| {
                         AppError::NotFound(format!("contact {} not found", contact_id))
                     })?;
                     NotifPrefsRecord::new(contact_id)
                 }
             };
 
-            if let Some(v) = req.email_enabled { prefs.set_email_enabled(v); }
-            if let Some(v) = req.sms_enabled { prefs.set_sms_enabled(v); }
-            if let Some(v) = req.webhook_enabled { prefs.set_webhook_enabled(v); }
+            if let Some(v) = req.email_enabled {
+                prefs.set_email_enabled(v);
+            }
+            if let Some(v) = req.sms_enabled {
+                prefs.set_sms_enabled(v);
+            }
+            if let Some(v) = req.webhook_enabled {
+                prefs.set_webhook_enabled(v);
+            }
 
             store
-                .write_json("main", &path, &prefs, &format!("Update notification prefs for {contact_id}"))
+                .write_json(
+                    "main",
+                    &path,
+                    &prefs,
+                    &format!("Update notification prefs for {contact_id}"),
+                )
                 .map_err(|e| AppError::Internal(format!("commit: {e}")))?;
 
             Ok::<_, AppError>(prefs)
         }
     })
     .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
-    ?;
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
 
     Ok(Json(prefs_to_response(&prefs)))
 }
@@ -441,8 +455,14 @@ async fn update_notification_prefs(
 pub fn contacts_routes() -> Router<AppState> {
     Router::new()
         .route("/v1/contacts", post(create_contact))
-        .route("/v1/contacts/{contact_id}", get(get_contact).patch(update_contact))
-        .route("/v1/contacts/{contact_id}/profile", get(get_contact_profile))
+        .route(
+            "/v1/contacts/{contact_id}",
+            get(get_contact).patch(update_contact),
+        )
+        .route(
+            "/v1/contacts/{contact_id}/profile",
+            get(get_contact_profile),
+        )
         .route(
             "/v1/contacts/{contact_id}/notification-prefs",
             get(get_notification_prefs).patch(update_notification_prefs),

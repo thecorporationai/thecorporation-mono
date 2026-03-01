@@ -1503,22 +1503,22 @@ fn packet_to_response(packet: &TransactionPacket) -> TransactionPacketResponse {
 
 fn default_transfer_docs() -> Vec<String> {
     vec![
-        "documents/governance/common/stock-transfer-agreement.md".to_owned(),
-        "documents/governance/common/transfer-board-consent.md".to_owned(),
+        "documents/governance/transactions/stock-transfer-agreement.md".to_owned(),
+        "documents/governance/transactions/transfer-board-consent.md".to_owned(),
     ]
 }
 
 fn default_board_packet_docs() -> Vec<String> {
     vec![
-        "documents/governance/common/board-consent.md".to_owned(),
-        "documents/governance/common/equity-issuance-approval.md".to_owned(),
+        "documents/governance/transactions/board-consent.md".to_owned(),
+        "documents/governance/transactions/equity-issuance-approval.md".to_owned(),
     ]
 }
 
 fn default_closing_packet_docs() -> Vec<String> {
     vec![
-        "documents/governance/common/subscription-agreement.md".to_owned(),
-        "documents/governance/common/investor-rights-agreement.md".to_owned(),
+        "documents/governance/transactions/subscription-agreement.md".to_owned(),
+        "documents/governance/transactions/investor-rights-agreement.md".to_owned(),
     ]
 }
 

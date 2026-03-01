@@ -3,31 +3,59 @@
 //! Endpoints for governance bodies, seats, meetings, votes, and resolutions.
 
 use axum::{
+    Json, Router,
     extract::{Path, Query, State},
     routing::{get, post},
-    Json, Router,
 };
 use chrono::NaiveDate;
 use serde::{Deserialize, Serialize};
 
 use super::AppState;
-use crate::auth::{RequireGovernanceRead, RequireGovernanceVote, RequireGovernanceWrite};
+use crate::auth::{
+    RequireGovernanceRead, RequireGovernanceVote, RequireGovernanceWrite, RequireInternalWorker,
+};
+use crate::domain::formation::types::EntityType;
 use crate::domain::governance::{
     agenda_item::AgendaItem,
+    audit::{
+        GovernanceAuditCheckpoint, GovernanceAuditEntry, GovernanceAuditEventType,
+        GovernanceAuditVerificationReport,
+    },
     body::GovernanceBody,
+    delegation_schedule::{CURRENT_SCHEDULE_PATH, DelegationSchedule, ScheduleAmendment},
+    doc_generator::{
+        GOVERNANCE_DOC_BUNDLES_CURRENT_PATH, GOVERNANCE_DOC_BUNDLES_HISTORY_DIR,
+        GovernanceDocBundleCurrent, GovernanceDocBundleManifest, GovernanceDocBundleSummary,
+        GovernanceDocEntityType, bundle_documents_prefix, bundle_history_path,
+        bundle_manifest_path, render_bundle_from_profile,
+    },
     error::GovernanceError,
+    incident::{GovernanceIncident, IncidentSeverity, IncidentStatus},
     meeting::Meeting,
+    mode::{GovernanceMode, GovernanceModeState},
+    mode_history::GovernanceModeChangeEvent,
+    policy_engine::canonicalize_intent_type,
+    profile::{GOVERNANCE_PROFILE_PATH, GovernanceProfile},
     resolution::Resolution,
     seat::GovernanceSeat,
+    trigger::{GovernanceTriggerEvent, GovernanceTriggerSource, GovernanceTriggerType},
     types::*,
     vote::Vote,
 };
 use crate::domain::ids::{
-    AgendaItemId, ContactId, EntityId, GovernanceBodyId, GovernanceSeatId, MeetingId, ResolutionId,
-    VoteId, WorkspaceId,
+    AgendaItemId, ComplianceEscalationId, ContactId, DocumentId, EntityId,
+    GovernanceAuditCheckpointId, GovernanceAuditVerificationId, GovernanceBodyId,
+    GovernanceDocBundleId, GovernanceModeEventId, GovernanceSeatId, GovernanceTriggerId,
+    IncidentId, IntentId, MeetingId, ResolutionId, ScheduleAmendmentId, VoteId, WorkspaceId,
 };
 use crate::error::AppError;
 use crate::git::commit::FileWrite;
+use crate::git::error::GitStorageError;
+use crate::routes::governance_enforcement::{
+    BuildAuditEntryInput, LockdownTriggerInput, SetModeWithHistoryInput, apply_lockdown_trigger,
+    audit_entry_path, build_audit_entry, list_audit_entries_sorted, read_mode_or_default,
+    set_mode_with_history,
+};
 use crate::store::entity_store::EntityStore;
 
 // ── Query types ──────────────────────────────────────────────────────
@@ -99,6 +127,140 @@ pub struct ComputeResolutionRequest {
     pub effective_date: Option<NaiveDate>,
 }
 
+#[derive(Deserialize)]
+pub struct SetGovernanceModeRequest {
+    pub entity_id: EntityId,
+    pub mode: GovernanceMode,
+    #[serde(default)]
+    pub reason: Option<String>,
+    #[serde(default)]
+    pub incident_ids: Vec<IncidentId>,
+    #[serde(default)]
+    pub evidence_refs: Vec<String>,
+}
+
+#[derive(Deserialize)]
+pub struct CreateIncidentRequest {
+    pub entity_id: EntityId,
+    pub severity: IncidentSeverity,
+    pub title: String,
+    pub description: String,
+}
+
+#[derive(Deserialize)]
+pub struct FinalizeAgendaItemRequest {
+    pub entity_id: EntityId,
+    pub status: AgendaItemStatus,
+}
+
+#[derive(Deserialize)]
+pub struct AttachResolutionDocumentRequest {
+    pub entity_id: EntityId,
+    pub document_id: DocumentId,
+}
+
+#[derive(Deserialize)]
+pub struct AmendDelegationScheduleRequest {
+    pub entity_id: EntityId,
+    #[serde(default)]
+    pub tier1_max_amount_cents: Option<i64>,
+    #[serde(default)]
+    pub allowed_tier1_intent_types: Option<Vec<String>>,
+    #[serde(default)]
+    pub next_mandatory_review_at: Option<NaiveDate>,
+    #[serde(default)]
+    pub meeting_id: Option<MeetingId>,
+    #[serde(default)]
+    pub adopted_resolution_id: Option<ResolutionId>,
+    #[serde(default)]
+    pub rationale: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct ReauthorizeDelegationScheduleRequest {
+    pub entity_id: EntityId,
+    pub meeting_id: MeetingId,
+    pub adopted_resolution_id: ResolutionId,
+    #[serde(default)]
+    pub rationale: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct UpdateGovernanceProfileRequest {
+    pub legal_name: String,
+    pub jurisdiction: String,
+    pub effective_date: NaiveDate,
+    pub adopted_by: String,
+    pub last_reviewed: NaiveDate,
+    pub next_mandatory_review: NaiveDate,
+    #[serde(default)]
+    pub registered_agent_name: Option<String>,
+    #[serde(default)]
+    pub registered_agent_address: Option<String>,
+    #[serde(default)]
+    pub board_size: Option<u32>,
+    #[serde(default)]
+    pub incorporator_name: Option<String>,
+    #[serde(default)]
+    pub incorporator_address: Option<String>,
+    #[serde(default)]
+    pub principal_name: Option<String>,
+    #[serde(default)]
+    pub principal_title: Option<String>,
+    #[serde(default)]
+    pub incomplete_profile: Option<bool>,
+}
+
+#[derive(Deserialize)]
+pub struct GenerateGovernanceDocBundleRequest {
+    #[serde(default)]
+    pub template_version: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct InternalLockdownTriggerRequest {
+    pub idempotency_key: String,
+    pub trigger_type: GovernanceTriggerType,
+    pub severity: IncidentSeverity,
+    pub title: String,
+    pub description: String,
+    #[serde(default)]
+    pub evidence_refs: Vec<String>,
+    #[serde(default)]
+    pub linked_intent_id: Option<IntentId>,
+    #[serde(default)]
+    pub linked_escalation_id: Option<ComplianceEscalationId>,
+}
+
+#[derive(Deserialize)]
+pub struct CreateGovernanceAuditEventRequest {
+    pub entity_id: EntityId,
+    pub event_type: GovernanceAuditEventType,
+    pub action: String,
+    #[serde(default)]
+    pub details: serde_json::Value,
+    #[serde(default)]
+    pub evidence_refs: Vec<String>,
+    #[serde(default)]
+    pub linked_intent_id: Option<IntentId>,
+    #[serde(default)]
+    pub linked_incident_id: Option<IncidentId>,
+    #[serde(default)]
+    pub linked_trigger_id: Option<GovernanceTriggerId>,
+    #[serde(default)]
+    pub linked_mode_event_id: Option<GovernanceModeEventId>,
+}
+
+#[derive(Deserialize)]
+pub struct WriteGovernanceAuditCheckpointRequest {
+    pub entity_id: EntityId,
+}
+
+#[derive(Deserialize)]
+pub struct VerifyGovernanceAuditChainRequest {
+    pub entity_id: EntityId,
+}
+
 // ── Response types ───────────────────────────────────────────────────
 
 #[derive(Serialize)]
@@ -136,6 +298,7 @@ pub struct MeetingResponse {
     pub location: String,
     pub status: MeetingStatus,
     pub quorum_met: QuorumStatus,
+    pub agenda_item_ids: Vec<AgendaItemId>,
     pub created_at: String,
 }
 
@@ -171,9 +334,55 @@ pub struct ResolutionResponse {
     pub resolution_text: String,
     pub passed: bool,
     pub effective_date: Option<NaiveDate>,
+    pub document_id: Option<DocumentId>,
     pub votes_for: u32,
     pub votes_against: u32,
+    pub votes_abstain: u32,
+    pub recused_count: u32,
     pub created_at: String,
+}
+
+#[derive(Serialize)]
+pub struct GovernanceModeResponse {
+    pub entity_id: EntityId,
+    pub mode: GovernanceMode,
+    pub reason: Option<String>,
+    pub updated_at: String,
+    pub created_at: String,
+}
+
+#[derive(Serialize)]
+pub struct IncidentResponse {
+    pub incident_id: IncidentId,
+    pub entity_id: EntityId,
+    pub severity: IncidentSeverity,
+    pub title: String,
+    pub description: String,
+    pub status: IncidentStatus,
+    pub created_at: String,
+    pub resolved_at: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct GenerateGovernanceDocBundleResponse {
+    pub manifest: GovernanceDocBundleManifest,
+    pub current: GovernanceDocBundleCurrent,
+    pub summary: GovernanceDocBundleSummary,
+}
+
+#[derive(Serialize)]
+pub struct InternalLockdownTriggerResponse {
+    pub trigger_id: GovernanceTriggerId,
+    pub incident_id: IncidentId,
+    pub mode: GovernanceMode,
+    pub mode_event_id: GovernanceModeEventId,
+    pub idempotent_replay: bool,
+}
+
+#[derive(Serialize)]
+pub struct DelegationScheduleChangeResponse {
+    pub schedule: DelegationSchedule,
+    pub amendment: ScheduleAmendment,
 }
 
 // ── Conversion helpers ───────────────────────────────────────────────
@@ -215,6 +424,7 @@ fn meeting_to_response(m: &Meeting) -> MeetingResponse {
         location: m.location().to_owned(),
         status: m.status(),
         quorum_met: m.quorum_met(),
+        agenda_item_ids: Vec::new(),
         created_at: m.created_at().to_rfc3339(),
     }
 }
@@ -253,9 +463,35 @@ fn resolution_to_response(r: &Resolution) -> ResolutionResponse {
         resolution_text: r.resolution_text().to_owned(),
         passed: r.passed(),
         effective_date: r.effective_date(),
+        document_id: r.document_id(),
         votes_for: r.votes_for(),
         votes_against: r.votes_against(),
+        votes_abstain: r.votes_abstain(),
+        recused_count: r.recused_count(),
         created_at: r.created_at().to_rfc3339(),
+    }
+}
+
+fn mode_to_response(mode: &GovernanceModeState) -> GovernanceModeResponse {
+    GovernanceModeResponse {
+        entity_id: mode.entity_id(),
+        mode: mode.mode(),
+        reason: mode.reason().map(ToOwned::to_owned),
+        updated_at: mode.updated_at().to_rfc3339(),
+        created_at: mode.created_at().to_rfc3339(),
+    }
+}
+
+fn incident_to_response(incident: &GovernanceIncident) -> IncidentResponse {
+    IncidentResponse {
+        incident_id: incident.incident_id(),
+        entity_id: incident.entity_id(),
+        severity: incident.severity(),
+        title: incident.title().to_owned(),
+        description: incident.description().to_owned(),
+        status: incident.status(),
+        created_at: incident.created_at().to_rfc3339(),
+        resolved_at: incident.resolved_at().map(|t| t.to_rfc3339()),
     }
 }
 
@@ -272,6 +508,827 @@ fn open_store<'a>(
         }
         other => AppError::Internal(other.to_string()),
     })
+}
+
+fn read_schedule_or_default(store: &EntityStore<'_>, entity_id: EntityId) -> DelegationSchedule {
+    store
+        .read_json::<DelegationSchedule>("main", CURRENT_SCHEDULE_PATH)
+        .unwrap_or_else(|_| DelegationSchedule::default_for_entity(entity_id))
+}
+
+fn governance_doc_entity_type_for(entity_type: EntityType) -> GovernanceDocEntityType {
+    match entity_type {
+        EntityType::Corporation => GovernanceDocEntityType::Corporation,
+        EntityType::Llc => GovernanceDocEntityType::Llc,
+    }
+}
+
+fn read_profile_or_default(
+    store: &EntityStore<'_>,
+    entity_id: EntityId,
+) -> Result<GovernanceProfile, AppError> {
+    match store.read_json::<GovernanceProfile>("main", GOVERNANCE_PROFILE_PATH) {
+        Ok(profile) => {
+            if profile.entity_id() != entity_id {
+                return Err(AppError::UnprocessableEntity(format!(
+                    "governance profile entity_id {} does not match requested entity {}",
+                    profile.entity_id(),
+                    entity_id
+                )));
+            }
+            Ok(profile)
+        }
+        Err(GitStorageError::NotFound(_)) => {
+            let entity = store
+                .read_entity("main")
+                .map_err(|e| AppError::Internal(format!("read entity: {e}")))?;
+            Ok(GovernanceProfile::default_for_entity(&entity))
+        }
+        Err(e) => Err(AppError::Internal(format!("read governance profile: {e}"))),
+    }
+}
+
+fn read_doc_bundle_current(
+    store: &EntityStore<'_>,
+) -> Result<GovernanceDocBundleCurrent, AppError> {
+    store
+        .read_json::<GovernanceDocBundleCurrent>("main", GOVERNANCE_DOC_BUNDLES_CURRENT_PATH)
+        .map_err(|e| match e {
+            GitStorageError::NotFound(_) => {
+                AppError::NotFound("no governance doc bundle has been generated yet".to_owned())
+            }
+            other => AppError::Internal(format!("read governance doc bundle current: {other}")),
+        })
+}
+
+fn list_doc_bundle_summaries(
+    store: &EntityStore<'_>,
+) -> Result<Vec<GovernanceDocBundleSummary>, AppError> {
+    let ids = store
+        .list_ids_in_dir::<GovernanceDocBundleId>("main", GOVERNANCE_DOC_BUNDLES_HISTORY_DIR)
+        .map_err(|e| AppError::Internal(format!("list governance doc bundles: {e}")))?;
+    let mut summaries = Vec::new();
+    for bundle_id in ids {
+        let path = bundle_history_path(bundle_id);
+        let summary = store
+            .read_json::<GovernanceDocBundleSummary>("main", &path)
+            .map_err(|e| AppError::Internal(format!("read governance doc bundle summary: {e}")))?;
+        summaries.push(summary);
+    }
+    summaries.sort_by(|a, b| b.generated_at.cmp(&a.generated_at));
+    Ok(summaries)
+}
+
+fn audit_checkpoint_path(checkpoint_id: GovernanceAuditCheckpointId) -> String {
+    format!("governance/audit/checkpoints/{checkpoint_id}.json")
+}
+
+fn audit_verification_path(verification_id: GovernanceAuditVerificationId) -> String {
+    format!("governance/audit/verifications/{verification_id}.json")
+}
+
+fn normalize_tier1_intents(intents: Vec<String>) -> Vec<String> {
+    let mut normalized = intents
+        .into_iter()
+        .map(|s| canonicalize_intent_type(&s))
+        .filter(|s| !s.is_empty())
+        .collect::<Vec<_>>();
+    normalized.sort();
+    normalized.dedup();
+    normalized
+}
+
+fn validate_schedule_resolution(
+    store: &EntityStore<'_>,
+    meeting_id: MeetingId,
+    resolution_id: ResolutionId,
+) -> Result<(), AppError> {
+    let meeting = store
+        .read::<Meeting>("main", meeting_id)
+        .map_err(|_| AppError::NotFound(format!("meeting {meeting_id} not found")))?;
+    let body = store
+        .read::<GovernanceBody>("main", meeting.body_id())
+        .map_err(|_| {
+            AppError::NotFound(format!("governance body {} not found", meeting.body_id()))
+        })?;
+    if !matches!(
+        body.body_type(),
+        BodyType::BoardOfDirectors | BodyType::LlcMemberVote
+    ) {
+        return Err(AppError::UnprocessableEntity(
+            "delegation schedule changes require board/member authority".to_owned(),
+        ));
+    }
+    let resolution = store
+        .read_resolution("main", meeting_id, resolution_id)
+        .map_err(|_| AppError::NotFound(format!("resolution {resolution_id} not found")))?;
+    if !resolution.passed() {
+        return Err(AppError::UnprocessableEntity(format!(
+            "resolution {resolution_id} did not pass"
+        )));
+    }
+    Ok(())
+}
+
+// ── Handlers: Governance profile + doc bundles ──────────────────────
+
+async fn get_governance_profile(
+    RequireGovernanceRead(auth): RequireGovernanceRead,
+    State(state): State<AppState>,
+    Path(entity_id): Path<EntityId>,
+) -> Result<Json<GovernanceProfile>, AppError> {
+    let workspace_id = auth.workspace_id();
+
+    let profile = tokio::task::spawn_blocking({
+        let layout = state.layout.clone();
+        move || {
+            let store = open_store(&layout, workspace_id, entity_id)?;
+            let profile = read_profile_or_default(&store, entity_id)?;
+            profile.validate().map_err(AppError::UnprocessableEntity)?;
+            Ok::<_, AppError>(profile)
+        }
+    })
+    .await
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+
+    Ok(Json(profile))
+}
+
+async fn update_governance_profile(
+    RequireGovernanceWrite(auth): RequireGovernanceWrite,
+    State(state): State<AppState>,
+    Path(entity_id): Path<EntityId>,
+    Json(req): Json<UpdateGovernanceProfileRequest>,
+) -> Result<Json<GovernanceProfile>, AppError> {
+    let workspace_id = auth.workspace_id();
+
+    let profile = tokio::task::spawn_blocking({
+        let layout = state.layout.clone();
+        move || {
+            let store = open_store(&layout, workspace_id, entity_id)?;
+            let mut profile = read_profile_or_default(&store, entity_id)?;
+            profile.update(
+                req.legal_name,
+                req.jurisdiction,
+                req.effective_date,
+                req.adopted_by,
+                req.last_reviewed,
+                req.next_mandatory_review,
+                req.registered_agent_name,
+                req.registered_agent_address,
+                req.board_size,
+                req.incorporator_name,
+                req.incorporator_address,
+                req.principal_name,
+                req.principal_title,
+                req.incomplete_profile,
+            );
+            profile.validate().map_err(AppError::UnprocessableEntity)?;
+            store
+                .write_json(
+                    "main",
+                    GOVERNANCE_PROFILE_PATH,
+                    &profile,
+                    &format!("GOVERNANCE: update profile v{}", profile.version()),
+                )
+                .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
+            Ok::<_, AppError>(profile)
+        }
+    })
+    .await
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+
+    Ok(Json(profile))
+}
+
+async fn generate_governance_doc_bundle(
+    RequireGovernanceWrite(auth): RequireGovernanceWrite,
+    State(state): State<AppState>,
+    Path(entity_id): Path<EntityId>,
+    Json(req): Json<GenerateGovernanceDocBundleRequest>,
+) -> Result<Json<GenerateGovernanceDocBundleResponse>, AppError> {
+    let workspace_id = auth.workspace_id();
+
+    let response = tokio::task::spawn_blocking({
+        let layout = state.layout.clone();
+        move || {
+            let store = open_store(&layout, workspace_id, entity_id)?;
+            let profile = read_profile_or_default(&store, entity_id)?;
+            profile.validate().map_err(AppError::UnprocessableEntity)?;
+
+            let entity_type = governance_doc_entity_type_for(profile.entity_type());
+            let template_version = req.template_version.unwrap_or_else(|| "v1".to_owned());
+            let rendered =
+                render_bundle_from_profile(entity_type, entity_id, &profile, &template_version)
+                    .map_err(|e| {
+                        AppError::Internal(format!("render governance doc bundle: {e:#}"))
+                    })?;
+
+            let bundle_id = rendered.manifest.bundle_id;
+            let manifest_path = bundle_manifest_path(bundle_id);
+            let history_path = bundle_history_path(bundle_id);
+            let docs_prefix = bundle_documents_prefix(bundle_id);
+
+            let mut files = Vec::with_capacity(rendered.documents.len() + 3);
+            for doc in &rendered.documents {
+                files.push(FileWrite::raw(
+                    format!("{docs_prefix}/{}", doc.path),
+                    doc.content.clone(),
+                ));
+            }
+            files.push(
+                FileWrite::json(manifest_path, &rendered.manifest)
+                    .map_err(|e| AppError::Internal(format!("serialize manifest: {e}")))?,
+            );
+            files.push(
+                FileWrite::json(GOVERNANCE_DOC_BUNDLES_CURRENT_PATH, &rendered.current)
+                    .map_err(|e| AppError::Internal(format!("serialize current pointer: {e}")))?,
+            );
+            files.push(
+                FileWrite::json(history_path, &rendered.summary)
+                    .map_err(|e| AppError::Internal(format!("serialize summary: {e}")))?,
+            );
+
+            store
+                .commit(
+                    "main",
+                    &format!("GOVERNANCE: generate doc bundle {bundle_id}"),
+                    files,
+                )
+                .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
+
+            Ok::<_, AppError>(GenerateGovernanceDocBundleResponse {
+                manifest: rendered.manifest,
+                current: rendered.current,
+                summary: rendered.summary,
+            })
+        }
+    })
+    .await
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+
+    Ok(Json(response))
+}
+
+async fn get_current_governance_doc_bundle(
+    RequireGovernanceRead(auth): RequireGovernanceRead,
+    State(state): State<AppState>,
+    Path(entity_id): Path<EntityId>,
+) -> Result<Json<GovernanceDocBundleCurrent>, AppError> {
+    let workspace_id = auth.workspace_id();
+
+    let current = tokio::task::spawn_blocking({
+        let layout = state.layout.clone();
+        move || {
+            let store = open_store(&layout, workspace_id, entity_id)?;
+            let current = read_doc_bundle_current(&store)?;
+            if current.entity_id != entity_id {
+                return Err(AppError::NotFound(format!(
+                    "current governance doc bundle does not belong to entity {entity_id}"
+                )));
+            }
+            Ok::<_, AppError>(current)
+        }
+    })
+    .await
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+
+    Ok(Json(current))
+}
+
+async fn list_governance_doc_bundles(
+    RequireGovernanceRead(auth): RequireGovernanceRead,
+    State(state): State<AppState>,
+    Path(entity_id): Path<EntityId>,
+) -> Result<Json<Vec<GovernanceDocBundleSummary>>, AppError> {
+    let workspace_id = auth.workspace_id();
+
+    let summaries = tokio::task::spawn_blocking({
+        let layout = state.layout.clone();
+        move || {
+            let store = open_store(&layout, workspace_id, entity_id)?;
+            let summaries = list_doc_bundle_summaries(&store)?;
+            Ok::<_, AppError>(summaries)
+        }
+    })
+    .await
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+
+    Ok(Json(summaries))
+}
+
+async fn get_governance_doc_bundle(
+    RequireGovernanceRead(auth): RequireGovernanceRead,
+    State(state): State<AppState>,
+    Path((entity_id, bundle_id)): Path<(EntityId, GovernanceDocBundleId)>,
+) -> Result<Json<GovernanceDocBundleManifest>, AppError> {
+    let workspace_id = auth.workspace_id();
+
+    let manifest = tokio::task::spawn_blocking({
+        let layout = state.layout.clone();
+        move || {
+            let store = open_store(&layout, workspace_id, entity_id)?;
+            let path = bundle_manifest_path(bundle_id);
+            let manifest = store
+                .read_json::<GovernanceDocBundleManifest>("main", &path)
+                .map_err(|e| match e {
+                    GitStorageError::NotFound(_) => {
+                        AppError::NotFound(format!("governance doc bundle {bundle_id} not found"))
+                    }
+                    other => AppError::Internal(format!("read governance doc bundle: {other}")),
+                })?;
+            if manifest.entity_id != entity_id {
+                return Err(AppError::NotFound(format!(
+                    "governance doc bundle {bundle_id} not found for entity {entity_id}"
+                )));
+            }
+            Ok::<_, AppError>(manifest)
+        }
+    })
+    .await
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+
+    Ok(Json(manifest))
+}
+
+async fn list_governance_triggers(
+    RequireGovernanceRead(auth): RequireGovernanceRead,
+    State(state): State<AppState>,
+    Path(entity_id): Path<EntityId>,
+) -> Result<Json<Vec<GovernanceTriggerEvent>>, AppError> {
+    let workspace_id = auth.workspace_id();
+
+    let triggers = tokio::task::spawn_blocking({
+        let layout = state.layout.clone();
+        move || {
+            let store = open_store(&layout, workspace_id, entity_id)?;
+            let ids = store
+                .list_ids::<GovernanceTriggerEvent>("main")
+                .map_err(|e| AppError::Internal(format!("list governance triggers: {e}")))?;
+            let mut out = Vec::new();
+            for id in ids {
+                let trigger = store
+                    .read::<GovernanceTriggerEvent>("main", id)
+                    .map_err(|e| {
+                        AppError::Internal(format!("read governance trigger {id}: {e}"))
+                    })?;
+                if trigger.entity_id() == entity_id {
+                    out.push(trigger);
+                }
+            }
+            out.sort_by(|a, b| b.created_at().cmp(&a.created_at()));
+            Ok::<_, AppError>(out)
+        }
+    })
+    .await
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+
+    Ok(Json(triggers))
+}
+
+async fn list_governance_mode_history(
+    RequireGovernanceRead(auth): RequireGovernanceRead,
+    State(state): State<AppState>,
+    Path(entity_id): Path<EntityId>,
+) -> Result<Json<Vec<GovernanceModeChangeEvent>>, AppError> {
+    let workspace_id = auth.workspace_id();
+
+    let events = tokio::task::spawn_blocking({
+        let layout = state.layout.clone();
+        move || {
+            let store = open_store(&layout, workspace_id, entity_id)?;
+            let ids = store
+                .list_ids::<GovernanceModeChangeEvent>("main")
+                .map_err(|e| AppError::Internal(format!("list governance mode history: {e}")))?;
+            let mut out = Vec::new();
+            for id in ids {
+                let event = store
+                    .read::<GovernanceModeChangeEvent>("main", id)
+                    .map_err(|e| {
+                        AppError::Internal(format!("read governance mode event {id}: {e}"))
+                    })?;
+                if event.entity_id() == entity_id {
+                    out.push(event);
+                }
+            }
+            out.sort_by(|a, b| b.created_at().cmp(&a.created_at()));
+            Ok::<_, AppError>(out)
+        }
+    })
+    .await
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+
+    Ok(Json(events))
+}
+
+async fn ingest_lockdown_trigger(
+    _worker: RequireInternalWorker,
+    State(state): State<AppState>,
+    Path((workspace_id, entity_id)): Path<(WorkspaceId, EntityId)>,
+    Json(req): Json<InternalLockdownTriggerRequest>,
+) -> Result<Json<InternalLockdownTriggerResponse>, AppError> {
+    let response = tokio::task::spawn_blocking({
+        let layout = state.layout.clone();
+        move || {
+            let store = open_store(&layout, workspace_id, entity_id)?;
+            let result = apply_lockdown_trigger(
+                &store,
+                entity_id,
+                LockdownTriggerInput {
+                    source: GovernanceTriggerSource::ExternalIngestion,
+                    trigger_type: req.trigger_type,
+                    severity: req.severity,
+                    title: req.title,
+                    description: req.description,
+                    evidence_refs: req.evidence_refs,
+                    linked_intent_id: req.linked_intent_id,
+                    linked_escalation_id: req.linked_escalation_id,
+                    idempotency_key: Some(req.idempotency_key),
+                    existing_incident_id: None,
+                    updated_by: None,
+                },
+            )?;
+            Ok::<_, AppError>(InternalLockdownTriggerResponse {
+                trigger_id: result.trigger.trigger_id(),
+                incident_id: result.incident.incident_id(),
+                mode: result.mode.mode(),
+                mode_event_id: result.mode_event.mode_event_id(),
+                idempotent_replay: result.idempotent_replay,
+            })
+        }
+    })
+    .await
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+
+    Ok(Json(response))
+}
+
+async fn list_governance_audit_entries(
+    RequireGovernanceRead(auth): RequireGovernanceRead,
+    State(state): State<AppState>,
+    Path(entity_id): Path<EntityId>,
+) -> Result<Json<Vec<GovernanceAuditEntry>>, AppError> {
+    let workspace_id = auth.workspace_id();
+
+    let entries = tokio::task::spawn_blocking({
+        let layout = state.layout.clone();
+        move || {
+            let store = open_store(&layout, workspace_id, entity_id)?;
+            let mut entries = list_audit_entries_sorted(&store, entity_id)?;
+            entries.reverse();
+            Ok::<_, AppError>(entries)
+        }
+    })
+    .await
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+
+    Ok(Json(entries))
+}
+
+async fn create_governance_audit_event(
+    RequireGovernanceWrite(auth): RequireGovernanceWrite,
+    State(state): State<AppState>,
+    Json(req): Json<CreateGovernanceAuditEventRequest>,
+) -> Result<Json<GovernanceAuditEntry>, AppError> {
+    let workspace_id = auth.workspace_id();
+    let entity_id = req.entity_id;
+
+    if req.action.trim().is_empty() {
+        return Err(AppError::BadRequest(
+            "governance audit event action must not be empty".to_owned(),
+        ));
+    }
+
+    let entry = tokio::task::spawn_blocking({
+        let layout = state.layout.clone();
+        move || {
+            let store = open_store(&layout, workspace_id, entity_id)?;
+            let entry = build_audit_entry(
+                &store,
+                entity_id,
+                BuildAuditEntryInput {
+                    event_type: req.event_type,
+                    action: req.action,
+                    details: req.details,
+                    evidence_refs: req.evidence_refs,
+                    linked_intent_id: req.linked_intent_id,
+                    linked_incident_id: req.linked_incident_id,
+                    linked_trigger_id: req.linked_trigger_id,
+                    linked_mode_event_id: req.linked_mode_event_id,
+                },
+            )?;
+            store
+                .write_json(
+                    "main",
+                    &audit_entry_path(entry.audit_entry_id()),
+                    &entry,
+                    &format!("GOVERNANCE: append audit entry {}", entry.audit_entry_id()),
+                )
+                .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
+            Ok::<_, AppError>(entry)
+        }
+    })
+    .await
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+
+    Ok(Json(entry))
+}
+
+async fn write_governance_audit_checkpoint(
+    RequireGovernanceWrite(auth): RequireGovernanceWrite,
+    State(state): State<AppState>,
+    Json(req): Json<WriteGovernanceAuditCheckpointRequest>,
+) -> Result<Json<GovernanceAuditCheckpoint>, AppError> {
+    let workspace_id = auth.workspace_id();
+    let entity_id = req.entity_id;
+
+    let checkpoint = tokio::task::spawn_blocking({
+        let layout = state.layout.clone();
+        move || {
+            let store = open_store(&layout, workspace_id, entity_id)?;
+            let entries = list_audit_entries_sorted(&store, entity_id)?;
+            let latest = entries.last().ok_or_else(|| {
+                AppError::UnprocessableEntity(
+                    "cannot checkpoint governance audit chain without entries".to_owned(),
+                )
+            })?;
+            let total_entries = u64::try_from(entries.len())
+                .map_err(|_| AppError::Internal("audit entry count overflow".to_owned()))?;
+            let checkpoint = GovernanceAuditCheckpoint::new(
+                GovernanceAuditCheckpointId::new(),
+                entity_id,
+                latest.audit_entry_id(),
+                latest.entry_hash().to_owned(),
+                total_entries,
+            );
+            let checkpoint_audit_entry = build_audit_entry(
+                &store,
+                entity_id,
+                BuildAuditEntryInput {
+                    event_type: GovernanceAuditEventType::CheckpointWritten,
+                    action: "governance audit checkpoint written".to_owned(),
+                    details: serde_json::json!({
+                        "checkpoint_id": checkpoint.checkpoint_id(),
+                        "latest_entry_id": checkpoint.latest_entry_id(),
+                        "latest_entry_hash": checkpoint.latest_entry_hash(),
+                        "total_entries": checkpoint.total_entries(),
+                    }),
+                    evidence_refs: Vec::new(),
+                    linked_intent_id: None,
+                    linked_incident_id: None,
+                    linked_trigger_id: None,
+                    linked_mode_event_id: None,
+                },
+            )?;
+
+            store
+                .commit(
+                    "main",
+                    &format!(
+                        "GOVERNANCE: write audit checkpoint {}",
+                        checkpoint.checkpoint_id()
+                    ),
+                    vec![
+                        FileWrite::json(
+                            audit_checkpoint_path(checkpoint.checkpoint_id()),
+                            &checkpoint,
+                        )
+                        .map_err(|e| AppError::Internal(format!("serialize checkpoint: {e}")))?,
+                        FileWrite::json(
+                            audit_entry_path(checkpoint_audit_entry.audit_entry_id()),
+                            &checkpoint_audit_entry,
+                        )
+                        .map_err(|e| {
+                            AppError::Internal(format!("serialize governance audit entry: {e}"))
+                        })?,
+                    ],
+                )
+                .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
+
+            Ok::<_, AppError>(checkpoint)
+        }
+    })
+    .await
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+
+    Ok(Json(checkpoint))
+}
+
+async fn list_governance_audit_checkpoints(
+    RequireGovernanceRead(auth): RequireGovernanceRead,
+    State(state): State<AppState>,
+    Path(entity_id): Path<EntityId>,
+) -> Result<Json<Vec<GovernanceAuditCheckpoint>>, AppError> {
+    let workspace_id = auth.workspace_id();
+
+    let checkpoints = tokio::task::spawn_blocking({
+        let layout = state.layout.clone();
+        move || {
+            let store = open_store(&layout, workspace_id, entity_id)?;
+            let ids = store
+                .list_ids::<GovernanceAuditCheckpoint>("main")
+                .map_err(|e| {
+                    AppError::Internal(format!("list governance audit checkpoints: {e}"))
+                })?;
+            let mut checkpoints = Vec::new();
+            for id in ids {
+                let checkpoint = store
+                    .read::<GovernanceAuditCheckpoint>("main", id)
+                    .map_err(|e| {
+                        AppError::Internal(format!("read governance audit checkpoint {id}: {e}"))
+                    })?;
+                if checkpoint.entity_id() == entity_id {
+                    checkpoints.push(checkpoint);
+                }
+            }
+            checkpoints.sort_by(|a, b| b.created_at().cmp(&a.created_at()));
+            Ok::<_, AppError>(checkpoints)
+        }
+    })
+    .await
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+
+    Ok(Json(checkpoints))
+}
+
+async fn verify_governance_audit_chain(
+    RequireGovernanceWrite(auth): RequireGovernanceWrite,
+    State(state): State<AppState>,
+    Json(req): Json<VerifyGovernanceAuditChainRequest>,
+) -> Result<Json<GovernanceAuditVerificationReport>, AppError> {
+    let workspace_id = auth.workspace_id();
+    let entity_id = req.entity_id;
+
+    let report = tokio::task::spawn_blocking({
+        let layout = state.layout.clone();
+        move || {
+            let store = open_store(&layout, workspace_id, entity_id)?;
+            let entries = list_audit_entries_sorted(&store, entity_id)?;
+            let total_entries = u64::try_from(entries.len())
+                .map_err(|_| AppError::Internal("audit entry count overflow".to_owned()))?;
+            let latest_entry_hash = entries.last().map(|entry| entry.entry_hash().to_owned());
+
+            let mut anomalies = Vec::new();
+            let mut expected_previous_hash: Option<String> = None;
+            for (index, entry) in entries.iter().enumerate() {
+                if entry.previous_entry_hash().map(ToOwned::to_owned) != expected_previous_hash {
+                    anomalies.push(format!(
+                        "entry {} previous hash mismatch at index {}",
+                        entry.audit_entry_id(),
+                        index
+                    ));
+                }
+                if !entry.verify_integrity() {
+                    anomalies.push(format!(
+                        "entry {} hash verification failed",
+                        entry.audit_entry_id()
+                    ));
+                }
+                expected_previous_hash = Some(entry.entry_hash().to_owned());
+            }
+
+            let ok = anomalies.is_empty();
+            let mut triggered_lockdown = false;
+            let mut trigger_id = None;
+            let mut incident_id = None;
+
+            if !ok {
+                let idempotency_suffix = latest_entry_hash
+                    .clone()
+                    .unwrap_or_else(|| "none".to_owned());
+                let trigger_result = apply_lockdown_trigger(
+                    &store,
+                    entity_id,
+                    LockdownTriggerInput {
+                        source: GovernanceTriggerSource::ExecutionGate,
+                        trigger_type: GovernanceTriggerType::AuditChainVerificationFailed,
+                        severity: IncidentSeverity::Critical,
+                        title: "Governance audit chain verification failed".to_owned(),
+                        description: format!(
+                            "detected {} anomaly/anomalies in governance audit chain",
+                            anomalies.len()
+                        ),
+                        evidence_refs: vec![format!("governance-audit-chain:{idempotency_suffix}")],
+                        linked_intent_id: None,
+                        linked_escalation_id: None,
+                        idempotency_key: Some(format!(
+                            "audit-chain-verification:{idempotency_suffix}"
+                        )),
+                        existing_incident_id: None,
+                        updated_by: None,
+                    },
+                )?;
+                triggered_lockdown = true;
+                trigger_id = Some(trigger_result.trigger.trigger_id());
+                incident_id = Some(trigger_result.incident.incident_id());
+            }
+
+            let report = GovernanceAuditVerificationReport::new(
+                GovernanceAuditVerificationId::new(),
+                entity_id,
+                ok,
+                total_entries,
+                anomalies.clone(),
+                latest_entry_hash.clone(),
+                triggered_lockdown,
+                trigger_id,
+                incident_id,
+            );
+            let verification_audit_entry = build_audit_entry(
+                &store,
+                entity_id,
+                BuildAuditEntryInput {
+                    event_type: if ok {
+                        GovernanceAuditEventType::ChainVerified
+                    } else {
+                        GovernanceAuditEventType::ChainVerificationFailed
+                    },
+                    action: if ok {
+                        "governance audit chain verification passed".to_owned()
+                    } else {
+                        "governance audit chain verification failed".to_owned()
+                    },
+                    details: serde_json::json!({
+                        "verification_id": report.verification_id(),
+                        "ok": report.ok(),
+                        "total_entries": report.total_entries(),
+                        "anomaly_count": report.anomalies().len(),
+                    }),
+                    evidence_refs: Vec::new(),
+                    linked_intent_id: None,
+                    linked_incident_id: report.incident_id(),
+                    linked_trigger_id: report.trigger_id(),
+                    linked_mode_event_id: None,
+                },
+            )?;
+
+            store
+                .commit(
+                    "main",
+                    &format!(
+                        "GOVERNANCE: verify audit chain {}",
+                        report.verification_id()
+                    ),
+                    vec![
+                        FileWrite::json(audit_verification_path(report.verification_id()), &report)
+                            .map_err(|e| {
+                                AppError::Internal(format!("serialize verification: {e}"))
+                            })?,
+                        FileWrite::json(
+                            audit_entry_path(verification_audit_entry.audit_entry_id()),
+                            &verification_audit_entry,
+                        )
+                        .map_err(|e| {
+                            AppError::Internal(format!("serialize governance audit entry: {e}"))
+                        })?,
+                    ],
+                )
+                .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
+
+            Ok::<_, AppError>(report)
+        }
+    })
+    .await
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+
+    Ok(Json(report))
+}
+
+async fn list_governance_audit_verifications(
+    RequireGovernanceRead(auth): RequireGovernanceRead,
+    State(state): State<AppState>,
+    Path(entity_id): Path<EntityId>,
+) -> Result<Json<Vec<GovernanceAuditVerificationReport>>, AppError> {
+    let workspace_id = auth.workspace_id();
+
+    let reports = tokio::task::spawn_blocking({
+        let layout = state.layout.clone();
+        move || {
+            let store = open_store(&layout, workspace_id, entity_id)?;
+            let ids = store
+                .list_ids::<GovernanceAuditVerificationReport>("main")
+                .map_err(|e| {
+                    AppError::Internal(format!("list governance audit verifications: {e}"))
+                })?;
+            let mut reports = Vec::new();
+            for id in ids {
+                let report = store
+                    .read::<GovernanceAuditVerificationReport>("main", id)
+                    .map_err(|e| {
+                        AppError::Internal(format!("read governance audit verification {id}: {e}"))
+                    })?;
+                if report.entity_id() == entity_id {
+                    reports.push(report);
+                }
+            }
+            reports.sort_by(|a, b| b.created_at().cmp(&a.created_at()));
+            Ok::<_, AppError>(reports)
+        }
+    })
+    .await
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+
+    Ok(Json(reports))
 }
 
 // ── Handlers: Governance bodies ──────────────────────────────────────
@@ -313,8 +1370,7 @@ async fn create_governance_body(
         }
     })
     .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
-    ?;
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
 
     Ok(Json(body_to_response(&body)))
 }
@@ -330,15 +1386,15 @@ async fn list_governance_bodies(
         let layout = state.layout.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
-            let ids = store.list_ids::<GovernanceBody>("main").map_err(|e| {
-                AppError::Internal(format!("list governance bodies: {e}"))
-            })?;
+            let ids = store
+                .list_ids::<GovernanceBody>("main")
+                .map_err(|e| AppError::Internal(format!("list governance bodies: {e}")))?;
 
             let mut results = Vec::new();
             for id in ids {
-                let b = store.read::<GovernanceBody>("main", id).map_err(|e| {
-                    AppError::Internal(format!("read governance body {id}: {e}"))
-                })?;
+                let b = store
+                    .read::<GovernanceBody>("main", id)
+                    .map_err(|e| AppError::Internal(format!("read governance body {id}: {e}")))?;
                 // Filter to bodies belonging to this entity
                 if b.entity_id() == entity_id {
                     results.push(body_to_response(&b));
@@ -348,10 +1404,443 @@ async fn list_governance_bodies(
         }
     })
     .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
-    ?;
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
 
     Ok(Json(bodies))
+}
+
+// ── Handlers: Governance mode + incidents ───────────────────────────
+
+async fn get_governance_mode(
+    RequireGovernanceRead(auth): RequireGovernanceRead,
+    State(state): State<AppState>,
+    Query(query): Query<super::EntityIdQuery>,
+) -> Result<Json<GovernanceModeResponse>, AppError> {
+    let workspace_id = auth.workspace_id();
+    let entity_id = query.entity_id;
+
+    let mode = tokio::task::spawn_blocking({
+        let layout = state.layout.clone();
+        move || {
+            let store = open_store(&layout, workspace_id, entity_id)?;
+            Ok::<_, AppError>(read_mode_or_default(&store, entity_id))
+        }
+    })
+    .await
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+
+    Ok(Json(mode_to_response(&mode)))
+}
+
+async fn set_governance_mode(
+    RequireGovernanceWrite(auth): RequireGovernanceWrite,
+    State(state): State<AppState>,
+    Json(req): Json<SetGovernanceModeRequest>,
+) -> Result<Json<GovernanceModeResponse>, AppError> {
+    let workspace_id = auth.workspace_id();
+    let entity_id = req.entity_id;
+    let updated_by = auth.contact_id();
+
+    let mode = tokio::task::spawn_blocking({
+        let layout = state.layout.clone();
+        move || {
+            let store = open_store(&layout, workspace_id, entity_id)?;
+            let current = read_mode_or_default(&store, entity_id);
+
+            if matches!(current.mode(), GovernanceMode::IncidentLockdown)
+                && matches!(req.mode, GovernanceMode::Normal)
+            {
+                let has_reason = req
+                    .reason
+                    .as_deref()
+                    .is_some_and(|reason| !reason.trim().is_empty());
+                if !has_reason {
+                    return Err(AppError::UnprocessableEntity(
+                        "unlocking from incident_lockdown requires a non-empty reason".to_owned(),
+                    ));
+                }
+                if req.incident_ids.is_empty() {
+                    return Err(AppError::UnprocessableEntity(
+                        "unlocking from incident_lockdown requires incident_ids".to_owned(),
+                    ));
+                }
+            }
+
+            let result = set_mode_with_history(
+                &store,
+                entity_id,
+                SetModeWithHistoryInput {
+                    target_mode: req.mode,
+                    reason: req.reason,
+                    incident_ids: req.incident_ids,
+                    evidence_refs: req.evidence_refs,
+                    trigger_id: None,
+                    updated_by,
+                    commit_message: format!("GOVERNANCE: set mode {:?}", req.mode),
+                },
+            )?;
+            Ok::<_, AppError>(result.mode)
+        }
+    })
+    .await
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+
+    Ok(Json(mode_to_response(&mode)))
+}
+
+async fn create_incident(
+    RequireGovernanceWrite(auth): RequireGovernanceWrite,
+    State(state): State<AppState>,
+    Json(req): Json<CreateIncidentRequest>,
+) -> Result<Json<IncidentResponse>, AppError> {
+    let workspace_id = auth.workspace_id();
+    let entity_id = req.entity_id;
+
+    let incident = tokio::task::spawn_blocking({
+        let layout = state.layout.clone();
+        move || {
+            let store = open_store(&layout, workspace_id, entity_id)?;
+            let incident = GovernanceIncident::new(
+                IncidentId::new(),
+                entity_id,
+                req.severity,
+                req.title,
+                req.description,
+            );
+            let path = format!("governance/incidents/{}.json", incident.incident_id());
+            store
+                .write_json(
+                    "main",
+                    &path,
+                    &incident,
+                    &format!("GOVERNANCE: create incident {}", incident.incident_id()),
+                )
+                .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
+
+            Ok::<_, AppError>(incident)
+        }
+    })
+    .await
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+
+    Ok(Json(incident_to_response(&incident)))
+}
+
+async fn list_incidents(
+    RequireGovernanceRead(auth): RequireGovernanceRead,
+    State(state): State<AppState>,
+    Path(entity_id): Path<EntityId>,
+) -> Result<Json<Vec<IncidentResponse>>, AppError> {
+    let workspace_id = auth.workspace_id();
+
+    let incidents = tokio::task::spawn_blocking({
+        let layout = state.layout.clone();
+        move || {
+            let store = open_store(&layout, workspace_id, entity_id)?;
+            let ids = store
+                .list_ids::<GovernanceIncident>("main")
+                .map_err(|e| AppError::Internal(format!("list incidents: {e}")))?;
+            let mut out = Vec::new();
+            for id in ids {
+                let incident = store
+                    .read::<GovernanceIncident>("main", id)
+                    .map_err(|e| AppError::Internal(format!("read incident {id}: {e}")))?;
+                out.push(incident_to_response(&incident));
+            }
+            out.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+            Ok::<_, AppError>(out)
+        }
+    })
+    .await
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+
+    Ok(Json(incidents))
+}
+
+async fn resolve_incident(
+    RequireGovernanceWrite(auth): RequireGovernanceWrite,
+    State(state): State<AppState>,
+    Path(incident_id): Path<IncidentId>,
+    Query(query): Query<super::EntityIdQuery>,
+) -> Result<Json<IncidentResponse>, AppError> {
+    let workspace_id = auth.workspace_id();
+    let entity_id = query.entity_id;
+
+    let incident = tokio::task::spawn_blocking({
+        let layout = state.layout.clone();
+        move || {
+            let store = open_store(&layout, workspace_id, entity_id)?;
+            let mut incident = store
+                .read::<GovernanceIncident>("main", incident_id)
+                .map_err(|_| AppError::NotFound(format!("incident {incident_id} not found")))?;
+            incident.resolve();
+            let path = format!("governance/incidents/{}.json", incident_id);
+            store
+                .write_json(
+                    "main",
+                    &path,
+                    &incident,
+                    &format!("GOVERNANCE: resolve incident {incident_id}"),
+                )
+                .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
+            Ok::<_, AppError>(incident)
+        }
+    })
+    .await
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+
+    Ok(Json(incident_to_response(&incident)))
+}
+
+// ── Handlers: Delegation schedule ───────────────────────────────────
+
+async fn get_delegation_schedule(
+    RequireGovernanceRead(auth): RequireGovernanceRead,
+    State(state): State<AppState>,
+    Query(query): Query<super::EntityIdQuery>,
+) -> Result<Json<DelegationSchedule>, AppError> {
+    let workspace_id = auth.workspace_id();
+    let entity_id = query.entity_id;
+
+    let schedule = tokio::task::spawn_blocking({
+        let layout = state.layout.clone();
+        move || {
+            let store = open_store(&layout, workspace_id, entity_id)?;
+            Ok::<_, AppError>(read_schedule_or_default(&store, entity_id))
+        }
+    })
+    .await
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+
+    Ok(Json(schedule))
+}
+
+async fn amend_delegation_schedule(
+    RequireGovernanceWrite(auth): RequireGovernanceWrite,
+    State(state): State<AppState>,
+    Json(req): Json<AmendDelegationScheduleRequest>,
+) -> Result<Json<DelegationScheduleChangeResponse>, AppError> {
+    let workspace_id = auth.workspace_id();
+    let entity_id = req.entity_id;
+
+    let response = tokio::task::spawn_blocking({
+        let layout = state.layout.clone();
+        move || {
+            let store = open_store(&layout, workspace_id, entity_id)?;
+            let current = read_schedule_or_default(&store, entity_id);
+            let mut amended = current.clone();
+
+            if let Some(amount) = req.tier1_max_amount_cents {
+                amended.set_tier1_max_amount_cents(amount);
+            }
+            if let Some(intents) = req.allowed_tier1_intent_types {
+                amended.set_allowed_tier1_intent_types(normalize_tier1_intents(intents));
+            }
+            if let Some(next_review) = req.next_mandatory_review_at {
+                amended.set_next_mandatory_review_at(next_review);
+            }
+
+            if req.meeting_id.is_some() ^ req.adopted_resolution_id.is_some() {
+                return Err(AppError::BadRequest(
+                    "meeting_id and adopted_resolution_id must be provided together".to_owned(),
+                ));
+            }
+
+            let prev_allows_all = current.allowed_tier1_intent_types().is_empty();
+            let next_allows_all = amended.allowed_tier1_intent_types().is_empty();
+            let cap_expansion =
+                amended.tier1_max_amount_cents() > current.tier1_max_amount_cents();
+            let lane_expansion = if prev_allows_all {
+                false
+            } else if next_allows_all {
+                true
+            } else {
+                !current
+                    .added_tier1_intents(amended.allowed_tier1_intent_types())
+                    .is_empty()
+            };
+            let authority_expansion = cap_expansion || lane_expansion;
+
+            let linked_resolution = match (req.meeting_id, req.adopted_resolution_id) {
+                (Some(meeting_id), Some(resolution_id)) => {
+                    validate_schedule_resolution(&store, meeting_id, resolution_id)?;
+                    Some(resolution_id)
+                }
+                (None, None) => None,
+                _ => unreachable!("handled by xor guard"),
+            };
+            if authority_expansion && linked_resolution.is_none() {
+                return Err(AppError::UnprocessableEntity(
+                    "authority-expanding delegation changes require a passed board/member resolution"
+                        .to_owned(),
+                ));
+            }
+
+            if let Some(resolution_id) = linked_resolution {
+                amended.set_adopted_resolution_id(Some(resolution_id));
+            }
+
+            let added_intents = if prev_allows_all {
+                Vec::new()
+            } else if next_allows_all {
+                Vec::new()
+            } else {
+                current.added_tier1_intents(amended.allowed_tier1_intent_types())
+            };
+            let removed_intents = if prev_allows_all {
+                Vec::new()
+            } else if next_allows_all {
+                current.allowed_tier1_intent_types().to_vec()
+            } else {
+                current.removed_tier1_intents(amended.allowed_tier1_intent_types())
+            };
+
+            amended.bump_version();
+            let amendment = ScheduleAmendment::new(
+                ScheduleAmendmentId::new(),
+                entity_id,
+                current.version(),
+                amended.version(),
+                current.tier1_max_amount_cents(),
+                amended.tier1_max_amount_cents(),
+                added_intents,
+                removed_intents,
+                authority_expansion,
+                linked_resolution,
+                req.rationale,
+            );
+
+            let amendment_path = format!(
+                "governance/delegation-schedule/amendments/{}.json",
+                amendment.schedule_amendment_id()
+            );
+            let files = vec![
+                FileWrite::json(CURRENT_SCHEDULE_PATH, &amended)
+                    .map_err(|e| AppError::Internal(format!("serialize schedule: {e}")))?,
+                FileWrite::json(amendment_path, &amendment)
+                    .map_err(|e| AppError::Internal(format!("serialize amendment: {e}")))?,
+            ];
+            store
+                .commit(
+                    "main",
+                    &format!(
+                        "GOVERNANCE: amend delegation schedule v{}->v{}",
+                        current.version(),
+                        amended.version()
+                    ),
+                    files,
+                )
+                .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
+
+            Ok::<_, AppError>(DelegationScheduleChangeResponse {
+                schedule: amended,
+                amendment,
+            })
+        }
+    })
+    .await
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+
+    Ok(Json(response))
+}
+
+async fn reauthorize_delegation_schedule(
+    RequireGovernanceWrite(auth): RequireGovernanceWrite,
+    State(state): State<AppState>,
+    Json(req): Json<ReauthorizeDelegationScheduleRequest>,
+) -> Result<Json<DelegationScheduleChangeResponse>, AppError> {
+    let workspace_id = auth.workspace_id();
+    let entity_id = req.entity_id;
+
+    let response = tokio::task::spawn_blocking({
+        let layout = state.layout.clone();
+        move || {
+            let store = open_store(&layout, workspace_id, entity_id)?;
+            validate_schedule_resolution(&store, req.meeting_id, req.adopted_resolution_id)?;
+
+            let current = read_schedule_or_default(&store, entity_id);
+            let mut schedule = current.clone();
+            schedule.bump_version();
+            schedule.reauthorize(req.adopted_resolution_id);
+
+            let amendment = ScheduleAmendment::new(
+                ScheduleAmendmentId::new(),
+                entity_id,
+                current.version(),
+                schedule.version(),
+                current.tier1_max_amount_cents(),
+                schedule.tier1_max_amount_cents(),
+                Vec::new(),
+                Vec::new(),
+                false,
+                Some(req.adopted_resolution_id),
+                req.rationale,
+            );
+
+            let amendment_path = format!(
+                "governance/delegation-schedule/amendments/{}.json",
+                amendment.schedule_amendment_id()
+            );
+            let files = vec![
+                FileWrite::json(CURRENT_SCHEDULE_PATH, &schedule)
+                    .map_err(|e| AppError::Internal(format!("serialize schedule: {e}")))?,
+                FileWrite::json(amendment_path, &amendment)
+                    .map_err(|e| AppError::Internal(format!("serialize amendment: {e}")))?,
+            ];
+            store
+                .commit(
+                    "main",
+                    &format!(
+                        "GOVERNANCE: reauthorize delegation schedule v{}->v{}",
+                        current.version(),
+                        schedule.version()
+                    ),
+                    files,
+                )
+                .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
+
+            Ok::<_, AppError>(DelegationScheduleChangeResponse {
+                schedule,
+                amendment,
+            })
+        }
+    })
+    .await
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+
+    Ok(Json(response))
+}
+
+async fn list_delegation_schedule_history(
+    RequireGovernanceRead(auth): RequireGovernanceRead,
+    State(state): State<AppState>,
+    Query(query): Query<super::EntityIdQuery>,
+) -> Result<Json<Vec<ScheduleAmendment>>, AppError> {
+    let workspace_id = auth.workspace_id();
+    let entity_id = query.entity_id;
+
+    let history = tokio::task::spawn_blocking({
+        let layout = state.layout.clone();
+        move || {
+            let store = open_store(&layout, workspace_id, entity_id)?;
+            let ids = store
+                .list_ids::<ScheduleAmendment>("main")
+                .map_err(|e| AppError::Internal(format!("list schedule amendments: {e}")))?;
+            let mut amendments = Vec::new();
+            for id in ids {
+                let amendment = store
+                    .read::<ScheduleAmendment>("main", id)
+                    .map_err(|e| AppError::Internal(format!("read amendment {id}: {e}")))?;
+                amendments.push(amendment);
+            }
+            amendments.sort_by(|a, b| b.created_at().cmp(&a.created_at()));
+            Ok::<_, AppError>(amendments)
+        }
+    })
+    .await
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+
+    Ok(Json(history))
 }
 
 // ── Handlers: Governance seats ───────────────────────────────────────
@@ -377,7 +1866,10 @@ async fn create_seat(
             })?;
 
             let seat_id = GovernanceSeatId::new();
-            let voting_power = req.voting_power.map(VotingPower::new).transpose()
+            let voting_power = req
+                .voting_power
+                .map(VotingPower::new)
+                .transpose()
                 .map_err(|e| AppError::BadRequest(format!("invalid voting power: {e}")))?;
             let seat = GovernanceSeat::new(
                 seat_id,
@@ -403,8 +1895,7 @@ async fn create_seat(
         }
     })
     .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
-    ?;
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
 
     Ok(Json(seat_to_response(&seat)))
 }
@@ -422,15 +1913,15 @@ async fn list_seats(
         let layout = state.layout.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
-            let ids = store.list_ids::<GovernanceSeat>("main").map_err(|e| {
-                AppError::Internal(format!("list governance seats: {e}"))
-            })?;
+            let ids = store
+                .list_ids::<GovernanceSeat>("main")
+                .map_err(|e| AppError::Internal(format!("list governance seats: {e}")))?;
 
             let mut results = Vec::new();
             for id in ids {
-                let s = store.read::<GovernanceSeat>("main", id).map_err(|e| {
-                    AppError::Internal(format!("read governance seat {id}: {e}"))
-                })?;
+                let s = store
+                    .read::<GovernanceSeat>("main", id)
+                    .map_err(|e| AppError::Internal(format!("read governance seat {id}: {e}")))?;
                 if s.body_id() == body_id {
                     results.push(seat_to_response(&s));
                 }
@@ -439,8 +1930,7 @@ async fn list_seats(
         }
     })
     .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
-    ?;
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
 
     Ok(Json(seats))
 }
@@ -478,8 +1968,7 @@ async fn resign_seat(
         }
     })
     .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
-    ?;
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
 
     Ok(Json(seat_to_response(&seat)))
 }
@@ -494,7 +1983,7 @@ async fn schedule_meeting(
     let workspace_id = auth.workspace_id();
     let entity_id = req.entity_id;
 
-    let meeting = tokio::task::spawn_blocking({
+    let (meeting, agenda_item_ids) = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
@@ -518,50 +2007,50 @@ async fn schedule_meeting(
             );
 
             // Build all files to commit atomically: meeting + agenda items
-            let mut files = vec![FileWrite::json(
-                format!("governance/meetings/{}/meeting.json", meeting_id),
-                &meeting,
-            )
-            .map_err(|e| AppError::Internal(format!("serialize meeting: {e}")))?];
+            let mut files = vec![
+                FileWrite::json(
+                    format!("governance/meetings/{}/meeting.json", meeting_id),
+                    &meeting,
+                )
+                .map_err(|e| AppError::Internal(format!("serialize meeting: {e}")))?,
+            ];
 
+            let mut agenda_item_ids = Vec::new();
             for (i, title) in req.agenda_item_titles.iter().enumerate() {
                 let item_id = AgendaItemId::new();
                 let item = AgendaItem::new(
                     item_id,
                     meeting_id,
-                    u32::try_from(i + 1).map_err(|_| AppError::BadRequest("too many agenda items".to_owned()))?,
+                    u32::try_from(i + 1)
+                        .map_err(|_| AppError::BadRequest("too many agenda items".to_owned()))?,
                     title.clone(),
                     None,
                     AgendaItemType::Resolution,
                 );
                 files.push(
                     FileWrite::json(
-                        format!(
-                            "governance/meetings/{}/agenda/{}.json",
-                            meeting_id, item_id
-                        ),
+                        format!("governance/meetings/{}/agenda/{}.json", meeting_id, item_id),
                         &item,
                     )
                     .map_err(|e| AppError::Internal(format!("serialize agenda item: {e}")))?,
                 );
+                agenda_item_ids.push(item_id);
             }
 
             store
-                .commit(
-                    "main",
-                    &format!("Schedule meeting {meeting_id}"),
-                    files,
-                )
+                .commit("main", &format!("Schedule meeting {meeting_id}"), files)
                 .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
 
-            Ok::<_, AppError>(meeting)
+            Ok::<_, AppError>((meeting, agenda_item_ids))
         }
     })
     .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
-    ?;
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
 
-    Ok(Json(meeting_to_response(&meeting)))
+    Ok(Json(MeetingResponse {
+        agenda_item_ids,
+        ..meeting_to_response(&meeting)
+    }))
 }
 
 async fn list_meetings(
@@ -577,15 +2066,15 @@ async fn list_meetings(
         let layout = state.layout.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
-            let ids = store.list_ids::<Meeting>("main").map_err(|e| {
-                AppError::Internal(format!("list meetings: {e}"))
-            })?;
+            let ids = store
+                .list_ids::<Meeting>("main")
+                .map_err(|e| AppError::Internal(format!("list meetings: {e}")))?;
 
             let mut results = Vec::new();
             for id in ids {
-                let m = store.read::<Meeting>("main", id).map_err(|e| {
-                    AppError::Internal(format!("read meeting {id}: {e}"))
-                })?;
+                let m = store
+                    .read::<Meeting>("main", id)
+                    .map_err(|e| AppError::Internal(format!("read meeting {id}: {e}")))?;
                 if m.body_id() == body_id {
                     results.push(meeting_to_response(&m));
                 }
@@ -594,10 +2083,47 @@ async fn list_meetings(
         }
     })
     .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
-    ?;
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
 
     Ok(Json(meetings))
+}
+
+async fn list_agenda_items(
+    RequireGovernanceRead(auth): RequireGovernanceRead,
+    State(state): State<AppState>,
+    Path(meeting_id): Path<MeetingId>,
+    Query(query): Query<MeetingQuery>,
+) -> Result<Json<Vec<AgendaItemResponse>>, AppError> {
+    let workspace_id = auth.workspace_id();
+    let entity_id = query.entity_id;
+
+    let agenda_items = tokio::task::spawn_blocking({
+        let layout = state.layout.clone();
+        move || {
+            let store = open_store(&layout, workspace_id, entity_id)?;
+            // Ensure the meeting exists and belongs to this entity's store.
+            store
+                .read::<Meeting>("main", meeting_id)
+                .map_err(|_| AppError::NotFound(format!("meeting {} not found", meeting_id)))?;
+
+            let ids = store
+                .list_agenda_item_ids("main", meeting_id)
+                .map_err(|e| AppError::Internal(format!("list agenda items: {e}")))?;
+
+            let mut results = Vec::new();
+            for id in ids {
+                if let Ok(item) = store.read_agenda_item("main", meeting_id, id) {
+                    results.push(agenda_item_to_response(&item));
+                }
+            }
+            results.sort_by_key(|i| i.sequence_number);
+            Ok::<_, AppError>(results)
+        }
+    })
+    .await
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+
+    Ok(Json(agenda_items))
 }
 
 async fn send_notice(
@@ -613,9 +2139,9 @@ async fn send_notice(
         let layout = state.layout.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
-            let mut meeting = store.read::<Meeting>("main", meeting_id).map_err(|_| {
-                AppError::NotFound(format!("meeting {} not found", meeting_id))
-            })?;
+            let mut meeting = store
+                .read::<Meeting>("main", meeting_id)
+                .map_err(|_| AppError::NotFound(format!("meeting {} not found", meeting_id)))?;
 
             meeting.send_notice()?;
 
@@ -633,8 +2159,7 @@ async fn send_notice(
         }
     })
     .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
-    ?;
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
 
     Ok(Json(meeting_to_response(&meeting)))
 }
@@ -653,18 +2178,15 @@ async fn convene_meeting(
         let layout = state.layout.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
-            let mut meeting = store.read::<Meeting>("main", meeting_id).map_err(|_| {
-                AppError::NotFound(format!("meeting {} not found", meeting_id))
-            })?;
+            let mut meeting = store
+                .read::<Meeting>("main", meeting_id)
+                .map_err(|_| AppError::NotFound(format!("meeting {} not found", meeting_id)))?;
 
             // Read the body to get quorum rule
             let body = store
                 .read::<GovernanceBody>("main", meeting.body_id())
                 .map_err(|_| {
-                    AppError::NotFound(format!(
-                        "governance body {} not found",
-                        meeting.body_id()
-                    ))
+                    AppError::NotFound(format!("governance body {} not found", meeting.body_id()))
                 })?;
 
             // Read all seats for the body, filter to those that can vote
@@ -681,8 +2203,7 @@ async fn convene_meeting(
             // Count present seats that can vote
             let present_count = u32::try_from(req.present_seat_ids.len())
                 .map_err(|_| AppError::BadRequest("too many seats".to_owned()))?;
-            let quorum_met =
-                body.quorum_rule().is_met(present_count, total_eligible);
+            let quorum_met = body.quorum_rule().is_met(present_count, total_eligible);
 
             meeting.convene(req.present_seat_ids, quorum_met)?;
 
@@ -700,8 +2221,7 @@ async fn convene_meeting(
         }
     })
     .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
-    ?;
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
 
     Ok(Json(meeting_to_response(&meeting)))
 }
@@ -719,9 +2239,9 @@ async fn adjourn_meeting(
         let layout = state.layout.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
-            let mut meeting = store.read::<Meeting>("main", meeting_id).map_err(|_| {
-                AppError::NotFound(format!("meeting {} not found", meeting_id))
-            })?;
+            let mut meeting = store
+                .read::<Meeting>("main", meeting_id)
+                .map_err(|_| AppError::NotFound(format!("meeting {} not found", meeting_id)))?;
 
             meeting.adjourn()?;
 
@@ -739,8 +2259,7 @@ async fn adjourn_meeting(
         }
     })
     .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
-    ?;
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
 
     Ok(Json(meeting_to_response(&meeting)))
 }
@@ -758,9 +2277,9 @@ async fn cancel_meeting(
         let layout = state.layout.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
-            let mut meeting = store.read::<Meeting>("main", meeting_id).map_err(|_| {
-                AppError::NotFound(format!("meeting {} not found", meeting_id))
-            })?;
+            let mut meeting = store
+                .read::<Meeting>("main", meeting_id)
+                .map_err(|_| AppError::NotFound(format!("meeting {} not found", meeting_id)))?;
 
             meeting.cancel()?;
 
@@ -778,8 +2297,7 @@ async fn cancel_meeting(
         }
     })
     .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
-    ?;
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
 
     Ok(Json(meeting_to_response(&meeting)))
 }
@@ -802,9 +2320,9 @@ async fn cast_vote(
             let store = open_store(&layout, workspace_id, entity_id)?;
 
             // Read the meeting and check it can accept votes
-            let meeting = store.read::<Meeting>("main", meeting_id).map_err(|_| {
-                AppError::NotFound(format!("meeting {} not found", meeting_id))
-            })?;
+            let meeting = store
+                .read::<Meeting>("main", meeting_id)
+                .map_err(|_| AppError::NotFound(format!("meeting {} not found", meeting_id)))?;
 
             if !meeting.can_vote() {
                 return Err(GovernanceError::VotingSessionNotOpen.into());
@@ -813,9 +2331,7 @@ async fn cast_vote(
             // Verify agenda item exists
             store
                 .read_agenda_item("main", meeting_id, item_id)
-                .map_err(|_| {
-                    AppError::NotFound(format!("agenda item {} not found", item_id))
-                })?;
+                .map_err(|_| AppError::NotFound(format!("agenda item {} not found", item_id)))?;
 
             // Find the seat for the voter in this body
             let seat_ids = store.list_ids::<GovernanceSeat>("main").unwrap_or_default();
@@ -843,9 +2359,7 @@ async fn cast_vote(
             }
 
             // Check for duplicate votes
-            let existing_vote_ids = store
-                .list_vote_ids("main", meeting_id)
-                .unwrap_or_default();
+            let existing_vote_ids = store.list_vote_ids("main", meeting_id).unwrap_or_default();
             for vid in &existing_vote_ids {
                 if let Ok(v) = store.read_vote("main", meeting_id, *vid) {
                     if v.agenda_item_id() == item_id && v.voter_id() == req.voter_id {
@@ -869,10 +2383,7 @@ async fn cast_vote(
                 seat.voting_power(),
             )?;
 
-            let path = format!(
-                "governance/meetings/{}/votes/{}.json",
-                meeting_id, vote_id
-            );
+            let path = format!("governance/meetings/{}/votes/{}.json", meeting_id, vote_id);
             store
                 .write_json(
                     "main",
@@ -886,8 +2397,7 @@ async fn cast_vote(
         }
     })
     .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
-    ?;
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
 
     Ok(Json(vote_to_response(&vote)))
 }
@@ -905,9 +2415,7 @@ async fn list_votes(
         let layout = state.layout.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
-            let ids = store
-                .list_vote_ids("main", meeting_id)
-                .unwrap_or_default();
+            let ids = store.list_vote_ids("main", meeting_id).unwrap_or_default();
 
             let mut results = Vec::new();
             for id in ids {
@@ -921,10 +2429,82 @@ async fn list_votes(
         }
     })
     .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
-    ?;
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
 
     Ok(Json(votes))
+}
+
+async fn finalize_agenda_item(
+    RequireGovernanceWrite(auth): RequireGovernanceWrite,
+    State(state): State<AppState>,
+    Path((meeting_id, item_id)): Path<(MeetingId, AgendaItemId)>,
+    Json(req): Json<FinalizeAgendaItemRequest>,
+) -> Result<Json<AgendaItemResponse>, AppError> {
+    let workspace_id = auth.workspace_id();
+    let entity_id = req.entity_id;
+
+    let agenda_item = tokio::task::spawn_blocking({
+        let layout = state.layout.clone();
+        move || {
+            let store = open_store(&layout, workspace_id, entity_id)?;
+            store
+                .read::<Meeting>("main", meeting_id)
+                .map_err(|_| AppError::NotFound(format!("meeting {meeting_id} not found")))?;
+            let mut item = store
+                .read_agenda_item("main", meeting_id, item_id)
+                .map_err(|_| AppError::NotFound(format!("agenda item {item_id} not found")))?;
+
+            if matches!(
+                item.status(),
+                AgendaItemStatus::Voted | AgendaItemStatus::Tabled | AgendaItemStatus::Withdrawn
+            ) {
+                return Err(AppError::Conflict(format!(
+                    "agenda item {item_id} already finalized"
+                )));
+            }
+
+            match req.status {
+                AgendaItemStatus::Pending => {
+                    return Err(AppError::BadRequest(
+                        "cannot finalize agenda item to pending".to_owned(),
+                    ));
+                }
+                AgendaItemStatus::Discussed => item.mark_discussed(),
+                AgendaItemStatus::Voted => {
+                    let has_resolution = store
+                        .list_resolution_ids("main", meeting_id)
+                        .unwrap_or_default()
+                        .into_iter()
+                        .filter_map(|rid| store.read_resolution("main", meeting_id, rid).ok())
+                        .any(|r| r.agenda_item_id() == item_id);
+                    if !has_resolution {
+                        return Err(AppError::UnprocessableEntity(format!(
+                            "cannot finalize agenda item {item_id} as voted before a resolution exists"
+                        )));
+                    }
+                    item.mark_voted();
+                }
+                AgendaItemStatus::Tabled => item.table(),
+                AgendaItemStatus::Withdrawn => item.withdraw(),
+            }
+
+            let path = format!("governance/meetings/{meeting_id}/agenda/{item_id}.json");
+            store
+                .write_json(
+                    "main",
+                    &path,
+                    &item,
+                    &format!("GOVERNANCE: finalize agenda item {item_id} as {:?}", req.status),
+                )
+                .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
+
+            Ok::<_, AppError>(item)
+        }
+    })
+    .await
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+
+    Ok(Json(agenda_item_to_response(&agenda_item)))
 }
 
 // ── Handlers: Resolutions ────────────────────────────────────────────
@@ -945,24 +2525,19 @@ async fn compute_resolution(
             let store = open_store(&layout, workspace_id, entity_id)?;
 
             // Read the meeting
-            let meeting = store.read::<Meeting>("main", meeting_id).map_err(|_| {
-                AppError::NotFound(format!("meeting {} not found", meeting_id))
-            })?;
+            let meeting = store
+                .read::<Meeting>("main", meeting_id)
+                .map_err(|_| AppError::NotFound(format!("meeting {} not found", meeting_id)))?;
 
             // Read the body to get quorum rule
             let body = store
                 .read::<GovernanceBody>("main", meeting.body_id())
                 .map_err(|_| {
-                    AppError::NotFound(format!(
-                        "governance body {} not found",
-                        meeting.body_id()
-                    ))
+                    AppError::NotFound(format!("governance body {} not found", meeting.body_id()))
                 })?;
 
             // Read all votes for this agenda item
-            let vote_ids = store
-                .list_vote_ids("main", meeting_id)
-                .unwrap_or_default();
+            let vote_ids = store.list_vote_ids("main", meeting_id).unwrap_or_default();
 
             let mut votes_for: u32 = 0;
             let mut votes_against: u32 = 0;
@@ -996,6 +2571,20 @@ async fn compute_resolution(
                 QuorumThreshold::Unanimous => ResolutionType::UnanimousWrittenConsent,
             };
 
+            // Guard against duplicate resolution computation for the same agenda item.
+            let existing_resolution_ids = store
+                .list_resolution_ids("main", meeting_id)
+                .unwrap_or_default();
+            for existing_id in existing_resolution_ids {
+                if let Ok(existing) = store.read_resolution("main", meeting_id, existing_id)
+                    && existing.agenda_item_id() == item_id
+                {
+                    return Err(AppError::Conflict(format!(
+                        "resolution already exists for agenda item {item_id}"
+                    )));
+                }
+            }
+
             let resolution_id = ResolutionId::new();
             let resolution = Resolution::new(
                 resolution_id,
@@ -1020,7 +2609,9 @@ async fn compute_resolution(
                     "main",
                     &path,
                     &resolution,
-                    &format!("Compute resolution {resolution_id} for agenda item {item_id}"),
+                    &format!(
+                        "GOVERNANCE: compute resolution {resolution_id} for agenda item {item_id}"
+                    ),
                 )
                 .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
 
@@ -1028,8 +2619,7 @@ async fn compute_resolution(
         }
     })
     .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
-    ?;
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
 
     Ok(Json(resolution_to_response(&resolution)))
 }
@@ -1061,10 +2651,63 @@ async fn list_resolutions(
         }
     })
     .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
-    ?;
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
 
     Ok(Json(resolutions))
+}
+
+async fn attach_resolution_document(
+    RequireGovernanceWrite(auth): RequireGovernanceWrite,
+    State(state): State<AppState>,
+    Path((meeting_id, resolution_id)): Path<(MeetingId, ResolutionId)>,
+    Json(req): Json<AttachResolutionDocumentRequest>,
+) -> Result<Json<ResolutionResponse>, AppError> {
+    let workspace_id = auth.workspace_id();
+    let entity_id = req.entity_id;
+
+    let resolution = tokio::task::spawn_blocking({
+        let layout = state.layout.clone();
+        move || {
+            let store = open_store(&layout, workspace_id, entity_id)?;
+            // Validate attached document exists in formation records.
+            store.read_document("main", req.document_id).map_err(|_| {
+                AppError::NotFound(format!("document {} not found", req.document_id))
+            })?;
+
+            let mut resolution = store
+                .read_resolution("main", meeting_id, resolution_id)
+                .map_err(|_| AppError::NotFound(format!("resolution {resolution_id} not found")))?;
+
+            if let Some(existing) = resolution.document_id() {
+                if existing == req.document_id {
+                    return Ok::<_, AppError>(resolution);
+                }
+                return Err(AppError::Conflict(format!(
+                    "resolution {resolution_id} already has document {existing} attached"
+                )));
+            }
+
+            resolution.set_document_id(req.document_id);
+            let path = format!("governance/meetings/{meeting_id}/resolutions/{resolution_id}.json");
+            store
+                .write_json(
+                    "main",
+                    &path,
+                    &resolution,
+                    &format!(
+                        "GOVERNANCE: attach document {} to resolution {resolution_id}",
+                        req.document_id
+                    ),
+                )
+                .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
+
+            Ok::<_, AppError>(resolution)
+        }
+    })
+    .await
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+
+    Ok(Json(resolution_to_response(&resolution)))
 }
 
 // ── Handlers: Scan expired seats ─────────────────────────────────────
@@ -1087,30 +2730,39 @@ async fn scan_expired_seats(
         let layout = state.layout.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
-            let body_ids = store.list_ids::<GovernanceBody>("main").map_err(|e| {
-                AppError::Internal(format!("list bodies: {e}"))
-            })?;
+            let body_ids = store
+                .list_ids::<GovernanceBody>("main")
+                .map_err(|e| AppError::Internal(format!("list bodies: {e}")))?;
 
             let today = chrono::Utc::now().date_naive();
             let mut scanned = 0usize;
             let mut expired = 0usize;
 
             for body_id in body_ids {
-                let seat_ids = store.list_ids::<GovernanceSeat>("main").map_err(|e| {
-                    AppError::Internal(format!("list seats: {e}"))
-                })?;
+                let seat_ids = store
+                    .list_ids::<GovernanceSeat>("main")
+                    .map_err(|e| AppError::Internal(format!("list seats: {e}")))?;
 
                 for seat_id in seat_ids {
                     scanned += 1;
                     if let Ok(seat) = store.read::<GovernanceSeat>("main", seat_id) {
                         if let Some(term_end) = seat.term_expiration() {
-                            if term_end < today && seat.status() == crate::domain::governance::types::SeatStatus::Active {
+                            if term_end < today
+                                && seat.status()
+                                    == crate::domain::governance::types::SeatStatus::Active
+                            {
                                 // Seat has expired — mark it
                                 let mut seat = seat;
                                 seat.resign()?;
-                                let path = format!("governance/bodies/{}/seats/{}.json", body_id, seat_id);
+                                let path =
+                                    format!("governance/bodies/{}/seats/{}.json", body_id, seat_id);
                                 store
-                                    .write_json("main", &path, &seat, &format!("Expire seat {seat_id}"))
+                                    .write_json(
+                                        "main",
+                                        &path,
+                                        &seat,
+                                        &format!("Expire seat {seat_id}"),
+                                    )
                                     .map_err(|e| AppError::Internal(format!("commit: {e}")))?;
                                 expired += 1;
                             }
@@ -1123,8 +2775,7 @@ async fn scan_expired_seats(
         }
     })
     .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
-    ?;
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
 
     Ok(Json(result))
 }
@@ -1163,9 +2814,11 @@ async fn written_consent(
             let store = open_store(&layout, workspace_id, entity_id)?;
 
             // Verify body exists
-            store.read::<GovernanceBody>("main", req.body_id).map_err(|_| {
-                AppError::NotFound(format!("governance body {} not found", req.body_id))
-            })?;
+            store
+                .read::<GovernanceBody>("main", req.body_id)
+                .map_err(|_| {
+                    AppError::NotFound(format!("governance body {} not found", req.body_id))
+                })?;
 
             let meeting_id = MeetingId::new();
             let meeting = Meeting::new(
@@ -1173,22 +2826,26 @@ async fn written_consent(
                 req.body_id,
                 MeetingType::WrittenConsent,
                 req.title,
-                None, // No scheduled date for written consent
+                None,          // No scheduled date for written consent
                 String::new(), // No location
-                0, // No notice days
+                0,             // No notice days
             );
 
             let path = format!("governance/meetings/{}/meeting.json", meeting_id);
             store
-                .write_json("main", &path, &meeting, &format!("Written consent {meeting_id}"))
+                .write_json(
+                    "main",
+                    &path,
+                    &meeting,
+                    &format!("Written consent {meeting_id}"),
+                )
                 .map_err(|e| AppError::Internal(format!("commit: {e}")))?;
 
             Ok::<_, AppError>(meeting)
         }
     })
     .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
-    ?;
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
 
     Ok(Json(WrittenConsentResponse {
         meeting_id: meeting.meeting_id(),
@@ -1214,13 +2871,13 @@ async fn list_all_meetings(
         let layout = state.layout.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
-            let ids = store.list_ids::<Meeting>("main").map_err(|e| {
-                AppError::Internal(format!("list meetings: {e}"))
-            })?;
+            let ids = store
+                .list_ids::<Meeting>("main")
+                .map_err(|e| AppError::Internal(format!("list meetings: {e}")))?;
 
             let mut results = Vec::new();
             for id in ids {
-                if let Ok(m) = store.read::<Meeting>("main",id) {
+                if let Ok(m) = store.read::<Meeting>("main", id) {
                     results.push(meeting_to_response(&m));
                 }
             }
@@ -1228,8 +2885,7 @@ async fn list_all_meetings(
         }
     })
     .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
-    ?;
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
 
     Ok(Json(meetings))
 }
@@ -1248,13 +2904,13 @@ async fn list_all_governance_bodies(
         let layout = state.layout.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
-            let ids = store.list_ids::<GovernanceBody>("main").map_err(|e| {
-                AppError::Internal(format!("list bodies: {e}"))
-            })?;
+            let ids = store
+                .list_ids::<GovernanceBody>("main")
+                .map_err(|e| AppError::Internal(format!("list bodies: {e}")))?;
 
             let mut results = Vec::new();
             for id in ids {
-                if let Ok(b) = store.read::<GovernanceBody>("main",id) {
+                if let Ok(b) = store.read::<GovernanceBody>("main", id) {
                     results.push(body_to_response(&b));
                 }
             }
@@ -1262,8 +2918,7 @@ async fn list_all_governance_bodies(
         }
     })
     .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
-    ?;
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
 
     Ok(Json(bodies))
 }
@@ -1272,6 +2927,90 @@ async fn list_all_governance_bodies(
 
 pub fn governance_routes() -> Router<AppState> {
     Router::new()
+        // Governance profile + document bundle generation
+        .route(
+            "/v1/entities/{entity_id}/governance/profile",
+            get(get_governance_profile).put(update_governance_profile),
+        )
+        .route(
+            "/v1/entities/{entity_id}/governance/doc-bundles/generate",
+            post(generate_governance_doc_bundle),
+        )
+        .route(
+            "/v1/entities/{entity_id}/governance/doc-bundles/current",
+            get(get_current_governance_doc_bundle),
+        )
+        .route(
+            "/v1/entities/{entity_id}/governance/doc-bundles",
+            get(list_governance_doc_bundles),
+        )
+        .route(
+            "/v1/entities/{entity_id}/governance/doc-bundles/{bundle_id}",
+            get(get_governance_doc_bundle),
+        )
+        .route(
+            "/v1/entities/{entity_id}/governance/triggers",
+            get(list_governance_triggers),
+        )
+        .route(
+            "/v1/entities/{entity_id}/governance/mode-history",
+            get(list_governance_mode_history),
+        )
+        .route(
+            "/v1/entities/{entity_id}/governance/audit/entries",
+            get(list_governance_audit_entries),
+        )
+        .route(
+            "/v1/governance/audit/events",
+            post(create_governance_audit_event),
+        )
+        .route(
+            "/v1/governance/audit/checkpoints",
+            post(write_governance_audit_checkpoint),
+        )
+        .route(
+            "/v1/entities/{entity_id}/governance/audit/checkpoints",
+            get(list_governance_audit_checkpoints),
+        )
+        .route("/v1/governance/audit/verify", post(verify_governance_audit_chain))
+        .route(
+            "/v1/entities/{entity_id}/governance/audit/verifications",
+            get(list_governance_audit_verifications),
+        )
+        .route(
+            "/v1/internal/workspaces/{workspace_id}/entities/{entity_id}/governance/triggers/lockdown",
+            post(ingest_lockdown_trigger),
+        )
+        // Governance mode + incidents
+        .route(
+            "/v1/governance/mode",
+            get(get_governance_mode).post(set_governance_mode),
+        )
+        .route("/v1/governance/incidents", post(create_incident))
+        .route(
+            "/v1/entities/{entity_id}/governance/incidents",
+            get(list_incidents),
+        )
+        .route(
+            "/v1/governance/incidents/{incident_id}/resolve",
+            post(resolve_incident),
+        )
+        .route(
+            "/v1/governance/delegation-schedule",
+            get(get_delegation_schedule),
+        )
+        .route(
+            "/v1/governance/delegation-schedule/amend",
+            post(amend_delegation_schedule),
+        )
+        .route(
+            "/v1/governance/delegation-schedule/reauthorize",
+            post(reauthorize_delegation_schedule),
+        )
+        .route(
+            "/v1/governance/delegation-schedule/history",
+            get(list_delegation_schedule_history),
+        )
         // Governance bodies
         .route("/v1/governance-bodies", post(create_governance_body))
         .route(
@@ -1283,12 +3022,13 @@ pub fn governance_routes() -> Router<AppState> {
             "/v1/governance-bodies/{body_id}/seats",
             post(create_seat).get(list_seats),
         )
-        .route(
-            "/v1/governance-seats/{seat_id}/resign",
-            post(resign_seat),
-        )
+        .route("/v1/governance-seats/{seat_id}/resign", post(resign_seat))
         // Meetings
         .route("/v1/meetings", post(schedule_meeting))
+        .route(
+            "/v1/meetings/{meeting_id}/agenda-items",
+            get(list_agenda_items),
+        )
         .route(
             "/v1/governance-bodies/{body_id}/meetings",
             get(list_meetings),
@@ -1306,10 +3046,18 @@ pub fn governance_routes() -> Router<AppState> {
             "/v1/meetings/{meeting_id}/agenda-items/{item_id}/votes",
             get(list_votes),
         )
+        .route(
+            "/v1/meetings/{meeting_id}/agenda-items/{item_id}/finalize",
+            post(finalize_agenda_item),
+        )
         // Resolutions
         .route(
             "/v1/meetings/{meeting_id}/agenda-items/{item_id}/resolution",
             post(compute_resolution),
+        )
+        .route(
+            "/v1/meetings/{meeting_id}/resolutions/{resolution_id}/attach-document",
+            post(attach_resolution_document),
         )
         .route(
             "/v1/meetings/{meeting_id}/resolutions",

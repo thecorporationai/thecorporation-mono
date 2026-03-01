@@ -28,8 +28,12 @@ pub fn create_branch(
     let source_oid = repo.resolve_ref(from_ref)?;
 
     // Create the new ref.
-    repo.inner()
-        .reference(&full_ref, source_oid, false, &format!("create branch {name}"))?;
+    repo.inner().reference(
+        &full_ref,
+        source_oid,
+        false,
+        &format!("create branch {name}"),
+    )?;
 
     tracing::debug!(branch = %name, from = %from_ref, oid = %source_oid, "branch created");
 
@@ -67,9 +71,10 @@ pub fn delete_branch(repo: &CorpRepo, name: &str) -> Result<(), GitStorageError>
     }
 
     let full_ref = CorpRepo::normalize_ref(name);
-    let mut reference = repo.inner().find_reference(&full_ref).map_err(|_| {
-        GitStorageError::BranchNotFound(name.to_owned())
-    })?;
+    let mut reference = repo
+        .inner()
+        .find_reference(&full_ref)
+        .map_err(|_| GitStorageError::BranchNotFound(name.to_owned()))?;
 
     reference.delete()?;
 

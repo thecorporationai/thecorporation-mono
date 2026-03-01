@@ -61,10 +61,7 @@ pub enum TreasuryError {
 
     /// A spending request exceeds the authorized limit.
     #[error("spending limit exceeded: requested={requested}, authorized={authorized}")]
-    SpendingLimitExceeded {
-        requested: Cents,
-        authorized: Cents,
-    },
+    SpendingLimitExceeded { requested: Cents, authorized: Cents },
 
     /// No spending policy has been configured for the entity.
     #[error("no spending policy found for entity")]

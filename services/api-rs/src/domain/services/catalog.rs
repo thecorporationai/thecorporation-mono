@@ -97,8 +97,7 @@ pub fn service_catalog() -> Vec<ServiceItem> {
             item_id: id_from_slug("boi_report"),
             slug: "boi_report".to_owned(),
             name: "BOI Report Filing".to_owned(),
-            description: "File Beneficial Ownership Information report with FinCEN."
-                .to_owned(),
+            description: "File Beneficial Ownership Information report with FinCEN.".to_owned(),
             price_cents: 4900,
             price_type: PriceType::OneTime,
             obligation_type: "boi_report".to_owned(),
@@ -120,8 +119,7 @@ pub fn service_catalog() -> Vec<ServiceItem> {
             item_id: id_from_slug("franchise_tax"),
             slug: "franchise_tax".to_owned(),
             name: "Franchise Tax Filing".to_owned(),
-            description: "Calculate and file the entity's annual franchise tax."
-                .to_owned(),
+            description: "Calculate and file the entity's annual franchise tax.".to_owned(),
             price_cents: 19900,
             price_type: PriceType::Annual,
             obligation_type: "franchise_tax".to_owned(),
@@ -131,8 +129,7 @@ pub fn service_catalog() -> Vec<ServiceItem> {
             item_id: id_from_slug("qualification.foreign"),
             slug: "qualification.foreign".to_owned(),
             name: "Foreign Qualification".to_owned(),
-            description: "Register the entity to do business in an additional state."
-                .to_owned(),
+            description: "Register the entity to do business in an additional state.".to_owned(),
             price_cents: 29900,
             price_type: PriceType::OneTime,
             obligation_type: "qualification.foreign".to_owned(),
@@ -189,7 +186,11 @@ mod tests {
         let a = service_catalog();
         let b = service_catalog();
         for (x, y) in a.iter().zip(b.iter()) {
-            assert_eq!(x.item_id, y.item_id, "IDs should be stable for slug {}", x.slug);
+            assert_eq!(
+                x.item_id, y.item_id,
+                "IDs should be stable for slug {}",
+                x.slug
+            );
         }
     }
 

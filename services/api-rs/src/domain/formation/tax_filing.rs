@@ -51,13 +51,27 @@ impl TaxFiling {
     }
 
     // Accessors
-    pub fn filing_id(&self) -> TaxFilingId { self.filing_id }
-    pub fn entity_id(&self) -> EntityId { self.entity_id }
-    pub fn document_type(&self) -> &str { &self.document_type }
-    pub fn tax_year(&self) -> i32 { self.tax_year }
-    pub fn document_id(&self) -> DocumentId { self.document_id }
-    pub fn status(&self) -> TaxFilingStatus { self.status }
-    pub fn created_at(&self) -> DateTime<Utc> { self.created_at }
+    pub fn filing_id(&self) -> TaxFilingId {
+        self.filing_id
+    }
+    pub fn entity_id(&self) -> EntityId {
+        self.entity_id
+    }
+    pub fn document_type(&self) -> &str {
+        &self.document_type
+    }
+    pub fn tax_year(&self) -> i32 {
+        self.tax_year
+    }
+    pub fn document_id(&self) -> DocumentId {
+        self.document_id
+    }
+    pub fn status(&self) -> TaxFilingStatus {
+        self.status
+    }
+    pub fn created_at(&self) -> DateTime<Utc> {
+        self.created_at
+    }
 }
 
 #[cfg(test)]

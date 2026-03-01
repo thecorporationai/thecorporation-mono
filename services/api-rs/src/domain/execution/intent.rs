@@ -5,7 +5,8 @@ use serde::{Deserialize, Serialize};
 
 use super::error::ExecutionError;
 use super::types::{AuthorityTier, IntentStatus};
-use crate::domain::ids::{EntityId, IntentId, WorkspaceId};
+use crate::domain::governance::policy_engine::PolicyDecision;
+use crate::domain::ids::{ApprovalArtifactId, DocumentRequestId, EntityId, IntentId, WorkspaceId};
 
 /// An intent to perform a corporate action.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -15,6 +16,12 @@ pub struct Intent {
     workspace_id: WorkspaceId,
     intent_type: String,
     authority_tier: AuthorityTier,
+    #[serde(default)]
+    policy_decision: Option<PolicyDecision>,
+    #[serde(default)]
+    bound_approval_artifact_id: Option<ApprovalArtifactId>,
+    #[serde(default)]
+    bound_document_request_ids: Vec<DocumentRequestId>,
     status: IntentStatus,
     description: String,
     metadata: serde_json::Value,
@@ -42,6 +49,9 @@ impl Intent {
             workspace_id,
             intent_type,
             authority_tier,
+            policy_decision: None,
+            bound_approval_artifact_id: None,
+            bound_document_request_ids: Vec::new(),
             status: IntentStatus::Pending,
             description,
             metadata,
@@ -137,6 +147,15 @@ impl Intent {
     pub fn metadata(&self) -> &serde_json::Value {
         &self.metadata
     }
+    pub fn policy_decision(&self) -> Option<&PolicyDecision> {
+        self.policy_decision.as_ref()
+    }
+    pub fn bound_approval_artifact_id(&self) -> Option<ApprovalArtifactId> {
+        self.bound_approval_artifact_id
+    }
+    pub fn bound_document_request_ids(&self) -> &[DocumentRequestId] {
+        &self.bound_document_request_ids
+    }
     pub fn evaluated_at(&self) -> Option<DateTime<Utc>> {
         self.evaluated_at
     }
@@ -154,6 +173,24 @@ impl Intent {
     }
     pub fn created_at(&self) -> DateTime<Utc> {
         self.created_at
+    }
+
+    pub fn update_authority_tier(&mut self, tier: AuthorityTier) {
+        self.authority_tier = tier;
+    }
+
+    pub fn set_policy_decision(&mut self, decision: PolicyDecision) {
+        self.policy_decision = Some(decision);
+    }
+
+    pub fn bind_approval_artifact(&mut self, approval_artifact_id: ApprovalArtifactId) {
+        self.bound_approval_artifact_id = Some(approval_artifact_id);
+    }
+
+    pub fn bind_document_request(&mut self, request_id: DocumentRequestId) {
+        if !self.bound_document_request_ids.contains(&request_id) {
+            self.bound_document_request_ids.push(request_id);
+        }
     }
 }
 
@@ -244,6 +281,18 @@ mod tests {
         assert!(intent.authorize().is_err());
         // Can't execute from Pending.
         assert!(intent.mark_executed().is_err());
+    }
+
+    #[test]
+    fn update_authority_tier_syncs() {
+        let mut intent = make_intent();
+        assert_eq!(intent.authority_tier(), AuthorityTier::Tier2);
+
+        intent.update_authority_tier(AuthorityTier::Tier3);
+        assert_eq!(intent.authority_tier(), AuthorityTier::Tier3);
+
+        intent.update_authority_tier(AuthorityTier::Tier1);
+        assert_eq!(intent.authority_tier(), AuthorityTier::Tier1);
     }
 
     #[test]

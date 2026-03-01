@@ -85,13 +85,21 @@ impl Cents {
     /// Require a positive value (> 0).
     #[inline]
     pub fn require_positive(self) -> Result<Self, &'static str> {
-        if self.0 > 0 { Ok(self) } else { Err("amount must be positive") }
+        if self.0 > 0 {
+            Ok(self)
+        } else {
+            Err("amount must be positive")
+        }
     }
 
     /// Require a non-negative value (>= 0).
     #[inline]
     pub fn require_non_negative(self) -> Result<Self, &'static str> {
-        if self.0 >= 0 { Ok(self) } else { Err("amount must be non-negative") }
+        if self.0 >= 0 {
+            Ok(self)
+        } else {
+            Err("amount must be non-negative")
+        }
     }
 }
 
@@ -540,8 +548,7 @@ mod tests {
         let status = InvoiceStatus::Draft;
         let json = serde_json::to_string(&status).expect("serialize InvoiceStatus");
         assert_eq!(json, "\"draft\"");
-        let parsed: InvoiceStatus =
-            serde_json::from_str(&json).expect("deserialize InvoiceStatus");
+        let parsed: InvoiceStatus = serde_json::from_str(&json).expect("deserialize InvoiceStatus");
         assert_eq!(status, parsed);
     }
 

@@ -45,13 +45,17 @@ fn validate_branch_name(s: &str) -> Result<(), BranchNameError> {
         return Err(BranchNameError("branch name must not be empty".into()));
     }
     if s.starts_with('-') {
-        return Err(BranchNameError("branch name must not start with '-'".into()));
+        return Err(BranchNameError(
+            "branch name must not start with '-'".into(),
+        ));
     }
     if s.contains("..") {
         return Err(BranchNameError("branch name must not contain '..'".into()));
     }
     if s.contains(' ') {
-        return Err(BranchNameError("branch name must not contain spaces".into()));
+        return Err(BranchNameError(
+            "branch name must not contain spaces".into(),
+        ));
     }
     if s.contains('\0') {
         return Err(BranchNameError(
@@ -59,9 +63,7 @@ fn validate_branch_name(s: &str) -> Result<(), BranchNameError> {
         ));
     }
     if s.ends_with('/') {
-        return Err(BranchNameError(
-            "branch name must not end with '/'".into(),
-        ));
+        return Err(BranchNameError("branch name must not end with '/'".into()));
     }
     if s.ends_with(".lock") {
         return Err(BranchNameError(

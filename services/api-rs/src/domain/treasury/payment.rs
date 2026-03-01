@@ -63,14 +63,30 @@ impl Payment {
     }
 
     // Accessors
-    pub fn payment_id(&self) -> PaymentId { self.payment_id }
-    pub fn entity_id(&self) -> EntityId { self.entity_id }
-    pub fn amount_cents(&self) -> Cents { self.amount_cents }
-    pub fn recipient(&self) -> &str { &self.recipient }
-    pub fn payment_method(&self) -> PaymentMethod { self.payment_method }
-    pub fn description(&self) -> &str { &self.description }
-    pub fn status(&self) -> PaymentStatus { self.status }
-    pub fn created_at(&self) -> DateTime<Utc> { self.created_at }
+    pub fn payment_id(&self) -> PaymentId {
+        self.payment_id
+    }
+    pub fn entity_id(&self) -> EntityId {
+        self.entity_id
+    }
+    pub fn amount_cents(&self) -> Cents {
+        self.amount_cents
+    }
+    pub fn recipient(&self) -> &str {
+        &self.recipient
+    }
+    pub fn payment_method(&self) -> PaymentMethod {
+        self.payment_method
+    }
+    pub fn description(&self) -> &str {
+        &self.description
+    }
+    pub fn status(&self) -> PaymentStatus {
+        self.status
+    }
+    pub fn created_at(&self) -> DateTime<Utc> {
+        self.created_at
+    }
 }
 
 #[cfg(test)]

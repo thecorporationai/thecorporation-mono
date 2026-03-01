@@ -12,10 +12,12 @@ use crate::domain::agents::secret_proxy::SecretProxyConfig;
 use crate::domain::contacts::contact::Contact;
 use crate::domain::equity::cap_table::CapTable;
 use crate::domain::equity::funding_round::FundingRound;
+use crate::domain::equity::fundraising_workflow::FundraisingWorkflow;
 use crate::domain::equity::grant::EquityGrant;
 use crate::domain::equity::safe_note::SafeNote;
 use crate::domain::equity::share_class::ShareClass;
 use crate::domain::equity::transfer::ShareTransfer;
+use crate::domain::equity::transfer_workflow::TransferWorkflow;
 use crate::domain::equity::valuation::Valuation;
 use crate::domain::execution::intent::Intent;
 use crate::domain::execution::obligation::Obligation;
@@ -39,10 +41,10 @@ use crate::domain::treasury::payment::Payment;
 use crate::domain::treasury::payroll::PayrollRun;
 use crate::domain::treasury::reconciliation::Reconciliation;
 use crate::git::error::GitStorageError;
+use crate::store::RepoLayout;
 use crate::store::entity_store::EntityStore;
 use crate::store::stored_entity::StoredEntity;
 use crate::store::workspace_store::WorkspaceStore;
-use crate::store::RepoLayout;
 
 // ── Types ────────────────────────────────────────────────────────────
 
@@ -106,7 +108,10 @@ impl ValidationStats {
 /// Validate all repos under `data_dir`. Returns process exit code (0 = ok, 1 = errors).
 pub fn run(data_dir: PathBuf) -> i32 {
     if !data_dir.exists() {
-        eprintln!("error: data directory does not exist: {}", data_dir.display());
+        eprintln!(
+            "error: data directory does not exist: {}",
+            data_dir.display()
+        );
         return 1;
     }
 
@@ -146,7 +151,12 @@ fn validate_workspace(layout: &RepoLayout, ws_id: WorkspaceId, stats: &mut Valid
     let ws_store = match WorkspaceStore::open(layout, ws_id) {
         Ok(s) => s,
         Err(e) => {
-            stats.push_error(ws_id, "workspace", "_workspace.git", format!("cannot open workspace repo: {e}"));
+            stats.push_error(
+                ws_id,
+                "workspace",
+                "_workspace.git",
+                format!("cannot open workspace repo: {e}"),
+            );
             return;
         }
     };
@@ -182,7 +192,12 @@ fn validate_workspace_api_keys(
         Ok(ids) => ids,
         Err(GitStorageError::NotFound(_)) => return,
         Err(e) => {
-            stats.push_error(ws_id, "workspace", "api-keys/", format!("cannot list api keys: {e}"));
+            stats.push_error(
+                ws_id,
+                "workspace",
+                "api-keys/",
+                format!("cannot list api keys: {e}"),
+            );
             return;
         }
     };
@@ -209,7 +224,12 @@ fn validate_workspace_agents(
         Ok(ids) => ids,
         Err(GitStorageError::NotFound(_)) => return,
         Err(e) => {
-            stats.push_error(ws_id, "workspace", "agents/", format!("cannot list agents: {e}"));
+            stats.push_error(
+                ws_id,
+                "workspace",
+                "agents/",
+                format!("cannot list agents: {e}"),
+            );
             return;
         }
     };
@@ -232,7 +252,12 @@ fn validate_workspace_secret_proxies(
         Ok(n) => n,
         Err(GitStorageError::NotFound(_)) => return,
         Err(e) => {
-            stats.push_error(ws_id, "workspace", "secrets/", format!("cannot list secret proxies: {e}"));
+            stats.push_error(
+                ws_id,
+                "workspace",
+                "secrets/",
+                format!("cannot list secret proxies: {e}"),
+            );
             return;
         }
     };
@@ -260,7 +285,12 @@ fn validate_entity(
     let store = match EntityStore::open(layout, ws_id, entity_id) {
         Ok(s) => s,
         Err(e) => {
-            stats.push_error(ws_id, &ctx, format!("{entity_id}.git"), format!("cannot open entity repo: {e}"));
+            stats.push_error(
+                ws_id,
+                &ctx,
+                format!("{entity_id}.git"),
+                format!("cannot open entity repo: {e}"),
+            );
             return;
         }
     };
@@ -290,6 +320,8 @@ fn validate_entity(
     validate_stored::<Valuation>(&store, ws_id, &ctx, stats);
     validate_stored::<ShareTransfer>(&store, ws_id, &ctx, stats);
     validate_stored::<FundingRound>(&store, ws_id, &ctx, stats);
+    validate_stored::<TransferWorkflow>(&store, ws_id, &ctx, stats);
+    validate_stored::<FundraisingWorkflow>(&store, ws_id, &ctx, stats);
 
     validate_stored::<GovernanceBody>(&store, ws_id, &ctx, stats);
     validate_stored::<GovernanceSeat>(&store, ws_id, &ctx, stats);
@@ -349,7 +381,12 @@ fn validate_stored<T: StoredEntity>(
         Ok(ids) => ids,
         Err(GitStorageError::NotFound(_)) => return,
         Err(e) => {
-            stats.push_error(ws_id, ctx, T::storage_dir(), format!("cannot list IDs: {e}"));
+            stats.push_error(
+                ws_id,
+                ctx,
+                T::storage_dir(),
+                format!("cannot list IDs: {e}"),
+            );
             return;
         }
     };
@@ -374,7 +411,12 @@ fn validate_documents(
         Ok(ids) => ids,
         Err(GitStorageError::NotFound(_)) => return,
         Err(e) => {
-            stats.push_error(ws_id, ctx, "formation/", format!("cannot list documents: {e}"));
+            stats.push_error(
+                ws_id,
+                ctx,
+                "formation/",
+                format!("cannot list documents: {e}"),
+            );
             return;
         }
     };
@@ -442,7 +484,7 @@ fn validate_meetings(
 mod tests {
     use super::*;
     use crate::domain::ids::WorkspaceId;
-    use crate::git::commit::{commit_files, FileWrite};
+    use crate::git::commit::{FileWrite, commit_files};
     use crate::git::repo::CorpRepo;
     use crate::store::workspace_store::WorkspaceStore;
 

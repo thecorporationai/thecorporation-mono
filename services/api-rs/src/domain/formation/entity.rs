@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use super::error::FormationError;
 use super::types::{EntityType, FormationState, FormationStatus, Jurisdiction};
-use crate::domain::ids::{EntityId, WorkspaceId};
+use crate::domain::ids::{ContractId, DocumentId, EntityId, WorkspaceId};
 
 /// Maximum length for a legal entity name.
 const MAX_LEGAL_NAME_LEN: usize = 500;
@@ -36,6 +36,16 @@ struct RawEntity {
     formation_status: FormationStatus,
     registered_agent_name: Option<String>,
     registered_agent_address: Option<String>,
+    #[serde(default)]
+    service_agreement_executed: bool,
+    #[serde(default)]
+    service_agreement_executed_at: Option<DateTime<Utc>>,
+    #[serde(default)]
+    service_agreement_contract_id: Option<ContractId>,
+    #[serde(default)]
+    service_agreement_document_id: Option<DocumentId>,
+    #[serde(default)]
+    service_agreement_notes: Option<String>,
     created_at: DateTime<Utc>,
 }
 
@@ -54,6 +64,11 @@ impl TryFrom<RawEntity> for Entity {
             formation_status: raw.formation_status,
             registered_agent_name: raw.registered_agent_name,
             registered_agent_address: raw.registered_agent_address,
+            service_agreement_executed: raw.service_agreement_executed,
+            service_agreement_executed_at: raw.service_agreement_executed_at,
+            service_agreement_contract_id: raw.service_agreement_contract_id,
+            service_agreement_document_id: raw.service_agreement_document_id,
+            service_agreement_notes: raw.service_agreement_notes,
             created_at: raw.created_at,
         })
     }
@@ -74,6 +89,11 @@ pub struct Entity {
     formation_status: FormationStatus,
     registered_agent_name: Option<String>,
     registered_agent_address: Option<String>,
+    service_agreement_executed: bool,
+    service_agreement_executed_at: Option<DateTime<Utc>>,
+    service_agreement_contract_id: Option<ContractId>,
+    service_agreement_document_id: Option<DocumentId>,
+    service_agreement_notes: Option<String>,
     created_at: DateTime<Utc>,
 }
 
@@ -102,6 +122,11 @@ impl Entity {
             formation_status: FormationStatus::Pending,
             registered_agent_name,
             registered_agent_address,
+            service_agreement_executed: false,
+            service_agreement_executed_at: None,
+            service_agreement_contract_id: None,
+            service_agreement_document_id: None,
+            service_agreement_notes: None,
             created_at: Utc::now(),
         })
     }
@@ -144,6 +169,19 @@ impl Entity {
         self.advance_status(FormationStatus::Dissolved)
     }
 
+    pub fn record_service_agreement_execution(
+        &mut self,
+        contract_id: Option<ContractId>,
+        document_id: Option<DocumentId>,
+        notes: Option<String>,
+    ) {
+        self.service_agreement_executed = true;
+        self.service_agreement_executed_at = Some(Utc::now());
+        self.service_agreement_contract_id = contract_id;
+        self.service_agreement_document_id = document_id;
+        self.service_agreement_notes = notes;
+    }
+
     // ── Accessors ────────────────────────────────────────────────────────
 
     pub fn entity_id(&self) -> EntityId {
@@ -184,6 +222,26 @@ impl Entity {
 
     pub fn created_at(&self) -> DateTime<Utc> {
         self.created_at
+    }
+
+    pub fn service_agreement_executed(&self) -> bool {
+        self.service_agreement_executed
+    }
+
+    pub fn service_agreement_executed_at(&self) -> Option<DateTime<Utc>> {
+        self.service_agreement_executed_at
+    }
+
+    pub fn service_agreement_contract_id(&self) -> Option<ContractId> {
+        self.service_agreement_contract_id
+    }
+
+    pub fn service_agreement_document_id(&self) -> Option<DocumentId> {
+        self.service_agreement_document_id
+    }
+
+    pub fn service_agreement_notes(&self) -> Option<&str> {
+        self.service_agreement_notes.as_deref()
     }
 }
 
@@ -244,9 +302,10 @@ mod tests {
     #[test]
     fn advance_status_follows_fsm() {
         let mut e = make_entity();
-        assert!(e
-            .advance_status(FormationStatus::DocumentsGenerated)
-            .is_ok());
+        assert!(
+            e.advance_status(FormationStatus::DocumentsGenerated)
+                .is_ok()
+        );
         assert_eq!(e.formation_status(), FormationStatus::DocumentsGenerated);
     }
 
@@ -261,7 +320,8 @@ mod tests {
     fn advance_to_active_sets_formation_state() {
         let mut e = make_entity();
         // Walk the FSM to Active
-        e.advance_status(FormationStatus::DocumentsGenerated).unwrap();
+        e.advance_status(FormationStatus::DocumentsGenerated)
+            .unwrap();
         e.advance_status(FormationStatus::DocumentsSigned).unwrap();
         e.advance_status(FormationStatus::FilingSubmitted).unwrap();
         e.advance_status(FormationStatus::Filed).unwrap();

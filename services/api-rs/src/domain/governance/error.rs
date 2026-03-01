@@ -27,9 +27,7 @@ pub enum GovernanceError {
     },
 
     /// A vote did not meet the required quorum.
-    #[error(
-        "quorum not met: required={required}, present={present}, total={total}"
-    )]
+    #[error("quorum not met: required={required}, present={present}, total={total}")]
     QuorumNotMet {
         required: QuorumThreshold,
         present: u32,

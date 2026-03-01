@@ -48,7 +48,8 @@ impl GovernanceSeat {
             role,
             appointed_date,
             term_expiration,
-            voting_power: voting_power.unwrap_or(VotingPower::new(1).expect("1 is valid voting power")),
+            voting_power: voting_power
+                .unwrap_or(VotingPower::new(1).expect("1 is valid voting power")),
             status: SeatStatus::Active,
             created_at: Utc::now(),
         })

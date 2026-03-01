@@ -70,8 +70,12 @@ mod tests {
     #[test]
     fn encrypted_secrets_serde() {
         let mut secrets = EncryptedSecrets::default();
-        secrets.entries.insert("API_KEY".to_owned(), "gAAAAA...".to_owned());
-        secrets.entries.insert("OTHER".to_owned(), "gAAAAB...".to_owned());
+        secrets
+            .entries
+            .insert("API_KEY".to_owned(), "gAAAAA...".to_owned());
+        secrets
+            .entries
+            .insert("OTHER".to_owned(), "gAAAAB...".to_owned());
 
         let json = serde_json::to_string(&secrets).unwrap();
         let parsed: EncryptedSecrets = serde_json::from_str(&json).unwrap();

@@ -21,6 +21,8 @@ pub struct Obligation {
     status: ObligationStatus,
     fulfilled_at: Option<DateTime<Utc>>,
     waived_at: Option<DateTime<Utc>>,
+    #[serde(default)]
+    expired_at: Option<DateTime<Utc>>,
     created_at: DateTime<Utc>,
 }
 
@@ -48,6 +50,7 @@ impl Obligation {
             status: ObligationStatus::Required,
             fulfilled_at: None,
             waived_at: None,
+            expired_at: None,
             created_at: Utc::now(),
         }
     }
@@ -94,6 +97,21 @@ impl Obligation {
         }
     }
 
+    /// Expire. Required or InProgress -> Expired.
+    pub fn expire(&mut self) -> Result<(), ExecutionError> {
+        match self.status {
+            ObligationStatus::Required | ObligationStatus::InProgress => {
+                self.status = ObligationStatus::Expired;
+                self.expired_at = Some(Utc::now());
+                Ok(())
+            }
+            _ => Err(ExecutionError::InvalidObligationTransition {
+                from: self.status,
+                to: ObligationStatus::Expired,
+            }),
+        }
+    }
+
     // ── Accessors ─────────────────────────────────────────────────────
 
     pub fn obligation_id(&self) -> ObligationId {
@@ -129,6 +147,9 @@ impl Obligation {
     pub fn waived_at(&self) -> Option<DateTime<Utc>> {
         self.waived_at
     }
+    pub fn expired_at(&self) -> Option<DateTime<Utc>> {
+        self.expired_at
+    }
     pub fn created_at(&self) -> DateTime<Utc> {
         self.created_at
     }
@@ -140,10 +161,7 @@ impl Obligation {
                 self.assignee_id = Some(assignee_id);
                 Ok(())
             }
-            _ => Err(ExecutionError::InvalidObligationTransition {
-                from: self.status,
-                to: self.status,
-            }),
+            _ => Err(ExecutionError::CannotAssignInState(self.status)),
         }
     }
 }
@@ -224,6 +242,43 @@ mod tests {
     }
 
     #[test]
+    fn expire_from_required() {
+        let mut obl = make_obligation();
+        obl.expire().unwrap();
+        assert_eq!(obl.status(), ObligationStatus::Expired);
+        assert!(obl.expired_at().is_some());
+    }
+
+    #[test]
+    fn expire_from_in_progress() {
+        let mut obl = make_obligation();
+        obl.start().unwrap();
+        obl.expire().unwrap();
+        assert_eq!(obl.status(), ObligationStatus::Expired);
+    }
+
+    #[test]
+    fn cannot_expire_from_fulfilled() {
+        let mut obl = make_obligation();
+        obl.fulfill().unwrap();
+        assert!(obl.expire().is_err());
+    }
+
+    #[test]
+    fn cannot_expire_from_waived() {
+        let mut obl = make_obligation();
+        obl.waive().unwrap();
+        assert!(obl.expire().is_err());
+    }
+
+    #[test]
+    fn cannot_expire_from_expired() {
+        let mut obl = make_obligation();
+        obl.expire().unwrap();
+        assert!(obl.expire().is_err());
+    }
+
+    #[test]
     fn serde_roundtrip() {
         let mut obl = make_obligation();
         obl.start().unwrap();
@@ -234,6 +289,9 @@ mod tests {
         assert_eq!(parsed.obligation_id(), obl.obligation_id());
         assert_eq!(parsed.status(), ObligationStatus::InProgress);
         assert_eq!(parsed.obligation_type().as_str(), "annual_report");
-        assert_eq!(parsed.due_date(), Some(NaiveDate::from_ymd_opt(2026, 12, 31).unwrap()));
+        assert_eq!(
+            parsed.due_date(),
+            Some(NaiveDate::from_ymd_opt(2026, 12, 31).unwrap())
+        );
     }
 }

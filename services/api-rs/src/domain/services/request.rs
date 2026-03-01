@@ -65,10 +65,7 @@ impl ServiceRequest {
     // ── State transitions ─────────────────────────────────────────────
 
     /// Pending -> Checkout (Stripe session created).
-    pub fn begin_checkout(
-        &mut self,
-        session_id: String,
-    ) -> Result<(), ServiceError> {
+    pub fn begin_checkout(&mut self, session_id: String) -> Result<(), ServiceError> {
         if self.status != ServiceRequestStatus::Pending {
             return Err(ServiceError::InvalidTransition {
                 from: self.status,
@@ -81,10 +78,7 @@ impl ServiceRequest {
     }
 
     /// Checkout -> Paid (Stripe payment confirmed).
-    pub fn mark_paid(
-        &mut self,
-        payment_intent_id: Option<String>,
-    ) -> Result<(), ServiceError> {
+    pub fn mark_paid(&mut self, payment_intent_id: Option<String>) -> Result<(), ServiceError> {
         if self.status != ServiceRequestStatus::Checkout {
             return Err(ServiceError::InvalidTransition {
                 from: self.status,
@@ -249,7 +243,9 @@ mod tests {
     fn can_fail_from_any_non_terminal_state() {
         for start_fn in [
             |_r: &mut ServiceRequest| {},
-            |r: &mut ServiceRequest| { r.begin_checkout("cs".to_owned()).unwrap(); },
+            |r: &mut ServiceRequest| {
+                r.begin_checkout("cs".to_owned()).unwrap();
+            },
             |r: &mut ServiceRequest| {
                 r.begin_checkout("cs".to_owned()).unwrap();
                 r.mark_paid(None).unwrap();
@@ -262,7 +258,11 @@ mod tests {
         ] {
             let mut req = make_request();
             start_fn(&mut req);
-            assert!(req.fail().is_ok(), "should be able to fail from {:?}", req.status());
+            assert!(
+                req.fail().is_ok(),
+                "should be able to fail from {:?}",
+                req.status()
+            );
         }
     }
 

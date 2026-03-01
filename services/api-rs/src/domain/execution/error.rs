@@ -33,6 +33,17 @@ pub enum ExecutionError {
         to: ObligationStatus,
     },
 
+    /// Cannot assign an obligation in its current state.
+    #[error("cannot assign obligation in {0} state")]
+    CannotAssignInState(ObligationStatus),
+
+    /// A document request cannot transition between the given states.
+    #[error("invalid document request transition from {from} to {to}")]
+    InvalidDocumentRequestTransition {
+        from: super::types::DocumentRequestStatus,
+        to: super::types::DocumentRequestStatus,
+    },
+
     /// An execution has already been recorded for this intent.
     #[error("duplicate execution for intent {intent_id}")]
     DuplicateExecution { intent_id: IntentId },

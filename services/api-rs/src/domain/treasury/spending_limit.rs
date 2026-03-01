@@ -34,10 +34,22 @@ impl SpendingLimit {
         }
     }
 
-    pub fn spending_limit_id(&self) -> SpendingLimitId { self.spending_limit_id }
-    pub fn entity_id(&self) -> EntityId { self.entity_id }
-    pub fn amount_cents(&self) -> i64 { self.amount_cents }
-    pub fn period(&self) -> &str { &self.period }
-    pub fn category(&self) -> &str { &self.category }
-    pub fn created_at(&self) -> DateTime<Utc> { self.created_at }
+    pub fn spending_limit_id(&self) -> SpendingLimitId {
+        self.spending_limit_id
+    }
+    pub fn entity_id(&self) -> EntityId {
+        self.entity_id
+    }
+    pub fn amount_cents(&self) -> i64 {
+        self.amount_cents
+    }
+    pub fn period(&self) -> &str {
+        &self.period
+    }
+    pub fn category(&self) -> &str {
+        &self.category
+    }
+    pub fn created_at(&self) -> DateTime<Utc> {
+        self.created_at
+    }
 }

@@ -50,7 +50,11 @@ impl ShareCount {
     /// Require a positive value (> 0).
     #[inline]
     pub fn require_positive(self) -> Result<Self, &'static str> {
-        if self.0 > 0 { Ok(self) } else { Err("share count must be positive") }
+        if self.0 > 0 {
+            Ok(self)
+        } else {
+            Err("share count must be positive")
+        }
     }
 }
 
@@ -711,7 +715,11 @@ mod tests {
 
     #[test]
     fn share_count_sum() {
-        let counts = vec![ShareCount::new(100), ShareCount::new(200), ShareCount::new(300)];
+        let counts = vec![
+            ShareCount::new(100),
+            ShareCount::new(200),
+            ShareCount::new(300),
+        ];
         let total: ShareCount = counts.into_iter().sum();
         assert_eq!(total.raw(), 600);
     }

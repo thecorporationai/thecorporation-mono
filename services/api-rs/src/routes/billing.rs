@@ -4,9 +4,9 @@
 //! Subscription state is stored in the workspace repo at `billing/subscription.json`.
 
 use axum::{
+    Json, Router,
     extract::{Path, State},
     routing::{get, post},
-    Json, Router,
 };
 use serde::{Deserialize, Serialize};
 
@@ -116,7 +116,11 @@ fn read_or_create_subscription(
         Err(_) => {
             let sub = Subscription::new(SubscriptionId::new(), workspace_id, plan.to_owned());
             ws_store
-                .write_json("billing/subscription.json", &sub, "Init billing subscription")
+                .write_json(
+                    "billing/subscription.json",
+                    &sub,
+                    "Init billing subscription",
+                )
                 .map_err(|e| AppError::Internal(format!("commit: {e}")))?;
             Ok(sub)
         }
@@ -158,8 +162,7 @@ async fn checkout(
         }
     })
     .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
-    ?;
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
 
     let session_id = format!("cs_{}", uuid::Uuid::new_v4());
     Ok(Json(CheckoutResponse {
@@ -190,14 +193,10 @@ async fn portal(
         }
     })
     .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
-    ?;
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
 
     Ok(Json(PortalResponse {
-        portal_url: format!(
-            "https://billing.stripe.com/p/portal?ws={}",
-            workspace_id
-        ),
+        portal_url: format!("https://billing.stripe.com/p/portal?ws={}", workspace_id),
         workspace_id,
     }))
 }
@@ -218,8 +217,7 @@ async fn billing_status(
         }
     })
     .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
-    ?;
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
 
     Ok(Json(BillingStatusResponse {
         workspace_id: sub.workspace_id(),
@@ -281,8 +279,7 @@ async fn create_subscription(
         }
     })
     .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
-    ?;
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
 
     Ok(Json(subscription_to_response(&sub)))
 }
@@ -300,14 +297,17 @@ async fn get_subscription(
             let ws_store = WorkspaceStore::open(&layout, workspace_id)
                 .map_err(|e| AppError::NotFound(format!("workspace not found: {e}")))?;
 
-            let sub: Subscription = ws_store.read_json("billing/subscription.json")
-                .map_err(|_| AppError::NotFound(format!("subscription {} not found", subscription_id)))?;
+            let sub: Subscription =
+                ws_store
+                    .read_json("billing/subscription.json")
+                    .map_err(|_| {
+                        AppError::NotFound(format!("subscription {} not found", subscription_id))
+                    })?;
             Ok::<_, AppError>(sub)
         }
     })
     .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
-    ?;
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
 
     Ok(Json(subscription_to_response(&sub)))
 }
@@ -332,11 +332,17 @@ async fn tick_subscriptions(
             for ws_id in workspace_ids {
                 if let Ok(ws_store) = WorkspaceStore::open(&layout, ws_id) {
                     processed += 1;
-                    if let Ok(mut sub) = ws_store.read_json::<Subscription>("billing/subscription.json") {
+                    if let Ok(mut sub) =
+                        ws_store.read_json::<Subscription>("billing/subscription.json")
+                    {
                         if sub.status() == "active" {
                             renewals += 1;
                             sub.set_status("active".to_owned());
-                            let _ = ws_store.write_json("billing/subscription.json", &sub, "Subscription tick");
+                            let _ = ws_store.write_json(
+                                "billing/subscription.json",
+                                &sub,
+                                "Subscription tick",
+                            );
                         }
                     }
                 }
@@ -349,8 +355,7 @@ async fn tick_subscriptions(
         }
     })
     .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
-    ?;
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
 
     Ok(Json(result))
 }

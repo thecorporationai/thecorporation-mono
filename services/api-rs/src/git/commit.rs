@@ -79,33 +79,25 @@ pub fn commit_files(
     let commit_oid = match ctx.and_then(|c| c.signer) {
         Some(signer) => {
             // Create the commit buffer without writing, sign it, then write signed.
-            let commit_buf = git.commit_create_buffer(
-                &sig,
-                &sig,
-                &final_message,
-                &new_tree,
-                &[&parent_commit],
-            )?;
+            let commit_buf =
+                git.commit_create_buffer(&sig, &sig, &final_message, &new_tree, &[&parent_commit])?;
             let commit_str = std::str::from_utf8(&commit_buf).map_err(|e| {
                 GitStorageError::SigningError(format!("commit buffer not UTF-8: {e}"))
             })?;
             let signature = signer.sign_commit(commit_str)?;
-            let signed_oid =
-                git.commit_signed(commit_str, &signature, Some("gpgsig"))?;
+            let signed_oid = git.commit_signed(commit_str, &signature, Some("gpgsig"))?;
             // Update ref to point to the signed commit.
             git.reference(&full_ref, signed_oid, true, "signed commit")?;
             signed_oid
         }
-        None => {
-            git.commit(
-                Some(&full_ref),
-                &sig,
-                &sig,
-                &final_message,
-                &new_tree,
-                &[&parent_commit],
-            )?
-        }
+        None => git.commit(
+            Some(&full_ref),
+            &sig,
+            &sig,
+            &final_message,
+            &new_tree,
+            &[&parent_commit],
+        )?,
     };
 
     tracing::debug!(
@@ -155,7 +147,8 @@ fn build_tree_overlay(
         }
         if fw.path.starts_with('/') || fw.path.contains("..") {
             return Err(GitStorageError::Git(format!(
-                "invalid file path: '{}'", fw.path
+                "invalid file path: '{}'",
+                fw.path
             )));
         }
 
@@ -195,7 +188,11 @@ fn flush_tree(
 ) -> Result<Oid, GitStorageError> {
     let children = match node {
         TreeNode::Dir(children) => children,
-        _ => return Err(GitStorageError::Git("expected directory node at root".into())),
+        _ => {
+            return Err(GitStorageError::Git(
+                "expected directory node at root".into(),
+            ));
+        }
     };
 
     let mut builder = git.treebuilder(existing)?;
@@ -213,8 +210,7 @@ fn flush_tree(
                     .and_then(|entry| entry.to_object(git).ok())
                     .and_then(|obj| obj.into_tree().ok());
 
-                let subtree_oid =
-                    flush_tree(git, existing_subtree.as_ref(), child)?;
+                let subtree_oid = flush_tree(git, existing_subtree.as_ref(), child)?;
                 builder.insert(name, subtree_oid, 0o040000)?;
             }
         }

@@ -4,7 +4,7 @@
 use axum::http::HeaderValue;
 use axum::response::Response;
 use axum::{Json, Router, middleware, routing::get};
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::net::SocketAddr;
@@ -41,6 +41,21 @@ enum Command {
         #[arg(long, default_value = "./data/repos")]
         data_dir: PathBuf,
     },
+    /// Generate governance markdown docs bundle from Rust.
+    GenerateGovernanceDocs {
+        /// Governance profile to generate.
+        #[arg(long, value_enum)]
+        entity_type: GovernanceEntityTypeArg,
+        /// Output directory for generated docs and manifest.
+        #[arg(long)]
+        out_dir: PathBuf,
+    },
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+enum GovernanceEntityTypeArg {
+    Corporation,
+    Llc,
 }
 
 async fn health() -> Json<Value> {
@@ -59,6 +74,33 @@ async fn main() {
         Some(Command::Validate { data_dir }) => {
             let code = validate::run(data_dir);
             std::process::exit(code);
+        }
+        Some(Command::GenerateGovernanceDocs {
+            entity_type,
+            out_dir,
+        }) => {
+            let profile = match entity_type {
+                GovernanceEntityTypeArg::Corporation => {
+                    domain::governance::doc_generator::GovernanceDocEntityType::Corporation
+                }
+                GovernanceEntityTypeArg::Llc => {
+                    domain::governance::doc_generator::GovernanceDocEntityType::Llc
+                }
+            };
+
+            match domain::governance::doc_generator::generate_bundle(profile, &out_dir) {
+                Ok(manifest) => {
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&manifest)
+                            .unwrap_or_else(|_| "{\"status\":\"ok\"}".to_owned())
+                    );
+                }
+                Err(err) => {
+                    eprintln!("governance docs generation failed: {err:#}");
+                    std::process::exit(1);
+                }
+            }
         }
         None => {
             run_server(cli.skip_validation).await;

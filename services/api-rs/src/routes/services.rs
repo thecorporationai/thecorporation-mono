@@ -157,8 +157,8 @@ async fn create_service_request(
     let entity_id = body.entity_id;
     let slug = body.service_slug.clone();
 
-    let item = catalog::find_by_slug(&slug)
-        .ok_or_else(|| ServiceError::ItemNotFound(slug.clone()))?;
+    let item =
+        catalog::find_by_slug(&slug).ok_or_else(|| ServiceError::ItemNotFound(slug.clone()))?;
 
     if !item.active {
         return Err(AppError::BadRequest(format!(
@@ -194,10 +194,12 @@ async fn create_service_request(
                     None,
                 );
                 store
-                    .write::<Obligation>("main", oid, &obligation, &format!(
-                        "Create obligation for service request: {}",
-                        item.slug
-                    ))
+                    .write::<Obligation>(
+                        "main",
+                        oid,
+                        &obligation,
+                        &format!("Create obligation for service request: {}", item.slug),
+                    )
                     .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
                 oid
             };
@@ -213,10 +215,12 @@ async fn create_service_request(
                 item.price_cents,
             );
             store
-                .write::<ServiceRequest>("main", request_id, &request, &format!(
-                    "Create service request {} for {}",
-                    request_id, item.slug
-                ))
+                .write::<ServiceRequest>(
+                    "main",
+                    request_id,
+                    &request,
+                    &format!("Create service request {} for {}", request_id, item.slug),
+                )
                 .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
 
             Ok::<_, AppError>(request)
@@ -403,9 +407,7 @@ async fn stripe_webhook(
                 .map_err(|_| AppError::BadRequest("invalid request_id in metadata".to_owned()))?;
             let workspace_id: WorkspaceId = workspace_id_s
                 .parse()
-                .map_err(|_| {
-                    AppError::BadRequest("invalid workspace_id in metadata".to_owned())
-                })?;
+                .map_err(|_| AppError::BadRequest("invalid workspace_id in metadata".to_owned()))?;
 
             tokio::task::spawn_blocking({
                 let layout = state.layout.clone();
@@ -422,10 +424,7 @@ async fn stripe_webhook(
                             "main",
                             request_id,
                             &request,
-                            &format!(
-                                "Payment confirmed for service request {}",
-                                request_id
-                            ),
+                            &format!("Payment confirmed for service request {}", request_id),
                         )
                         .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
 
@@ -532,9 +531,7 @@ async fn fulfill_service_request(
                 .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
 
             // Also fulfill the linked obligation.
-            if let Ok(mut obligation) =
-                store.read::<Obligation>("main", request.obligation_id())
-            {
+            if let Ok(mut obligation) = store.read::<Obligation>("main", request.obligation_id()) {
                 if obligation.fulfill().is_ok() {
                     let _ = store.write::<Obligation>(
                         "main",
@@ -695,8 +692,5 @@ pub fn services_routes() -> Router<AppState> {
         // Ops dashboard
         .route("/v1/services/pending", get(list_pending_fulfillment))
         // Stripe webhook
-        .route(
-            "/v1/services/webhooks/stripe",
-            post(stripe_webhook),
-        )
+        .route("/v1/services/webhooks/stripe", post(stripe_webhook))
 }
