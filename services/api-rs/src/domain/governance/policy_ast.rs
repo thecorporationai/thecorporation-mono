@@ -70,19 +70,57 @@ pub enum EscalationCondition {
     IsReversibleFalse,
 }
 
-/// Supported metadata field paths for lane checks.
+// ── Typed lane field enums ────────────────────────────────────────────
+
+/// Boolean metadata fields for equality checks.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub enum LaneField {
+pub enum BoolField {
     #[serde(rename = "templateApproved")]
     TemplateApproved,
-    #[serde(rename = "modifications")]
-    Modifications,
+}
+
+/// Numeric metadata fields for comparison checks.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum NumericField {
     #[serde(rename = "context.rateIncreasePercent")]
     ContextRateIncreasePercent,
     #[serde(rename = "context.priceIncreasePercent")]
     ContextPriceIncreasePercent,
     #[serde(rename = "context.premiumIncreasePercent")]
     ContextPremiumIncreasePercent,
+}
+
+/// String-list metadata fields for containment checks.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum StringListField {
+    #[serde(rename = "modifications")]
+    Modifications,
+}
+
+/// Unified field enum for runtime lookup. Used internally by the evaluator.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum LaneField {
+    Bool(BoolField),
+    Numeric(NumericField),
+    StringList(StringListField),
+}
+
+impl From<BoolField> for LaneField {
+    fn from(f: BoolField) -> Self {
+        Self::Bool(f)
+    }
+}
+
+impl From<NumericField> for LaneField {
+    fn from(f: NumericField) -> Self {
+        Self::Numeric(f)
+    }
+}
+
+impl From<StringListField> for LaneField {
+    fn from(f: StringListField) -> Self {
+        Self::StringList(f)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
@@ -167,36 +205,35 @@ pub struct LaneConditionRule {
     pub checks: Vec<LaneCheck>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
-#[serde(tag = "op", rename_all = "snake_case")]
+#[derive(Debug, Clone)]
 pub enum LaneCheck {
     Eq {
-        field: LaneField,
+        field: BoolField,
         value: LaneScalarValue,
         message: String,
     },
     Neq {
-        field: LaneField,
+        field: BoolField,
         value: LaneScalarValue,
         message: String,
     },
     Lte {
-        field: LaneField,
+        field: NumericField,
         value: f64,
         message: String,
     },
     Gte {
-        field: LaneField,
+        field: NumericField,
         value: f64,
         message: String,
     },
     ContainsNone {
-        field: LaneField,
+        field: StringListField,
         value: Vec<String>,
         message: String,
     },
     ContainsAny {
-        field: LaneField,
+        field: StringListField,
         value: Vec<String>,
         message: String,
     },
@@ -211,6 +248,76 @@ impl LaneCheck {
             | Self::Gte { message, .. }
             | Self::ContainsNone { message, .. }
             | Self::ContainsAny { message, .. } => message,
+        }
+    }
+
+    /// Return the unified `LaneField` for this check.
+    pub fn lane_field(&self) -> LaneField {
+        match self {
+            Self::Eq { field, .. } | Self::Neq { field, .. } => LaneField::from(*field),
+            Self::Lte { field, .. } | Self::Gte { field, .. } => LaneField::from(*field),
+            Self::ContainsNone { field, .. } | Self::ContainsAny { field, .. } => {
+                LaneField::from(*field)
+            }
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for LaneCheck {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        struct RawLaneCheck {
+            op: String,
+            field: String,
+            #[serde(default)]
+            value: serde_json::Value,
+            message: String,
+        }
+
+        let raw = RawLaneCheck::deserialize(deserializer)?;
+
+        match raw.op.as_str() {
+            "eq" | "neq" => {
+                let field: BoolField = serde_json::from_value(serde_json::Value::String(raw.field.clone()))
+                    .map_err(|_| serde::de::Error::custom(format!(
+                        "op '{}' requires a bool field, got '{}'", raw.op, raw.field
+                    )))?;
+                let value: LaneScalarValue = serde_json::from_value(raw.value)
+                    .map_err(serde::de::Error::custom)?;
+                if raw.op == "eq" {
+                    Ok(LaneCheck::Eq { field, value, message: raw.message })
+                } else {
+                    Ok(LaneCheck::Neq { field, value, message: raw.message })
+                }
+            }
+            "lte" | "gte" => {
+                let field: NumericField = serde_json::from_value(serde_json::Value::String(raw.field.clone()))
+                    .map_err(|_| serde::de::Error::custom(format!(
+                        "op '{}' requires a numeric field, got '{}'", raw.op, raw.field
+                    )))?;
+                let value: f64 = raw.value.as_f64().ok_or_else(|| {
+                    serde::de::Error::custom(format!("op '{}' requires a numeric value", raw.op))
+                })?;
+                if raw.op == "lte" {
+                    Ok(LaneCheck::Lte { field, value, message: raw.message })
+                } else {
+                    Ok(LaneCheck::Gte { field, value, message: raw.message })
+                }
+            }
+            "contains_none" | "contains_any" => {
+                let field: StringListField = serde_json::from_value(serde_json::Value::String(raw.field.clone()))
+                    .map_err(|_| serde::de::Error::custom(format!(
+                        "op '{}' requires a string list field, got '{}'", raw.op, raw.field
+                    )))?;
+                let value: Vec<String> = serde_json::from_value(raw.value)
+                    .map_err(serde::de::Error::custom)?;
+                if raw.op == "contains_none" {
+                    Ok(LaneCheck::ContainsNone { field, value, message: raw.message })
+                } else {
+                    Ok(LaneCheck::ContainsAny { field, value, message: raw.message })
+                }
+            }
+            other => Err(serde::de::Error::custom(format!("unknown lane check op: '{other}'"))),
         }
     }
 }
@@ -311,31 +418,8 @@ impl GovernanceAstV1 {
             errors.push("silence_is_approval must be false".to_owned());
         }
 
-        // 8. Lane checks must use field/operator combinations that are type-safe.
-        for lane in &rules.lane_conditions {
-            for check in &lane.checks {
-                let valid = match check {
-                    LaneCheck::Eq { field, .. } | LaneCheck::Neq { field, .. } => {
-                        matches!(field, LaneField::TemplateApproved)
-                    }
-                    LaneCheck::Lte { field, .. } | LaneCheck::Gte { field, .. } => matches!(
-                        field,
-                        LaneField::ContextRateIncreasePercent
-                            | LaneField::ContextPriceIncreasePercent
-                            | LaneField::ContextPremiumIncreasePercent
-                    ),
-                    LaneCheck::ContainsNone { field, .. } | LaneCheck::ContainsAny { field, .. } => {
-                        matches!(field, LaneField::Modifications)
-                    }
-                };
-                if !valid {
-                    errors.push(format!(
-                        "lane '{}' has invalid field/operator pairing for check {:?}",
-                        lane.lane_id, check
-                    ));
-                }
-            }
-        }
+        // 8. (Removed) Lane field/operator parity is now enforced at the type level
+        //    by the typed field enums (BoolField, NumericField, StringListField).
 
         // 9. Document/section/clause IDs must be unique across the AST.
         let mut seen_doc_ids = HashSet::new();
@@ -442,14 +526,29 @@ mod tests {
     }
 
     #[test]
-    fn validation_catches_invalid_lane_field_operator_pairing() {
+    fn invalid_lane_field_operator_pairing_fails_deserialization() {
         let mut ast_json: serde_json::Value = serde_json::from_str(AST_JSON).unwrap();
+        // Set a bool-only field on a numeric op — should fail deserialization
         ast_json["rules"]["lane_conditions"][0]["checks"][0]["field"] = json!("modifications");
-        let ast: GovernanceAstV1 = serde_json::from_value(ast_json).unwrap();
-        let errors = ast.validate();
+        let err = serde_json::from_value::<GovernanceAstV1>(ast_json).unwrap_err();
         assert!(
-            errors.iter().any(|e| e.contains("invalid field/operator pairing")),
-            "expected lane field/op pairing error, got: {errors:?}"
+            err.to_string().contains("requires a bool field"),
+            "expected typed field deserialization error, got: {err}"
+        );
+    }
+
+    #[test]
+    fn numeric_op_on_string_list_field_fails_deserialization() {
+        let check_json = json!({
+            "op": "lte",
+            "field": "modifications",
+            "value": 10.0,
+            "message": "should fail"
+        });
+        let err = serde_json::from_value::<LaneCheck>(check_json).unwrap_err();
+        assert!(
+            err.to_string().contains("requires a numeric field"),
+            "expected typed field deserialization error, got: {err}"
         );
     }
 

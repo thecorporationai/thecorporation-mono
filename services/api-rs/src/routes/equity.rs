@@ -1099,21 +1099,21 @@ fn ensure_authorized_intent(
     }
 
     let decision = evaluate_governance_intent(intent.intent_type(), intent.metadata());
-    if !decision.policy_mapped {
+    if !decision.policy_mapped() {
         return Err(AppError::UnprocessableEntity(format!(
             "intent {} type {} is not explicitly mapped in governance policy",
             intent.intent_id(),
             intent.intent_type()
         )));
     }
-    if !decision.allowed {
+    if !decision.allowed() {
         return Err(AppError::UnprocessableEntity(format!(
             "intent {} blocked by policy: {}",
             intent.intent_id(),
-            decision.blockers.join("; ")
+            decision.blockers().join("; ")
         )));
     }
-    if decision.tier != AuthorityTier::Tier3 {
+    if decision.tier() != AuthorityTier::Tier3 {
         return Err(AppError::UnprocessableEntity(format!(
             "intent {} must evaluate to tier_3 under strict equity policy",
             intent.intent_id()

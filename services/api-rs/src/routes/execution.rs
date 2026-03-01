@@ -25,9 +25,8 @@ use crate::domain::formation::types::FormationStatus;
 use crate::domain::governance::delegation_schedule::{CURRENT_SCHEDULE_PATH, DelegationSchedule};
 use crate::domain::governance::incident::IncidentSeverity;
 use crate::domain::governance::policy_engine::{
-    PolicyDecision, apply_conflict_fail_closed, apply_mode_overrides, apply_schedule_overrides,
-    apply_service_agreement_overrides, amount_from_metadata_cents,
-    canonicalize_intent_type, evaluate_intent as evaluate_governance_intent,
+    PolicyDecision, PolicyEvaluationContext, amount_from_metadata_cents,
+    canonicalize_intent_type, evaluate_full_with_override,
     mapped_tier_requires_manual_artifacts,
 };
 use crate::domain::governance::trigger::{GovernanceTriggerSource, GovernanceTriggerType};
@@ -393,7 +392,7 @@ fn enforce_execution_prerequisites(
     let approval_id = intent.bound_approval_artifact_id().ok_or(
         ExecutionPrerequisiteViolation::MissingApprovalArtifact {
             intent_id: intent.intent_id(),
-            tier: decision.tier,
+            tier: decision.tier(),
         },
     )?;
 
@@ -499,33 +498,21 @@ async fn create_intent(
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
             let canonical_intent_type = canonicalize_intent_type(&req.intent_type);
-            let mut decision = evaluate_governance_intent(&canonical_intent_type, &req.metadata);
             let mode = read_mode_or_default(&store, entity_id);
-            decision =
-                apply_mode_overrides(decision, mode.mode(), &canonical_intent_type, &req.metadata);
-            if let Some(requested_tier) = req.authority_tier
-                && !decision.policy_mapped
-            {
-                decision.tier = requested_tier;
-                decision.requires_approval = !matches!(requested_tier, AuthorityTier::Tier1);
-            }
             let schedule = read_schedule_or_default(&store, entity_id);
-            decision = apply_schedule_overrides(
-                decision,
-                &schedule,
-                &canonical_intent_type,
-                &req.metadata,
-                Utc::now(),
-            );
             let entity = store
                 .read_entity("main")
                 .map_err(|e| AppError::Internal(format!("read entity: {e}")))?;
-            decision = apply_service_agreement_overrides(
-                    decision,
-                    matches!(entity.formation_status(), FormationStatus::Active),
-                    entity.service_agreement_executed(),
-                );
-            decision = apply_conflict_fail_closed(decision);
+            let ctx = PolicyEvaluationContext {
+                intent_type: &canonical_intent_type,
+                metadata: &req.metadata,
+                mode: mode.mode(),
+                schedule: &schedule,
+                now: Utc::now(),
+                entity_is_active: matches!(entity.formation_status(), FormationStatus::Active),
+                service_agreement_executed: entity.service_agreement_executed(),
+            };
+            let decision = evaluate_full_with_override(&ctx, req.authority_tier);
 
             let intent_id = IntentId::new();
             let mut intent = Intent::new(
@@ -533,7 +520,7 @@ async fn create_intent(
                 entity_id,
                 workspace_id,
                 canonical_intent_type,
-                decision.tier,
+                decision.tier(),
                 req.description,
                 req.metadata,
             );
@@ -607,39 +594,24 @@ async fn evaluate_intent(
                 .map_err(|_| AppError::NotFound(format!("intent {} not found", intent_id)))?;
 
             let canonical_intent_type = canonicalize_intent_type(intent.intent_type());
-            let mut decision =
-                evaluate_governance_intent(&canonical_intent_type, intent.metadata());
             let mode = read_mode_or_default(&store, entity_id);
-            decision = apply_mode_overrides(
-                decision,
-                mode.mode(),
-                &canonical_intent_type,
-                intent.metadata(),
-            );
-            if !decision.policy_mapped {
-                decision.tier = intent.authority_tier();
-                decision.requires_approval = !matches!(decision.tier, AuthorityTier::Tier1);
-            }
             let schedule = read_schedule_or_default(&store, entity_id);
-            decision = apply_schedule_overrides(
-                decision,
-                &schedule,
-                &canonical_intent_type,
-                intent.metadata(),
-                Utc::now(),
-            );
             let entity = store
                 .read_entity("main")
                 .map_err(|e| AppError::Internal(format!("read entity: {e}")))?;
-            decision = apply_service_agreement_overrides(
-                    decision,
-                    matches!(entity.formation_status(), FormationStatus::Active),
-                    entity.service_agreement_executed(),
-                );
-            decision = apply_conflict_fail_closed(decision);
-            let allowed = decision.allowed;
-            let blockers = decision.blockers.clone();
-            intent.update_authority_tier(decision.tier);
+            let ctx = PolicyEvaluationContext {
+                intent_type: &canonical_intent_type,
+                metadata: intent.metadata(),
+                mode: mode.mode(),
+                schedule: &schedule,
+                now: Utc::now(),
+                entity_is_active: matches!(entity.formation_status(), FormationStatus::Active),
+                service_agreement_executed: entity.service_agreement_executed(),
+            };
+            let decision = evaluate_full_with_override(&ctx, Some(intent.authority_tier()));
+            let allowed = decision.allowed();
+            let blockers = decision.blockers().to_vec();
+            intent.update_authority_tier(decision.tier());
             intent.set_policy_decision(decision);
 
             if allowed {
@@ -685,40 +657,25 @@ async fn authorize_intent(
                 .map_err(|_| AppError::NotFound(format!("intent {} not found", intent_id)))?;
 
             let canonical_intent_type = canonicalize_intent_type(intent.intent_type());
-            let mut decision =
-                evaluate_governance_intent(&canonical_intent_type, intent.metadata());
             let mode = read_mode_or_default(&store, entity_id);
-            decision = apply_mode_overrides(
-                decision,
-                mode.mode(),
-                &canonical_intent_type,
-                intent.metadata(),
-            );
-            if !decision.policy_mapped {
-                decision.tier = intent.authority_tier();
-                decision.requires_approval = !matches!(decision.tier, AuthorityTier::Tier1);
-            }
             let schedule = read_schedule_or_default(&store, entity_id);
-            decision = apply_schedule_overrides(
-                decision,
-                &schedule,
-                &canonical_intent_type,
-                intent.metadata(),
-                Utc::now(),
-            );
             let entity = store
                 .read_entity("main")
                 .map_err(|e| AppError::Internal(format!("read entity: {e}")))?;
-            decision = apply_service_agreement_overrides(
-                    decision,
-                    matches!(entity.formation_status(), FormationStatus::Active),
-                    entity.service_agreement_executed(),
-                );
-            decision = apply_conflict_fail_closed(decision);
-            if !decision.allowed {
+            let ctx = PolicyEvaluationContext {
+                intent_type: &canonical_intent_type,
+                metadata: intent.metadata(),
+                mode: mode.mode(),
+                schedule: &schedule,
+                now: Utc::now(),
+                entity_is_active: matches!(entity.formation_status(), FormationStatus::Active),
+                service_agreement_executed: entity.service_agreement_executed(),
+            };
+            let decision = evaluate_full_with_override(&ctx, Some(intent.authority_tier()));
+            if !decision.allowed() {
                 return Err(AppError::UnprocessableEntity(format!(
                     "intent blocked by policy: {}",
-                    decision.blockers.join("; ")
+                    decision.blockers().join("; ")
                 )));
             }
             if let Err(violation) = enforce_execution_prerequisites(&store, &intent, &decision) {
@@ -732,7 +689,7 @@ async fn authorize_intent(
                 }
                 return Err(AppError::UnprocessableEntity(violation.reason()));
             }
-            intent.update_authority_tier(decision.tier);
+            intent.update_authority_tier(decision.tier());
             intent.set_policy_decision(decision);
             intent.authorize()?;
 
@@ -773,40 +730,25 @@ async fn execute_intent(
                 .map_err(|_| AppError::NotFound(format!("intent {} not found", intent_id)))?;
 
             let canonical_intent_type = canonicalize_intent_type(intent.intent_type());
-            let mut decision =
-                evaluate_governance_intent(&canonical_intent_type, intent.metadata());
             let mode = read_mode_or_default(&store, entity_id);
-            decision = apply_mode_overrides(
-                decision,
-                mode.mode(),
-                &canonical_intent_type,
-                intent.metadata(),
-            );
-            if !decision.policy_mapped {
-                decision.tier = intent.authority_tier();
-                decision.requires_approval = !matches!(decision.tier, AuthorityTier::Tier1);
-            }
             let schedule = read_schedule_or_default(&store, entity_id);
-            decision = apply_schedule_overrides(
-                decision,
-                &schedule,
-                &canonical_intent_type,
-                intent.metadata(),
-                Utc::now(),
-            );
             let entity = store
                 .read_entity("main")
                 .map_err(|e| AppError::Internal(format!("read entity: {e}")))?;
-            decision = apply_service_agreement_overrides(
-                    decision,
-                    matches!(entity.formation_status(), FormationStatus::Active),
-                    entity.service_agreement_executed(),
-                );
-            decision = apply_conflict_fail_closed(decision);
-            if !decision.allowed {
+            let ctx = PolicyEvaluationContext {
+                intent_type: &canonical_intent_type,
+                metadata: intent.metadata(),
+                mode: mode.mode(),
+                schedule: &schedule,
+                now: Utc::now(),
+                entity_is_active: matches!(entity.formation_status(), FormationStatus::Active),
+                service_agreement_executed: entity.service_agreement_executed(),
+            };
+            let decision = evaluate_full_with_override(&ctx, Some(intent.authority_tier()));
+            if !decision.allowed() {
                 return Err(AppError::UnprocessableEntity(format!(
                     "intent blocked by policy: {}",
-                    decision.blockers.join("; ")
+                    decision.blockers().join("; ")
                 )));
             }
             if let Err(violation) = enforce_execution_prerequisites(&store, &intent, &decision) {
@@ -820,7 +762,7 @@ async fn execute_intent(
                 }
                 return Err(AppError::UnprocessableEntity(violation.reason()));
             }
-            intent.update_authority_tier(decision.tier);
+            intent.update_authority_tier(decision.tier());
             intent.set_policy_decision(decision);
             intent.mark_executed()?;
 

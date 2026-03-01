@@ -10,10 +10,10 @@ use super::capability::GovernanceCapability;
 use super::delegation_schedule::DelegationSchedule;
 use super::mode::GovernanceMode;
 use super::policy_ast::{
-    EscalationCondition, EscalationRule, LaneCheck, LaneField, LaneScalarValue,
-    default_governance_ast,
+    BoolField, EscalationCondition, EscalationRule, LaneCheck, LaneField, LaneScalarValue,
+    NumericField, StringListField, default_governance_ast,
 };
-use super::proof_obligations::enforce_proof_obligations;
+use super::proof_obligations::{enforce_proof_obligations, verify_decision};
 use super::typed_intent::{ParsedGovernanceMetadata, TypedIntent};
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -27,6 +27,64 @@ pub enum AuthoritySource {
     StandingInstruction,
     DelegationSchedule,
     Heuristic,
+}
+
+/// All authority sources in descending rank order (highest authority first).
+const AUTHORITY_SOURCES_BY_RANK: [AuthoritySource; 8] = [
+    AuthoritySource::Law,
+    AuthoritySource::Charter,
+    AuthoritySource::GovernanceDocs,
+    AuthoritySource::Resolution,
+    AuthoritySource::Directive,
+    AuthoritySource::StandingInstruction,
+    AuthoritySource::DelegationSchedule,
+    AuthoritySource::Heuristic,
+];
+
+// Compile-time assertion: the array is monotonically ranked (each rank > next rank).
+const _: () = {
+    let sources = AUTHORITY_SOURCES_BY_RANK;
+    let mut i = 0;
+    while i + 1 < sources.len() {
+        assert!(
+            sources[i].rank() > sources[i + 1].rank(),
+            "AUTHORITY_SOURCES_BY_RANK is not monotonically ranked"
+        );
+        i += 1;
+    }
+};
+
+impl AuthoritySource {
+    /// Numeric rank: higher means greater authority. Law=7, Heuristic=0.
+    pub const fn rank(self) -> u8 {
+        match self {
+            Self::Law => 7,
+            Self::Charter => 6,
+            Self::GovernanceDocs => 5,
+            Self::Resolution => 4,
+            Self::Directive => 3,
+            Self::StandingInstruction => 2,
+            Self::DelegationSchedule => 1,
+            Self::Heuristic => 0,
+        }
+    }
+
+    /// Returns true if `self` has strictly greater authority than `other`.
+    pub fn outranks(self, other: Self) -> bool {
+        self.rank() > other.rank()
+    }
+}
+
+impl PartialOrd for AuthoritySource {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for AuthoritySource {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.rank().cmp(&other.rank())
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -46,19 +104,161 @@ pub struct PolicyConflict {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PolicyDecision {
-    pub tier: AuthorityTier,
-    pub policy_mapped: bool,
-    pub allowed: bool,
-    pub requires_approval: bool,
-    pub blockers: Vec<String>,
-    pub escalation_reasons: Vec<String>,
-    pub clause_refs: Vec<String>,
+    pub(super) tier: AuthorityTier,
+    pub(super) policy_mapped: bool,
+    pub(super) allowed: bool,
+    pub(super) requires_approval: bool,
+    pub(super) blockers: Vec<String>,
+    pub(super) escalation_reasons: Vec<String>,
+    pub(super) clause_refs: Vec<String>,
     #[serde(default)]
-    pub precedence_trace: Vec<PolicyPrecedenceTrace>,
+    pub(super) precedence_trace: Vec<PolicyPrecedenceTrace>,
     #[serde(default)]
-    pub precedence_conflicts: Vec<PolicyConflict>,
+    pub(super) precedence_conflicts: Vec<PolicyConflict>,
     #[serde(default)]
-    pub effective_source: Option<AuthoritySource>,
+    pub(super) effective_source: Option<AuthoritySource>,
+}
+
+impl PolicyDecision {
+    /// Construct a new PolicyDecision with derived invariants:
+    /// - `allowed` is derived from `blockers.is_empty()`
+    /// - `requires_approval` is derived from `tier > Tier1`
+    pub fn new(
+        tier: AuthorityTier,
+        policy_mapped: bool,
+        blockers: Vec<String>,
+        escalation_reasons: Vec<String>,
+        clause_refs: Vec<String>,
+        precedence_trace: Vec<PolicyPrecedenceTrace>,
+        precedence_conflicts: Vec<PolicyConflict>,
+        effective_source: Option<AuthoritySource>,
+    ) -> Self {
+        Self {
+            allowed: blockers.is_empty(),
+            requires_approval: tier > AuthorityTier::Tier1,
+            tier,
+            policy_mapped,
+            blockers,
+            escalation_reasons,
+            clause_refs,
+            precedence_trace,
+            precedence_conflicts,
+            effective_source,
+        }
+    }
+
+    // ── Getters ──────────────────────────────────────────────────────
+
+    pub fn tier(&self) -> AuthorityTier {
+        self.tier
+    }
+
+    pub fn policy_mapped(&self) -> bool {
+        self.policy_mapped
+    }
+
+    pub fn allowed(&self) -> bool {
+        self.allowed
+    }
+
+    pub fn requires_approval(&self) -> bool {
+        self.requires_approval
+    }
+
+    pub fn blockers(&self) -> &[String] {
+        &self.blockers
+    }
+
+    pub fn escalation_reasons(&self) -> &[String] {
+        &self.escalation_reasons
+    }
+
+    pub fn clause_refs(&self) -> &[String] {
+        &self.clause_refs
+    }
+
+    pub fn precedence_trace(&self) -> &[PolicyPrecedenceTrace] {
+        &self.precedence_trace
+    }
+
+    pub fn precedence_conflicts(&self) -> &[PolicyConflict] {
+        &self.precedence_conflicts
+    }
+
+    pub fn effective_source(&self) -> Option<AuthoritySource> {
+        self.effective_source
+    }
+
+    // ── Invariant-preserving mutators ────────────────────────────────
+
+    /// Escalate the tier — only raises, never lowers. Updates `requires_approval`.
+    pub fn escalate_tier(&mut self, new_tier: AuthorityTier) {
+        if new_tier > self.tier {
+            self.tier = new_tier;
+            self.requires_approval = self.tier > AuthorityTier::Tier1;
+        }
+    }
+
+    /// Add a blocker, which sets `allowed = false`.
+    pub fn add_blocker(&mut self, msg: String) {
+        self.blockers.push(msg);
+        self.allowed = false;
+    }
+
+    /// Add an escalation reason.
+    pub fn add_escalation_reason(&mut self, msg: String) {
+        self.escalation_reasons.push(msg);
+    }
+
+    /// Add a clause reference.
+    pub fn add_clause_ref(&mut self, clause_ref: String) {
+        self.clause_refs.push(clause_ref);
+    }
+
+    /// Record a precedence trace entry and update the effective source.
+    pub fn push_precedence_trace(
+        &mut self,
+        source: AuthoritySource,
+        outcome: &str,
+        reason: Option<String>,
+    ) {
+        self.precedence_trace.push(PolicyPrecedenceTrace {
+            source,
+            outcome: outcome.to_owned(),
+            reason,
+        });
+        self.effective_source = Some(source);
+    }
+
+    /// Record a precedence conflict. The higher source must outrank the lower source.
+    pub fn push_precedence_conflict(
+        &mut self,
+        higher_source: AuthoritySource,
+        lower_source: AuthoritySource,
+        reason: String,
+    ) {
+        debug_assert!(
+            higher_source.outranks(lower_source),
+            "push_precedence_conflict: higher_source {:?} (rank {}) does not outrank lower_source {:?} (rank {})",
+            higher_source, higher_source.rank(), lower_source, lower_source.rank()
+        );
+        self.precedence_conflicts.push(PolicyConflict {
+            higher_source,
+            lower_source,
+            reason,
+        });
+    }
+
+    /// Override tier for unmapped capabilities (legacy execution.rs behavior).
+    /// Only valid when `policy_mapped` is false.
+    pub fn override_tier_for_unmapped(&mut self, tier: AuthorityTier) {
+        debug_assert!(
+            !self.policy_mapped,
+            "override_tier_for_unmapped called on policy-mapped decision"
+        );
+        self.tier = tier;
+        self.requires_approval = self.tier > AuthorityTier::Tier1;
+    }
 }
 
 /// Canonicalize incoming intent type text for policy evaluation.
@@ -175,24 +375,20 @@ pub fn evaluate_intent_typed(intent: &TypedIntent<'_>) -> PolicyDecision {
         clause_refs.push("rule.metadata.decode_failure".to_owned());
     }
 
-    let requires_approval = tier > AuthorityTier::Tier1;
-
-    let mut decision = PolicyDecision {
+    let mut decision = PolicyDecision::new(
         tier,
         policy_mapped,
-        allowed: blockers.is_empty(),
-        requires_approval,
         blockers,
-        escalation_reasons: reasons,
+        reasons,
         clause_refs,
-        precedence_trace: vec![PolicyPrecedenceTrace {
+        vec![PolicyPrecedenceTrace {
             source: AuthoritySource::Heuristic,
             outcome: "allow".to_owned(),
             reason: Some("base policy AST evaluation".to_owned()),
         }],
-        precedence_conflicts: Vec::new(),
-        effective_source: Some(AuthoritySource::Heuristic),
-    };
+        Vec::new(),
+        Some(AuthoritySource::Heuristic),
+    );
 
     enforce_proof_obligations(&mut decision);
     decision
@@ -243,21 +439,21 @@ fn escalation_applies(
 fn check_lane(metadata: &Value, check: &LaneCheck) -> bool {
     match check {
         LaneCheck::Eq { field, value, .. } => {
-            let got = get_field(metadata, *field);
+            let got = get_field(metadata, LaneField::from(*field));
             got == scalar_value_as_json(value).as_ref()
         }
         LaneCheck::Neq { field, value, .. } => {
-            let got = get_field(metadata, *field);
+            let got = get_field(metadata, LaneField::from(*field));
             got != scalar_value_as_json(value).as_ref()
         }
-        LaneCheck::Lte { field, value, .. } => get_field(metadata, *field)
+        LaneCheck::Lte { field, value, .. } => get_field(metadata, LaneField::from(*field))
             .and_then(Value::as_f64)
             .is_some_and(|g| g <= *value),
-        LaneCheck::Gte { field, value, .. } => get_field(metadata, *field)
+        LaneCheck::Gte { field, value, .. } => get_field(metadata, LaneField::from(*field))
             .and_then(Value::as_f64)
             .is_some_and(|g| g >= *value),
         LaneCheck::ContainsNone { field, value, .. } => {
-            let got = get_field(metadata, *field);
+            let got = get_field(metadata, LaneField::from(*field));
             let arr = normalized_string_list(got);
             let banned = value
                 .iter()
@@ -266,7 +462,7 @@ fn check_lane(metadata: &Value, check: &LaneCheck) -> bool {
             !arr.iter().any(|item| banned.iter().any(|blocked| blocked == item))
         }
         LaneCheck::ContainsAny { field, value, .. } => {
-            let got = get_field(metadata, *field);
+            let got = get_field(metadata, LaneField::from(*field));
             let arr = normalized_string_list(got);
             let required = value
                 .iter()
@@ -301,17 +497,147 @@ fn normalized_string_list(value: Option<&Value>) -> Vec<String> {
 
 fn get_field(value: &Value, field: LaneField) -> Option<&Value> {
     match field {
-        LaneField::TemplateApproved => value.get("templateApproved"),
-        LaneField::Modifications => value.get("modifications"),
-        LaneField::ContextRateIncreasePercent => value
+        LaneField::Bool(BoolField::TemplateApproved) => value.get("templateApproved"),
+        LaneField::StringList(StringListField::Modifications) => value.get("modifications"),
+        LaneField::Numeric(NumericField::ContextRateIncreasePercent) => value
             .get("context")
             .and_then(|v| v.get("rateIncreasePercent")),
-        LaneField::ContextPriceIncreasePercent => value
+        LaneField::Numeric(NumericField::ContextPriceIncreasePercent) => value
             .get("context")
             .and_then(|v| v.get("priceIncreasePercent")),
-        LaneField::ContextPremiumIncreasePercent => value
+        LaneField::Numeric(NumericField::ContextPremiumIncreasePercent) => value
             .get("context")
             .and_then(|v| v.get("premiumIncreasePercent")),
+    }
+}
+
+// ── Typestate pipeline ────────────────────────────────────────────────
+
+mod sealed {
+    pub trait PipelineStage {}
+}
+
+/// Base evaluation complete — no overrides applied yet.
+pub enum Raw {}
+/// Mode overrides (normal/principal_unavailable/incident_lockdown) applied.
+pub enum ModeApplied {}
+/// Delegation schedule overrides applied.
+pub enum ScheduleApplied {}
+/// Service agreement precondition applied.
+pub enum AgreementApplied {}
+/// Precedence conflict fail-closed check applied.
+pub enum ConflictChecked {}
+/// Proof obligations verified — terminal state.
+pub enum Verified {}
+
+impl sealed::PipelineStage for Raw {}
+impl sealed::PipelineStage for ModeApplied {}
+impl sealed::PipelineStage for ScheduleApplied {}
+impl sealed::PipelineStage for AgreementApplied {}
+impl sealed::PipelineStage for ConflictChecked {}
+impl sealed::PipelineStage for Verified {}
+
+/// A `PolicyDecision` tagged with its pipeline stage.
+///
+/// Only `PipelineDecision<Verified>` can produce the final `PolicyDecision`.
+/// Calling stages out of order is a compile error.
+pub(crate) struct PipelineDecision<S: sealed::PipelineStage> {
+    decision: PolicyDecision,
+    _stage: std::marker::PhantomData<S>,
+}
+
+impl<S: sealed::PipelineStage> PipelineDecision<S> {
+    fn new(decision: PolicyDecision) -> Self {
+        Self {
+            decision,
+            _stage: std::marker::PhantomData,
+        }
+    }
+
+    fn transition<T: sealed::PipelineStage>(self) -> PipelineDecision<T> {
+        PipelineDecision::new(self.decision)
+    }
+
+    /// Access the inner decision (read-only) for inspection at any stage.
+    pub(crate) fn decision(&self) -> &PolicyDecision {
+        &self.decision
+    }
+}
+
+impl PipelineDecision<Raw> {
+    pub(crate) fn apply_mode(
+        self,
+        mode: GovernanceMode,
+        intent_type: &str,
+        metadata: &Value,
+    ) -> PipelineDecision<ModeApplied> {
+        let decision = apply_mode_overrides(self.decision, mode, intent_type, metadata);
+        PipelineDecision::new(decision)
+    }
+}
+
+impl PipelineDecision<ModeApplied> {
+    pub(crate) fn apply_tier_override(
+        mut self,
+        tier_override: Option<AuthorityTier>,
+    ) -> PipelineDecision<ModeApplied> {
+        if let Some(tier) = tier_override {
+            if !self.decision.policy_mapped() {
+                self.decision.override_tier_for_unmapped(tier);
+            }
+        }
+        self
+    }
+
+    pub(crate) fn apply_schedule(
+        self,
+        schedule: &DelegationSchedule,
+        intent_type: &str,
+        metadata: &Value,
+        now: DateTime<Utc>,
+    ) -> PipelineDecision<ScheduleApplied> {
+        let decision =
+            apply_schedule_overrides(self.decision, schedule, intent_type, metadata, now);
+        PipelineDecision::new(decision)
+    }
+}
+
+impl PipelineDecision<ScheduleApplied> {
+    pub(crate) fn apply_agreement(
+        self,
+        entity_is_active: bool,
+        service_agreement_executed: bool,
+    ) -> PipelineDecision<AgreementApplied> {
+        let decision = apply_service_agreement_overrides(
+            self.decision,
+            entity_is_active,
+            service_agreement_executed,
+        );
+        PipelineDecision::new(decision)
+    }
+}
+
+impl PipelineDecision<AgreementApplied> {
+    pub(crate) fn apply_conflict_check(self) -> PipelineDecision<ConflictChecked> {
+        let decision = apply_conflict_fail_closed(self.decision);
+        PipelineDecision::new(decision)
+    }
+}
+
+impl PipelineDecision<ConflictChecked> {
+    pub(crate) fn verify(self) -> PipelineDecision<Verified> {
+        let verified = verify_decision(self.decision);
+        PipelineDecision {
+            decision: verified.into_decision(),
+            _stage: std::marker::PhantomData,
+        }
+    }
+}
+
+impl PipelineDecision<Verified> {
+    /// Extract the final `PolicyDecision`. Only available after full pipeline verification.
+    pub(crate) fn into_decision(self) -> PolicyDecision {
+        self.decision
     }
 }
 
@@ -330,24 +656,39 @@ pub struct PolicyEvaluationContext<'a> {
 
 /// Run the full policy evaluation pipeline: AST rules + mode + schedule + service agreement.
 pub fn evaluate_full(ctx: &PolicyEvaluationContext) -> PolicyDecision {
+    evaluate_full_with_override(ctx, None)
+}
+
+/// Run the full policy evaluation pipeline with an optional tier override for unmapped capabilities.
+///
+/// When `tier_override` is `Some(tier)` and the capability is not policy-mapped,
+/// the tier is overridden to the requested value. This supports the execution route's
+/// legacy behavior where intents can specify their own tier for unmapped capabilities.
+///
+/// The full pipeline is always executed including `enforce_proof_obligations`, preventing
+/// the bug where proof obligations were skipped after mode/schedule/agreement overrides.
+pub fn evaluate_full_with_override(
+    ctx: &PolicyEvaluationContext,
+    tier_override: Option<AuthorityTier>,
+) -> PolicyDecision {
     let canonical = canonicalize_intent_type(ctx.intent_type);
-    let decision = evaluate_intent(&canonical, ctx.metadata);
-    let decision = apply_mode_overrides(decision, ctx.mode, &canonical, ctx.metadata);
-    let decision = apply_schedule_overrides(
-        decision,
-        ctx.schedule,
-        &canonical,
-        ctx.metadata,
-        ctx.now,
-    );
-    let decision = apply_service_agreement_overrides(
-        decision,
-        ctx.entity_is_active,
-        ctx.service_agreement_executed,
-    );
-    let mut decision = apply_conflict_fail_closed(decision);
-    enforce_proof_obligations(&mut decision);
-    decision
+    evaluate_pipeline(&canonical, ctx.metadata)
+        .apply_mode(ctx.mode, &canonical, ctx.metadata)
+        .apply_tier_override(tier_override)
+        .apply_schedule(ctx.schedule, &canonical, ctx.metadata, ctx.now)
+        .apply_agreement(ctx.entity_is_active, ctx.service_agreement_executed)
+        .apply_conflict_check()
+        .verify()
+        .into_decision()
+}
+
+/// Entry point for the typed pipeline: evaluates base intent and returns `PipelineDecision<Raw>`.
+pub(crate) fn evaluate_pipeline(
+    intent_type: &str,
+    metadata: &Value,
+) -> PipelineDecision<Raw> {
+    let decision = evaluate_intent(intent_type, metadata);
+    PipelineDecision::new(decision)
 }
 
 /// Capabilities that remain operational during incident lockdown.
@@ -365,12 +706,11 @@ pub fn apply_mode_overrides(
     intent_type: &str,
     metadata: &Value,
 ) -> PolicyDecision {
-    let was_allowed = decision.allowed;
-    let initial_tier = decision.tier;
+    let was_allowed = decision.allowed();
+    let initial_tier = decision.tier();
     match mode {
         GovernanceMode::Normal => {
-            push_precedence_trace(
-                &mut decision,
+            decision.push_precedence_trace(
                 AuthoritySource::Resolution,
                 "allow",
                 Some("normal governance mode".to_owned()),
@@ -381,74 +721,61 @@ pub fn apply_mode_overrides(
                 .get("isReversible")
                 .and_then(Value::as_bool)
                 .unwrap_or(false);
-            if decision.tier != AuthorityTier::Tier1 || !reversible {
-                decision.allowed = false;
-                decision.blockers.push(
+            if decision.tier() != AuthorityTier::Tier1 || !reversible {
+                decision.add_blocker(
                     "principal_unavailable mode only permits reversible tier_1 actions".to_owned(),
                 );
                 if was_allowed {
-                    push_precedence_conflict(
-                        &mut decision,
+                    decision.push_precedence_conflict(
                         AuthoritySource::Resolution,
                         AuthoritySource::Heuristic,
                         "principal_unavailable overrides previously-allowed action".to_owned(),
                     );
                 }
-                push_precedence_trace(
-                    &mut decision,
+                decision.push_precedence_trace(
                     AuthoritySource::Resolution,
                     "block",
                     Some("principal_unavailable mode requires reversible tier_1".to_owned()),
                 );
             } else {
-                push_precedence_trace(
-                    &mut decision,
+                decision.push_precedence_trace(
                     AuthoritySource::Resolution,
                     "allow",
                     Some("principal_unavailable mode constraints satisfied".to_owned()),
                 );
             }
-            decision
-                .clause_refs
-                .push("rule.mode.principal_unavailable".to_owned());
+            decision.add_clause_ref("rule.mode.principal_unavailable".to_owned());
         }
         GovernanceMode::IncidentLockdown => {
             if !LOCKDOWN_ALLOWLIST.contains(&intent_type) {
-                decision.allowed = false;
-                decision
-                    .blockers
-                    .push("incident_lockdown mode blocks this capability".to_owned());
+                decision.add_blocker(
+                    "incident_lockdown mode blocks this capability".to_owned(),
+                );
                 if was_allowed {
-                    push_precedence_conflict(
-                        &mut decision,
+                    decision.push_precedence_conflict(
                         AuthoritySource::Resolution,
                         AuthoritySource::Heuristic,
                         "incident_lockdown overrides previously-allowed action".to_owned(),
                     );
                 }
-                push_precedence_trace(
-                    &mut decision,
+                decision.push_precedence_trace(
                     AuthoritySource::Resolution,
                     "block",
                     Some("incident_lockdown blocks non-allowlisted capabilities".to_owned()),
                 );
             } else {
-                push_precedence_trace(
-                    &mut decision,
+                decision.push_precedence_trace(
                     AuthoritySource::Resolution,
                     "allow",
                     Some("incident_lockdown allowlisted capability".to_owned()),
                 );
             }
-            decision
-                .clause_refs
-                .push("rule.mode.incident_lockdown".to_owned());
+            decision.add_clause_ref("rule.mode.incident_lockdown".to_owned());
         }
     }
-    if initial_tier != decision.tier {
-        let updated_tier = decision.tier;
-        push_precedence_trace(
-            &mut decision,
+    if initial_tier != decision.tier() {
+        let updated_tier = decision.tier();
+        decision.push_precedence_trace(
             AuthoritySource::Resolution,
             "escalate",
             Some(format!(
@@ -466,9 +793,8 @@ pub fn apply_schedule_overrides(
     metadata: &Value,
     now: DateTime<Utc>,
 ) -> PolicyDecision {
-    if decision.tier != AuthorityTier::Tier1 {
-        push_precedence_trace(
-            &mut decision,
+    if decision.tier() != AuthorityTier::Tier1 {
+        decision.push_precedence_trace(
             AuthoritySource::DelegationSchedule,
             "allow",
             Some("schedule tier_1 checks skipped for non-tier_1 action".to_owned()),
@@ -476,25 +802,20 @@ pub fn apply_schedule_overrides(
         return decision;
     }
 
-    let was_allowed = decision.allowed;
+    let was_allowed = decision.allowed();
     if schedule.is_reauth_suspended_at(now) {
-        decision.allowed = false;
-        decision
-            .blockers
-            .push("delegation schedule autonomy is suspended pending reauthorization".to_owned());
-        decision
-            .clause_refs
-            .push("rule.reauth.full_suspension".to_owned());
+        decision.add_blocker(
+            "delegation schedule autonomy is suspended pending reauthorization".to_owned(),
+        );
+        decision.add_clause_ref("rule.reauth.full_suspension".to_owned());
         if was_allowed {
-            push_precedence_conflict(
-                &mut decision,
+            decision.push_precedence_conflict(
                 AuthoritySource::DelegationSchedule,
                 AuthoritySource::Heuristic,
                 "reauthorization suspension overrides previously-allowed tier_1 action".to_owned(),
             );
         }
-        push_precedence_trace(
-            &mut decision,
+        decision.push_precedence_trace(
             AuthoritySource::DelegationSchedule,
             "block",
             Some("delegation schedule full suspension active".to_owned()),
@@ -503,23 +824,18 @@ pub fn apply_schedule_overrides(
     }
 
     if !schedule.allows_tier1_intent(intent_type) {
-        decision.tier = AuthorityTier::Tier2;
-        decision.requires_approval = true;
-        decision.escalation_reasons.push(
+        decision.escalate_tier(AuthorityTier::Tier2);
+        decision.add_escalation_reason(
             "intent is outside the tier_1 delegation lane and requires explicit approval"
                 .to_owned(),
         );
-        decision
-            .clause_refs
-            .push("delegation.schedule.tier1_lane".to_owned());
-        push_precedence_conflict(
-            &mut decision,
+        decision.add_clause_ref("delegation.schedule.tier1_lane".to_owned());
+        decision.push_precedence_conflict(
             AuthoritySource::DelegationSchedule,
             AuthoritySource::Heuristic,
             "tier_1 lane restriction escalated action to tier_2".to_owned(),
         );
-        push_precedence_trace(
-            &mut decision,
+        decision.push_precedence_trace(
             AuthoritySource::DelegationSchedule,
             "escalate",
             Some("intent outside allowed tier_1 lane".to_owned()),
@@ -529,22 +845,17 @@ pub fn apply_schedule_overrides(
     if let Some(amount_cents) = amount_from_metadata_cents(metadata) {
         let effective_limit = schedule.effective_tier1_max_amount_cents(now);
         if amount_cents > effective_limit {
-            decision.tier = AuthorityTier::Tier2;
-            decision.requires_approval = true;
-            decision.escalation_reasons.push(format!(
+            decision.escalate_tier(AuthorityTier::Tier2);
+            decision.add_escalation_reason(format!(
                 "amount {amount_cents} exceeds current tier_1 limit {effective_limit}"
             ));
-            decision
-                .clause_refs
-                .push("delegation.schedule.tier1_limit".to_owned());
-            push_precedence_conflict(
-                &mut decision,
+            decision.add_clause_ref("delegation.schedule.tier1_limit".to_owned());
+            decision.push_precedence_conflict(
                 AuthoritySource::DelegationSchedule,
                 AuthoritySource::Heuristic,
                 "tier_1 spending limit exceeded".to_owned(),
             );
-            push_precedence_trace(
-                &mut decision,
+            decision.push_precedence_trace(
                 AuthoritySource::DelegationSchedule,
                 "escalate",
                 Some(format!(
@@ -554,9 +865,8 @@ pub fn apply_schedule_overrides(
         }
     }
 
-    if decision.allowed && decision.tier == AuthorityTier::Tier1 {
-        push_precedence_trace(
-            &mut decision,
+    if decision.allowed() && decision.tier() == AuthorityTier::Tier1 {
+        decision.push_precedence_trace(
             AuthoritySource::DelegationSchedule,
             "allow",
             Some("delegation schedule constraints satisfied".to_owned()),
@@ -571,35 +881,29 @@ pub fn apply_service_agreement_overrides(
     entity_is_active: bool,
     service_agreement_executed: bool,
 ) -> PolicyDecision {
-    let was_allowed = decision.allowed;
+    let was_allowed = decision.allowed();
     if entity_is_active
-        && decision.tier == AuthorityTier::Tier1
+        && decision.tier() == AuthorityTier::Tier1
         && !service_agreement_executed
     {
-        decision.allowed = false;
-        decision.blockers.push(
+        decision.add_blocker(
             "active entities require an executed service agreement for tier_1 autonomy".to_owned(),
         );
-        decision
-            .clause_refs
-            .push("rule.precondition.service_agreement".to_owned());
+        decision.add_clause_ref("rule.precondition.service_agreement".to_owned());
         if was_allowed {
-            push_precedence_conflict(
-                &mut decision,
+            decision.push_precedence_conflict(
                 AuthoritySource::GovernanceDocs,
                 AuthoritySource::Heuristic,
                 "service agreement precondition overrides autonomous tier_1 execution".to_owned(),
             );
         }
-        push_precedence_trace(
-            &mut decision,
+        decision.push_precedence_trace(
             AuthoritySource::GovernanceDocs,
             "block",
             Some("service agreement precondition not satisfied".to_owned()),
         );
     } else {
-        push_precedence_trace(
-            &mut decision,
+        decision.push_precedence_trace(
             AuthoritySource::GovernanceDocs,
             "allow",
             Some("service agreement precondition satisfied or not applicable".to_owned()),
@@ -609,11 +913,10 @@ pub fn apply_service_agreement_overrides(
 }
 
 pub fn apply_conflict_fail_closed(mut decision: PolicyDecision) -> PolicyDecision {
-    if !decision.precedence_conflicts.is_empty() {
-        decision.allowed = false;
-        decision.blockers.push(format!(
-            "precedence conflict requires explicit human governance resolution ({} conflict(s))",
-            decision.precedence_conflicts.len()
+    if !decision.precedence_conflicts().is_empty() {
+        let count = decision.precedence_conflicts().len();
+        decision.add_blocker(format!(
+            "precedence conflict requires explicit human governance resolution ({count} conflict(s))",
         ));
     }
     decision
@@ -622,7 +925,7 @@ pub fn apply_conflict_fail_closed(mut decision: PolicyDecision) -> PolicyDecisio
 /// Returns true if the intent maps to a known policy tier above Tier 1
 /// (i.e., it requires manual approval artifacts).
 pub fn mapped_tier_requires_manual_artifacts(decision: &PolicyDecision) -> bool {
-    decision.policy_mapped && decision.tier != AuthorityTier::Tier1
+    decision.policy_mapped() && decision.tier() != AuthorityTier::Tier1
 }
 
 pub fn amount_from_metadata_cents(metadata: &Value) -> Option<i64> {
@@ -638,32 +941,6 @@ pub fn amount_from_metadata_cents(metadata: &Value) -> Option<i64> {
         })
 }
 
-fn push_precedence_trace(
-    decision: &mut PolicyDecision,
-    source: AuthoritySource,
-    outcome: &str,
-    reason: Option<String>,
-) {
-    decision.precedence_trace.push(PolicyPrecedenceTrace {
-        source,
-        outcome: outcome.to_owned(),
-        reason,
-    });
-    decision.effective_source = Some(source);
-}
-
-fn push_precedence_conflict(
-    decision: &mut PolicyDecision,
-    higher_source: AuthoritySource,
-    lower_source: AuthoritySource,
-    reason: String,
-) {
-    decision.precedence_conflicts.push(PolicyConflict {
-        higher_source,
-        lower_source,
-        reason,
-    });
-}
 
 #[cfg(test)]
 mod tests {
@@ -1006,5 +1283,105 @@ mod tests {
         let d = evaluate_full(&ctx);
         assert_eq!(d.tier, AuthorityTier::Tier2);
         assert!(d.requires_approval);
+    }
+
+    // ── AuthoritySource ordering tests ───────────────────────────────
+
+    #[test]
+    fn authority_source_rank_ordering() {
+        assert!(AuthoritySource::Law.outranks(AuthoritySource::Charter));
+        assert!(AuthoritySource::Charter.outranks(AuthoritySource::GovernanceDocs));
+        assert!(AuthoritySource::GovernanceDocs.outranks(AuthoritySource::Resolution));
+        assert!(AuthoritySource::Resolution.outranks(AuthoritySource::Directive));
+        assert!(AuthoritySource::Directive.outranks(AuthoritySource::StandingInstruction));
+        assert!(AuthoritySource::StandingInstruction.outranks(AuthoritySource::DelegationSchedule));
+        assert!(AuthoritySource::DelegationSchedule.outranks(AuthoritySource::Heuristic));
+    }
+
+    #[test]
+    fn authority_source_ord_is_total() {
+        let sources = [
+            AuthoritySource::Law,
+            AuthoritySource::Charter,
+            AuthoritySource::GovernanceDocs,
+            AuthoritySource::Resolution,
+            AuthoritySource::Directive,
+            AuthoritySource::StandingInstruction,
+            AuthoritySource::DelegationSchedule,
+            AuthoritySource::Heuristic,
+        ];
+        // Trichotomy: for all pairs, exactly one of <, ==, > holds
+        for (i, a) in sources.iter().enumerate() {
+            for (j, b) in sources.iter().enumerate() {
+                if i < j {
+                    assert!(a > b, "{a:?} should outrank {b:?}");
+                } else if i == j {
+                    assert_eq!(a, b);
+                } else {
+                    assert!(a < b, "{a:?} should be outranked by {b:?}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn authority_source_self_does_not_outrank_self() {
+        let sources = [
+            AuthoritySource::Law,
+            AuthoritySource::Charter,
+            AuthoritySource::GovernanceDocs,
+            AuthoritySource::Resolution,
+            AuthoritySource::Directive,
+            AuthoritySource::StandingInstruction,
+            AuthoritySource::DelegationSchedule,
+            AuthoritySource::Heuristic,
+        ];
+        for s in sources {
+            assert!(!s.outranks(s), "{s:?} should not outrank itself");
+        }
+    }
+
+    // ── Typestate pipeline tests ─────────────────────────────────────
+
+    #[test]
+    fn pipeline_stages_produce_same_result_as_evaluate_full() {
+        let schedule = make_default_schedule();
+        let metadata = json!({"laneId": "lane-3.3-renewal", "context": {"priceIncreasePercent": 5}});
+        let ctx = make_ctx(
+            "pay_recurring_obligation",
+            &metadata,
+            GovernanceMode::Normal,
+            &schedule,
+        );
+
+        // evaluate_full uses the pipeline internally — verify it matches direct evaluation
+        let d = evaluate_full(&ctx);
+        assert_eq!(d.tier, AuthorityTier::Tier1);
+        assert!(d.allowed, "blockers: {:?}", d.blockers);
+
+        // Also verify through evaluate_full_with_override
+        let d2 = evaluate_full_with_override(&ctx, None);
+        assert_eq!(d2.tier, d.tier);
+        assert_eq!(d2.allowed, d.allowed);
+    }
+
+    #[test]
+    fn pipeline_with_tier_override_for_unmapped() {
+        let schedule = make_default_schedule();
+        let metadata = json!({});
+        let ctx = make_ctx(
+            "totally.unknown.intent",
+            &metadata,
+            GovernanceMode::Normal,
+            &schedule,
+        );
+
+        // Without override: unmapped defaults to Tier2
+        let d_default = evaluate_full(&ctx);
+        assert_eq!(d_default.tier, AuthorityTier::Tier2);
+
+        // With override to Tier1: unmapped uses the override
+        let d_override = evaluate_full_with_override(&ctx, Some(AuthorityTier::Tier1));
+        assert_eq!(d_override.tier, AuthorityTier::Tier1);
     }
 }

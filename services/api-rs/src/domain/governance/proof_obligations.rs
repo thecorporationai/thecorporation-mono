@@ -104,15 +104,50 @@ pub fn evaluate_proof_obligations(decision: &PolicyDecision) -> ProofReport {
 pub fn enforce_proof_obligations(decision: &mut PolicyDecision) -> ProofReport {
     let report = evaluate_proof_obligations(decision);
     if !report.passed() {
-        decision.allowed = false;
         for violation in &report.violations {
-            decision.blockers.push(format!(
+            decision.add_blocker(format!(
                 "proof obligation failed [{}]: {}",
                 violation.code, violation.detail
             ));
         }
     }
     report
+}
+
+/// A `PolicyDecision` that has been verified against all proof obligations.
+///
+/// This type bundles the decision with its proof report, ensuring callers
+/// can only obtain a decision that has been checked. Constructed by
+/// `verify_decision()` or through the typestate pipeline.
+#[derive(Debug, Clone)]
+pub struct VerifiedDecision {
+    decision: PolicyDecision,
+    report: ProofReport,
+}
+
+impl VerifiedDecision {
+    pub fn decision(&self) -> &PolicyDecision {
+        &self.decision
+    }
+
+    pub fn report(&self) -> &ProofReport {
+        &self.report
+    }
+
+    pub fn into_decision(self) -> PolicyDecision {
+        self.decision
+    }
+
+    pub fn into_parts(self) -> (PolicyDecision, ProofReport) {
+        (self.decision, self.report)
+    }
+}
+
+/// Consume a `PolicyDecision` and verify all proof obligations.
+/// Returns a `VerifiedDecision` bundling the decision with its proof report.
+pub fn verify_decision(mut decision: PolicyDecision) -> VerifiedDecision {
+    let report = enforce_proof_obligations(&mut decision);
+    VerifiedDecision { decision, report }
 }
 
 #[cfg(test)]
@@ -122,22 +157,20 @@ mod tests {
 
     #[test]
     fn catches_conflict_fail_closed_violation() {
-        let mut d = PolicyDecision {
-            tier: AuthorityTier::Tier2,
-            policy_mapped: true,
-            allowed: true,
-            requires_approval: true,
-            blockers: Vec::new(),
-            escalation_reasons: Vec::new(),
-            clause_refs: vec!["delegation.authority_tiers".to_owned()],
-            precedence_trace: Vec::new(),
-            precedence_conflicts: vec![crate::domain::governance::policy_engine::PolicyConflict {
+        let mut d = PolicyDecision::new(
+            AuthorityTier::Tier2,
+            true,
+            Vec::new(),
+            Vec::new(),
+            vec!["delegation.authority_tiers".to_owned()],
+            Vec::new(),
+            vec![crate::domain::governance::policy_engine::PolicyConflict {
                 higher_source: crate::domain::governance::policy_engine::AuthoritySource::Law,
                 lower_source: crate::domain::governance::policy_engine::AuthoritySource::Heuristic,
                 reason: "conflict".to_owned(),
             }],
-            effective_source: None,
-        };
+            None,
+        );
         let report = enforce_proof_obligations(&mut d);
         assert!(!report.passed());
         assert!(!d.allowed);
