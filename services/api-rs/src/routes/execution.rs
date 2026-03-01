@@ -24,12 +24,11 @@ use crate::domain::execution::{
 use crate::domain::formation::types::FormationStatus;
 use crate::domain::governance::delegation_schedule::{CURRENT_SCHEDULE_PATH, DelegationSchedule};
 use crate::domain::governance::incident::IncidentSeverity;
-use crate::domain::governance::mode::GovernanceMode;
 use crate::domain::governance::policy_engine::{
-    AuthoritySource, PolicyConflict, PolicyDecision, PolicyPrecedenceTrace,
-    apply_conflict_fail_closed, apply_mode_overrides, apply_schedule_overrides,
-    apply_service_agreement_overrides, amount_from_metadata_cents, mapped_tier_requires_manual_artifacts,
+    PolicyDecision, apply_conflict_fail_closed, apply_mode_overrides, apply_schedule_overrides,
+    apply_service_agreement_overrides, amount_from_metadata_cents,
     canonicalize_intent_type, evaluate_intent as evaluate_governance_intent,
+    mapped_tier_requires_manual_artifacts,
 };
 use crate::domain::governance::trigger::{GovernanceTriggerSource, GovernanceTriggerType};
 use crate::domain::ids::{

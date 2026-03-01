@@ -61,6 +61,39 @@ pub enum LaneCheckOp {
     ContainsAny,
 }
 
+/// Escalation condition keys supported in the governance AST.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum EscalationCondition {
+    TemplateApprovedFalse,
+    RestrictedModificationsPresent,
+    IsReversibleFalse,
+}
+
+/// Supported metadata field paths for lane checks.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum LaneField {
+    #[serde(rename = "templateApproved")]
+    TemplateApproved,
+    #[serde(rename = "modifications")]
+    Modifications,
+    #[serde(rename = "context.rateIncreasePercent")]
+    ContextRateIncreasePercent,
+    #[serde(rename = "context.priceIncreasePercent")]
+    ContextPriceIncreasePercent,
+    #[serde(rename = "context.premiumIncreasePercent")]
+    ContextPremiumIncreasePercent,
+}
+
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(untagged)]
+pub enum LaneScalarValue {
+    Bool(bool),
+    Number(f64),
+    String(String),
+    Null,
+}
+
 /// Governance clause types from the AST document structure.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -122,7 +155,7 @@ pub struct EscalationRule {
     pub id: String,
     #[serde(default)]
     pub applies: Vec<GovernanceCapability>,
-    pub condition: Option<String>,
+    pub condition: Option<EscalationCondition>,
     pub escalate_to: AstAuthorityTier,
     pub reason: String,
 }
@@ -135,11 +168,51 @@ pub struct LaneConditionRule {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-pub struct LaneCheck {
-    pub field: String,
-    pub op: LaneCheckOp,
-    pub value: serde_json::Value,
-    pub message: String,
+#[serde(tag = "op", rename_all = "snake_case")]
+pub enum LaneCheck {
+    Eq {
+        field: LaneField,
+        value: LaneScalarValue,
+        message: String,
+    },
+    Neq {
+        field: LaneField,
+        value: LaneScalarValue,
+        message: String,
+    },
+    Lte {
+        field: LaneField,
+        value: f64,
+        message: String,
+    },
+    Gte {
+        field: LaneField,
+        value: f64,
+        message: String,
+    },
+    ContainsNone {
+        field: LaneField,
+        value: Vec<String>,
+        message: String,
+    },
+    ContainsAny {
+        field: LaneField,
+        value: Vec<String>,
+        message: String,
+    },
+}
+
+impl LaneCheck {
+    pub fn message(&self) -> &str {
+        match self {
+            Self::Eq { message, .. }
+            | Self::Neq { message, .. }
+            | Self::Lte { message, .. }
+            | Self::Gte { message, .. }
+            | Self::ContainsNone { message, .. }
+            | Self::ContainsAny { message, .. } => message,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -238,6 +311,52 @@ impl GovernanceAstV1 {
             errors.push("silence_is_approval must be false".to_owned());
         }
 
+        // 8. Lane checks must use field/operator combinations that are type-safe.
+        for lane in &rules.lane_conditions {
+            for check in &lane.checks {
+                let valid = match check {
+                    LaneCheck::Eq { field, .. } | LaneCheck::Neq { field, .. } => {
+                        matches!(field, LaneField::TemplateApproved)
+                    }
+                    LaneCheck::Lte { field, .. } | LaneCheck::Gte { field, .. } => matches!(
+                        field,
+                        LaneField::ContextRateIncreasePercent
+                            | LaneField::ContextPriceIncreasePercent
+                            | LaneField::ContextPremiumIncreasePercent
+                    ),
+                    LaneCheck::ContainsNone { field, .. } | LaneCheck::ContainsAny { field, .. } => {
+                        matches!(field, LaneField::Modifications)
+                    }
+                };
+                if !valid {
+                    errors.push(format!(
+                        "lane '{}' has invalid field/operator pairing for check {:?}",
+                        lane.lane_id, check
+                    ));
+                }
+            }
+        }
+
+        // 9. Document/section/clause IDs must be unique across the AST.
+        let mut seen_doc_ids = HashSet::new();
+        let mut seen_section_ids = HashSet::new();
+        let mut seen_clause_ids = HashSet::new();
+        for doc in &self.documents {
+            if !seen_doc_ids.insert(&doc.id) {
+                errors.push(format!("duplicate document id: {}", doc.id));
+            }
+            for section in &doc.sections {
+                if !seen_section_ids.insert(&section.id) {
+                    errors.push(format!("duplicate section id: {}", section.id));
+                }
+                for clause in &section.clauses {
+                    if !seen_clause_ids.insert(&clause.id) {
+                        errors.push(format!("duplicate clause id: {}", clause.id));
+                    }
+                }
+            }
+        }
+
         errors
     }
 }
@@ -267,6 +386,7 @@ pub fn default_governance_ast() -> &'static GovernanceAstV1 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
 
     #[test]
     fn parses_and_validates_default_ast() {
@@ -318,6 +438,29 @@ mod tests {
         assert!(
             errors.iter().any(|e| e.contains("silence_is_approval")),
             "expected silence_is_approval error, got: {errors:?}"
+        );
+    }
+
+    #[test]
+    fn validation_catches_invalid_lane_field_operator_pairing() {
+        let mut ast_json: serde_json::Value = serde_json::from_str(AST_JSON).unwrap();
+        ast_json["rules"]["lane_conditions"][0]["checks"][0]["field"] = json!("modifications");
+        let ast: GovernanceAstV1 = serde_json::from_value(ast_json).unwrap();
+        let errors = ast.validate();
+        assert!(
+            errors.iter().any(|e| e.contains("invalid field/operator pairing")),
+            "expected lane field/op pairing error, got: {errors:?}"
+        );
+    }
+
+    #[test]
+    fn unknown_escalation_condition_fails_deserialization() {
+        let mut ast_json: serde_json::Value = serde_json::from_str(AST_JSON).unwrap();
+        ast_json["rules"]["escalation"][0]["condition"] = json!("unknown_condition");
+        let err = serde_json::from_value::<GovernanceAstV1>(ast_json).unwrap_err();
+        assert!(
+            err.to_string().contains("unknown variant"),
+            "expected unknown variant error, got: {err}"
         );
     }
 }

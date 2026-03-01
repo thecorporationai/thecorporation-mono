@@ -9,7 +9,12 @@ use crate::domain::execution::types::AuthorityTier;
 use super::capability::GovernanceCapability;
 use super::delegation_schedule::DelegationSchedule;
 use super::mode::GovernanceMode;
-use super::policy_ast::{EscalationRule, LaneCheck, LaneCheckOp, default_governance_ast};
+use super::policy_ast::{
+    EscalationCondition, EscalationRule, LaneCheck, LaneField, LaneScalarValue,
+    default_governance_ast,
+};
+use super::proof_obligations::enforce_proof_obligations;
+use super::typed_intent::{ParsedGovernanceMetadata, TypedIntent};
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -69,19 +74,24 @@ pub fn canonicalize_intent_type(intent_type: &str) -> String {
 }
 
 pub fn evaluate_intent(intent_type: &str, metadata: &Value) -> PolicyDecision {
-    let canonical_intent_type = canonicalize_intent_type(intent_type);
-    let parsed_cap = canonical_intent_type.parse::<GovernanceCapability>().ok();
+    let typed_intent = TypedIntent::parse(intent_type, metadata);
+    evaluate_intent_typed(&typed_intent)
+}
+
+pub fn evaluate_intent_typed(intent: &TypedIntent<'_>) -> PolicyDecision {
+    let canonical_intent_type = intent.canonical_intent_type().to_owned();
+    let parsed_cap = intent.capability();
+    let metadata = intent.raw_metadata();
+    let parsed_metadata = intent.metadata();
     let ast = default_governance_ast();
     let mut blockers = Vec::new();
     let mut reasons = Vec::new();
     let mut clause_refs = vec!["delegation.authority_tiers".to_owned()];
 
     let policy_mapped = parsed_cap
-        .as_ref()
-        .is_some_and(|cap| ast.rules.tier_defaults.contains_key(cap));
+        .is_some_and(|cap| ast.rules.tier_defaults.contains_key(&cap));
     let default_tier = parsed_cap
-        .as_ref()
-        .and_then(|cap| ast.rules.tier_defaults.get(cap))
+        .and_then(|cap| ast.rules.tier_defaults.get(&cap))
         .map(|t| t.into_inner())
         .unwrap_or(AuthorityTier::Tier2);
 
@@ -94,10 +104,7 @@ pub fn evaluate_intent(intent_type: &str, metadata: &Value) -> PolicyDecision {
 
     let mut tier = default_tier;
 
-    if parsed_cap
-        .as_ref()
-        .is_some_and(|cap| ast.rules.non_delegable.contains(cap))
-    {
+    if parsed_cap.is_some_and(|cap| ast.rules.non_delegable.contains(&cap)) {
         tier = AuthorityTier::Tier3;
         blockers.push(format!(
             "\"{canonical_intent_type}\" is non-delegable and requires Principal/Board authority"
@@ -107,22 +114,21 @@ pub fn evaluate_intent(intent_type: &str, metadata: &Value) -> PolicyDecision {
 
     for rule in &ast.rules.escalation {
         let escalation_tier = rule.escalate_to.into_inner();
-        if escalation_applies(rule, parsed_cap.as_ref(), metadata) && escalation_tier > tier {
+        if escalation_applies(rule, parsed_cap, parsed_metadata, metadata) && escalation_tier > tier
+        {
             tier = escalation_tier;
             reasons.push(rule.reason.clone());
             clause_refs.push(format!("rule.escalation.{}", rule.id));
         }
     }
 
-    let requested_lane_id = metadata
-        .get("laneId")
-        .and_then(Value::as_str);
+    let requested_lane_id = parsed_metadata.lane_id.as_deref();
 
     let lane_conditions = ast
         .rules
         .lane_conditions
         .iter()
-        .filter(|l| parsed_cap.as_ref().is_some_and(|cap| l.capability == *cap))
+        .filter(|l| parsed_cap.is_some_and(|cap| l.capability == cap))
         .collect::<Vec<_>>();
 
     if let Some(lane_id) = requested_lane_id {
@@ -150,16 +156,28 @@ pub fn evaluate_intent(intent_type: &str, metadata: &Value) -> PolicyDecision {
                 }
                 reasons.push(format!(
                     "Lane conditions failed ({}): {}",
-                    lane.lane_id, check.message
+                    lane.lane_id,
+                    check.message()
                 ));
                 clause_refs.push(format!("rule.lane.{}", lane.lane_id));
             }
         }
     }
 
+    if !parsed_metadata.decode_issues.is_empty() {
+        if tier < AuthorityTier::Tier2 {
+            tier = AuthorityTier::Tier2;
+        }
+        reasons.push(format!(
+            "Metadata decoding issues detected: {}",
+            parsed_metadata.decode_issues.join("; ")
+        ));
+        clause_refs.push("rule.metadata.decode_failure".to_owned());
+    }
+
     let requires_approval = tier > AuthorityTier::Tier1;
 
-    PolicyDecision {
+    let mut decision = PolicyDecision {
         tier,
         policy_mapped,
         allowed: blockers.is_empty(),
@@ -174,73 +192,98 @@ pub fn evaluate_intent(intent_type: &str, metadata: &Value) -> PolicyDecision {
         }],
         precedence_conflicts: Vec::new(),
         effective_source: Some(AuthoritySource::Heuristic),
-    }
+    };
+
+    enforce_proof_obligations(&mut decision);
+    decision
 }
 
-pub fn supported_escalation_conditions() -> &'static [&'static str] {
+pub fn supported_escalation_conditions() -> &'static [EscalationCondition] {
     &[
-        "template_approved_false",
-        "restricted_modifications_present",
-        "is_reversible_false",
+        EscalationCondition::TemplateApprovedFalse,
+        EscalationCondition::RestrictedModificationsPresent,
+        EscalationCondition::IsReversibleFalse,
     ]
 }
 
 fn escalation_applies(
     rule: &EscalationRule,
-    parsed_cap: Option<&GovernanceCapability>,
+    parsed_cap: Option<GovernanceCapability>,
+    parsed_metadata: &ParsedGovernanceMetadata,
     metadata: &Value,
 ) -> bool {
     if !rule.applies.is_empty() {
         match parsed_cap {
-            Some(cap) if rule.applies.contains(cap) => {}
+            Some(cap) if rule.applies.contains(&cap) => {}
             _ => return false,
         }
     }
 
-    match rule.condition.as_deref() {
-        Some("template_approved_false") => metadata
-            .get("templateApproved")
-            .and_then(Value::as_bool)
-            .is_some_and(|v| !v),
-        Some("restricted_modifications_present") => {
-            let mods = normalized_string_list(metadata.get("modifications"));
+    match rule.condition {
+        Some(EscalationCondition::TemplateApprovedFalse) => {
+            parsed_metadata.template_approved.is_some_and(|v| !v)
+        }
+        Some(EscalationCondition::RestrictedModificationsPresent) => {
+            let mods = if parsed_metadata.modifications.is_empty() {
+                normalized_string_list(metadata.get("modifications"))
+            } else {
+                parsed_metadata.modifications.clone()
+            };
             let restricted = ["indemnification", "governing_law", "ip_assignment"];
             mods.iter()
                 .any(|m| restricted.iter().any(|restricted| restricted == m))
         }
-        Some("is_reversible_false") => metadata
-            .get("isReversible")
-            .and_then(Value::as_bool)
-            .is_some_and(|v| !v),
-        Some(_) => false,
+        Some(EscalationCondition::IsReversibleFalse) => {
+            parsed_metadata.is_reversible.is_some_and(|v| !v)
+        }
         None => false,
     }
 }
 
 fn check_lane(metadata: &Value, check: &LaneCheck) -> bool {
-    let got = get_path(metadata, &check.field);
-    match check.op {
-        LaneCheckOp::Eq => got == Some(&check.value),
-        LaneCheckOp::Neq => got != Some(&check.value),
-        LaneCheckOp::Lte => got
+    match check {
+        LaneCheck::Eq { field, value, .. } => {
+            let got = get_field(metadata, *field);
+            got == scalar_value_as_json(value).as_ref()
+        }
+        LaneCheck::Neq { field, value, .. } => {
+            let got = get_field(metadata, *field);
+            got != scalar_value_as_json(value).as_ref()
+        }
+        LaneCheck::Lte { field, value, .. } => get_field(metadata, *field)
             .and_then(Value::as_f64)
-            .zip(check.value.as_f64())
-            .is_some_and(|(g, c)| g <= c),
-        LaneCheckOp::Gte => got
+            .is_some_and(|g| g <= *value),
+        LaneCheck::Gte { field, value, .. } => get_field(metadata, *field)
             .and_then(Value::as_f64)
-            .zip(check.value.as_f64())
-            .is_some_and(|(g, c)| g >= c),
-        LaneCheckOp::ContainsNone => {
+            .is_some_and(|g| g >= *value),
+        LaneCheck::ContainsNone { field, value, .. } => {
+            let got = get_field(metadata, *field);
             let arr = normalized_string_list(got);
-            let banned = normalized_string_list(Some(&check.value));
+            let banned = value
+                .iter()
+                .map(|s| s.trim().to_ascii_lowercase())
+                .collect::<Vec<_>>();
             !arr.iter().any(|item| banned.iter().any(|blocked| blocked == item))
         }
-        LaneCheckOp::ContainsAny => {
+        LaneCheck::ContainsAny { field, value, .. } => {
+            let got = get_field(metadata, *field);
             let arr = normalized_string_list(got);
-            let required = normalized_string_list(Some(&check.value));
+            let required = value
+                .iter()
+                .map(|s| s.trim().to_ascii_lowercase())
+                .collect::<Vec<_>>();
             arr.iter()
                 .any(|item| required.iter().any(|expected| expected == item))
         }
+    }
+}
+
+fn scalar_value_as_json(value: &LaneScalarValue) -> Option<Value> {
+    match value {
+        LaneScalarValue::Bool(v) => Some(Value::Bool(*v)),
+        LaneScalarValue::Number(v) => serde_json::Number::from_f64(*v).map(Value::Number),
+        LaneScalarValue::String(v) => Some(Value::String(v.clone())),
+        LaneScalarValue::Null => Some(Value::Null),
     }
 }
 
@@ -256,12 +299,20 @@ fn normalized_string_list(value: Option<&Value>) -> Vec<String> {
     }
 }
 
-fn get_path<'a>(value: &'a Value, path: &str) -> Option<&'a Value> {
-    let mut current = value;
-    for part in path.split('.') {
-        current = current.get(part)?;
+fn get_field(value: &Value, field: LaneField) -> Option<&Value> {
+    match field {
+        LaneField::TemplateApproved => value.get("templateApproved"),
+        LaneField::Modifications => value.get("modifications"),
+        LaneField::ContextRateIncreasePercent => value
+            .get("context")
+            .and_then(|v| v.get("rateIncreasePercent")),
+        LaneField::ContextPriceIncreasePercent => value
+            .get("context")
+            .and_then(|v| v.get("priceIncreasePercent")),
+        LaneField::ContextPremiumIncreasePercent => value
+            .get("context")
+            .and_then(|v| v.get("premiumIncreasePercent")),
     }
-    Some(current)
 }
 
 // ── Full evaluation with mode, schedule, and service agreement ────────
@@ -294,7 +345,9 @@ pub fn evaluate_full(ctx: &PolicyEvaluationContext) -> PolicyDecision {
         ctx.entity_is_active,
         ctx.service_agreement_executed,
     );
-    apply_conflict_fail_closed(decision)
+    let mut decision = apply_conflict_fail_closed(decision);
+    enforce_proof_obligations(&mut decision);
+    decision
 }
 
 /// Capabilities that remain operational during incident lockdown.
@@ -794,15 +847,14 @@ mod tests {
     #[test]
     fn ast_escalation_conditions_are_supported() {
         let ast = default_governance_ast();
-        let supported: BTreeSet<&str> = supported_escalation_conditions().iter().copied().collect();
+        let supported: BTreeSet<EscalationCondition> =
+            supported_escalation_conditions().iter().copied().collect();
         for rule in &ast.rules.escalation {
-            let condition = rule
-                .condition
-                .as_deref()
-                .expect("AST escalation rules must have a condition");
+            let condition = rule.condition.expect("AST escalation rules must have a condition");
             assert!(
-                supported.contains(condition),
-                "unsupported AST escalation condition: {condition} (rule id: {})",
+                supported.contains(&condition),
+                "unsupported AST escalation condition: {:?} (rule id: {})",
+                condition,
                 rule.id
             );
         }
