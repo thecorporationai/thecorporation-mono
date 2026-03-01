@@ -29,6 +29,6 @@ for (const td of GENERATED_TOOL_DEFINITIONS as unknown as ToolDef[]) {
 
 export const READ_ONLY_TOOLS = new Set([
   "get_workspace_status", "list_entities", "get_cap_table", "list_documents",
-  "list_safe_notes", "list_agents", "get_checklist", "get_document_link",
+  "list_safe_notes", "list_agents", "get_checklist",
   "get_signing_link", "list_obligations", "get_billing_status",
 ]);
