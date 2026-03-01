@@ -165,6 +165,10 @@ impl DelegationSchedule {
     pub fn last_reauthorized_at(&self) -> DateTime<Utc> {
         self.last_reauthorized_at
     }
+    pub fn set_last_reauthorized_at(&mut self, at: DateTime<Utc>) {
+        self.last_reauthorized_at = at;
+        self.updated_at = Utc::now();
+    }
     pub fn next_mandatory_review_at(&self) -> NaiveDate {
         self.next_mandatory_review_at
     }

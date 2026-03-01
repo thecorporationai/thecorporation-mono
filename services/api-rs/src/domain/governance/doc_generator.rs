@@ -56,6 +56,8 @@ pub struct GovernanceDocBundleManifest {
     pub generated_at: String,
     pub source_root: String,
     pub documents: Vec<GeneratedGovernanceDocument>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub warnings: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -296,6 +298,7 @@ pub fn render_bundle_from_profile_with_repo_root(
 
     let bundle_id = GovernanceDocBundleId::new();
     let generated_at = Utc::now().to_rfc3339();
+    let placeholder_warnings = detect_placeholders(&rendered_docs);
     let manifest = GovernanceDocBundleManifest {
         bundle_id,
         entity_id,
@@ -313,6 +316,7 @@ pub fn render_bundle_from_profile_with_repo_root(
                 bytes: d.content.len(),
             })
             .collect(),
+        warnings: placeholder_warnings,
     };
     let current = GovernanceDocBundleCurrent {
         bundle_id,
@@ -416,6 +420,30 @@ fn apply_profile_replacements(
     }
 
     out
+}
+
+/// Placeholder patterns that indicate unfinished document generation.
+const PLACEHOLDER_PATTERNS: &[&str] = &["`TBD`", "YYYY-MM-DD", "`TBD ", "TBD`"];
+
+/// Scan rendered documents for residual placeholder markers.
+fn detect_placeholders(docs: &[RenderedGovernanceDocument]) -> Vec<String> {
+    let mut warnings = Vec::new();
+    for doc in docs {
+        let content = match std::str::from_utf8(&doc.content) {
+            Ok(s) => s,
+            Err(_) => continue,
+        };
+        for pattern in PLACEHOLDER_PATTERNS {
+            let count = content.matches(pattern).count();
+            if count > 0 {
+                warnings.push(format!(
+                    "{}: {} occurrence(s) of placeholder \"{}\"",
+                    doc.path, count, pattern
+                ));
+            }
+        }
+    }
+    warnings
 }
 
 fn sha256_hex(bytes: &[u8]) -> String {

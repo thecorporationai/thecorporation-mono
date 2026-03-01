@@ -649,6 +649,36 @@ async fn create_authorized_round_intent(
     .await;
     assert_eq!(status, StatusCode::OK, "evaluate intent: {evaluate}");
 
+    // Create and bind approval artifact (policy engine maps equity intents to tier 3).
+    let (status, artifact) = post_json(
+        app,
+        "/v1/execution/approval-artifacts",
+        json!({
+            "entity_id": entity_id,
+            "intent_type": intent_type,
+            "scope": format!("Board approval for {}", intent_type),
+            "approver_identity": "Board of Directors",
+            "explicit": true,
+            "channel": "board_resolution",
+        }),
+        token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "create approval artifact: {artifact}");
+    let artifact_id = artifact["approval_artifact_id"].as_str().unwrap();
+
+    let (status, bound) = post_json(
+        app,
+        &format!("/v1/intents/{intent_id}/bind-approval-artifact"),
+        json!({
+            "entity_id": entity_id,
+            "approval_artifact_id": artifact_id,
+        }),
+        token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "bind approval artifact: {bound}");
+
     let (status, authorize) = post_json(
         app,
         &format!("/v1/intents/{intent_id}/authorize?{e_query}"),
@@ -1667,14 +1697,13 @@ async fn test_equity_lifecycle() {
         resolution_id
     );
 
-    // 7. Accept round with an authorized intent.
+    // 7. Accept round with an authorized intent (equity.round.accept is Tier 3).
     let (status, accept_intent) = post_json(
         &app,
         "/v1/execution/intents",
         json!({
             "entity_id": entity_id,
             "intent_type": "equity.round.accept",
-            "authority_tier": "tier_2",
             "description": "Accept approved Series A round",
             "metadata": {"round_id": round_id},
         }),
@@ -1692,6 +1721,35 @@ async fn test_equity_lifecycle() {
         &app,
         &format!("/v1/intents/{accept_intent_id}/evaluate?{e_query}"),
         json!({}),
+        &token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    let (status, artifact) = post_json(
+        &app,
+        "/v1/execution/approval-artifacts",
+        json!({
+            "entity_id": entity_id,
+            "intent_type": "equity.round.accept",
+            "scope": "Board approval for round acceptance",
+            "approver_identity": "Board of Directors",
+            "explicit": true,
+            "channel": "board_resolution",
+        }),
+        &token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let artifact_id = artifact["approval_artifact_id"].as_str().unwrap();
+
+    let (status, _) = post_json(
+        &app,
+        &format!("/v1/intents/{accept_intent_id}/bind-approval-artifact"),
+        json!({
+            "entity_id": entity_id,
+            "approval_artifact_id": artifact_id,
+        }),
         &token,
     )
     .await;
@@ -1736,14 +1794,13 @@ async fn test_equity_lifecycle() {
     assert!(!preview["lines"].as_array().unwrap().is_empty());
     assert!(preview["total_new_units"].as_i64().unwrap_or(0) > 0);
 
-    // 8. Execute conversion with authorized execute intent.
+    // 8. Execute conversion with authorized execute intent (equity.round.execute_conversion is Tier 3).
     let (status, execute_intent) = post_json(
         &app,
         "/v1/execution/intents",
         json!({
             "entity_id": entity_id,
             "intent_type": "equity.round.execute_conversion",
-            "authority_tier": "tier_2",
             "description": "Execute Series A conversion",
             "metadata": {"round_id": round_id},
         }),
@@ -1761,6 +1818,35 @@ async fn test_equity_lifecycle() {
         &app,
         &format!("/v1/intents/{execute_intent_id}/evaluate?{e_query}"),
         json!({}),
+        &token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    let (status, artifact) = post_json(
+        &app,
+        "/v1/execution/approval-artifacts",
+        json!({
+            "entity_id": entity_id,
+            "intent_type": "equity.round.execute_conversion",
+            "scope": "Board approval for conversion execution",
+            "approver_identity": "Board of Directors",
+            "explicit": true,
+            "channel": "board_resolution",
+        }),
+        &token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let exec_artifact_id = artifact["approval_artifact_id"].as_str().unwrap();
+
+    let (status, _) = post_json(
+        &app,
+        &format!("/v1/intents/{execute_intent_id}/bind-approval-artifact"),
+        json!({
+            "entity_id": entity_id,
+            "approval_artifact_id": exec_artifact_id,
+        }),
         &token,
     )
     .await;
@@ -2310,14 +2396,13 @@ async fn test_execution_lifecycle() {
     let _ = ws_id;
     let e_query = format!("entity_id={entity_id}");
 
-    // 1. Create intent
+    // 1. Create intent (hire_employee is Tier 2 per governance AST)
     let (status, intent) = post_json(
         &app,
         "/v1/execution/intents",
         json!({
             "entity_id": entity_id,
             "intent_type": "hire_employee",
-            "authority_tier": "tier_1",
             "description": "Hire new engineer",
         }),
         &token,
@@ -2337,6 +2422,36 @@ async fn test_execution_lifecycle() {
     .await;
     assert_eq!(status, StatusCode::OK, "evaluate intent: {intent}");
     assert_eq!(intent["status"], "evaluated");
+
+    // 2b. Create and bind approval artifact (required for Tier 2)
+    let (status, artifact) = post_json(
+        &app,
+        "/v1/execution/approval-artifacts",
+        json!({
+            "entity_id": entity_id,
+            "intent_type": "hire_employee",
+            "scope": "Approval to hire new engineer",
+            "approver_identity": "Principal",
+            "explicit": true,
+            "channel": "email",
+        }),
+        &token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "create approval artifact: {artifact}");
+    let artifact_id = artifact["approval_artifact_id"].as_str().unwrap();
+
+    let (status, bound) = post_json(
+        &app,
+        &format!("/v1/intents/{intent_id}/bind-approval-artifact"),
+        json!({
+            "entity_id": entity_id,
+            "approval_artifact_id": artifact_id,
+        }),
+        &token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "bind approval artifact: {bound}");
 
     // 3. Authorize intent
     let (status, intent) = post_json(
@@ -2734,7 +2849,6 @@ async fn test_execute_conversion_requires_round_acceptance() {
         json!({
             "entity_id": entity_id,
             "intent_type": "equity.round.execute_conversion",
-            "authority_tier": "tier_2",
             "description": "Execute Series A conversion",
             "metadata": {"round_id": round_id},
         }),
@@ -2748,6 +2862,35 @@ async fn test_execute_conversion_requires_round_acceptance() {
         &app,
         &format!("/v1/intents/{execute_intent_id}/evaluate?{e_query}"),
         json!({}),
+        &token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    let (status, artifact) = post_json(
+        &app,
+        "/v1/execution/approval-artifacts",
+        json!({
+            "entity_id": entity_id,
+            "intent_type": "equity.round.execute_conversion",
+            "scope": "Board approval for conversion execution",
+            "approver_identity": "Board of Directors",
+            "explicit": true,
+            "channel": "board_resolution",
+        }),
+        &token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let artifact_id = artifact["approval_artifact_id"].as_str().unwrap();
+
+    let (status, _) = post_json(
+        &app,
+        &format!("/v1/intents/{execute_intent_id}/bind-approval-artifact"),
+        json!({
+            "entity_id": entity_id,
+            "approval_artifact_id": artifact_id,
+        }),
         &token,
     )
     .await;
@@ -3380,14 +3523,13 @@ async fn test_full_cross_domain_lifecycle() {
     .await;
     assert_eq!(status, StatusCode::OK);
 
-    // Create an intent to hire
+    // Create an intent to hire (hire_employee is Tier 2 per governance AST)
     let (status, intent) = post_json(
         &app,
         "/v1/execution/intents",
         json!({
             "entity_id": entity_id,
             "intent_type": "hire_employee",
-            "authority_tier": "tier_1",
             "description": "Hire Eve as engineer",
         }),
         &token,
@@ -3401,6 +3543,36 @@ async fn test_full_cross_domain_lifecycle() {
         &app,
         &format!("/v1/intents/{intent_id}/evaluate?{e_query}"),
         json!({}),
+        &token,
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK);
+
+    // Create and bind approval artifact (required for Tier 2)
+    let (s, artifact) = post_json(
+        &app,
+        "/v1/execution/approval-artifacts",
+        json!({
+            "entity_id": entity_id,
+            "intent_type": "hire_employee",
+            "scope": "Approval to hire Eve",
+            "approver_identity": "Principal",
+            "explicit": true,
+            "channel": "email",
+        }),
+        &token,
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK);
+    let artifact_id = artifact["approval_artifact_id"].as_str().unwrap();
+
+    let (s, _) = post_json(
+        &app,
+        &format!("/v1/intents/{intent_id}/bind-approval-artifact"),
+        json!({
+            "entity_id": entity_id,
+            "approval_artifact_id": artifact_id,
+        }),
         &token,
     )
     .await;

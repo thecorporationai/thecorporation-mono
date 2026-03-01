@@ -7,9 +7,9 @@
 use std::fmt;
 use std::str::FromStr;
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum GovernanceCapability {
     MaintainBooksRecords,
     PrepareComplianceDocs,
@@ -211,6 +211,20 @@ impl FromStr for GovernanceCapability {
     }
 }
 
+impl Serialize for GovernanceCapability {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(self.as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for GovernanceCapability {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let s = String::deserialize(deserializer)?;
+        s.parse::<GovernanceCapability>()
+            .map_err(serde::de::Error::custom)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeSet;
@@ -237,11 +251,11 @@ mod tests {
             .rules
             .tier_defaults
             .keys()
-            .map(String::as_str)
+            .copied()
             .collect::<BTreeSet<_>>();
         let rust_caps = GovernanceCapability::ALL
             .iter()
-            .map(|capability| capability.as_str())
+            .copied()
             .collect::<BTreeSet<_>>();
         assert_eq!(
             ast_caps, rust_caps,
@@ -251,11 +265,15 @@ mod tests {
 
     #[test]
     fn ast_non_delegable_are_known_capabilities() {
+        // With typed AST fields, non_delegable entries are already
+        // GovernanceCapability values — deserialization would fail on
+        // unknown capabilities. This test confirms the structural invariant.
         let ast = default_governance_ast();
         for capability in &ast.rules.non_delegable {
-            capability
-                .parse::<GovernanceCapability>()
-                .expect("non_delegable capability should be known");
+            assert!(
+                GovernanceCapability::ALL.contains(capability),
+                "non_delegable capability {capability} is not in ALL"
+            );
         }
     }
 }

@@ -30,6 +30,8 @@ pub struct Intent {
     executed_at: Option<DateTime<Utc>>,
     failed_at: Option<DateTime<Utc>>,
     failure_reason: Option<String>,
+    #[serde(default)]
+    cancelled_at: Option<DateTime<Utc>>,
     created_at: DateTime<Utc>,
 }
 
@@ -60,6 +62,7 @@ impl Intent {
             executed_at: None,
             failed_at: None,
             failure_reason: None,
+            cancelled_at: None,
             created_at: Utc::now(),
         }
     }
@@ -106,7 +109,7 @@ impl Intent {
     /// Mark as failed. Can fail from Pending, Evaluated, or Authorized.
     pub fn mark_failed(&mut self, reason: String) -> Result<(), ExecutionError> {
         match self.status {
-            IntentStatus::Executed | IntentStatus::Failed => {
+            IntentStatus::Executed | IntentStatus::Failed | IntentStatus::Cancelled => {
                 Err(ExecutionError::InvalidIntentTransition {
                     from: self.status,
                     to: IntentStatus::Failed,
@@ -116,6 +119,23 @@ impl Intent {
                 self.status = IntentStatus::Failed;
                 self.failed_at = Some(Utc::now());
                 self.failure_reason = Some(reason);
+                Ok(())
+            }
+        }
+    }
+
+    /// Cancel the intent. Valid from Pending, Evaluated, or Authorized.
+    pub fn cancel(&mut self) -> Result<(), ExecutionError> {
+        match self.status {
+            IntentStatus::Executed | IntentStatus::Failed | IntentStatus::Cancelled => {
+                Err(ExecutionError::InvalidIntentTransition {
+                    from: self.status,
+                    to: IntentStatus::Cancelled,
+                })
+            }
+            _ => {
+                self.status = IntentStatus::Cancelled;
+                self.cancelled_at = Some(Utc::now());
                 Ok(())
             }
         }
@@ -170,6 +190,9 @@ impl Intent {
     }
     pub fn failure_reason(&self) -> Option<&str> {
         self.failure_reason.as_deref()
+    }
+    pub fn cancelled_at(&self) -> Option<DateTime<Utc>> {
+        self.cancelled_at
     }
     pub fn created_at(&self) -> DateTime<Utc> {
         self.created_at
@@ -272,6 +295,61 @@ mod tests {
         let mut intent = make_intent();
         intent.mark_failed("first".to_owned()).unwrap();
         assert!(intent.mark_failed("second".to_owned()).is_err());
+    }
+
+    #[test]
+    fn cancel_from_pending() {
+        let mut intent = make_intent();
+        intent.cancel().unwrap();
+        assert_eq!(intent.status(), IntentStatus::Cancelled);
+        assert!(intent.cancelled_at().is_some());
+    }
+
+    #[test]
+    fn cancel_from_evaluated() {
+        let mut intent = make_intent();
+        intent.evaluate().unwrap();
+        intent.cancel().unwrap();
+        assert_eq!(intent.status(), IntentStatus::Cancelled);
+    }
+
+    #[test]
+    fn cancel_from_authorized() {
+        let mut intent = make_intent();
+        intent.evaluate().unwrap();
+        intent.authorize().unwrap();
+        intent.cancel().unwrap();
+        assert_eq!(intent.status(), IntentStatus::Cancelled);
+    }
+
+    #[test]
+    fn cannot_cancel_from_executed() {
+        let mut intent = make_intent();
+        intent.evaluate().unwrap();
+        intent.authorize().unwrap();
+        intent.mark_executed().unwrap();
+        assert!(intent.cancel().is_err());
+    }
+
+    #[test]
+    fn cannot_cancel_from_failed() {
+        let mut intent = make_intent();
+        intent.mark_failed("oops".to_owned()).unwrap();
+        assert!(intent.cancel().is_err());
+    }
+
+    #[test]
+    fn cannot_cancel_from_cancelled() {
+        let mut intent = make_intent();
+        intent.cancel().unwrap();
+        assert!(intent.cancel().is_err());
+    }
+
+    #[test]
+    fn cannot_fail_from_cancelled() {
+        let mut intent = make_intent();
+        intent.cancel().unwrap();
+        assert!(intent.mark_failed("too late".to_owned()).is_err());
     }
 
     #[test]

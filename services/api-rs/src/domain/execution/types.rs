@@ -19,6 +19,8 @@ pub enum IntentStatus {
     Executed,
     /// Intent execution failed.
     Failed,
+    /// Intent was voluntarily cancelled before execution.
+    Cancelled,
 }
 
 impl fmt::Display for IntentStatus {
@@ -29,6 +31,7 @@ impl fmt::Display for IntentStatus {
             Self::Authorized => write!(f, "authorized"),
             Self::Executed => write!(f, "executed"),
             Self::Failed => write!(f, "failed"),
+            Self::Cancelled => write!(f, "cancelled"),
         }
     }
 }
@@ -125,7 +128,7 @@ pub enum AssigneeType {
 // ── AuthorityTier ──────────────────────────────────────────────────────
 
 /// The authority level required to approve an action.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum AuthorityTier {
     /// Lowest authority level — routine operations.
     #[serde(rename = "tier_1")]
@@ -136,6 +139,27 @@ pub enum AuthorityTier {
     /// Highest authority — major corporate actions.
     #[serde(rename = "tier_3")]
     Tier3,
+}
+
+impl AuthorityTier {
+    /// Returns the numeric level (1, 2, or 3).
+    pub fn level(self) -> u8 {
+        match self {
+            Self::Tier1 => 1,
+            Self::Tier2 => 2,
+            Self::Tier3 => 3,
+        }
+    }
+
+    /// Construct from a numeric level. Returns `None` for invalid values.
+    pub fn from_level(n: u8) -> Option<Self> {
+        match n {
+            1 => Some(Self::Tier1),
+            2 => Some(Self::Tier2),
+            3 => Some(Self::Tier3),
+            _ => None,
+        }
+    }
 }
 
 impl fmt::Display for AuthorityTier {

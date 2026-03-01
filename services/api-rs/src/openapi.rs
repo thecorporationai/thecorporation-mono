@@ -887,6 +887,16 @@ fn add_governance_paths(paths: &mut Map<String, Value>) {
 
     add_path(
         paths,
+        "/v1/governance/evaluate",
+        "post",
+        op(
+            "governance",
+            "evaluate_governance",
+            "Evaluate governance policy (dry-run)",
+        ),
+    );
+    add_path(
+        paths,
         "/v1/governance-bodies",
         "post",
         op(
@@ -1349,6 +1359,12 @@ fn add_execution_paths(paths: &mut Map<String, Value>) {
         "/v1/intents/{intent_id}/execute",
         "post",
         op("execution", "execute_intent", "Execute intent"),
+    );
+    add_path(
+        paths,
+        "/v1/intents/{intent_id}/cancel",
+        "post",
+        op("execution", "cancel_intent", "Cancel intent"),
     );
     add_path(
         paths,

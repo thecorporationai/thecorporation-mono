@@ -7,14 +7,14 @@ use axum::{
     extract::{Path, Query, State},
     routing::{get, post},
 };
-use chrono::NaiveDate;
+use chrono::{NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 
 use super::AppState;
 use crate::auth::{
     RequireGovernanceRead, RequireGovernanceVote, RequireGovernanceWrite, RequireInternalWorker,
 };
-use crate::domain::formation::types::EntityType;
+use crate::domain::formation::types::{EntityType, FormationStatus};
 use crate::domain::governance::{
     agenda_item::AgendaItem,
     audit::{
@@ -34,7 +34,7 @@ use crate::domain::governance::{
     meeting::Meeting,
     mode::{GovernanceMode, GovernanceModeState},
     mode_history::GovernanceModeChangeEvent,
-    policy_engine::canonicalize_intent_type,
+    policy_engine::{PolicyDecision, PolicyEvaluationContext, canonicalize_intent_type, evaluate_full},
     profile::{GOVERNANCE_PROFILE_PATH, GovernanceProfile},
     resolution::Resolution,
     seat::GovernanceSeat,
@@ -259,6 +259,18 @@ pub struct WriteGovernanceAuditCheckpointRequest {
 #[derive(Deserialize)]
 pub struct VerifyGovernanceAuditChainRequest {
     pub entity_id: EntityId,
+}
+
+#[derive(Deserialize)]
+pub struct EvaluateGovernanceRequest {
+    pub entity_id: EntityId,
+    pub intent_type: String,
+    #[serde(default = "default_evaluate_metadata")]
+    pub metadata: serde_json::Value,
+}
+
+fn default_evaluate_metadata() -> serde_json::Value {
+    serde_json::Value::Object(serde_json::Map::new())
 }
 
 // ── Response types ───────────────────────────────────────────────────
@@ -1843,6 +1855,45 @@ async fn list_delegation_schedule_history(
     Ok(Json(history))
 }
 
+// ── Handlers: Policy evaluation (dry-run) ───────────────────────────
+
+async fn evaluate_governance(
+    RequireGovernanceRead(auth): RequireGovernanceRead,
+    State(state): State<AppState>,
+    Json(req): Json<EvaluateGovernanceRequest>,
+) -> Result<Json<PolicyDecision>, AppError> {
+    let workspace_id = auth.workspace_id();
+    let entity_id = req.entity_id;
+
+    let decision = tokio::task::spawn_blocking({
+        let layout = state.layout.clone();
+        move || {
+            let store = open_store(&layout, workspace_id, entity_id)?;
+            let mode = read_mode_or_default(&store, entity_id);
+            let schedule = read_schedule_or_default(&store, entity_id);
+            let entity = store
+                .read_entity("main")
+                .map_err(|e| AppError::Internal(format!("read entity: {e}")))?;
+
+            let ctx = PolicyEvaluationContext {
+                intent_type: &req.intent_type,
+                metadata: &req.metadata,
+                mode: mode.mode(),
+                schedule: &schedule,
+                now: Utc::now(),
+                entity_is_active: matches!(entity.formation_status(), FormationStatus::Active),
+                service_agreement_executed: entity.service_agreement_executed(),
+            };
+
+            Ok::<_, AppError>(evaluate_full(&ctx))
+        }
+    })
+    .await
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+
+    Ok(Json(decision))
+}
+
 // ── Handlers: Governance seats ───────────────────────────────────────
 
 async fn create_seat(
@@ -3011,6 +3062,8 @@ pub fn governance_routes() -> Router<AppState> {
             "/v1/governance/delegation-schedule/history",
             get(list_delegation_schedule_history),
         )
+        // Policy evaluation (dry-run)
+        .route("/v1/governance/evaluate", post(evaluate_governance))
         // Governance bodies
         .route("/v1/governance-bodies", post(create_governance_body))
         .route(
