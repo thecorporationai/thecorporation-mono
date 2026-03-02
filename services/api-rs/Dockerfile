@@ -4,9 +4,16 @@ FROM rust:slim AS builder
 RUN apt-get update && apt-get install -y libssl-dev pkg-config && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /build
-COPY crates/agent-types/ crates/agent-types/
-COPY services/api-rs/Cargo.toml services/api-rs/Cargo.lock services/api-rs/
-COPY services/api-rs/src services/api-rs/src
+
+# Copy shared crate
+COPY crates/agent-types /build/crates/agent-types
+
+# Copy governance AST (referenced via include_str! from policy_ast.rs)
+COPY governance /build/governance
+
+# Copy api-rs source (Cargo.toml references ../../crates/agent-types)
+COPY services/api-rs/Cargo.toml services/api-rs/Cargo.lock /build/services/api-rs/
+COPY services/api-rs/src /build/services/api-rs/src
 
 WORKDIR /build/services/api-rs
 RUN cargo build --release
