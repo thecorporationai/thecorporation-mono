@@ -19,6 +19,25 @@ The Corporation provides:
 npx -y @thecorporation/mcp-server
 ```
 
+### Claude Desktop config
+
+```json
+{
+  "mcpServers": {
+    "thecorporation": {
+      "command": "npx",
+      "args": ["-y", "@thecorporation/mcp-server"]
+    }
+  }
+}
+```
+
+### Claude Code
+
+```bash
+claude mcp add thecorporation -- npx -y @thecorporation/mcp-server
+```
+
 ### CLI
 
 ```bash
