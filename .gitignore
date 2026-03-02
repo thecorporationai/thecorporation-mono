@@ -1,8 +1,3 @@
-# Byte-compiled / optimized / DLL files
-__pycache__/
-*.py[cod]
-*$py.class
-
 # Environments
 .venv/
 venv/
@@ -17,59 +12,17 @@ htmlcov/
 # Tooling
 .ruff_cache/
 .mypy_cache/
-.ipynb_checkpoints/
 
 # Logs and temporary files
 logs/
 *.log
-*.txt
-!ARCHITECTURE/*.md
-!README.md
-!TODO.md
-!requirements.txt
-!shared/corp_tools/system_prompt_base.txt
-
-# Triage loop state (keep history, ignore transient logs)
-!.triage-loop/triaged_files.txt
 
 # OS generated files
 .DS_Store
 Thumbs.db
 
-# Databases and runtime artifacts
-*.db
-backend/test.db
-celerybeat-schedule
-backend/celerybeat-schedule
-backend/data/*
-!backend/data/.gitkeep
-services/api/data/
-
 # Dependencies
 node_modules/
-
-# Scenario output retention policy:
-#   Keep:   findings.md, metadata.json, transcript.md, latest
-#   Ignore: heavyweight/transient artifacts that bloat git history
-scenario-outputs/**/checkpoint_*.json
-scenario-outputs/**/transcript.json
-
-# Implementation loop artifacts (runtime churn)
-.loop/*.log
-.loop/*.md
-.loop/*.txt
-.loop/*counter*
-!.loop/.gitkeep
-!.loop/README.md
-!.architect-loop/README.md
-
-# Architect loop artifacts (runtime churn)
-.architect-loop/*.log
-.architect-loop/*.md
-.architect-loop/*.txt
-.architect-loop/*counter*
-!.architect-loop/.gitkeep
-!.architect-loop/README.md
 
 # Rust
 target/
@@ -78,5 +31,6 @@ target/
 # TypeScript / Node build outputs
 dist/
 
-# MkDocs build output
-site/
+# Claude Code artifacts
+.claude/worktrees/
+.claude/memory/
