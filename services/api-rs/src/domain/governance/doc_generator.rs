@@ -7,6 +7,9 @@ use sha2::{Digest, Sha256};
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use super::doc_ast::{
+    ContentNode, DocumentDefinition, EntityTypeKey, GovernanceDocAstV2,
+};
 use super::profile::GovernanceProfile;
 use crate::domain::ids::{EntityId, GovernanceDocBundleId};
 
@@ -452,6 +455,302 @@ fn sha256_hex(bytes: &[u8]) -> String {
     hex::encode(hasher.finalize())
 }
 
+// ── AST-based rendering ──────────────────────────────────────────────
+
+/// Format cents as a USD string (e.g. 1000000 → "$10,000").
+pub fn format_usd(cents: i64) -> String {
+    let dollars = cents / 100;
+    if dollars == 0 {
+        return "$0".to_owned();
+    }
+    let negative = dollars < 0;
+    let abs = dollars.unsigned_abs();
+    let s = abs.to_string();
+    let mut result = String::new();
+    for (i, ch) in s.chars().enumerate() {
+        if i > 0 && (s.len() - i) % 3 == 0 {
+            result.push(',');
+        }
+        result.push(ch);
+    }
+    if negative {
+        format!("-${result}")
+    } else {
+        format!("${result}")
+    }
+}
+
+/// Render a single document definition from the v2 AST to markdown.
+pub fn render_document_from_ast(
+    doc: &DocumentDefinition,
+    ast: &GovernanceDocAstV2,
+    entity_type: EntityTypeKey,
+    profile: &GovernanceProfile,
+) -> String {
+    let mut out = String::new();
+
+    // Title
+    out.push_str(&format!("# {}\n", doc.title));
+
+    // Preamble (as blockquote)
+    if let Some(preamble) = &doc.preamble {
+        out.push('\n');
+        out.push_str(&format!("> {preamble}\n"));
+    }
+
+    // Metadata fields
+    if !doc.metadata_fields.is_empty() {
+        out.push('\n');
+        for field in &doc.metadata_fields {
+            let value = resolve_profile_field(&field.key, profile)
+                .or_else(|| field.default.clone())
+                .unwrap_or_else(|| {
+                    field
+                        .placeholder
+                        .clone()
+                        .unwrap_or_else(|| "`TBD`".to_owned())
+                });
+            out.push_str(&format!("**{}**: `{}`\n", field.label, value));
+        }
+    }
+
+    // Content nodes
+    for node in &doc.content {
+        render_node(&mut out, node, ast, entity_type, profile);
+    }
+
+    out
+}
+
+fn resolve_profile_field(key: &str, profile: &GovernanceProfile) -> Option<String> {
+    match key {
+        "effective_date" => Some(profile.effective_date().to_string()),
+        "adopted_by" => Some(profile.adopted_by().to_owned()),
+        "last_reviewed" => Some(profile.last_reviewed().to_string()),
+        "next_mandatory_review" => Some(profile.next_mandatory_review().to_string()),
+        "legal_name" => Some(profile.legal_name().to_owned()),
+        _ => None,
+    }
+}
+
+fn render_node(
+    out: &mut String,
+    node: &ContentNode,
+    ast: &GovernanceDocAstV2,
+    entity_type: EntityTypeKey,
+    profile: &GovernanceProfile,
+) {
+    match node {
+        ContentNode::Heading { level, text } => {
+            out.push('\n');
+            for _ in 0..*level {
+                out.push('#');
+            }
+            out.push(' ');
+            out.push_str(&substitute(text, ast, profile));
+            out.push('\n');
+        }
+        ContentNode::Paragraph { text } => {
+            out.push('\n');
+            out.push_str(&substitute(text, ast, profile));
+            out.push('\n');
+        }
+        ContentNode::OrderedList { items } => {
+            out.push('\n');
+            for (i, item) in items.iter().enumerate() {
+                out.push_str(&format!("{}. {}\n", i + 1, substitute(item, ast, profile)));
+            }
+        }
+        ContentNode::UnorderedList { items } => {
+            out.push('\n');
+            for item in items {
+                out.push_str(&format!("- {}\n", substitute(item, ast, profile)));
+            }
+        }
+        ContentNode::Table { headers, rows } => {
+            out.push('\n');
+            // Header row
+            out.push('|');
+            for h in headers {
+                out.push_str(&format!(" {} |", h));
+            }
+            out.push('\n');
+            // Separator
+            out.push('|');
+            for _ in headers {
+                out.push_str("---|");
+            }
+            out.push('\n');
+            // Data rows
+            for row in rows {
+                out.push('|');
+                for cell in row {
+                    out.push_str(&format!(" {} |", substitute(cell, ast, profile)));
+                }
+                out.push('\n');
+            }
+        }
+        ContentNode::DataTable { source, columns } => {
+            render_data_table(out, source, columns, ast, entity_type);
+        }
+        ContentNode::Conditional {
+            when_entity,
+            content,
+        } => {
+            if *when_entity == entity_type {
+                for child in content {
+                    render_node(out, child, ast, entity_type, profile);
+                }
+            }
+        }
+        ContentNode::SignatureBlock { role, fields } => {
+            out.push('\n');
+            out.push_str(&format!("{role}: ____________________"));
+            for field in fields {
+                match field.as_str() {
+                    "date" => out.push_str("  Date: `YYYY-MM-DD`"),
+                    "name" => out.push_str(&format!("\nName / Title: `TBD`")),
+                    "title" => {} // included in name line
+                    _ => out.push_str(&format!("\n{field}: `TBD`")),
+                }
+            }
+            out.push('\n');
+        }
+        ContentNode::Placeholder { key, label } => {
+            let value = resolve_profile_field(key, profile)
+                .unwrap_or_else(|| "`TBD`".to_owned());
+            out.push_str(&format!("**{label}**: {value}\n"));
+        }
+        ContentNode::Note { text } => {
+            out.push('\n');
+            out.push_str(&format!("> **Note:** {text}\n"));
+        }
+        ContentNode::CodeBlock { language, lines } => {
+            out.push('\n');
+            out.push_str("```");
+            if let Some(lang) = language {
+                out.push_str(lang);
+            }
+            out.push('\n');
+            for line in lines {
+                out.push_str(line);
+                out.push('\n');
+            }
+            out.push_str("```\n");
+        }
+        ContentNode::DocumentRef { text, .. } => {
+            out.push_str(&substitute(text, ast, profile));
+        }
+        ContentNode::HorizontalRule => {
+            out.push_str("\n---\n");
+        }
+    }
+}
+
+fn render_data_table(
+    out: &mut String,
+    source: &str,
+    columns: &[super::doc_ast::DataTableColumn],
+    ast: &GovernanceDocAstV2,
+    _entity_type: EntityTypeKey,
+) {
+    out.push('\n');
+    // Header
+    out.push('|');
+    for col in columns {
+        out.push_str(&format!(" {} |", col.header));
+    }
+    out.push('\n');
+    // Separator — right-align USD columns
+    out.push('|');
+    for col in columns {
+        if col.format.as_deref() == Some("usd") {
+            out.push_str("---:|");
+        } else {
+            out.push_str("---|");
+        }
+    }
+    out.push('\n');
+
+    match source {
+        "authority_precedence" => {
+            for entry in &ast.authority_precedence {
+                out.push('|');
+                for col in columns {
+                    let val = match col.key.as_str() {
+                        "rank" => entry.rank.to_string(),
+                        "source" => entry.source.clone(),
+                        "label" => entry.label.clone(),
+                        _ => String::new(),
+                    };
+                    out.push_str(&format!(" {} |", val));
+                }
+                out.push('\n');
+            }
+        }
+        "spending_defaults.categories" => {
+            for cat in &ast.spending_defaults.categories {
+                out.push('|');
+                for col in columns {
+                    let val = match col.key.as_str() {
+                        "id" => cat.id.clone(),
+                        "label" => cat.label.clone(),
+                        "per_transaction_cents" => {
+                            if col.format.as_deref() == Some("usd") {
+                                format_usd(cat.per_transaction_cents)
+                            } else {
+                                cat.per_transaction_cents.to_string()
+                            }
+                        }
+                        "monthly_aggregate_cents" => {
+                            if col.format.as_deref() == Some("usd") {
+                                format_usd(cat.monthly_aggregate_cents)
+                            } else {
+                                cat.monthly_aggregate_cents.to_string()
+                            }
+                        }
+                        _ => String::new(),
+                    };
+                    out.push_str(&format!(" {} |", val));
+                }
+                out.push('\n');
+            }
+        }
+        _ => {
+            out.push_str(&format!("<!-- unknown data source: {} -->\n", source));
+        }
+    }
+}
+
+/// Substitute `{{key}}` placeholders in text with values from the AST or profile.
+fn substitute(text: &str, ast: &GovernanceDocAstV2, profile: &GovernanceProfile) -> String {
+    let mut result = text.to_owned();
+
+    // AST-derived substitutions
+    if result.contains("{{spending_defaults.per_vendor_annual_cap}}") {
+        result = result.replace(
+            "{{spending_defaults.per_vendor_annual_cap}}",
+            &format_usd(ast.spending_defaults.per_vendor_annual_cap_cents),
+        );
+    }
+
+    // Profile-derived substitutions
+    if result.contains("{{effective_date}}") {
+        result = result.replace("{{effective_date}}", &profile.effective_date().to_string());
+    }
+    if result.contains("{{legal_name}}") {
+        result = result.replace("{{legal_name}}", profile.legal_name());
+    }
+    if result.contains("{{entity_legal_name}}") {
+        result = result.replace("{{entity_legal_name}}", profile.legal_name());
+    }
+    if result.contains("{{adopted_by}}") {
+        result = result.replace("{{adopted_by}}", profile.adopted_by());
+    }
+
+    result
+}
+
 fn find_repo_root(start: &Path) -> anyhow::Result<PathBuf> {
     let mut cursor = Some(start);
     while let Some(current) = cursor {
@@ -512,6 +811,65 @@ mod tests {
         assert!(out.path().join("manifest.json").is_file());
         assert!(out.path().join("corporation/bylaws.md").is_file());
         assert!(out.path().join("transactions/board-consent.md").is_file());
+    }
+
+    #[test]
+    fn delegation_schedule_renders_from_ast() {
+        let ast = super::super::doc_ast::default_doc_ast();
+        let entity = make_entity(EntityType::Corporation);
+        let profile = GovernanceProfile::default_for_entity(&entity);
+        let doc = ast
+            .documents
+            .iter()
+            .find(|d| d.id == "agent_delegation_schedule")
+            .expect("delegation schedule");
+        let rendered = render_document_from_ast(
+            doc,
+            ast,
+            super::super::doc_ast::EntityTypeKey::Corporation,
+            &profile,
+        );
+        // Key spending amounts from AST
+        assert!(rendered.contains("$10,000"), "should contain $10,000");
+        assert!(rendered.contains("$7,500"), "should contain $7,500");
+        assert!(rendered.contains("$5,000"), "should contain $5,000");
+        assert!(rendered.contains("$2,500"), "should contain $2,500");
+        assert!(rendered.contains("$500"), "should contain $500");
+        assert!(rendered.contains("$50,000"), "should contain per-vendor cap $50,000");
+        assert!(rendered.contains("# Agent Delegation Schedule"));
+        assert!(rendered.contains("Authority precedence"));
+    }
+
+    #[test]
+    fn signing_standard_renders_from_ast() {
+        let ast = super::super::doc_ast::default_doc_ast();
+        let entity = make_entity(EntityType::Corporation);
+        let profile = GovernanceProfile::default_for_entity(&entity);
+        let doc = ast
+            .documents
+            .iter()
+            .find(|d| d.id == "signing_and_records_standard")
+            .expect("signing standard");
+        let rendered = render_document_from_ast(
+            doc,
+            ast,
+            super::super::doc_ast::EntityTypeKey::Corporation,
+            &profile,
+        );
+        assert!(rendered.contains("# Signing and Records Standard"));
+        assert!(rendered.contains("Hash-chain integrity"));
+        assert!(rendered.contains("Incident report format"));
+        assert!(rendered.contains("SHA-256"));
+    }
+
+    #[test]
+    fn format_usd_basic() {
+        assert_eq!(format_usd(1_000_000), "$10,000");
+        assert_eq!(format_usd(750_000), "$7,500");
+        assert_eq!(format_usd(50_000), "$500");
+        assert_eq!(format_usd(5_000_000), "$50,000");
+        assert_eq!(format_usd(100), "$1");
+        assert_eq!(format_usd(0), "$0");
     }
 
     #[test]

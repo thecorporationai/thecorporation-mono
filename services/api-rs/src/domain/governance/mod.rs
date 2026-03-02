@@ -3,6 +3,7 @@ pub mod audit;
 pub mod body;
 pub mod capability;
 pub mod delegation_schedule;
+pub mod doc_ast;
 pub mod doc_generator;
 pub mod error;
 pub mod incident;
