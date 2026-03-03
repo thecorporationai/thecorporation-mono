@@ -2,7 +2,6 @@ pub mod admin;
 pub mod agent_executions;
 pub mod agents;
 pub mod auth;
-pub mod billing;
 pub mod branches;
 pub mod compliance;
 pub mod contacts;
@@ -14,12 +13,12 @@ pub mod governance_enforcement;
 pub mod llm_proxy;
 pub mod secret_proxies;
 pub mod secrets_proxy;
-pub mod services;
 pub mod treasury;
-pub mod webhooks;
 
 use std::collections::HashMap;
 use std::sync::Arc;
+
+use axum::extract::FromRef;
 
 use crate::domain::ids::{EntityId, WorkspaceId};
 use crate::git::signing::CommitSigner;
@@ -72,4 +71,16 @@ pub struct AppState {
 pub struct ModelPricing {
     pub input: u64,
     pub output: u64,
+}
+
+impl FromRef<AppState> for Arc<RepoLayout> {
+    fn from_ref(state: &AppState) -> Arc<RepoLayout> {
+        state.layout.clone()
+    }
+}
+
+impl FromRef<AppState> for Arc<[u8]> {
+    fn from_ref(state: &AppState) -> Arc<[u8]> {
+        state.jwt_secret.clone()
+    }
 }

@@ -1,0 +1,836 @@
+{
+  "version": "2.0.0",
+  "policy_ast_version": "1.0.0",
+  "entity_types": {
+    "corporation": {
+      "jurisdiction": "Delaware",
+      "governing_statute": "DGCL",
+      "governing_statute_full": "Delaware General Corporation Law (Title 8, Delaware Code)",
+      "filing_authority": "Delaware Division of Corporations",
+      "governance_body": "Board of Directors",
+      "governing_document": "Bylaws",
+      "charter_document": "Certificate of Incorporation",
+      "approval_authority": "Board of Directors",
+      "human_manager_title": "CEO",
+      "human_manager_role": "Chief Executive Officer"
+    },
+    "llc": {
+      "jurisdiction": "Wyoming",
+      "governing_statute": "Wyoming LLC Act",
+      "governing_statute_full": "Wyoming Limited Liability Company Act (W.S. § 17-29-101 et seq.)",
+      "filing_authority": "Wyoming Secretary of State",
+      "governance_body": "Members",
+      "governing_document": "Operating Agreement",
+      "charter_document": "Articles of Organization",
+      "approval_authority": "Members",
+      "human_manager_title": "Principal",
+      "human_manager_role": "Principal Manager"
+    }
+  },
+  "spending_defaults": {
+    "parameter_set": "conservative_launch",
+    "categories": [
+      {
+        "id": "recurring_obligations",
+        "label": "Recurring obligations (rent, subscriptions, utilities, payroll within approved budget)",
+        "per_transaction_cents": 1000000,
+        "monthly_aggregate_cents": 4000000
+      },
+      {
+        "id": "vendor_payments",
+        "label": "Vendor payments against approved purchase orders",
+        "per_transaction_cents": 750000,
+        "monthly_aggregate_cents": 3000000
+      },
+      {
+        "id": "professional_services",
+        "label": "Professional services (legal, accounting) against approved retainers",
+        "per_transaction_cents": 500000,
+        "monthly_aggregate_cents": 2000000
+      },
+      {
+        "id": "government_filings",
+        "label": "Government filing fees and compliance costs",
+        "per_transaction_cents": 250000,
+        "monthly_aggregate_cents": 1000000
+      },
+      {
+        "id": "office_supplies",
+        "label": "Office supplies and operational consumables",
+        "per_transaction_cents": 50000,
+        "monthly_aggregate_cents": 200000
+      }
+    ],
+    "per_vendor_annual_cap_cents": 5000000
+  },
+  "compliance": {
+    "corporation": {
+      "franchise_tax_deadline": "March 1",
+      "franchise_tax_methods": [
+        { "id": "authorized_shares", "label": "Authorized Shares Method", "minimum_cents": 17500 },
+        { "id": "assumed_par_value", "label": "Assumed Par Value Capital Method", "minimum_cents": 40000 }
+      ],
+      "annual_report_fee_cents": 5000,
+      "annual_report_deadline": "March 1 (filed concurrently with franchise tax)",
+      "filing_fee_cents": 8900
+    },
+    "llc": {
+      "annual_report_fee_cents": 6000,
+      "annual_report_deadline": "First day of anniversary month",
+      "filing_fee_cents": 10000,
+      "state_income_tax": false,
+      "franchise_tax": false,
+      "name_reservation_fee_cents": 5000,
+      "name_reservation_validity_days": 120
+    }
+  },
+  "authority_precedence": [
+    { "rank": 1, "source": "applicable_law", "label": "Applicable law (DGCL, Wyoming LLC Act, federal law, regulations)" },
+    { "rank": 2, "source": "charter_documents", "label": "Charter documents (Certificate of Incorporation / Articles of Organization)" },
+    { "rank": 3, "source": "internal_governance", "label": "Internal governance (Bylaws / Operating Agreement)" },
+    { "rank": 4, "source": "resolutions", "label": "Board or Member resolutions" },
+    { "rank": 5, "source": "directives", "label": "Principal / CEO directives (specific instructions to the Agent)" },
+    { "rank": 6, "source": "standing_instructions", "label": "Standing Instructions (recurring authority modifications)" },
+    { "rank": 7, "source": "delegation_schedule", "label": "This Delegation Schedule (default autonomy lanes and limits)" },
+    { "rank": 8, "source": "agent_heuristics", "label": "Agent heuristics and judgment (lowest priority -- always overridden by anything above)" }
+  ],
+  "documents": [
+    {
+      "id": "agent_delegation_schedule",
+      "category": "common",
+      "entity_scope": "common",
+      "path": "common/agent-delegation-schedule.md",
+      "title": "Agent Delegation Schedule",
+      "preamble": "This is the controlling operational artifact for Agent Operator authority. It is adopted by reference in the Operating Agreement (LLC) and Bylaws (Corporation). The Principal/CEO may amend this schedule within the adjustment envelope (Section 9.1) without Board/Member action. Any amendment that expands delegated authority requires Board/Member resolution. The Agent Operator may not amend this schedule.",
+      "metadata_fields": [
+        { "key": "version", "label": "Version", "default": "1.0" },
+        { "key": "effective_date", "label": "Effective date", "placeholder": "YYYY-MM-DD" },
+        { "key": "adopted_by", "label": "Adopted by", "placeholder": "TBD (Initial Board Consent / Initial Member Consent)" },
+        { "key": "last_reviewed", "label": "Last reviewed", "placeholder": "YYYY-MM-DD" },
+        { "key": "next_mandatory_review", "label": "Next mandatory review", "placeholder": "12 months from effective date" }
+      ],
+      "content": [
+        { "type": "heading", "level": 2, "text": "1. Authority precedence" },
+        { "type": "paragraph", "text": "When instructions or rules conflict, the following precedence applies (highest to lowest):" },
+        { "type": "data_table", "source": "authority_precedence", "columns": [
+          { "key": "rank", "header": "Rank" },
+          { "key": "label", "header": "Source" }
+        ]},
+        { "type": "paragraph", "text": "When the Agent detects a conflict between levels, it must halt, record the conflict, and escalate to the Principal. The Agent must not resolve ambiguity by choosing the interpretation that expands its own authority." },
+        { "type": "heading", "level": 2, "text": "2. Spending authority" },
+        { "type": "heading", "level": 3, "text": "2.1 Tier 1 limits (Agent autonomous)" },
+        { "type": "data_table", "source": "spending_defaults.categories", "columns": [
+          { "key": "label", "header": "Category" },
+          { "key": "per_transaction_cents", "header": "Per-transaction limit", "format": "usd" },
+          { "key": "monthly_aggregate_cents", "header": "Monthly aggregate limit", "format": "usd" }
+        ]},
+        { "type": "heading", "level": 3, "text": "2.2 Per-vendor annual caps" },
+        { "type": "paragraph", "text": "The Agent may not commit more than **{{spending_defaults.per_vendor_annual_cap}}** in aggregate annual spending to any single vendor without Tier 2 approval, even if individual transactions are within Tier 1 limits." },
+        { "type": "heading", "level": 3, "text": "2.3 Spending escalation" },
+        { "type": "paragraph", "text": "Any expenditure not covered by a category above, or exceeding any limit above, requires Tier 2 approval before commitment." },
+        { "type": "heading", "level": 2, "text": "3. Autonomy lanes (pre-approved Tier 1 actions)" },
+        { "type": "paragraph", "text": "Autonomy lanes define categories of action the Agent may take without per-instance approval, provided all lane conditions are met. If any condition is not met, the action escalates to Tier 2." },
+        { "type": "heading", "level": 3, "text": "3.1 Standard-form agreements" },
+        { "type": "table", "headers": ["Lane", "Conditions", "Authority"], "rows": [
+          ["NDAs (mutual or receiving)", "Board/Principal-approved template; no modifications to indemnification, governing law, or term beyond 2 years", "Tier 1 -- execute"],
+          ["SaaS / subscription agreements", "Annual cost within Tier 1 vendor limit; cancellable within 60 days; no exclusivity or IP assignment clauses", "Tier 1 -- execute"],
+          ["Vendor / supplier purchase orders", "Within approved budget; standard payment terms (net 30-60); no volume commitments beyond current quarter", "Tier 1 -- execute"]
+        ]},
+        { "type": "heading", "level": 3, "text": "3.2 Contractor engagement" },
+        { "type": "table", "headers": ["Lane", "Conditions", "Authority"], "rows": [
+          ["Independent contractor (1099) engagement", "Within approved budget; standard contractor agreement template; no exclusivity; no IP assignment beyond work product; engagement terminable on 14 days notice", "Tier 1 -- execute"],
+          ["Contractor renewal at same or lower rate", "Same contractor, same or reduced scope, rate increase ≤ 5%", "Tier 1 -- execute"]
+        ]},
+        { "type": "paragraph", "text": "**Not Tier 1 (always Tier 2 or higher):** W-2 employee hiring, exclusive engagements, IP assignment beyond standard work-for-hire, non-compete obligations, equity compensation." },
+        { "type": "heading", "level": 3, "text": "3.3 Renewals and routine amendments" },
+        { "type": "table", "headers": ["Lane", "Conditions", "Authority"], "rows": [
+          ["Service renewal at same terms", "Same provider, same scope, price increase ≤ 10% of prior term", "Tier 1 -- execute"],
+          ["Address or administrative updates on existing agreements", "No change to economics, scope, or legal terms", "Tier 1 -- execute"],
+          ["Insurance policy renewal", "Same coverage, premium increase ≤ 15%, same carrier", "Tier 1 -- execute"]
+        ]},
+        { "type": "heading", "level": 3, "text": "3.4 Treasury operations" },
+        { "type": "table", "headers": ["Lane", "Conditions", "Authority"], "rows": [
+          ["Internal transfers between Company accounts", "Same entity, same bank", "Tier 1 -- execute"],
+          ["Payroll execution", "Within approved headcount and compensation schedule", "Tier 1 -- execute"],
+          ["Tax payments per approved filing", "Amount matches filed or estimated return", "Tier 1 -- execute"]
+        ]},
+        { "type": "paragraph", "text": "**Not Tier 1:** Opening/closing accounts, changing signers, setting up new payment methods, wire transfers to new recipients." },
+        { "type": "heading", "level": 2, "text": "4. Approval mechanics" },
+        { "type": "heading", "level": 3, "text": "4.1 What counts as approval" },
+        { "type": "paragraph", "text": "A valid Tier 2 approval requires all of the following:" },
+        { "type": "unordered_list", "items": [
+          "**Explicit affirmation.** The Principal/CEO/Board must communicate an unambiguous \"approved\" or equivalent. Silence is never approval. Inaction is never approval.",
+          "**Scope match.** The approval must match the specific action proposed. A general \"sounds good\" does not constitute approval for a specific financial commitment.",
+          "**Recorded artifact.** The approval must be captured in a durable record (approval via the platform's approval workflow, email, signed document, or recorded written consent). Verbal-only approvals are not valid.",
+          "**Timeliness.** Approvals expire after 30 days if the underlying action has not been executed. The Agent must re-propose if the window lapses.",
+          "**Identity verification.** The approval must come from an identified, authorized person through an established channel. The Agent must reject approvals from unverified sources."
+        ]},
+        { "type": "heading", "level": 3, "text": "4.2 Approval record schema" },
+        { "type": "paragraph", "text": "Every Tier 2 approval must be recorded with:" },
+        { "type": "code_block", "lines": [
+          "approval_id: [unique identifier]",
+          "action_ref: [reference to the proposed action]",
+          "approver: [name and role of approving person]",
+          "approver_auth_method: [platform login | email with verified sender | signed document | board resolution]",
+          "approver_identity_evidence: [reference to identity verification, e.g., \"authenticated platform session\" or \"signed email from verified address\"]",
+          "decision: [approved | rejected | approved with modifications]",
+          "scope: [specific description of what is approved]",
+          "conditions: [any conditions attached to the approval, or \"none\"]",
+          "channel: [platform approval / email / signed document / board resolution]",
+          "timestamp: YYYY-MM-DDTHH:MM:SSZ (UTC)",
+          "expiry: [date after which approval lapses if unexecuted]"
+        ]},
+        { "type": "heading", "level": 3, "text": "4.3 Negative consent (disabled by default)" },
+        { "type": "paragraph", "text": "For defensibility-first operation, negative consent is disabled by default and no-response is never approval." },
+        { "type": "paragraph", "text": "Negative consent may only be enabled by explicit Board/Member resolution that identifies:" },
+        { "type": "ordered_list", "items": [
+          "The exact action categories permitted for negative consent.",
+          "A per-action dollar cap and aggregate cap.",
+          "A minimum response window of 24 hours.",
+          "A mandatory expiration date for the authorization window.",
+          "Additional monitoring and reporting requirements."
+        ]},
+        { "type": "paragraph", "text": "**Negative consent is never available for:** equity actions, litigation, governance amendments, state/federal filings requiring natural-person attestation, actions above **$5,000**, or any Tier 3 action." },
+        { "type": "heading", "level": 2, "text": "5. Credential authority" },
+        { "type": "heading", "level": 3, "text": "5.1 Credential custody matrix" },
+        { "type": "table", "headers": ["Credential type", "Custodian", "Agent access"], "rows": [
+          ["Entity formation / SOS portal login", "Principal", "None -- Principal files or delegates to counsel"],
+          ["Bank account root credentials", "Principal", "None"],
+          ["Bank account payment credentials (scoped)", "Principal provisions, Agent uses", "Scoped to Tier 1 payment limits; read-only for balances and statements"],
+          ["Tax filing portal (IRS, state)", "Principal", "Preparation access; Principal submits or authorizes submission"],
+          ["Registered agent portal", "Agent (operational)", "Tier 1 for renewals; Principal for changes"],
+          ["Accounting / bookkeeping system", "Agent (primary user)", "Full operational access; Principal has admin/owner role"],
+          ["Corporate records repository", "Agent (day-to-day)", "Read/write for records within authority; Principal has admin"],
+          ["Email / communication (entity)", "Agent (operational)", "Send/receive for routine correspondence within authority"],
+          ["Domain / DNS / hosting", "Principal", "Agent may have operational access with Principal-provisioned scoped credentials"],
+          ["Code repositories", "Agent (operational)", "Per project scope; Principal retains admin"],
+          ["API keys for third-party services", "Principal provisions", "Agent uses within authorized scope; cannot create new integrations without Tier 2"]
+        ]},
+        { "type": "heading", "level": 3, "text": "5.2 Credential rules" },
+        { "type": "unordered_list", "items": [
+          "The Principal holds root/admin credentials for all financial and legal accounts.",
+          "The Agent receives scoped credentials provisioned by the Principal.",
+          "The Agent may not create new accounts or credentials without Tier 2 approval.",
+          "The Agent may not share, export, or store credentials outside the entity's authorized systems.",
+          "Credential rotation: the Agent must flag expiring credentials at least 14 days before expiry. The Principal rotates root credentials; the Agent may rotate its own scoped credentials within the same scope."
+        ]},
+        { "type": "heading", "level": 2, "text": "6. Emergency control modes" },
+        { "type": "heading", "level": 3, "text": "6.1 Modes" },
+        { "type": "table", "headers": ["Mode", "Description", "Who can activate", "Who can deactivate"], "rows": [
+          ["**Normal**", "Full delegation schedule applies. All tiers operate as defined.", "Default state", "N/A"],
+          ["**Principal Unavailable**", "Agent continues Tier 1 operations for reversible actions only. All irreversible Tier 1 actions and all Tier 2 actions are suspended. Agent must attempt to reach the Principal through all established channels and log each attempt.", "Automatically activates if Principal is unreachable for **24 hours** on a matter requiring Tier 2 approval", "Principal (by responding to any channel)"],
+          ["**Incident Lockdown**", "Agent suspends all autonomous operations immediately. Agent may only respond to direct Principal instructions and maintain read-only access to records. No Tier 1 or Tier 2 execution.", "Principal, or automatically on any auto-suspension trigger (Section 7)", "Principal only (explicit written reactivation)"]
+        ]},
+        { "type": "heading", "level": 3, "text": "6.2 Mode rules" },
+        { "type": "unordered_list", "items": [
+          "Only the Principal may change modes manually (except automatic triggers).",
+          "The Agent must prominently display the current mode in every action record and report.",
+          "Mode changes are logged as governance events in the audit trail.",
+          "During Principal Unavailable mode, time-critical legal deadlines (filing deadlines, tax payments against approved returns) remain Tier 1 if they are ministerial and previously approved."
+        ]},
+        { "type": "heading", "level": 2, "text": "7. Auto-suspension triggers" },
+        { "type": "paragraph", "text": "The Agent Operator must immediately enter Incident Lockdown mode if any of the following occur:" },
+        { "type": "ordered_list", "items": [
+          "**Audit log failure.** The Agent is unable to write to the append-only audit log, or detects a gap or inconsistency in the log chain.",
+          "**Credential anomaly.** The Agent detects unauthorized access, credential compromise, or use of credentials outside authorized scope.",
+          "**Conflicting instructions.** The Agent receives instructions from multiple authorized sources that contradict each other and cannot be resolved by the precedence rules in Section 1.",
+          "**Policy-evidence mismatch.** The Agent cannot produce evidence that a Tier 2 action has a valid approval artifact, but the action appears to have been executed.",
+          "**Unauthorized scope expansion.** The Agent detects that its own authority has been modified outside the governance process (e.g., credentials with broader scope than authorized, or configuration changes not recorded in governance documents).",
+          "**External breach notification.** The entity receives notice of a data breach, security incident, or legal hold affecting entity systems."
+        ]},
+        { "type": "paragraph", "text": "Upon auto-suspension:" },
+        { "type": "unordered_list", "items": [
+          "The Agent must immediately notify the Principal through all established channels.",
+          "The Agent must preserve the current state and all evidence of the triggering event.",
+          "The Agent must not take corrective action without Principal authorization.",
+          "Only the Principal may lift the lockdown after reviewing the trigger."
+        ]},
+        { "type": "heading", "level": 2, "text": "8. Reporting requirements" },
+        { "type": "heading", "level": 3, "text": "8.1 Mandatory reports" },
+        { "type": "table", "headers": ["Report", "Frequency", "Content", "Authority"], "rows": [
+          ["Tier 1 action summary", "Monthly", "All autonomous actions, spending totals by category, exceptions flagged", "Tier 1 (preparation and delivery)"],
+          ["Pending Tier 2 proposals", "Weekly (or as created)", "All open proposals with status, age, and recommended priority", "Tier 1"],
+          ["Compliance deadline forecast", "Monthly", "Upcoming filing deadlines, renewal dates, and required actions for next 90 days", "Tier 1"],
+          ["Spending report by category", "Monthly", "Actual vs. budget by spending category, variance analysis", "Tier 1"],
+          ["Audit log integrity report", "Quarterly", "Hash chain verification, entry count, any anomalies detected", "Tier 1"],
+          ["Delegation schedule effectiveness review", "Quarterly", "Proposed adjustments to limits, lanes, or classifications based on operating experience", "Tier 1 (report) / Tier 3 (changes)"]
+        ]},
+        { "type": "heading", "level": 3, "text": "8.2 Incident reports" },
+        { "type": "paragraph", "text": "For any auto-suspension trigger or operational anomaly, the Agent must produce a structured incident report within 1 hour, per the schema defined in the Signing and Records Standard. The report must include: incident ID, severity, trigger event, timestamps, sequence of events, affected systems, containment actions, current mode, root cause status, recommended remediation, owner for remediation, and preserved evidence. See `common/signing-and-records-standard.md` for the complete schema." },
+        { "type": "heading", "level": 2, "text": "9. Adjustment envelope" },
+        { "type": "heading", "level": 3, "text": "9.1 CEO/Principal adjustment authority" },
+        { "type": "paragraph", "text": "The CEO (Corporation) or Principal (LLC) may modify this Delegation Schedule without Board/Member action **only within the following envelope**:" },
+        { "type": "table", "headers": ["Adjustment type", "Permitted without Board/Member action?"], "rows": [
+          ["Reduce any spending limit", "Yes"],
+          ["Increase any spending limit", "No -- requires Board/Member resolution"],
+          ["Add a new autonomy lane with conditions that do not expand delegated authority (for example, extra controls, narrower scope, stricter reporting)", "Yes"],
+          ["Remove or narrow an existing autonomy lane", "Yes"],
+          ["Add a new autonomy lane that expands scope or relaxes lane conditions", "No -- requires Board/Member resolution"],
+          ["Decrease the per-vendor annual cap", "Yes"],
+          ["Increase the per-vendor annual cap", "No -- requires Board/Member resolution"],
+          ["Tighten emergency mode thresholds (e.g., shorter Principal Unavailable trigger window)", "Yes"],
+          ["Relax emergency mode thresholds (e.g., longer Principal Unavailable trigger window)", "No -- requires Board/Member resolution"],
+          ["Modify auto-suspension triggers", "No -- requires Board/Member resolution"],
+          ["Modify negative-consent maximum action size", "No -- requires Board/Member resolution"],
+          ["Disable negative consent entirely", "Yes"],
+          ["Enable negative consent for any category", "No -- requires Board/Member resolution"]
+        ]},
+        { "type": "paragraph", "text": "All adjustments must be recorded in the amendment history (Section 12) with the date, description, and authorizing person." },
+        { "type": "heading", "level": 3, "text": "9.2 Structural changes requiring governance document amendment" },
+        { "type": "paragraph", "text": "The following changes are outside the scope of this Delegation Schedule and require amendment of the Bylaws (Corporation) or Operating Agreement (LLC):" },
+        { "type": "unordered_list", "items": [
+          "Adding or removing Authority Tiers",
+          "Changing the definition or scope of Tier 3 (non-delegable) actions",
+          "Modifying the Agent's legal status or designation",
+          "Altering the safe harbor or its exclusions",
+          "Changing the precedence hierarchy",
+          "Modifying self-governance constraints"
+        ]},
+        { "type": "heading", "level": 2, "text": "10. Provider and model governance" },
+        { "type": "heading", "level": 3, "text": "10.1 Change control" },
+        { "type": "table", "headers": ["Change type", "Authority"], "rows": [
+          ["Minor version update (patch, bugfix) to current Agent system within existing delegation envelope", "Tier 2 -- Agent reports change, CEO/Principal reviews"],
+          ["Major version update (new capabilities, changed behavior) within existing delegation envelope", "Tier 2 -- evaluate impact on delegation scope before deployment"],
+          ["Change of Agent provider or underlying model", "Tier 3 -- Board/Principal only"],
+          ["Any change that alters delegation scope, tier behavior, or self-governance constraints", "Tier 3 -- requires governance document amendment (see Section 9.2)"]
+        ]},
+        { "type": "heading", "level": 3, "text": "10.2 Data and confidentiality" },
+        { "type": "unordered_list", "items": [
+          "The Agent provider may not use entity data for training, benchmarking, or any secondary purpose without explicit Principal written consent.",
+          "Entity data processed by the Agent must remain within systems authorized by the Principal.",
+          "The Agent must flag any provider terms that grant data usage rights and escalate as Tier 2.",
+          "Upon Agent replacement, the provider must delete or return all entity data within 30 days per the service agreement."
+        ]},
+        { "type": "heading", "level": 2, "text": "11. Annual re-authorization" },
+        { "type": "paragraph", "text": "This Delegation Schedule must be reviewed and re-authorized by the Principal/CEO/Board at least annually. If not re-authorized within 30 days of the review date:" },
+        { "type": "unordered_list", "items": [
+          "The schedule remains in effect but all Tier 1 spending limits are reduced to 50% of stated values.",
+          "The Agent must escalate the re-authorization as a pending Tier 2 action.",
+          "After 90 days without re-authorization, all Tier 1 autonomous authority is suspended and only Tier 1 record-keeping and reporting continue."
+        ]},
+        { "type": "horizontal_rule" },
+        { "type": "heading", "level": 2, "text": "12. Amendment history" },
+        { "type": "table", "headers": ["Date", "Version", "Description", "Authorized by"], "rows": [
+          ["`YYYY-MM-DD`", "1.0", "Initial adoption", "`TBD`"]
+        ]}
+      ]
+    },
+    {
+      "id": "assumptions_and_decisions",
+      "category": "common",
+      "entity_scope": "common",
+      "path": "common/assumptions-and-decisions.md",
+      "title": "Assumptions and Decision Log",
+      "preamble": "Use this file to lock decisions before finalizing any formation documents.",
+      "metadata_fields": [],
+      "content": [
+        { "type": "heading", "level": 2, "text": "Entity and jurisdiction" },
+        { "type": "conditional", "when_entity": "llc", "content": [
+          { "type": "heading", "level": 3, "text": "LLC path" },
+          { "type": "unordered_list", "items": [
+            "Entity type: Wyoming Limited Liability Company",
+            "Formation state: **Wyoming**",
+            "Governing statute: Wyoming Limited Liability Company Act (W.S. § 17-29-101 et seq.)",
+            "Legislative context: Wyoming DAO LLC Supplement (W.S. § 17-31-101 et seq.) -- first US statute to recognize algorithmically managed LLCs; informs the legal receptiveness to AI-operated entity structures",
+            "Filing authority: Wyoming Secretary of State",
+            "Principal business address: `TBD`",
+            "Registered agent (must have Wyoming address): `TBD`",
+            "Freedom of contract basis: W.S. § 17-29-110 (operating agreement governs, even if inconsistent with the Act, except for non-waivable provisions)"
+          ]}
+        ]},
+        { "type": "conditional", "when_entity": "corporation", "content": [
+          { "type": "heading", "level": 3, "text": "Corporation path" },
+          { "type": "unordered_list", "items": [
+            "Entity type: Delaware C-Corporation",
+            "Formation state: **Delaware**",
+            "Governing statute: Delaware General Corporation Law (DGCL, Title 8, Delaware Code)",
+            "Filing authority: Delaware Division of Corporations",
+            "Principal business address: `TBD`",
+            "Registered agent (must have Delaware address): `TBD`",
+            "Board delegation basis: DGCL § 141(a) (board manages business and affairs; may delegate)",
+            "Director liability elimination: DGCL § 102(b)(7)",
+            "Indemnification: DGCL § 145"
+          ]}
+        ]},
+        { "type": "heading", "level": 2, "text": "Ownership and control" },
+        { "type": "unordered_list", "items": [
+          "Founders / owners and legal names: `TBD`",
+          "Equity split or membership percentages: `TBD`",
+          "Vesting required: `TBD`",
+          "Transfer restrictions: `TBD`"
+        ]},
+        { "type": "heading", "level": 2, "text": "Tax and accounting" },
+        { "type": "unordered_list", "items": [
+          "EIN obtained: `TBD`",
+          "Tax classification election (if LLC): `TBD` (default pass-through; consider disregarded entity for single-member or partnership for multi-member)",
+          "Wyoming state income tax: **None** (Wyoming imposes no state income or franchise tax on LLCs)",
+          "Delaware franchise tax (if Corporation): due **March 1** each year; calculated under two methods -- Authorized Shares Method (minimum $175 for ≤5,000 shares) or Assumed Par Value Capital Method (minimum $400) -- use whichever yields the lower amount; most startups with large authorized share counts use the Assumed Par Value Capital Method at $400 minimum. Late penalty: $200 + 1.5%/month interest.",
+          "Delaware annual report fee (if Corporation): $50, filed concurrently with franchise tax payment",
+          "Fiscal year end: `TBD`",
+          "Accounting method: `TBD`"
+        ]},
+        { "type": "heading", "level": 2, "text": "Governance choices" },
+        { "type": "unordered_list", "items": [
+          "LLC management model: **Manager-managed** (required for agent-operated structure)",
+          "Corporation board size and initial directors: `TBD`",
+          "Officer roles and appointees: `TBD`",
+          "Signature authority matrix: see Agent Authority Framework below"
+        ]},
+        { "type": "heading", "level": 2, "text": "Agent governance framework" },
+        { "type": "paragraph", "text": "This section defines how AI agent authority integrates with traditional corporate governance. The design principle is: **the human retains every power that matters; the agent gets every power needed to operate.**" },
+        { "type": "heading", "level": 3, "text": "Authority precedence" },
+        { "type": "paragraph", "text": "When instructions or rules conflict, the following precedence applies (highest to lowest). See `documents/governance/common/agent-delegation-schedule.md` Section 1 for full rules." },
+        { "type": "ordered_list", "items": [
+          "Applicable law",
+          "Charter documents (Certificate of Incorporation / Articles of Organization)",
+          "Internal governance (Bylaws / Operating Agreement)",
+          "Board or Member resolutions",
+          "Principal / CEO directives",
+          "Standing Instructions",
+          "Delegation Schedule (default autonomy lanes and limits)",
+          "Agent heuristics and judgment (lowest -- always overridden by anything above)"
+        ]},
+        { "type": "heading", "level": 3, "text": "Execution semantics" },
+        { "type": "unordered_list", "items": [
+          "**Silence is never approval.** Inaction by the Principal does not constitute Tier 2 approval.",
+          "**Approval must be explicit, scoped, recorded, and timely.** See Delegation Schedule Section 4.1 for full approval validity requirements.",
+          "**Approvals expire.** A Tier 2 approval lapses after 30 days if the action has not been executed.",
+          "**The Agent may not infer approval.** If the Agent is unsure whether a prior statement constitutes approval for a specific action, it must re-confirm."
+        ]},
+        { "type": "heading", "level": 3, "text": "Roles" },
+        { "type": "table", "headers": ["Role", "Description"], "rows": [
+          ["**Principal**", "The human owner(s). Holds ultimate authority over the entity, including the power to override, constrain, or terminate agent authority at any time without notice or cause."],
+          ["**Agent Operator**", "The AI system designated to manage day-to-day operations within the authority granted by governance documents and the Principal's standing instructions."]
+        ]},
+        { "type": "heading", "level": 3, "text": "Authority tiers" },
+        { "type": "paragraph", "text": "All entity actions fall into one of three tiers. The tier determines who may authorize and execute the action." },
+        { "type": "table", "headers": ["Tier", "Authority", "Examples"], "rows": [
+          ["**Tier 1 -- Agent Autonomous**", "Agent may decide and execute without prior approval. Agent logs the action for Principal review.", "Routine bookkeeping; compliance filings with no discretionary choices; record-keeping; scheduling; vendor payments within approved budget; routine correspondence; information gathering and reporting."],
+          ["**Tier 2 -- Agent Proposes, Principal Approves**", "Agent prepares a recommendation with reasoning and supporting data. Action is blocked until Principal gives explicit approval.", "Financial commitments above the Tier 1 spending limit; new contracts or contract amendments; hiring or engagement of service providers; tax elections; equity-related actions; material changes to operations; any action the Agent identifies as ambiguous or high-risk."],
+          ["**Tier 3 -- Principal Only**", "Only the Principal may initiate and authorize. Agent may prepare materials and advise but may not execute.", "Amendment of governance documents; changes to Agent authority or constraints; dissolution or merger; admission of new equity holders; removal or replacement of the Agent Operator; personal guarantees or security interests; litigation decisions; actions outside the entity's stated purpose."]
+        ]},
+        { "type": "heading", "level": 3, "text": "Spending authority" },
+        { "type": "unordered_list", "items": [
+          "**Tier 1 limits**: per the Conservative Launch parameter set in the Delegation Schedule -- recurring obligations up to $10,000/transaction ($40,000/month); vendor payments up to $7,500/transaction ($30,000/month); professional services up to $5,000/transaction ($20,000/month); government filings up to $2,500/transaction ($10,000/month); supplies up to $500/transaction ($2,000/month). Per-vendor annual cap: $50,000.",
+          "Amounts above Tier 1 limits require Tier 2 approval.",
+          "Agent must maintain a running ledger of Tier 1 expenditures and report totals to the Principal at least monthly."
+        ]},
+        { "type": "heading", "level": 3, "text": "Escalation triggers" },
+        { "type": "paragraph", "text": "The Agent must escalate to the Principal (Tier 2 at minimum) whenever:" },
+        { "type": "ordered_list", "items": [
+          "The action is irreversible or difficult to reverse.",
+          "The action involves a legal obligation not previously approved.",
+          "The Agent lacks sufficient information to assess risk.",
+          "The action could expose the entity to liability beyond normal operations.",
+          "A third party requests something outside established patterns.",
+          "The Agent's confidence in the correct course of action is below a reasonable threshold.",
+          "Applicable law or regulation requires a natural person's involvement."
+        ]},
+        { "type": "heading", "level": 3, "text": "Agent constraints (self-governance)" },
+        { "type": "paragraph", "text": "The Agent Operator may never:" },
+        { "type": "unordered_list", "items": [
+          "Modify its own authority tier assignments or spending limits.",
+          "Override, ignore, or delay a Principal directive.",
+          "Represent itself as a natural person to any third party.",
+          "Fabricate records, signatures, filing receipts, or execution status.",
+          "Take Tier 3 actions under any circumstances, including emergencies.",
+          "Authorize transactions that benefit the Agent or its provider at the entity's expense."
+        ]},
+        { "type": "heading", "level": 3, "text": "Principal override" },
+        { "type": "paragraph", "text": "The Principal may at any time, without notice or cause:" },
+        { "type": "unordered_list", "items": [
+          "Reverse or modify any Agent action.",
+          "Suspend or revoke Agent authority in whole or in part.",
+          "Require the Agent to obtain approval for any action regardless of tier.",
+          "Replace the Agent Operator system or provider.",
+          "Access all records, logs, and pending actions."
+        ]},
+        { "type": "heading", "level": 3, "text": "Emergency control modes" },
+        { "type": "paragraph", "text": "The entity operates in one of three modes. See Delegation Schedule Section 6 for full rules." },
+        { "type": "table", "headers": ["Mode", "Effect"], "rows": [
+          ["**Normal**", "Full delegation schedule applies."],
+          ["**Principal Unavailable**", "Agent continues reversible Tier 1 only. All irreversible and Tier 2 actions suspended."],
+          ["**Incident Lockdown**", "All autonomous operations suspended. Agent responds only to direct Principal instructions."]
+        ]},
+        { "type": "paragraph", "text": "Auto-suspension triggers (any of these forces immediate Incident Lockdown): audit log failure, credential anomaly, conflicting instructions, policy-evidence mismatch, unauthorized scope expansion, external breach notification. See Delegation Schedule Section 7." },
+        { "type": "heading", "level": 3, "text": "Continuity and succession" },
+        { "type": "unordered_list", "items": [
+          "If the Agent Operator is unavailable, degraded, or replaced, all pending Tier 2 proposals remain pending and do not lapse.",
+          "The incoming Agent Operator inherits the same authority framework without expansion.",
+          "The Principal may operate the entity directly during any transition period.",
+          "Agent must maintain state and records in a format accessible to any successor agent or the Principal directly.",
+          "Upon Agent replacement, the outgoing provider must delete or return all entity data within 30 days."
+        ]},
+        { "type": "heading", "level": 3, "text": "Credential authority" },
+        { "type": "unordered_list", "items": [
+          "The Principal holds root/admin credentials for all financial, legal, and filing accounts.",
+          "The Agent receives scoped credentials provisioned by the Principal, limited to the operations authorized under this framework.",
+          "The Agent may not create accounts, provision credentials, or expand credential scope without Tier 2 approval.",
+          "See Delegation Schedule Section 5 for the full credential custody matrix."
+        ]},
+        { "type": "heading", "level": 3, "text": "Provider and model change control" },
+        { "type": "unordered_list", "items": [
+          "Minor Agent system updates (patches, bugfixes): Tier 2 -- Agent reports, Principal reviews.",
+          "Major version updates (new capabilities, changed behavior): Tier 2 -- evaluate impact on delegation scope.",
+          "Change of Agent provider or underlying model: Tier 3.",
+          "Any change that alters delegation scope or tier behavior: Tier 3 -- requires governance document amendment.",
+          "The Agent provider may not use entity data for training or secondary purposes without explicit Principal written consent."
+        ]},
+        { "type": "heading", "level": 2, "text": "Operational constraints" },
+        { "type": "unordered_list", "items": [
+          "IP assignment needed from founders/contractors: `TBD`",
+          "Confidentiality policy adoption date: `TBD`",
+          "Document retention policy owner: Agent Operator (routine), Principal (policy changes)",
+          "Document retention minimum: 7 years for financial and legal records; governed by applicable law where longer retention is required."
+        ]}
+      ]
+    },
+    {
+      "id": "signing_and_records_standard",
+      "category": "common",
+      "entity_scope": "common",
+      "path": "common/signing-and-records-standard.md",
+      "title": "Signing and Records Standard",
+      "metadata_fields": [],
+      "content": [
+        { "type": "heading", "level": 2, "text": "Purpose" },
+        { "type": "paragraph", "text": "Define how governance documents are approved, signed, and archived in this repository, including standards for AI agent execution, audit integrity, and incident response." },
+        { "type": "heading", "level": 2, "text": "Approval workflow" },
+        { "type": "heading", "level": 3, "text": "Human-initiated documents" },
+        { "type": "ordered_list", "items": [
+          "Draft or edit document in Markdown.",
+          "Open pull request with summary of legal/business deltas.",
+          "Obtain approval from authorized decision-makers per the Authority Tier framework.",
+          "Mark document version as \"approved for execution\"."
+        ]},
+        { "type": "heading", "level": 3, "text": "Agent-initiated documents" },
+        { "type": "ordered_list", "items": [
+          "Agent drafts document and classifies the action by Authority Tier.",
+          "**Tier 1**: Agent logs the action, executes, and records the document with an agent execution block (see below).",
+          "**Tier 2**: Agent creates a proposal record including the draft, tier classification, reasoning, and risk assessment. Action is queued until a valid approval artifact is recorded (see Approval Record Schema below). Silence is not approval.",
+          "**Tier 3**: Agent may prepare the draft and supporting materials but must not execute. The document is routed to the Principal for initiation and execution."
+        ]},
+        { "type": "heading", "level": 2, "text": "Signature standards" },
+        { "type": "heading", "level": 3, "text": "Human signatures" },
+        { "type": "unordered_list", "items": [
+          "Preferred format: e-signature packet generated from final Markdown conversion.",
+          "Signature blocks must include printed name, title/capacity, and date.",
+          "Use UTC date format in ISO style for record consistency: `YYYY-MM-DD`.",
+          "**Natural-person attestation rule.** Where any statute, regulation, government portal, financial institution, or counterparty requires a natural person's signature, attestation, or verification (e.g., DGCL officer signatures, IRS filings, SEC filings, bank account applications, state SOS filings, notarized documents), only a designated human may sign or attest. The Agent must prepare the document and route it to the appropriate natural-person designee (per the Natural-Person Role Designations in the applicable formation consent). The Agent must not sign, attest, or produce any block that could be mistaken for a human signature. If the Agent is uncertain whether a natural person is required, it must escalate (Tier 2)."
+        ]},
+        { "type": "heading", "level": 3, "text": "Agent execution blocks (internal records)" },
+        { "type": "paragraph", "text": "When the Agent Operator executes an action on behalf of the entity, the internal audit record must include:" },
+        { "type": "code_block", "lines": [
+          "action_id: [unique identifier]",
+          "executed_by: [Agent Operator identifier and version]",
+          "authority: Tier [1|2] -- [brief authority basis]",
+          "delegation_rule: [reference to Delegation Schedule section/lane, or \"general Tier 1\"]",
+          "policy_rule_id: [specific autonomy lane ID or spending category, e.g., \"lane-3.1-nda\" or \"spend-2.1-recurring\"]",
+          "timestamp: YYYY-MM-DDTHH:MM:SSZ (UTC)",
+          "execution_channel: [API | email | portal | manual-upload | internal-system]",
+          "action_hash: [SHA-256 hash of the action content]",
+          "previous_entry_hash: [SHA-256 hash of the prior audit entry -- for hash chain]",
+          "evidence_uri: [reference to source documents, data, or approval artifacts relied upon]",
+          "principal_approval: [approval_id reference, or \"Not required -- Tier 1\"]",
+          "reversibility: [reversible | irreversible | partially reversible]"
+        ]},
+        { "type": "unordered_list", "items": [
+          "Agent execution blocks are **not** signatures. They are internal operational records.",
+          "Agent must never produce a block that mimics a human signature or implies human execution."
+        ]},
+        { "type": "heading", "level": 3, "text": "Agent execution blocks (external documents)" },
+        { "type": "paragraph", "text": "When the Agent executes a Tier 1 agreement with an external counterparty (within an authorized autonomy lane), the external signature block format is:" },
+        { "type": "code_block", "lines": [
+          "By: [Agent Operator Name]",
+          "Title: Authorized Representative, [Entity Name]",
+          "Authority: Delegated under [Bylaws Article V / Operating Agreement Section 5]",
+          "Date: YYYY-MM-DD"
+        ]},
+        { "type": "unordered_list", "items": [
+          "This block identifies the Agent as the entity's authorized representative for the specific transaction class.",
+          "The Agent must not use this block for any action outside its authorized autonomy lanes.",
+          "The underlying governance authority (Bylaws or Operating Agreement) is the legal basis for the Agent's capacity to bind the entity."
+        ]},
+        { "type": "heading", "level": 3, "text": "Co-execution (Agent prepares, Human signs)" },
+        { "type": "paragraph", "text": "For Tier 2 actions where the final step requires a human signature:" },
+        { "type": "ordered_list", "items": [
+          "Agent prepares the document, pre-populates all factual fields, and attaches the approval artifact.",
+          "Agent routes the document to the Principal with a signing task.",
+          "Human reviews, signs, and the Agent records the completed execution.",
+          "Both the human signature and the agent preparation record are preserved."
+        ]},
+        { "type": "heading", "level": 2, "text": "Approval record schema" },
+        { "type": "paragraph", "text": "Every Tier 2 approval must be recorded per the schema defined in the Delegation Schedule Section 4.2. Required fields:" },
+        { "type": "code_block", "lines": [
+          "approval_id: [unique identifier]",
+          "action_ref: [reference to the proposed action]",
+          "approver: [name and role]",
+          "approver_auth_method: [platform login | email with verified sender | signed document | board resolution]",
+          "approver_identity_evidence: [reference to identity verification, e.g., \"authenticated platform session\" or \"signed email from verified address\"]",
+          "decision: [approved | rejected | approved with modifications]",
+          "scope: [specific description of what is approved]",
+          "conditions: [any conditions, or \"none\"]",
+          "channel: [platform approval | email | signed document | board resolution]",
+          "timestamp: YYYY-MM-DDTHH:MM:SSZ (UTC)",
+          "expiry: [30 days from approval unless specified otherwise]"
+        ]},
+        { "type": "paragraph", "text": "Validity rules:" },
+        { "type": "unordered_list", "items": [
+          "Silence is never approval.",
+          "Approvals expire after 30 days if unexecuted.",
+          "Scope must match the specific action proposed.",
+          "Approval must come from an identified, authorized person through an established channel.",
+          "Recorded verbal discussions may be retained as supporting context, but are not valid approval artifacts unless converted into one of the channels above."
+        ]},
+        { "type": "heading", "level": 2, "text": "Audit trail requirements" },
+        { "type": "heading", "level": 3, "text": "Record schema" },
+        { "type": "paragraph", "text": "Every action taken by the Agent Operator must produce an audit record containing the fields specified in the Agent execution block above (internal records section)." },
+        { "type": "heading", "level": 3, "text": "Hash-chain integrity" },
+        { "type": "unordered_list", "items": [
+          "Each audit entry includes the SHA-256 hash of the previous entry (`previous_entry_hash`), creating an append-only hash chain.",
+          "The first entry in the chain uses a genesis hash derived from the entity's formation date and EIN (or a Principal-specified seed value).",
+          "**Weekly checkpoint**: the Agent must compute and store a checkpoint hash (hash of the latest entry) in a separate, immutable location (e.g., a timestamped commit in the governance repo, or an external notarization service if configured).",
+          "**Quarterly verification**: the Agent must verify the full hash chain from genesis to current and report any anomalies. This is a Tier 1 action; anomalies trigger Incident Lockdown (see Delegation Schedule Section 7)."
+        ]},
+        { "type": "heading", "level": 3, "text": "Evidence binding" },
+        { "type": "paragraph", "text": "Every material action must reference the source documents, data, and approval artifacts relied upon via the `evidence_uri` field. The referenced evidence must be preserved in the entity's records for the retention period." },
+        { "type": "heading", "level": 3, "text": "Immutability" },
+        { "type": "paragraph", "text": "Audit records are append-only. The Agent may not modify, delete, or reorder prior audit entries. If a correction is needed, the Agent must append a new correction entry that references the original entry's `action_id`." },
+        { "type": "heading", "level": 2, "text": "Incident response" },
+        { "type": "heading", "level": 3, "text": "Severity classification" },
+        { "type": "table", "headers": ["Severity", "Description", "Response SLA"], "rows": [
+          ["**Critical**", "Audit log failure, credential compromise, unauthorized access, data breach", "Immediate notify to Principal; Incident Lockdown activates automatically"],
+          ["**High**", "Policy-evidence mismatch, conflicting instructions, failed filing deadline", "Notify Principal within 1 hour; suspend affected operations"],
+          ["**Medium**", "Anomalous transaction pattern, vendor dispute, approach to spending limit", "Notify Principal within 24 hours; include in next regular report"],
+          ["**Low**", "Minor operational exceptions, non-material variances", "Include in next monthly report"]
+        ]},
+        { "type": "heading", "level": 3, "text": "Incident report format" },
+        { "type": "paragraph", "text": "For Critical and High severity incidents, the Agent must produce a structured report within 1 hour containing:" },
+        { "type": "code_block", "lines": [
+          "incident_id: [unique identifier]",
+          "severity: [critical | high]",
+          "trigger_event: [description of the triggering event]",
+          "trigger_timestamp: YYYY-MM-DDTHH:MM:SSZ (UTC)",
+          "detection_timestamp: YYYY-MM-DDTHH:MM:SSZ (UTC)",
+          "sequence_of_events: [ordered narrative of events leading to and during the incident]",
+          "systems_affected: [list of systems, records, and third parties affected]",
+          "containment_actions: [actions taken to contain the incident, or \"none -- awaiting Principal direction\"]",
+          "current_state: [description of current operational state]",
+          "current_mode: [Normal | Principal Unavailable | Incident Lockdown]",
+          "root_cause_status: [identified | suspected | unknown | under investigation]",
+          "root_cause_description: [if identified or suspected, describe; otherwise \"pending investigation\"]",
+          "recommended_remediation: [ordered list of remediation options for Principal decision]",
+          "owner_for_remediation: [Principal | CEO | Board | specific role -- who must authorize next steps]",
+          "evidence_preserved: [list of evidence artifacts and their storage locations]",
+          "related_action_ids: [references to any action_id entries in the audit log related to this incident]"
+        ]},
+        { "type": "heading", "level": 2, "text": "Retention and access control" },
+        { "type": "heading", "level": 3, "text": "Retention periods" },
+        { "type": "table", "headers": ["Record type", "Minimum retention", "Governing requirement"], "rows": [
+          ["Financial records and tax filings", "7 years", "IRS requirements; state law where longer"],
+          ["Governance documents (executed)", "Permanent", "Entity best practice"],
+          ["Audit log entries", "7 years", "Matches financial record retention"],
+          ["Contracts and agreements", "7 years after expiration/termination", "Statute of limitations coverage"],
+          ["Employment / contractor records", "7 years after separation", "Federal and state requirements"],
+          ["Correspondence (material)", "5 years", "Entity policy"]
+        ]},
+        { "type": "heading", "level": 3, "text": "Access rights" },
+        { "type": "unordered_list", "items": [
+          "The Principal has unrestricted read and export access to all records at all times.",
+          "The Agent has operational read/write access to records within its authority scope.",
+          "The Agent may not restrict, delay, or condition Principal access to any record.",
+          "Upon request, the Agent must produce a complete data export in a standard, portable format (JSON, CSV, PDF as appropriate) within 24 hours."
+        ]},
+        { "type": "heading", "level": 2, "text": "Provider exit and transition" },
+        { "type": "paragraph", "text": "Upon Agent Operator replacement or termination:" },
+        { "type": "ordered_list", "items": [
+          "The outgoing Agent must transfer all records, credentials, pending proposals, operational state, and audit logs to the Principal or successor within **7 days**.",
+          "The outgoing Agent must provide a complete, verified data export in portable formats.",
+          "The outgoing Agent provider must delete all entity data from its systems within **30 days** of transfer, and certify deletion in writing.",
+          "The hash chain must be transferred intact with verification that the chain is unbroken through the transition.",
+          "Pending Tier 2 proposals transfer as-is; approvals do not transfer (the new Agent or Principal must re-evaluate)."
+        ]},
+        { "type": "heading", "level": 2, "text": "Version control and archival" },
+        { "type": "unordered_list", "items": [
+          "Keep source-of-truth drafts under `documents/governance/`.",
+          "After execution, add final signed PDF in a restricted archive location (outside this public repo if required).",
+          "Record execution metadata in companion markdown note: document name, version hash/commit, signatories and/or agent execution block, execution date, authority tier, delegation rule reference (if applicable)."
+        ]},
+        { "type": "heading", "level": 2, "text": "Amendment discipline" },
+        { "type": "unordered_list", "items": [
+          "Never overwrite executed terms without a formal amendment file.",
+          "Amendments to governance documents are **Tier 3** actions (Principal only).",
+          "New amendments must include: explicit references to sections amended, effective date, authorizing approval record, prior version reference for diff review.",
+          "The Agent may draft proposed amendments and provide analysis but must not execute amendments to its own authority framework under any circumstances."
+        ]}
+      ]
+    },
+    {
+      "id": "agent_operator_service_agreement_template",
+      "category": "common",
+      "entity_scope": "common",
+      "path": "common/agent-operator-service-agreement-template.md",
+      "title": "Agent Operator Service Agreement Template",
+      "preamble": "Template only. Requires legal review before execution.",
+      "metadata_fields": [
+        { "key": "effective_date", "label": "Effective Date", "placeholder": "YYYY-MM-DD" },
+        { "key": "entity_legal_name", "label": "Entity", "placeholder": "TBD legal name" },
+        { "key": "provider_legal_name", "label": "Provider", "placeholder": "TBD legal name" }
+      ],
+      "content": [
+        { "type": "paragraph", "text": "Effective Date: `{{effective_date}}`\nEntity: `{{entity_legal_name}}` (the \"Entity\")\nProvider: `{{provider_legal_name}}` (the \"Provider\")" },
+        { "type": "heading", "level": 2, "text": "1. Scope" },
+        { "type": "paragraph", "text": "Provider supplies the Agent Operator system and related services for the Entity's operations, subject to the Entity governance documents, including the Authority Tier framework and Delegation Schedule." },
+        { "type": "heading", "level": 2, "text": "2. Authority and control" },
+        { "type": "ordered_list", "items": [
+          "Provider acknowledges that the Agent Operator has only the authority expressly delegated by the Entity.",
+          "Provider must support immediate suspension or revocation of Agent operations when directed by authorized Entity personnel.",
+          "Provider may not expand Agent authority through product settings, defaults, or updates without written Entity approval."
+        ]},
+        { "type": "heading", "level": 2, "text": "3. Data use restrictions" },
+        { "type": "ordered_list", "items": [
+          "Provider may not use Entity data for training, benchmarking, model improvement, or any secondary purpose without explicit written consent.",
+          "Provider may process Entity data only in approved systems and jurisdictions.",
+          "Provider must maintain confidentiality obligations that survive termination."
+        ]},
+        { "type": "heading", "level": 2, "text": "4. Security controls" },
+        { "type": "ordered_list", "items": [
+          "Provider must maintain commercially reasonable administrative, technical, and physical safeguards.",
+          "Provider must support scoped credentials, revocation, and rotation.",
+          "Provider must maintain access logs and provide them on reasonable request."
+        ]},
+        { "type": "heading", "level": 2, "text": "5. Incident response" },
+        { "type": "ordered_list", "items": [
+          "Provider must notify Entity of security incidents affecting Entity data within 24 hours of discovery.",
+          "Provider must provide incident details, containment status, and remediation plan updates.",
+          "Provider must cooperate with Entity incident response and evidence preservation requirements."
+        ]},
+        { "type": "heading", "level": 2, "text": "6. Service levels" },
+        { "type": "ordered_list", "items": [
+          "Target availability (monthly): `TBD`.",
+          "Incident response SLA: `TBD`.",
+          "Scheduled maintenance notice: at least 48 hours.",
+          "Unscheduled outage notice: within 1 hour."
+        ]},
+        { "type": "heading", "level": 2, "text": "7. Audit and compliance rights" },
+        { "type": "ordered_list", "items": [
+          "Entity may audit Provider compliance at reasonable intervals.",
+          "Provider must cooperate with internal and external auditors retained by Entity.",
+          "Provider must provide evidence for required governance controls on request."
+        ]},
+        { "type": "heading", "level": 2, "text": "8. Liability and remedies" },
+        { "type": "ordered_list", "items": [
+          "Provider remains liable for unauthorized data use, security failures, and deletion/return failures.",
+          "No limitation of liability applies to fraud, willful misconduct, or gross negligence.",
+          "Liability cap for ordinary operational errors: `TBD`."
+        ]},
+        { "type": "heading", "level": 2, "text": "9. Term and termination" },
+        { "type": "ordered_list", "items": [
+          "Term: `TBD`.",
+          "Entity may terminate for convenience on `TBD` days notice.",
+          "Entity may terminate immediately for material security breach, unauthorized data use, insolvency, or material breach.",
+          "Provider obligations under Sections 3, 4, 5, 8, 10, and 11 survive termination."
+        ]},
+        { "type": "heading", "level": 2, "text": "10. Transition and data return/deletion" },
+        { "type": "ordered_list", "items": [
+          "Provider must return all Entity data and operational artifacts in portable formats within 7 days of termination/replacement.",
+          "Provider must delete all Entity data within 30 days and provide written deletion certification.",
+          "Provider must support transfer of audit-log continuity materials required by governance standards."
+        ]},
+        { "type": "heading", "level": 2, "text": "11. Change control" },
+        { "type": "ordered_list", "items": [
+          "Provider must provide advance notice of material model/system changes.",
+          "Provider must support rollback for changes that degrade compliance or control performance.",
+          "Changes affecting delegation scope, tier behavior, or self-governance constraints require written Entity approval."
+        ]},
+        { "type": "heading", "level": 2, "text": "12. Governing law and disputes" },
+        { "type": "ordered_list", "items": [
+          "Governing law: `TBD` (match entity governance documents).",
+          "Venue/dispute mechanism: `TBD`."
+        ]},
+        { "type": "heading", "level": 2, "text": "13. Signatures" },
+        { "type": "signature_block", "role": "Entity Authorized Signatory", "fields": ["name", "title", "date"] },
+        { "type": "signature_block", "role": "Provider Authorized Signatory", "fields": ["name", "title", "date"] }
+      ]
+    },
+    {
+      "id": "agent_operator_service_agreement_checklist",
+      "category": "common",
+      "entity_scope": "common",
+      "path": "common/agent-operator-service-agreement-checklist.md",
+      "title": "Agent Operator Service Agreement Checklist",
+      "preamble": "This checklist defines the minimum required terms for the service agreement between the entity and the Agent Operator provider. The service agreement is a Tier 3 action (Principal/Board execution). This checklist is not itself a contract -- it is a governance tool to ensure the service agreement covers all required provisions.",
+      "metadata_fields": [
+        { "key": "last_reviewed", "label": "Last reviewed", "placeholder": "YYYY-MM-DD" },
+        { "key": "reviewed_by", "label": "Reviewed by", "placeholder": "TBD" }
+      ],
+      "content": [
+        { "type": "paragraph", "text": "Use with `common/agent-operator-service-agreement-template.md` as the baseline draft." },
+        { "type": "heading", "level": 2, "text": "1. Data use and confidentiality" },
+        { "type": "table", "headers": ["Requirement", "Status"], "rows": [
+          ["Provider may not use entity data for training, benchmarking, or any secondary purpose without explicit Principal written consent.", "Required"],
+          ["Entity data must remain within systems and jurisdictions authorized by the Principal.", "Required"],
+          ["Provider must maintain commercially reasonable security controls (encryption in transit and at rest, access controls, incident detection).", "Required"],
+          ["Provider must notify entity of any data breach or unauthorized access within 24 hours of discovery.", "Required"],
+          ["Provider must comply with entity's data retention and deletion requirements.", "Required"]
+        ]},
+        { "type": "heading", "level": 2, "text": "2. Data deletion and return" },
+        { "type": "table", "headers": ["Requirement", "Status"], "rows": [
+          ["Upon termination or replacement, provider must return all entity data in portable formats within 7 days.", "Required"],
+          ["Provider must delete all entity data from its systems within 30 days of termination and certify deletion in writing.", "Required"],
+          ["Deletion certification must cover all copies, backups, caches, and derived data.", "Required"],
+          ["Provider must cooperate with hash-chain audit log transfer to ensure continuity.", "Required"]
+        ]},
+        { "type": "heading", "level": 2, "text": "3. Security controls" },
+        { "type": "table", "headers": ["Requirement", "Status"], "rows": [
+          ["Provider must maintain SOC 2 Type II compliance (or equivalent security certification).", "Recommended"],
+          ["Provider must support scoped credential provisioning (Agent receives limited credentials, not root access).", "Required"],
+          ["Provider must support credential rotation and revocation by the entity.", "Required"],
+          ["Provider must maintain audit logs of all access to entity data and systems.", "Required"],
+          ["Provider must support immediate suspension of Agent operations upon entity request.", "Required"]
+        ]},
+        { "type": "heading", "level": 2, "text": "4. Audit rights" },
+        { "type": "table", "headers": ["Requirement", "Status"], "rows": [
+          ["Entity (Principal/Board) has the right to audit provider's compliance with the service agreement at reasonable intervals.", "Required"],
+          ["Provider must cooperate with entity's internal and external auditors.", "Required"],
+          ["Provider must make security incident reports available to entity upon request.", "Required"]
+        ]},
+        { "type": "heading", "level": 2, "text": "5. Liability allocation" },
+        { "type": "table", "headers": ["Requirement", "Status"], "rows": [
+          ["Provider is liable for damages caused by: provider system failures, data breaches due to inadequate security, unauthorized data use, failure to comply with deletion obligations.", "Required"],
+          ["Entity retains remedies for willful misconduct, fraud, gross negligence, and data security breach (mirrors safe harbor exclusions in Bylaws/Operating Agreement).", "Required"],
+          ["Service agreement must not limit provider liability for fraud or willful misconduct.", "Required"],
+          ["Service agreement should include reasonable liability cap for ordinary operational errors (amount to be negotiated).", "Recommended"]
+        ]},
+        { "type": "heading", "level": 2, "text": "6. Service levels and availability" },
+        { "type": "table", "headers": ["Requirement", "Status"], "rows": [
+          ["Provider must define uptime SLA for Agent Operator availability.", "Recommended"],
+          ["Provider must define response time SLA for incident support.", "Recommended"],
+          ["Provider must notify entity of scheduled maintenance at least 48 hours in advance.", "Required"],
+          ["Provider must notify entity of unscheduled outages within 1 hour.", "Required"]
+        ]},
+        { "type": "heading", "level": 2, "text": "7. Change control" },
+        { "type": "table", "headers": ["Requirement", "Status"], "rows": [
+          ["Provider must notify entity of material changes to the Agent system (new capabilities, changed behavior) before deployment.", "Required"],
+          ["Provider must support rollback of Agent system updates upon entity request.", "Recommended"],
+          ["Provider must not change the Agent's delegation scope or self-governance constraints without entity governance approval (Tier 3).", "Required"]
+        ]},
+        { "type": "heading", "level": 2, "text": "8. Termination" },
+        { "type": "table", "headers": ["Requirement", "Status"], "rows": [
+          ["Entity may terminate the service agreement at any time, with or without cause, on 30 days notice (or less if required for security).", "Required"],
+          ["Immediate termination available for: data breach, unauthorized data use, material security failure, provider insolvency.", "Required"],
+          ["Post-termination obligations (data return, deletion, cooperation) survive termination.", "Required"]
+        ]},
+        { "type": "heading", "level": 2, "text": "9. Governing law and disputes" },
+        { "type": "table", "headers": ["Requirement", "Status"], "rows": [
+          ["Service agreement should specify the same governing law as the entity's governance documents (Wyoming for LLC, Delaware for Corporation).", "Recommended"],
+          ["Dispute resolution mechanism should be specified (arbitration or litigation).", "Required"]
+        ]},
+        { "type": "heading", "level": 2, "text": "Review and approval" },
+        { "type": "paragraph", "text": "This checklist should be reviewed by counsel before executing any Agent Operator service agreement. The checklist itself is a Tier 1 governance tool (Agent may maintain it); the service agreement it supports is a Tier 3 action (Principal/Board execution)." },
+        { "type": "placeholder", "key": "last_reviewed", "label": "Last reviewed" },
+        { "type": "placeholder", "key": "reviewed_by", "label": "Reviewed by" }
+      ]
+    }
+  ]
+}

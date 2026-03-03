@@ -20,12 +20,6 @@ pub struct Config {
     #[serde(default)]
     pub jwt_public_key_pem: Option<String>,
 
-    #[serde(default)]
-    pub stripe_secret_key: Option<String>,
-
-    #[serde(default)]
-    pub stripe_webhook_secret: Option<String>,
-
     /// PEM-encoded Ed25519 private key for signing git commits.
     /// When absent, commits are unsigned (backward-compatible).
     #[serde(default)]

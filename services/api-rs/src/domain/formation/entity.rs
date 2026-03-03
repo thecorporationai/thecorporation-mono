@@ -37,6 +37,8 @@ struct RawEntity {
     registered_agent_name: Option<String>,
     registered_agent_address: Option<String>,
     #[serde(default)]
+    formation_date: Option<DateTime<Utc>>,
+    #[serde(default)]
     service_agreement_executed: bool,
     #[serde(default)]
     service_agreement_executed_at: Option<DateTime<Utc>>,
@@ -64,6 +66,7 @@ impl TryFrom<RawEntity> for Entity {
             formation_status: raw.formation_status,
             registered_agent_name: raw.registered_agent_name,
             registered_agent_address: raw.registered_agent_address,
+            formation_date: raw.formation_date,
             service_agreement_executed: raw.service_agreement_executed,
             service_agreement_executed_at: raw.service_agreement_executed_at,
             service_agreement_contract_id: raw.service_agreement_contract_id,
@@ -89,6 +92,7 @@ pub struct Entity {
     formation_status: FormationStatus,
     registered_agent_name: Option<String>,
     registered_agent_address: Option<String>,
+    formation_date: Option<DateTime<Utc>>,
     service_agreement_executed: bool,
     service_agreement_executed_at: Option<DateTime<Utc>>,
     service_agreement_contract_id: Option<ContractId>,
@@ -122,6 +126,7 @@ impl Entity {
             formation_status: FormationStatus::Pending,
             registered_agent_name,
             registered_agent_address,
+            formation_date: None,
             service_agreement_executed: false,
             service_agreement_executed_at: None,
             service_agreement_contract_id: None,
@@ -144,6 +149,9 @@ impl Entity {
         self.formation_status = to;
         if to == FormationStatus::Active {
             self.formation_state = FormationState::Active;
+            if self.formation_date.is_none() {
+                self.formation_date = Some(Utc::now());
+            }
         }
         Ok(())
     }
@@ -218,6 +226,14 @@ impl Entity {
 
     pub fn registered_agent_address(&self) -> Option<&str> {
         self.registered_agent_address.as_deref()
+    }
+
+    pub fn formation_date(&self) -> Option<DateTime<Utc>> {
+        self.formation_date
+    }
+
+    pub fn set_formation_date(&mut self, date: DateTime<Utc>) {
+        self.formation_date = Some(date);
     }
 
     pub fn created_at(&self) -> DateTime<Utc> {
@@ -329,6 +345,49 @@ mod tests {
         e.advance_status(FormationStatus::Active).unwrap();
         assert_eq!(e.formation_state(), FormationState::Active);
         assert_eq!(e.formation_status(), FormationStatus::Active);
+    }
+
+    #[test]
+    fn advance_to_active_auto_sets_formation_date() {
+        let mut e = make_entity();
+        assert!(e.formation_date().is_none());
+        // Walk the FSM to Active
+        e.advance_status(FormationStatus::DocumentsGenerated)
+            .unwrap();
+        e.advance_status(FormationStatus::DocumentsSigned).unwrap();
+        e.advance_status(FormationStatus::FilingSubmitted).unwrap();
+        e.advance_status(FormationStatus::Filed).unwrap();
+        e.advance_status(FormationStatus::EinApplied).unwrap();
+        e.advance_status(FormationStatus::Active).unwrap();
+        assert!(e.formation_date().is_some());
+    }
+
+    #[test]
+    fn explicit_formation_date_preserved_on_advance() {
+        let mut e = make_entity();
+        let explicit_date = chrono::Utc::now() - chrono::Duration::days(30);
+        e.set_formation_date(explicit_date);
+        // Walk the FSM to Active
+        e.advance_status(FormationStatus::DocumentsGenerated)
+            .unwrap();
+        e.advance_status(FormationStatus::DocumentsSigned).unwrap();
+        e.advance_status(FormationStatus::FilingSubmitted).unwrap();
+        e.advance_status(FormationStatus::Filed).unwrap();
+        e.advance_status(FormationStatus::EinApplied).unwrap();
+        e.advance_status(FormationStatus::Active).unwrap();
+        // Should preserve the explicitly set date, not override it
+        assert_eq!(e.formation_date(), Some(explicit_date));
+    }
+
+    #[test]
+    fn backward_compat_deserialization_without_formation_date() {
+        // Simulate old JSON without formation_date field
+        let e = make_entity();
+        let mut json: serde_json::Value = serde_json::to_value(&e).unwrap();
+        // Remove formation_date to simulate old data
+        json.as_object_mut().unwrap().remove("formation_date");
+        let parsed: Entity = serde_json::from_value(json).unwrap();
+        assert!(parsed.formation_date().is_none());
     }
 
     #[test]

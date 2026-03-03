@@ -82,9 +82,7 @@ fn build_app(tmp: &TempDir) -> Router {
         .merge(api_rs::routes::compliance::compliance_routes())
         .merge(api_rs::routes::auth::auth_routes())
         .merge(api_rs::routes::agents::agent_routes())
-        .merge(api_rs::routes::billing::billing_routes())
         .merge(api_rs::routes::admin::admin_routes())
-        .merge(api_rs::routes::webhooks::webhook_routes())
         .with_state(state)
 }
 
@@ -3662,89 +3660,6 @@ async fn patch_json(app: &Router, path: &str, body: Value, token: &str) -> (Stat
     (status, value)
 }
 
-// ── 14. Webhook lifecycle ───────────────────────────────────────────
-
-#[tokio::test]
-async fn test_webhook_lifecycle() {
-    let tmp = TempDir::new().unwrap();
-    let app = build_app(&tmp);
-    unsafe {
-        std::env::set_var("STRIPE_WEBHOOK_SECRET", "stripe-secret-test");
-        std::env::set_var(
-            "STRIPE_BILLING_WEBHOOK_SECRET",
-            "stripe-billing-secret-test",
-        );
-    }
-
-    // 1. Stripe webhook
-    let req = Request::builder()
-        .method(Method::POST)
-        .uri("/v1/webhooks/stripe")
-        .header("content-type", "application/json")
-        .header("x-webhook-secret", "stripe-secret-test")
-        .body(Body::from(
-            serde_json::to_vec(&json!({
-                "id": "evt_test_123",
-                "type": "payment_intent.succeeded",
-                "data": { "object": { "amount": 5000 } }
-            }))
-            .unwrap(),
-        ))
-        .unwrap();
-    let response = app.clone().oneshot(req).await.unwrap();
-    let status = response.status();
-    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
-        .await
-        .unwrap();
-    let body: Value = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
-    assert_eq!(status, StatusCode::OK, "stripe webhook: {body}");
-    assert_eq!(body["received"], true);
-    assert_eq!(body["event_id"], "evt_test_123");
-
-    // 2. Stripe billing webhook
-    let req = Request::builder()
-        .method(Method::POST)
-        .uri("/v1/webhooks/stripe-billing")
-        .header("content-type", "application/json")
-        .header("x-webhook-secret", "stripe-billing-secret-test")
-        .body(Body::from(
-            serde_json::to_vec(&json!({
-                "id": "evt_billing_456",
-                "type": "invoice.paid",
-                "data": { "object": { "subscription": "sub_123" } }
-            }))
-            .unwrap(),
-        ))
-        .unwrap();
-    let response = app.clone().oneshot(req).await.unwrap();
-    let status = response.status();
-    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
-        .await
-        .unwrap();
-    let body: Value = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
-    assert_eq!(status, StatusCode::OK, "stripe billing webhook: {body}");
-    assert_eq!(body["received"], true);
-    assert_eq!(body["event_id"], "evt_billing_456");
-
-    // 3. Webhook with missing optional fields
-    let req = Request::builder()
-        .method(Method::POST)
-        .uri("/v1/webhooks/stripe")
-        .header("content-type", "application/json")
-        .header("x-webhook-secret", "stripe-secret-test")
-        .body(Body::from(serde_json::to_vec(&json!({})).unwrap()))
-        .unwrap();
-    let response = app.clone().oneshot(req).await.unwrap();
-    let status = response.status();
-    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
-        .await
-        .unwrap();
-    let body: Value = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
-    assert_eq!(status, StatusCode::OK, "empty webhook: {body}");
-    assert_eq!(body["received"], true);
-    assert!(body["event_id"].is_null());
-}
-
 // ── 15. Auth & workspace provisioning lifecycle ─────────────────────
 
 #[tokio::test]
@@ -3999,100 +3914,6 @@ async fn test_compliance_lifecycle() {
     // Should have a risk level and classification result
     assert!(body["risk_level"].as_str().is_some());
     assert!(body["classification"].as_str().is_some());
-}
-
-// ── 18. Billing lifecycle ───────────────────────────────────────────
-
-#[tokio::test]
-async fn test_billing_lifecycle() {
-    let tmp = TempDir::new().unwrap();
-    let app = build_app(&tmp);
-    let token = make_token(WorkspaceId::new());
-
-    // 1. List plans (no workspace needed)
-    let (status, body) = get_json(&app, "/v1/billing/plans", &token).await;
-    assert_eq!(status, StatusCode::OK, "list plans: {body}");
-    let plans = body.as_array().unwrap();
-    assert!(plans.len() >= 3, "should have at least 3 plans");
-    assert!(plans.iter().any(|p| p["plan_id"] == "free"));
-    assert!(plans.iter().any(|p| p["plan_id"] == "pro"));
-    assert!(plans.iter().any(|p| p["plan_id"] == "enterprise"));
-
-    // 2. Provision workspace for billing tests
-    let (status, ws_body) = post_json(
-        &app,
-        "/v1/workspaces/provision",
-        json!({ "name": "Billing Test WS" }),
-        &token,
-    )
-    .await;
-    assert_eq!(status, StatusCode::CREATED);
-    let ws_id_str = ws_body["workspace_id"].as_str().unwrap();
-
-    // Create a token for this specific workspace
-    let ws_id: WorkspaceId = ws_id_str.parse().unwrap();
-    let ws_token = make_token(ws_id);
-
-    // 3. Checkout (creates subscription stub)
-    let (status, body) = post_json(
-        &app,
-        "/v1/billing/checkout",
-        json!({
-            "plan_id": "pro",
-            "success_url": "https://example.com/success",
-            "cancel_url": "https://example.com/cancel"
-        }),
-        &ws_token,
-    )
-    .await;
-    assert_eq!(status, StatusCode::OK, "checkout: {body}");
-    assert!(body["checkout_url"].as_str().is_some());
-    assert!(body["session_id"].as_str().is_some());
-    assert_eq!(body["plan_id"], "pro");
-
-    // 4. Billing status
-    let (status, body) = get_json(&app, "/v1/billing/status", &ws_token).await;
-    assert_eq!(status, StatusCode::OK, "billing status: {body}");
-    assert_eq!(body["plan"], "pro");
-
-    // 5. Create subscription
-    let (status, body) = post_json(
-        &app,
-        "/v1/subscriptions",
-        json!({
-            "plan": "enterprise"
-        }),
-        &ws_token,
-    )
-    .await;
-    assert_eq!(status, StatusCode::OK, "create subscription: {body}");
-    let sub_id = body["subscription_id"].as_str().unwrap();
-    assert_eq!(body["plan"], "enterprise");
-    assert_eq!(body["status"], "active");
-
-    // 6. Get subscription
-    let (status, body) = get_json(&app, &format!("/v1/subscriptions/{sub_id}"), &ws_token).await;
-    assert_eq!(status, StatusCode::OK, "get subscription: {body}");
-    assert_eq!(body["subscription_id"], sub_id);
-    assert_eq!(body["plan"], "enterprise");
-
-    // 7. Tick subscriptions
-    let (status, body) = post_json(&app, "/v1/subscriptions/tick", json!({}), &ws_token).await;
-    assert_eq!(status, StatusCode::OK, "tick subscriptions: {body}");
-    assert!(body["workspaces_processed"].as_i64().is_some());
-
-    // 8. Portal
-    let (status, body) = post_json(
-        &app,
-        "/v1/billing/portal",
-        json!({
-            "return_url": "https://example.com/return"
-        }),
-        &ws_token,
-    )
-    .await;
-    assert_eq!(status, StatusCode::OK, "portal: {body}");
-    assert!(body["portal_url"].as_str().is_some());
 }
 
 // ── 19. Admin endpoints ─────────────────────────────────────────────

@@ -12,9 +12,8 @@ use serde::{Deserialize, Serialize};
 
 use super::AppState;
 use crate::auth::RequireAdmin;
-use crate::domain::billing::subscription::Subscription;
 use crate::domain::contacts::contact::Contact;
-use crate::domain::ids::{EntityId, SubscriptionId, WorkspaceId};
+use crate::domain::ids::{EntityId, WorkspaceId};
 use crate::error::AppError;
 use crate::store::workspace_store::WorkspaceStore;
 
@@ -325,53 +324,6 @@ async fn demo_seed(
     }))
 }
 
-// ── Subscriptions ──────────────────────────────────────────────────
-
-#[derive(Serialize)]
-pub struct SubscriptionResponse {
-    pub workspace_id: WorkspaceId,
-    pub plan: String,
-    pub status: String,
-    pub current_period_end: Option<String>,
-}
-
-async fn get_subscription(
-    RequireAdmin(auth): RequireAdmin,
-    State(state): State<AppState>,
-) -> Result<Json<SubscriptionResponse>, AppError> {
-    let workspace_id = auth.workspace_id();
-
-    let sub = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        move || {
-            let ws_store = WorkspaceStore::open(&layout, workspace_id)
-                .map_err(|e| AppError::NotFound(format!("workspace not found: {e}")))?;
-
-            match ws_store.read_json::<Subscription>("billing/subscription.json") {
-                Ok(sub) => Ok::<_, AppError>(sub),
-                Err(_) => {
-                    // Create default free subscription
-                    let sub =
-                        Subscription::new(SubscriptionId::new(), workspace_id, "free".to_owned());
-                    ws_store
-                        .write_json("billing/subscription.json", &sub, "Init subscription")
-                        .map_err(|e| AppError::Internal(format!("commit: {e}")))?;
-                    Ok(sub)
-                }
-            }
-        }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
-
-    Ok(Json(SubscriptionResponse {
-        workspace_id: sub.workspace_id(),
-        plan: sub.plan().to_owned(),
-        status: sub.status().to_owned(),
-        current_period_end: sub.current_period_end().map(|s| s.to_owned()),
-    }))
-}
-
 // ── Config ───────────────────────────────────────────────────────────
 
 #[derive(Serialize)]
@@ -660,7 +612,6 @@ pub fn admin_routes() -> Router<AppState> {
         .route("/v1/workspace/status", get(workspace_status))
         .route("/v1/workspace/entities", get(list_workspace_entities))
         .route("/v1/demo/seed", post(demo_seed))
-        .route("/v1/subscription", get(get_subscription))
         .route("/v1/config", get(get_config))
         .route("/v1/workspaces/link", post(link_workspace))
         .route("/v1/workspaces/claim", post(claim_workspace))

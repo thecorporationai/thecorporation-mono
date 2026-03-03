@@ -1,13 +1,14 @@
 //! Auth middleware — Axum extractor that resolves a `Principal` from the
 //! `Authorization` header (Bearer JWT or raw API key).
 
+use std::sync::Arc;
+
 use axum::Json;
-use axum::extract::FromRequestParts;
+use axum::extract::{FromRef, FromRequestParts};
 use axum::http::StatusCode;
 use axum::http::request::Parts;
 use axum::response::{IntoResponse, Response};
 use serde_json::json;
-use std::any::Any;
 
 use crate::domain::auth::claims::PrincipalType;
 use crate::domain::auth::claims::decode_token;
@@ -60,7 +61,11 @@ macro_rules! define_scoped_extractor {
             }
         }
 
-        impl<S: Send + Sync + 'static> FromRequestParts<S> for $name {
+        impl<S> FromRequestParts<S> for $name
+        where
+            S: Send + Sync + 'static,
+            Arc<RepoLayout>: FromRef<S>,
+        {
             type Rejection = AuthRejection;
 
             async fn from_request_parts(
@@ -191,6 +196,7 @@ impl IntoResponse for AuthRejection {
 impl<S> FromRequestParts<S> for Principal
 where
     S: Send + Sync + 'static,
+    Arc<RepoLayout>: FromRef<S>,
 {
     type Rejection = AuthRejection;
 
@@ -204,11 +210,8 @@ where
         if let Some(token) = auth_header.strip_prefix("Bearer ") {
             if token.starts_with("sk_") {
                 // Direct API key path (Bearer sk_...) for integration parity.
-                let state_any = _state as &dyn Any;
-                let app_state = state_any
-                    .downcast_ref::<crate::routes::AppState>()
-                    .ok_or(AuthRejection(AuthError::InvalidApiKey))?;
-                return principal_from_api_key(app_state.layout.as_ref(), token)
+                let layout = Arc::<RepoLayout>::from_ref(_state);
+                return principal_from_api_key(layout.as_ref(), token)
                     .map_err(AuthRejection);
             }
 
@@ -240,11 +243,8 @@ where
 
         if auth_header.starts_with("sk_") {
             // Also accept raw API key header (without Bearer prefix).
-            let state_any = _state as &dyn Any;
-            let app_state = state_any
-                .downcast_ref::<crate::routes::AppState>()
-                .ok_or(AuthRejection(AuthError::InvalidApiKey))?;
-            return principal_from_api_key(app_state.layout.as_ref(), auth_header)
+            let layout = Arc::<RepoLayout>::from_ref(_state);
+            return principal_from_api_key(layout.as_ref(), auth_header)
                 .map_err(AuthRejection);
         }
 
@@ -334,21 +334,43 @@ mod tests {
     use axum::http::Request;
     use chrono::Utc;
 
+    /// Minimal test state that satisfies the `FromRef` bounds for auth extractors.
+    #[derive(Clone)]
+    struct TestState {
+        layout: Arc<RepoLayout>,
+    }
+
+    impl TestState {
+        fn new() -> Self {
+            Self {
+                layout: Arc::new(RepoLayout::new(std::path::PathBuf::from("/tmp/test-repos"))),
+            }
+        }
+    }
+
+    impl FromRef<TestState> for Arc<RepoLayout> {
+        fn from_ref(state: &TestState) -> Arc<RepoLayout> {
+            state.layout.clone()
+        }
+    }
+
     /// Helper: extract Principal from a request with the given Authorization header.
     async fn extract_principal(auth_value: &str) -> Result<Principal, AuthRejection> {
+        let state = TestState::new();
         let req = Request::builder()
             .header("authorization", auth_value)
             .body(())
             .expect("build request");
         let (mut parts, _body) = req.into_parts();
-        Principal::from_request_parts(&mut parts, &()).await
+        Principal::from_request_parts(&mut parts, &state).await
     }
 
     #[tokio::test]
     async fn missing_header_returns_unauthorized() {
+        let state = TestState::new();
         let req = Request::builder().body(()).expect("build request");
         let (mut parts, _body) = req.into_parts();
-        let result = Principal::from_request_parts(&mut parts, &()).await;
+        let result = Principal::from_request_parts(&mut parts, &state).await;
         assert!(result.is_err());
     }
 
@@ -407,12 +429,13 @@ mod tests {
     async fn internal_worker_token_extracts() {
         // SAFETY: test-only env mutation.
         unsafe { std::env::set_var("INTERNAL_WORKER_TOKEN", "worker-token-test") };
+        let state = TestState::new();
         let req = Request::builder()
             .header("authorization", "Bearer worker-token-test")
             .body(())
             .expect("build request");
         let (mut parts, _body) = req.into_parts();
-        let extracted = RequireInternalWorker::from_request_parts(&mut parts, &()).await;
+        let extracted = RequireInternalWorker::from_request_parts(&mut parts, &state).await;
         assert!(extracted.is_ok());
     }
 }

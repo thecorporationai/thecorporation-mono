@@ -1,0 +1,282 @@
+{
+  "version": "1.0.0",
+  "entity_types": ["llc", "corporation"],
+  "documents": [
+    {
+      "id": "delegation_schedule",
+      "path": "documents/governance/common/agent-delegation-schedule.md",
+      "title": "Agent Delegation Schedule",
+      "sections": [
+        {
+          "id": "delegation.authority_tiers",
+          "heading": "Authority tiers",
+          "clauses": [
+            {
+              "id": "delegation.authority_tiers.tier1",
+              "type": "threshold",
+              "text": "Tier 1 actions may execute autonomously within approved lanes and limits."
+            },
+            {
+              "id": "delegation.authority_tiers.tier2",
+              "type": "approval_requirement",
+              "text": "Tier 2 actions require explicit recorded approval before execution."
+            },
+            {
+              "id": "delegation.authority_tiers.tier3",
+              "type": "prohibition",
+              "text": "Tier 3 actions are non-delegable and require Principal/Board authority."
+            }
+          ]
+        },
+        {
+          "id": "delegation.approvals",
+          "heading": "Approval mechanics",
+          "clauses": [
+            {
+              "id": "delegation.approvals.silence_not_approval",
+              "type": "prohibition",
+              "text": "Silence is never approval."
+            },
+            {
+              "id": "delegation.approvals.expiry",
+              "type": "threshold",
+              "text": "Approvals expire after 30 days unless otherwise specified."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "signing_standard",
+      "path": "documents/governance/common/signing-and-records-standard.md",
+      "title": "Signing and Records Standard",
+      "sections": [
+        {
+          "id": "signing.attestation",
+          "heading": "Natural-person attestation",
+          "clauses": [
+            {
+              "id": "signing.attestation.required",
+              "type": "attestation_requirement",
+              "text": "Actions requiring legal attestation must be routed to designated natural persons."
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "rules": {
+    "tier_defaults": {
+      "maintain_books_records": 1,
+      "prepare_compliance_docs": 1,
+      "pay_recurring_obligation": 1,
+      "authorize_expenditure": 1,
+      "routine_correspondence": 1,
+      "information_gathering": 1,
+      "compliance_deadline_tracking": 1,
+      "execute_standard_form_agreement": 1,
+      "internal_account_transfer": 1,
+      "payroll_execution": 1,
+      "tax_payment_per_filing": 1,
+      "registered_agent_renewal": 1,
+      "financial_commitment_above_limits": 2,
+      "new_contract": 2,
+      "material_amendment": 2,
+      "hire_employee": 2,
+      "engage_contractor": 2,
+      "tax_election": 2,
+      "accounting_method_change": 2,
+      "equity_communication": 2,
+      "bank_account_open_close": 2,
+      "ambiguous_novel_action": 2,
+      "legal_claim_response": 2,
+      "franchise_tax_method_choice": 2,
+      "amend_charter": 3,
+      "amend_governance_docs": 3,
+      "issue_equity": 3,
+      "modify_agent_framework": 3,
+      "dissolve_entity": 3,
+      "merge_consolidate": 3,
+      "sell_substantially_all_assets": 3,
+      "personal_guarantee": 3,
+      "remove_replace_agent": 3,
+      "initiate_settle_litigation": 3,
+      "declare_dividends": 3,
+      "admit_new_members": 3,
+      "equity.round.accept": 3,
+      "equity.round.execute_conversion": 3,
+      "equity.transfer.prepare": 3,
+      "equity.transfer.execute": 3,
+      "equity.fundraising.prepare": 3,
+      "equity.fundraising.accept": 3,
+      "equity.fundraising.close": 3
+    },
+    "non_delegable": [
+      "amend_charter",
+      "amend_governance_docs",
+      "issue_equity",
+      "modify_agent_framework",
+      "dissolve_entity",
+      "merge_consolidate",
+      "sell_substantially_all_assets",
+      "personal_guarantee",
+      "remove_replace_agent",
+      "initiate_settle_litigation",
+      "declare_dividends",
+      "admit_new_members"
+    ],
+    "escalation": [
+      {
+        "id": "template-not-approved",
+        "applies": ["execute_standard_form_agreement"],
+        "condition": "template_approved_false",
+        "escalate_to": 2,
+        "reason": "Agreement not using approved template"
+      },
+      {
+        "id": "template-modified-beyond-lane",
+        "applies": ["execute_standard_form_agreement"],
+        "condition": "restricted_modifications_present",
+        "escalate_to": 2,
+        "reason": "Agreement template modified in restricted areas"
+      },
+      {
+        "id": "irreversible-action",
+        "condition": "is_reversible_false",
+        "escalate_to": 2,
+        "reason": "Action is irreversible"
+      }
+    ],
+    "lane_conditions": [
+      {
+        "lane_id": "lane-3.1-nda",
+        "capability": "execute_standard_form_agreement",
+        "checks": [
+          {
+            "field": "templateApproved",
+            "op": "eq",
+            "value": true,
+            "message": "Template not approved by Board/Principal"
+          },
+          {
+            "field": "modifications",
+            "op": "contains_none",
+            "value": ["indemnification", "governing_law"],
+            "message": "Restricted NDA modifications present"
+          }
+        ]
+      },
+      {
+        "lane_id": "lane-3.1-saas",
+        "capability": "execute_standard_form_agreement",
+        "checks": [
+          {
+            "field": "modifications",
+            "op": "contains_none",
+            "value": ["exclusivity"],
+            "message": "Exclusivity clause not permitted in SaaS lane"
+          },
+          {
+            "field": "modifications",
+            "op": "contains_none",
+            "value": ["ip_assignment"],
+            "message": "IP assignment clause not permitted in SaaS lane"
+          }
+        ]
+      },
+      {
+        "lane_id": "lane-3.1-vendor-po",
+        "capability": "execute_standard_form_agreement",
+        "checks": []
+      },
+      {
+        "lane_id": "lane-3.2-1099",
+        "capability": "engage_contractor",
+        "checks": [
+          {
+            "field": "modifications",
+            "op": "contains_none",
+            "value": ["exclusivity", "non_compete", "equity_compensation"],
+            "message": "Exclusivity, non-compete, or equity compensation not permitted for contractor engagement"
+          }
+        ]
+      },
+      {
+        "lane_id": "lane-3.2-renewal",
+        "capability": "engage_contractor",
+        "checks": [
+          {
+            "field": "context.rateIncreasePercent",
+            "op": "lte",
+            "value": 5,
+            "message": "Rate increase exceeds 5% limit for renewal lane"
+          }
+        ]
+      },
+      {
+        "lane_id": "lane-3.3-renewal",
+        "capability": "pay_recurring_obligation",
+        "checks": [
+          {
+            "field": "context.priceIncreasePercent",
+            "op": "lte",
+            "value": 10,
+            "message": "Price increase exceeds 10% limit for renewal lane"
+          }
+        ]
+      },
+      {
+        "lane_id": "lane-3.3-admin",
+        "capability": "routine_correspondence",
+        "checks": [
+          {
+            "field": "modifications",
+            "op": "contains_none",
+            "value": ["economics", "scope", "legal_terms"],
+            "message": "Admin update lane does not allow changes to economics, scope, or legal terms"
+          }
+        ]
+      },
+      {
+        "lane_id": "lane-3.3-insurance",
+        "capability": "pay_recurring_obligation",
+        "checks": [
+          {
+            "field": "context.premiumIncreasePercent",
+            "op": "lte",
+            "value": 15,
+            "message": "Premium increase exceeds 15% limit for insurance lane"
+          }
+        ]
+      },
+      {
+        "lane_id": "lane-3.4-transfer",
+        "capability": "internal_account_transfer",
+        "checks": []
+      },
+      {
+        "lane_id": "lane-3.4-payroll",
+        "capability": "payroll_execution",
+        "checks": []
+      },
+      {
+        "lane_id": "lane-3.4-tax",
+        "capability": "tax_payment_per_filing",
+        "checks": []
+      }
+    ],
+    "approval": {
+      "expiry_days": 30,
+      "silence_is_approval": false
+    },
+    "mode": {
+      "principal_unavailable_requires_reversible_tier1": true,
+      "incident_lockdown_blocks_all": true
+    },
+    "reauth": {
+      "reduced_limits_at_days": 30,
+      "reduced_limits_percent": 50,
+      "full_suspension_at_days": 90
+    }
+  }
+}

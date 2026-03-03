@@ -41,6 +41,9 @@ pub struct CreateFormationRequest {
     pub authorized_shares: Option<i64>,
     #[serde(default)]
     pub par_value: Option<String>,
+    /// Optional formation date for importing pre-formed entities.
+    #[serde(default)]
+    pub formation_date: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -60,6 +63,7 @@ pub struct FormationStatusResponse {
     pub jurisdiction: Jurisdiction,
     pub formation_state: FormationState,
     pub formation_status: FormationStatus,
+    pub formation_date: Option<String>,
     pub next_action: Option<String>,
 }
 
@@ -311,6 +315,7 @@ async fn get_formation(
         jurisdiction: entity.jurisdiction().to_owned(),
         formation_state: entity.formation_state(),
         formation_status: entity.formation_status(),
+        formation_date: entity.formation_date().map(|d| d.to_rfc3339()),
         next_action,
     }))
 }
@@ -558,6 +563,7 @@ async fn mark_documents_signed(
         jurisdiction: entity.jurisdiction().to_owned(),
         formation_state: entity.formation_state(),
         formation_status: entity.formation_status(),
+        formation_date: entity.formation_date().map(|d| d.to_rfc3339()),
         next_action,
     }))
 }
@@ -610,6 +616,7 @@ async fn submit_filing(
         jurisdiction: entity.jurisdiction().to_owned(),
         formation_state: entity.formation_state(),
         formation_status: entity.formation_status(),
+        formation_date: entity.formation_date().map(|d| d.to_rfc3339()),
         next_action,
     }))
 }
@@ -861,6 +868,7 @@ async fn confirm_filing(
         jurisdiction: entity.jurisdiction().to_owned(),
         formation_state: entity.formation_state(),
         formation_status: entity.formation_status(),
+        formation_date: entity.formation_date().map(|d| d.to_rfc3339()),
         next_action,
     }))
 }
@@ -904,6 +912,7 @@ async fn apply_ein(
         jurisdiction: entity.jurisdiction().to_owned(),
         formation_state: entity.formation_state(),
         formation_status: entity.formation_status(),
+        formation_date: entity.formation_date().map(|d| d.to_rfc3339()),
         next_action,
     }))
 }
@@ -988,6 +997,7 @@ async fn confirm_ein(
         jurisdiction: entity.jurisdiction().to_owned(),
         formation_state: entity.formation_state(),
         formation_status: entity.formation_status(),
+        formation_date: entity.formation_date().map(|d| d.to_rfc3339()),
         next_action,
     }))
 }
@@ -1372,6 +1382,7 @@ async fn list_entities(
                             jurisdiction: entity.jurisdiction().to_owned(),
                             formation_state: entity.formation_state(),
                             formation_status: entity.formation_status(),
+                            formation_date: entity.formation_date().map(|d| d.to_rfc3339()),
                             next_action,
                         });
                     }
@@ -1436,6 +1447,7 @@ async fn convert_entity(
         jurisdiction: entity.jurisdiction().to_owned(),
         formation_state: entity.formation_state(),
         formation_status: entity.formation_status(),
+        formation_date: entity.formation_date().map(|d| d.to_rfc3339()),
         next_action,
     }))
 }
