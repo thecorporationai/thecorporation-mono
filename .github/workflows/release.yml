@@ -1,0 +1,223 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+  id-token: write
+
+env:
+  RUST_TOOLCHAIN: "stable"
+  NODE_VERSION: "22"
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            services/api-rs/target
+            services/agent-worker/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('services/api-rs/Cargo.lock', 'services/agent-worker/Cargo.lock') }}
+      - name: Run api-rs tests
+        working-directory: services/api-rs
+        run: cargo test
+      - name: Run agent-worker tests
+        working-directory: services/agent-worker
+        run: cargo test
+
+  build-binaries:
+    needs: test
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            platform: linux-x64-gnu
+          - runner: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            platform: linux-arm64-gnu
+          - runner: macos-latest
+            target: x86_64-apple-darwin
+            platform: darwin-x64
+          - runner: macos-latest
+            target: aarch64-apple-darwin
+            platform: darwin-arm64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          targets: ${{ matrix.target }}
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            services/api-rs/target
+            services/agent-worker/target
+          key: ${{ matrix.platform }}-cargo-${{ hashFiles('services/api-rs/Cargo.lock', 'services/agent-worker/Cargo.lock') }}
+      - name: Build api-rs binary
+        working-directory: services/api-rs
+        run: cargo build --release --target ${{ matrix.target }}
+      - name: Build agent-worker binary
+        working-directory: services/agent-worker
+        run: cargo build --release --target ${{ matrix.target }}
+      - name: Copy binaries to npm package
+        run: |
+          mkdir -p packages/server/npm/${{ matrix.platform }}/bin
+          cp services/api-rs/target/${{ matrix.target }}/release/api-rs packages/server/npm/${{ matrix.platform }}/bin/api-rs
+          cp services/agent-worker/target/${{ matrix.target }}/release/agent-worker packages/server/npm/${{ matrix.platform }}/bin/agent-worker
+          chmod +x packages/server/npm/${{ matrix.platform }}/bin/*
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: binary-${{ matrix.platform }}
+          path: packages/server/npm/${{ matrix.platform }}
+
+  publish:
+    needs: build-binaries
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all binary artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: binary-*
+          path: artifacts
+
+      - name: Place binaries into npm package dirs
+        run: |
+          for platform in linux-x64-gnu linux-arm64-gnu darwin-x64 darwin-arm64; do
+            cp -r artifacts/binary-${platform}/* packages/server/npm/${platform}/
+          done
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          registry-url: https://registry.npmjs.org
+
+      - name: Extract version from tag
+        id: version
+        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Set version in all package.json files
+        env:
+          VERSION: ${{ steps.version.outputs.VERSION }}
+        run: |
+          set -euo pipefail
+
+          PACKAGES=(
+            packages/corp-tools/package.json
+            packages/server/package.json
+            packages/server/npm/linux-x64-gnu/package.json
+            packages/server/npm/linux-arm64-gnu/package.json
+            packages/server/npm/darwin-x64/package.json
+            packages/server/npm/darwin-arm64/package.json
+            packages/mcp-server/package.json
+            packages/cli-ts/package.json
+          )
+
+          for pkg in "${PACKAGES[@]}"; do
+            jq --arg v "$VERSION" '.version = $v' "$pkg" > tmp.json && mv tmp.json "$pkg"
+          done
+
+      - name: Install dependencies and build TS packages
+        run: |
+          set -euo pipefail
+
+          # Build corp-tools first (dependency for others)
+          cd packages/corp-tools
+          npm install
+          npm run build
+          cd ../..
+
+          # Build server
+          cd packages/server
+          npm install
+          npm run build
+          cd ../..
+
+          # Build mcp-server
+          cd packages/mcp-server
+          npm install
+          npm run build
+          cd ../..
+
+          # Build cli-ts
+          cd packages/cli-ts
+          npm install
+          npm run build
+          cd ../..
+
+      - name: Rewrite dependency versions for publishing
+        env:
+          VERSION: ${{ steps.version.outputs.VERSION }}
+        run: |
+          set -euo pipefail
+
+          # Update @thecorporation/* dependency versions to match release
+          for pkg in packages/mcp-server/package.json packages/cli-ts/package.json; do
+            jq --arg v "$VERSION" '
+              if .dependencies then
+                .dependencies |= with_entries(
+                  if .key | startswith("@thecorporation/") then .value = $v else . end
+                )
+              else . end |
+              if .optionalDependencies then
+                .optionalDependencies |= with_entries(
+                  if .key | startswith("@thecorporation/") then .value = $v else . end
+                )
+              else . end
+            ' "$pkg" > tmp.json && mv tmp.json "$pkg"
+          done
+
+          # Update server's optionalDependencies to match version
+          jq --arg v "$VERSION" '
+            .optionalDependencies |= with_entries(
+              if .key | startswith("@thecorporation/") then .value = $v else . end
+            )
+          ' packages/server/package.json > tmp.json && mv tmp.json packages/server/package.json
+
+      - name: Publish to npm
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          # 1. corp-tools (no deps on other @thecorporation packages)
+          npm publish packages/corp-tools --provenance --access public
+
+          # 2. Platform binary packages
+          for platform in linux-x64-gnu linux-arm64-gnu darwin-x64 darwin-arm64; do
+            npm publish packages/server/npm/${platform} --provenance --access public
+          done
+
+          # 3. server (depends on platform binary packages)
+          npm publish packages/server --provenance --access public
+
+          # 4. mcp-server (depends on corp-tools)
+          npm publish packages/mcp-server --provenance --access public
+
+          # 5. cli (depends on corp-tools, server)
+          npm publish packages/cli-ts --provenance --access public
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
