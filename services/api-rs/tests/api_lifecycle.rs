@@ -4358,6 +4358,12 @@ async fn test_packet_routes_and_escalation_evidence_resolution() {
 
 #[tokio::test]
 async fn test_governance_profile_and_doc_bundle_generation() {
+    let docs_root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../documents/governance");
+    if !docs_root.is_dir() {
+        eprintln!("skipping: documents/governance not present");
+        return;
+    }
     let tmp = TempDir::new().unwrap();
     let app = build_app(&tmp);
     let (ws_id, entity_id, token) = create_entity(&app).await;
