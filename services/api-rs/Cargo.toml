@@ -57,6 +57,7 @@ deadpool-redis = "0.18"
 
 # Encryption (secrets at rest)
 fernet = "0.2"
+openssl = { version = "0.10", optional = true, features = ["vendored"] }
 
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 
@@ -66,6 +67,10 @@ dotenvy = "0.15"
 
 # OpenAPI — spec is built programmatically in src/openapi.rs
 # utoipa annotations can be added incrementally for full schema generation
+
+[features]
+default = []
+vendored-openssl = ["openssl"]
 
 [dev-dependencies]
 proptest = "1"
