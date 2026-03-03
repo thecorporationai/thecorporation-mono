@@ -201,6 +201,12 @@ jobs:
             )
           ' packages/server/package.json > tmp.json && mv tmp.json packages/server/package.json
 
+      - name: Debug NPM token
+        run: |
+          echo "TOKEN starts with: ${NODE_AUTH_TOKEN:0:4}"
+          echo "TOKEN length: ${#NODE_AUTH_TOKEN}"
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
       - name: Publish to npm
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
