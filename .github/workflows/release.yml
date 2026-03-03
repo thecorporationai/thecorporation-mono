@@ -119,6 +119,16 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           registry-url: https://registry.npmjs.org
 
+      - name: Debug NPM token and npmrc
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          echo "TOKEN starts with: ${NODE_AUTH_TOKEN:0:4}"
+          echo "TOKEN length: ${#NODE_AUTH_TOKEN}"
+          echo "--- .npmrc ---"
+          cat ~/.npmrc 2>/dev/null || echo "no ~/.npmrc"
+          cat .npmrc 2>/dev/null || echo "no ./.npmrc"
+
       - name: Extract version from tag
         id: version
         run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
@@ -201,12 +211,6 @@ jobs:
             )
           ' packages/server/package.json > tmp.json && mv tmp.json packages/server/package.json
 
-      - name: Debug NPM token
-        run: |
-          echo "TOKEN starts with: ${NODE_AUTH_TOKEN:0:4}"
-          echo "TOKEN length: ${#NODE_AUTH_TOKEN}"
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
       - name: Publish to npm
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
