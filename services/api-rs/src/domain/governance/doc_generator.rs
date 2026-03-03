@@ -800,6 +800,10 @@ mod tests {
     #[test]
     fn can_generate_bundle_from_repo_root() {
         let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        if !repo_root.join("documents/governance").is_dir() {
+            eprintln!("skipping: documents/governance not present");
+            return;
+        }
         let out = TempDir::new().expect("temp dir");
         let manifest = generate_bundle_from_repo_root(
             GovernanceDocEntityType::Corporation,
@@ -875,6 +879,10 @@ mod tests {
     #[test]
     fn render_bundle_with_profile_replacements() {
         let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        if !repo_root.join("documents/governance").is_dir() {
+            eprintln!("skipping: documents/governance not present");
+            return;
+        }
         let entity = make_entity(EntityType::Corporation);
         let mut profile = GovernanceProfile::default_for_entity(&entity);
         profile.update(
