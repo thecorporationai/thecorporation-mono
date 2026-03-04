@@ -126,7 +126,24 @@ jobs:
 
       - name: Extract version from tag
         id: version
-        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+        run: |
+          set -euo pipefail
+
+          RAW_VERSION="${GITHUB_REF_NAME#v}"
+          VERSION="$RAW_VERSION"
+
+          # Normalize tags like v1.2.3b -> 1.2.3-b for npm semver compatibility.
+          if [[ "$VERSION" =~ ^([0-9]+\.[0-9]+\.[0-9]+)([A-Za-z][0-9A-Za-z.-]*)$ ]]; then
+            VERSION="${BASH_REMATCH[1]}-${BASH_REMATCH[2]}"
+          fi
+
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::Tag '$GITHUB_REF_NAME' resolves to invalid npm semver '$VERSION'. Use tags like v1.2.3 or v1.2.3-rc.1."
+            exit 1
+          fi
+
+          echo "VERSION=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Using release version: $VERSION (from tag: $GITHUB_REF_NAME)"
 
       - name: Set version in all package.json files
         env:
