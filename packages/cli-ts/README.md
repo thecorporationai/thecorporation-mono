@@ -1,8 +1,10 @@
 # @thecorporation/cli
 
-`corp` — corporate governance from the terminal. Form entities, manage equity, run payroll, file taxes, and chat with an AI assistant that can execute any corporate action.
+Corporate governance from the terminal. Every command validates input, passes it through the governance kernel, and commits the result to your git-backed corporate repo. The command runs. The commit appears. The corporate record updates.
 
-Part of [The Corporation](https://thecorporation.ai) — agent-native corporate infrastructure.
+`corp` handles entity formation, equity management, payroll, tax filings, governance, and agent management — with an AI assistant that can execute any corporate action via `corp chat`.
+
+Part of [TheCorporation](https://thecorporation.ai) — version-controlled governance, autonomous agents, and open-source corporate infrastructure.
 
 ## Install
 
@@ -114,6 +116,7 @@ Round close gating (v1, February 28, 2026):
 | `corp agents resume <id>` | Resume an agent |
 | `corp agents delete <id>` | Delete an agent |
 | `corp agents skill <id>` | Add a skill to an agent |
+| `corp agents executions <id>` | List agent executions |
 
 ### Billing & Approvals
 

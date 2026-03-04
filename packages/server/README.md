@@ -1,8 +1,8 @@
 # @thecorporation/server
 
-Pre-built binaries for the Corporation API server. Wraps the Rust backend as a Node.js child process with automatic platform detection.
+Pre-built binaries for the governance kernel — the Rust backend that validates every corporate action, enforces policy gates, and produces atomic git commits. Wraps the server as a Node.js child process with automatic platform detection.
 
-Part of [The Corporation](https://thecorporation.ai) — agent-native corporate infrastructure.
+Part of [TheCorporation](https://thecorporation.ai) — version-controlled governance, autonomous agents, and open-source corporate infrastructure.
 
 ## Install
 

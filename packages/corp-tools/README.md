@@ -1,8 +1,10 @@
 # @thecorporation/corp-tools
 
-Shared API client, tool definitions, and execution engine for The Corporation. Used by [`@thecorporation/cli`](https://www.npmjs.com/package/@thecorporation/cli), [`@thecorporation/mcp-server`](https://www.npmjs.com/package/@thecorporation/mcp-server), and the chat service.
+The shared foundation for TheCorporation's client ecosystem. Typed API client, 36 tool definitions, and the execution engine that powers the CLI, MCP server, and chat service. Every tool call — whether initiated by a human or an agent — flows through the same pipeline: validate, execute, commit, receipt.
 
-Part of [The Corporation](https://thecorporation.ai) — agent-native corporate infrastructure.
+Used by [`@thecorporation/cli`](https://www.npmjs.com/package/@thecorporation/cli), [`@thecorporation/mcp-server`](https://www.npmjs.com/package/@thecorporation/mcp-server), and the chat service.
+
+Part of [TheCorporation](https://thecorporation.ai) — version-controlled governance, autonomous agents, and open-source corporate infrastructure.
 
 ## Install
 

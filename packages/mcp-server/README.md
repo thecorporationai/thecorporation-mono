@@ -1,8 +1,8 @@
 # @thecorporation/mcp-server
 
-MCP server that gives AI agents full corporate operations capabilities — entity formation, equity management, payroll, contracts, banking, and tax compliance. 36 tools, zero corporate law expertise required.
+36 MCP tools that give AI agents full corporate operations capabilities. Entity formation, equity management, payroll, contracts, banking, tax compliance — every tool call passes through the governance kernel, produces an atomic git commit, and returns a signed receipt. Your agent gets corporate powers. Your corporation gets an audit trail.
 
-Part of [The Corporation](https://thecorporation.ai) — agent-native corporate infrastructure.
+Part of [TheCorporation](https://thecorporation.ai) — version-controlled governance, autonomous agents, and open-source corporate infrastructure.
 
 ## Install
 
@@ -100,6 +100,7 @@ On first run, the server automatically provisions a workspace and saves credenti
 | `list_obligations` | List compliance obligations |
 | `get_checklist` | Read the workspace checklist |
 | `update_checklist` | Update the workspace checklist |
+| `get_signer_link` | Generate a signing link for human obligations |
 | `get_billing_status` | Show billing tier and usage |
 
 ## Example Prompts

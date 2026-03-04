@@ -66,6 +66,8 @@ jobs:
         run: |
           docker run -d --name api-rs-integration \
             -e JWT_SECRET=integration-test-secret \
+            -e SECRETS_MASTER_KEY=YWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWE= \
+            -e INTERNAL_WORKER_TOKEN=integration-test-worker-token \
             -e RUST_LOG=api_rs=info \
             -p 8000:8000 \
             api-rs:ci
