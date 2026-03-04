@@ -134,19 +134,10 @@ jobs:
         run: |
           set -euo pipefail
 
-          PACKAGES=(
-            packages/corp-tools/package.json
-            packages/server/package.json
-            packages/server/npm/linux-x64-gnu/package.json
-            packages/server/npm/linux-arm64-gnu/package.json
-            packages/server/npm/darwin-x64/package.json
-            packages/server/npm/darwin-arm64/package.json
-            packages/mcp-server/package.json
-            packages/cli-ts/package.json
-          )
+          mapfile -t PACKAGES < <(find packages -type f -name package.json | sort)
 
           for pkg in "${PACKAGES[@]}"; do
-            jq --arg v "$VERSION" '.version = $v' "$pkg" > tmp.json && mv tmp.json "$pkg"
+            jq --arg v "$VERSION" '.version = $v' "$pkg" > "${pkg}.tmp" && mv "${pkg}.tmp" "$pkg"
           done
 
       - name: Install dependencies and build TS packages
@@ -177,34 +168,33 @@ jobs:
           npm run build
           cd ../..
 
-      - name: Rewrite dependency versions for publishing
+      - name: Rewrite internal dependency versions for publishing
         env:
           VERSION: ${{ steps.version.outputs.VERSION }}
         run: |
           set -euo pipefail
 
-          # Update @thecorporation/* dependency versions to match release
-          for pkg in packages/mcp-server/package.json packages/cli-ts/package.json; do
-            jq --arg v "$VERSION" '
-              if .dependencies then
-                .dependencies |= with_entries(
-                  if .key | startswith("@thecorporation/") then .value = $v else . end
-                )
-              else . end |
-              if .optionalDependencies then
-                .optionalDependencies |= with_entries(
-                  if .key | startswith("@thecorporation/") then .value = $v else . end
-                )
-              else . end
-            ' "$pkg" > tmp.json && mv tmp.json "$pkg"
-          done
+          mapfile -t PACKAGES < <(find packages -type f -name package.json | sort)
 
-          # Update server's optionalDependencies to match version
-          jq --arg v "$VERSION" '
-            .optionalDependencies |= with_entries(
-              if .key | startswith("@thecorporation/") then .value = $v else . end
-            )
-          ' packages/server/package.json > tmp.json && mv tmp.json packages/server/package.json
+          for pkg in "${PACKAGES[@]}"; do
+            jq --arg v "$VERSION" '
+              def bump_section($section):
+                if has($section) then
+                  .[$section] |= with_entries(
+                    if ((.key | startswith("@thecorporation/")) and ((.value | type) == "string"))
+                    then .value = $v
+                    else .
+                    end
+                  )
+                else
+                  .
+                end;
+              bump_section("dependencies")
+              | bump_section("optionalDependencies")
+              | bump_section("peerDependencies")
+              | bump_section("devDependencies")
+            ' "$pkg" > "${pkg}.tmp" && mv "${pkg}.tmp" "$pkg"
+          done
 
       - name: Publish to npm
         run: |
