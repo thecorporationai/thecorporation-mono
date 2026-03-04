@@ -145,8 +145,20 @@ jobs:
             exit 1
           fi
 
+          # Detect prerelease and set NPM_TAG accordingly.
+          if [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+- ]]; then
+            # Extract the prerelease identifier (e.g. "rc" from "1.2.3-rc.1", "beta" from "1.2.3-beta.2")
+            PRE="${VERSION#*-}"
+            NPM_TAG="${PRE%%[.0-9]*}"
+            # Fallback if tag is empty (e.g. "1.2.3-0")
+            NPM_TAG="${NPM_TAG:-next}"
+          else
+            NPM_TAG="latest"
+          fi
+
           echo "VERSION=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "Using release version: $VERSION (from tag: $GITHUB_REF_NAME)"
+          echo "NPM_TAG=$NPM_TAG" >> "$GITHUB_OUTPUT"
+          echo "Using release version: $VERSION (from tag: $GITHUB_REF_NAME, npm dist-tag: $NPM_TAG)"
 
       - name: Install dependencies and build TS packages
         run: |
@@ -206,25 +218,27 @@ jobs:
           done
 
       - name: Publish to npm
+        env:
+          NPM_TAG: ${{ steps.version.outputs.NPM_TAG }}
         run: |
           set -euo pipefail
 
           # 1. corp-tools (no deps on other @thecorporation packages)
-          npm publish ./packages/corp-tools --provenance --access public --registry=https://registry.npmjs.org
+          npm publish ./packages/corp-tools --provenance --access public --tag "$NPM_TAG" --registry=https://registry.npmjs.org
 
           # 2. Platform binary packages
           for platform in linux-x64-gnu linux-arm64-gnu darwin-x64 darwin-arm64; do
-            npm publish ./packages/server/npm/${platform} --provenance --access public --registry=https://registry.npmjs.org
+            npm publish ./packages/server/npm/${platform} --provenance --access public --tag "$NPM_TAG" --registry=https://registry.npmjs.org
           done
 
           # 3. server (depends on platform binary packages)
-          npm publish ./packages/server --provenance --access public --registry=https://registry.npmjs.org
+          npm publish ./packages/server --provenance --access public --tag "$NPM_TAG" --registry=https://registry.npmjs.org
 
           # 4. mcp-server (depends on corp-tools)
-          npm publish ./packages/mcp-server --provenance --access public --registry=https://registry.npmjs.org
+          npm publish ./packages/mcp-server --provenance --access public --tag "$NPM_TAG" --registry=https://registry.npmjs.org
 
           # 5. cli (depends on corp-tools, server)
-          npm publish ./packages/cli-ts --provenance --access public --registry=https://registry.npmjs.org
+          npm publish ./packages/cli-ts --provenance --access public --tag "$NPM_TAG" --registry=https://registry.npmjs.org
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
