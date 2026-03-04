@@ -124,6 +124,9 @@ jobs:
           npm install -g npm@^11.5.1
           npm --version
 
+      - name: Clear npm auth config
+        run: rm -f "$HOME/.npmrc"
+
       - name: Extract version from tag
         id: version
         run: |
@@ -144,18 +147,6 @@ jobs:
 
           echo "VERSION=$VERSION" >> "$GITHUB_OUTPUT"
           echo "Using release version: $VERSION (from tag: $GITHUB_REF_NAME)"
-
-      - name: Set version in all package.json files
-        env:
-          VERSION: ${{ steps.version.outputs.VERSION }}
-        run: |
-          set -euo pipefail
-
-          mapfile -t PACKAGES < <(find packages -type f -name package.json | sort)
-
-          for pkg in "${PACKAGES[@]}"; do
-            jq --arg v "$VERSION" '.version = $v' "$pkg" > "${pkg}.tmp" && mv "${pkg}.tmp" "$pkg"
-          done
 
       - name: Install dependencies and build TS packages
         run: |
@@ -185,7 +176,7 @@ jobs:
           npm run build
           cd ../..
 
-      - name: Rewrite internal dependency versions for publishing
+      - name: Rewrite versions for publishing
         env:
           VERSION: ${{ steps.version.outputs.VERSION }}
         run: |
@@ -195,6 +186,7 @@ jobs:
 
           for pkg in "${PACKAGES[@]}"; do
             jq --arg v "$VERSION" '
+              .version = $v |
               def bump_section($section):
                 if has($section) then
                   .[$section] |= with_entries(
