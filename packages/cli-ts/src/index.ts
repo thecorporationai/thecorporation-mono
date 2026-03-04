@@ -1,10 +1,14 @@
 import { Command } from "commander";
+import { createRequire } from "node:module";
+
+const require = createRequire(import.meta.url);
+const pkg = require("../package.json");
 
 const program = new Command();
 program
   .name("corp")
   .description("corp — Corporate governance from the terminal")
-  .version("0.1.0");
+  .version(pkg.version);
 
 // --- setup ---
 program

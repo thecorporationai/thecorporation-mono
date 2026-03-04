@@ -26,12 +26,7 @@ export async function formCommand(opts: {
 
     let jurisdiction = opts.jurisdiction;
     if (!jurisdiction) {
-      const jurisdictions = (serverCfg.jurisdictions ?? ["DE", "WY", "NV", "CA"]) as string[];
-      jurisdiction = await select({
-        message: "Jurisdiction",
-        choices: jurisdictions.map((j) => ({ value: j, name: j })),
-        default: "DE",
-      });
+      jurisdiction = entityType === "llc" ? "US-WY" : "US-DE";
     }
 
     const parsedMembers: ApiRecord[] = [];

@@ -18,6 +18,20 @@ export class SessionExpiredError extends Error {
   }
 }
 
+async function extractErrorMessage(resp: Response): Promise<string> {
+  try {
+    const text = await resp.text();
+    try {
+      const json = JSON.parse(text);
+      return json.error || json.message || json.detail || text;
+    } catch {
+      return text;
+    }
+  } catch {
+    return resp.statusText;
+  }
+}
+
 export async function provisionWorkspace(
   apiUrl: string,
   name?: string
@@ -30,7 +44,10 @@ export async function provisionWorkspace(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
-  if (!resp.ok) throw new Error(`Provision failed: ${resp.status} ${resp.statusText}`);
+  if (!resp.ok) {
+    const detail = await extractErrorMessage(resp);
+    throw new Error(`Provision failed: ${resp.status} ${resp.statusText} — ${detail}`);
+  }
   return resp.json() as Promise<ApiRecord>;
 }
 
@@ -64,38 +81,41 @@ export class CorpAPIClient {
     return fetch(url, opts);
   }
 
+  private async throwIfError(resp: Response): Promise<void> {
+    if (resp.status === 401) throw new SessionExpiredError();
+    if (!resp.ok) {
+      const detail = await extractErrorMessage(resp);
+      throw new Error(`${resp.status} ${resp.statusText} — ${detail}`);
+    }
+  }
+
   private async get(path: string, params?: Record<string, string>): Promise<unknown> {
     const resp = await this.request("GET", path, undefined, params);
-    if (resp.status === 401) throw new SessionExpiredError();
-    if (!resp.ok) throw new Error(`${resp.status} ${resp.statusText}`);
+    await this.throwIfError(resp);
     return resp.json();
   }
 
   private async post(path: string, body?: unknown): Promise<unknown> {
     const resp = await this.request("POST", path, body);
-    if (resp.status === 401) throw new SessionExpiredError();
-    if (!resp.ok) throw new Error(`${resp.status} ${resp.statusText}`);
+    await this.throwIfError(resp);
     return resp.json();
   }
 
   private async postWithParams(path: string, body: unknown, params: Record<string, string>): Promise<unknown> {
     const resp = await this.request("POST", path, body, params);
-    if (resp.status === 401) throw new SessionExpiredError();
-    if (!resp.ok) throw new Error(`${resp.status} ${resp.statusText}`);
+    await this.throwIfError(resp);
     return resp.json();
   }
 
   private async patch(path: string, body?: unknown): Promise<unknown> {
     const resp = await this.request("PATCH", path, body);
-    if (resp.status === 401) throw new SessionExpiredError();
-    if (!resp.ok) throw new Error(`${resp.status} ${resp.statusText}`);
+    await this.throwIfError(resp);
     return resp.json();
   }
 
   private async del(path: string): Promise<void> {
     const resp = await this.request("DELETE", path);
-    if (resp.status === 401) throw new SessionExpiredError();
-    if (!resp.ok) throw new Error(`${resp.status} ${resp.statusText}`);
+    await this.throwIfError(resp);
   }
 
   // --- Workspace ---
