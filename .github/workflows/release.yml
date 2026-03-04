@@ -99,8 +99,6 @@ jobs:
     permissions:
       contents: write
       id-token: write
-    env:
-      NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
     steps:
       - uses: actions/checkout@v4
 
@@ -121,10 +119,11 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           registry-url: https://registry.npmjs.org
 
-      - name: Configure npm auth
+      - name: Ensure npm supports trusted publishing
         run: |
-          echo "//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}" > "$HOME/.npmrc"
-          npm whoami
+          set -euo pipefail
+          npm install -g npm@^11.5.1
+          npm --version
 
       - name: Extract version from tag
         id: version
