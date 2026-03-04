@@ -117,7 +117,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
-          registry-url: https://registry.npmjs.org
 
       - name: Ensure npm supports trusted publishing
         run: |
@@ -212,21 +211,21 @@ jobs:
           set -euo pipefail
 
           # 1. corp-tools (no deps on other @thecorporation packages)
-          npm publish packages/corp-tools --provenance --access public
+          npm publish packages/corp-tools --provenance --access public --registry=https://registry.npmjs.org
 
           # 2. Platform binary packages
           for platform in linux-x64-gnu linux-arm64-gnu darwin-x64 darwin-arm64; do
-            npm publish packages/server/npm/${platform} --provenance --access public
+            npm publish packages/server/npm/${platform} --provenance --access public --registry=https://registry.npmjs.org
           done
 
           # 3. server (depends on platform binary packages)
-          npm publish packages/server --provenance --access public
+          npm publish packages/server --provenance --access public --registry=https://registry.npmjs.org
 
           # 4. mcp-server (depends on corp-tools)
-          npm publish packages/mcp-server --provenance --access public
+          npm publish packages/mcp-server --provenance --access public --registry=https://registry.npmjs.org
 
           # 5. cli (depends on corp-tools, server)
-          npm publish packages/cli-ts --provenance --access public
+          npm publish packages/cli-ts --provenance --access public --registry=https://registry.npmjs.org
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
