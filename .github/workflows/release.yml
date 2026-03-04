@@ -240,6 +240,9 @@ jobs:
           # 5. cli (depends on corp-tools, server)
           npm publish ./packages/cli-ts --provenance --access public --tag "$NPM_TAG" --registry=https://registry.npmjs.org
 
+          # 6. agent (no @thecorporation deps — only peer dep on @mariozechner/pi-coding-agent)
+          npm publish ./packages/agent --provenance --access public --tag "$NPM_TAG" --registry=https://registry.npmjs.org
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:

@@ -1,0 +1,36 @@
+{
+  "name": "@thecorporation/agent",
+  "version": "0.1.0",
+  "description": "TheCorporation agent — 35 corporate governance tools for the Pi coding agent",
+  "type": "module",
+  "bin": {
+    "corp-agent": "./bin/corp.mjs"
+  },
+  "files": [
+    "bin/",
+    "extension/",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "peerDependencies": {
+    "@mariozechner/pi-coding-agent": "*"
+  },
+  "keywords": [
+    "thecorporation",
+    "pi",
+    "coding-agent",
+    "corporate-governance",
+    "llc",
+    "corporation",
+    "agents"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/thecorporationai/thecorporation-mono.git",
+    "directory": "packages/agent"
+  },
+  "homepage": "https://thecorporation.ai"
+}

@@ -30,6 +30,56 @@ jobs:
         working-directory: services/agent-worker
         run: cargo test
 
+  test-agent:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Validate agent extension
+        run: |
+          node -e "
+          const fs = require('fs');
+          const src = fs.readFileSync('packages/agent/extension/corp.ts', 'utf8');
+          const agent = fs.readFileSync('packages/agent/extension/AGENT.md', 'utf8');
+          let pass = 0, fail = 0;
+
+          function check(label, ok) {
+            if (ok) { console.log('  ✓ ' + label); pass++; }
+            else    { console.log('  ✗ ' + label); fail++; }
+          }
+
+          // Tool definitions
+          const tools = new Set([...src.matchAll(/name: \"([^\"]+)\"/g)].map(m => m[1]));
+          check('Has 30+ tool definitions (found ' + tools.size + ')', tools.size >= 30);
+
+          // Key tools present
+          for (const t of [
+            'get_workspace_status', 'list_entities', 'get_cap_table',
+            'form_entity', 'issue_equity', 'issue_safe',
+            'create_invoice', 'generate_contract', 'convene_meeting',
+            'create_agent', 'list_obligations', 'get_billing_status',
+          ]) { check('Has tool: ' + t, tools.has(t)); }
+
+          // Extension structure
+          check('Exports default function', src.includes('export default function'));
+          check('Receives ExtensionAPI parameter', src.includes('ExtensionAPI'));
+          check('Has session_start handler', src.includes('session_start'));
+          check('Has tool_call handler', src.includes('pi.on(\"tool_call\"'));
+          check('Has confirmation gating', src.includes('ctx.ui.confirm'));
+
+          // AGENT.md
+          check('AGENT.md mentions cents', agent.includes('cents'));
+          check('AGENT.md mentions Read tools', agent.includes('Read tools'));
+
+          // bin entry point
+          check('bin/corp.mjs exists', fs.existsSync('packages/agent/bin/corp.mjs'));
+
+          console.log('\n' + pass + ' passed, ' + fail + ' failed');
+          if (fail > 0) process.exit(1);
+          "
+
   test-ts-unit:
     runs-on: ubuntu-latest
     steps:
