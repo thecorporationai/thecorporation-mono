@@ -1,0 +1,16 @@
+services:
+  api:
+    build:
+      context: ../..
+      dockerfile: services/api-rs/Dockerfile
+    environment:
+      JWT_SECRET: integration-test-secret
+      RUST_LOG: api_rs=info
+    ports:
+      - "${API_PORT:-8000}:8000"
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8000/health"]
+      interval: 2s
+      timeout: 5s
+      retries: 15
+      start_period: 5s

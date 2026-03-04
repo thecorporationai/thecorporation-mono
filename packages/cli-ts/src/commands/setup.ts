@@ -20,7 +20,7 @@ export async function setupCommand(): Promise<void> {
   if (!cfg.api_key || !cfg.workspace_id) {
     console.log("\nProvisioning workspace...");
     try {
-      const result = await provisionWorkspace(cfg.api_url);
+      const result = await provisionWorkspace(cfg.api_url, `${user.name}'s workspace`);
       cfg.api_key = result.api_key as string;
       cfg.workspace_id = result.workspace_id as string;
       console.log(`Workspace provisioned: ${result.workspace_id}`);
@@ -51,7 +51,7 @@ export async function setupCommand(): Promise<void> {
       });
       if (reprovision) {
         try {
-          const result = await provisionWorkspace(cfg.api_url);
+          const result = await provisionWorkspace(cfg.api_url, `${user.name}'s workspace`);
           cfg.api_key = result.api_key as string;
           cfg.workspace_id = result.workspace_id as string;
           console.log(`Workspace provisioned: ${result.workspace_id}`);

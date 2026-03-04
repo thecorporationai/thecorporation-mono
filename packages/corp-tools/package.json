@@ -17,10 +17,13 @@
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch",
+    "test": "vitest run",
+    "test:integration": "vitest run --config vitest.integration.config.ts",
     "generate:tools": "python3 ../../scripts/dev/generate_tool_defs.py --api-url http://localhost:8000 > src/tool-defs.generated.ts",
     "check:tools": "python3 ../../scripts/dev/check_tool_sync.py"
   },
   "devDependencies": {
+    "vitest": "^3.0.0",
     "tsup": "^8.4.0",
     "typescript": "^5.8.0",
     "@types/node": "^22.0.0"

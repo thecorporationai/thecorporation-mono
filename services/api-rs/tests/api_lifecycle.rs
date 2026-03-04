@@ -4924,3 +4924,228 @@ async fn test_openapi_spec() {
         "expected >= 115 operations, got {total_ops}"
     );
 }
+
+// ── Edge-case / negative tests ──────────────────────────────────────
+
+#[tokio::test]
+async fn test_provision_workspace_edge_cases() {
+    let tmp = TempDir::new().unwrap();
+    let app = build_app(&tmp);
+    let token = make_token(WorkspaceId::new());
+
+    // Empty body {} → 422 (the exact bug that corp setup hit)
+    let (status, _body) = post_json(
+        &app,
+        "/v1/workspaces/provision",
+        json!({}),
+        &token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "empty body should be 422");
+
+    // null name → 422
+    let (status, _body) = post_json(
+        &app,
+        "/v1/workspaces/provision",
+        json!({ "name": null }),
+        &token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "null name should be 422");
+
+    // empty string name → 400
+    let (status, _body) = post_json(
+        &app,
+        "/v1/workspaces/provision",
+        json!({ "name": "" }),
+        &token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "empty name should be 400");
+
+    // name too long (257 chars) → 400
+    let long_name = "a".repeat(257);
+    let (status, _body) = post_json(
+        &app,
+        "/v1/workspaces/provision",
+        json!({ "name": long_name }),
+        &token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "name > 256 should be 400");
+
+    // boundary: 256 chars → 201 (should succeed)
+    let boundary_name = "b".repeat(256);
+    let (status, body) = post_json(
+        &app,
+        "/v1/workspaces/provision",
+        json!({ "name": boundary_name }),
+        &token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "256-char name should succeed: {body}");
+    assert_eq!(body["name"], boundary_name);
+
+    // Unknown fields → 422 (deny_unknown_fields)
+    let (status, _body) = post_json(
+        &app,
+        "/v1/workspaces/provision",
+        json!({ "name": "Good Name", "surprise_field": true }),
+        &token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "unknown fields should be 422");
+
+    // Wrong type for name → 422
+    let (status, _body) = post_json(
+        &app,
+        "/v1/workspaces/provision",
+        json!({ "name": 12345 }),
+        &token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "numeric name should be 422");
+}
+
+#[tokio::test]
+async fn test_create_api_key_edge_cases() {
+    let tmp = TempDir::new().unwrap();
+    let app = build_app(&tmp);
+    let token = make_token(WorkspaceId::new());
+
+    // Provision a workspace first
+    let (status, ws_body) = post_json(
+        &app,
+        "/v1/workspaces/provision",
+        json!({ "name": "Key Edge Cases" }),
+        &token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED);
+    let ws_id: WorkspaceId = ws_body["workspace_id"].as_str().unwrap().parse().unwrap();
+    let ws_token = make_token(ws_id);
+
+    // Missing name → 422
+    let (status, _body) = post_json(
+        &app,
+        "/v1/api-keys",
+        json!({ "scopes": ["all"] }),
+        &ws_token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "missing name should be 422");
+
+    // Empty name → 400
+    let (status, _body) = post_json(
+        &app,
+        "/v1/api-keys",
+        json!({ "name": "", "scopes": ["all"] }),
+        &ws_token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "empty name should be 400");
+
+    // Name too long (> 128 chars) → 400
+    let long_name = "k".repeat(129);
+    let (status, _body) = post_json(
+        &app,
+        "/v1/api-keys",
+        json!({ "name": long_name, "scopes": ["all"] }),
+        &ws_token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "name > 128 should be 400");
+}
+
+#[tokio::test]
+async fn test_token_exchange_edge_cases() {
+    let tmp = TempDir::new().unwrap();
+    let app = build_app(&tmp);
+    let token = make_token(WorkspaceId::new());
+
+    // Provision a workspace
+    let (status, ws_body) = post_json(
+        &app,
+        "/v1/workspaces/provision",
+        json!({ "name": "Token Edge Cases" }),
+        &token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED);
+    let ws_id: WorkspaceId = ws_body["workspace_id"].as_str().unwrap().parse().unwrap();
+    let ws_token = make_token(ws_id);
+
+    // Missing api_key → 422
+    let (status, _body) = post_json(
+        &app,
+        "/v1/auth/token-exchange",
+        json!({ "ttl_seconds": 1800 }),
+        &ws_token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "missing api_key should be 422");
+
+    // Invalid key format (no sk_ prefix) → 401
+    let (status, _body) = post_json(
+        &app,
+        "/v1/auth/token-exchange",
+        json!({ "api_key": "not-a-valid-key", "ttl_seconds": 1800 }),
+        &ws_token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED, "invalid key format should be 401");
+
+    // ttl_seconds: 0 → 400
+    let api_key = ws_body["api_key"].as_str().unwrap();
+    let (status, _body) = post_json(
+        &app,
+        "/v1/auth/token-exchange",
+        json!({ "api_key": api_key, "ttl_seconds": 0 }),
+        &ws_token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "ttl=0 should be 400");
+
+    // ttl_seconds: 100000 (too large) → 400
+    let (status, _body) = post_json(
+        &app,
+        "/v1/auth/token-exchange",
+        json!({ "api_key": api_key, "ttl_seconds": 100000 }),
+        &ws_token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "ttl=100000 should be 400");
+}
+
+#[tokio::test]
+async fn test_chat_session_edge_cases() {
+    let tmp = TempDir::new().unwrap();
+    let app = build_app(&tmp);
+
+    // Missing email → 422
+    let (status, _body) = post_json_no_auth(
+        &app,
+        "/v1/chat/session",
+        json!({}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "missing email should be 422");
+
+    // Empty email → 400
+    let (status, _body) = post_json_no_auth(
+        &app,
+        "/v1/chat/session",
+        json!({ "email": "" }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "empty email should be 400");
+
+    // Email without @ → 400
+    let (status, _body) = post_json_no_auth(
+        &app,
+        "/v1/chat/session",
+        json!({ "email": "not-an-email" }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "email without @ should be 400");
+}
