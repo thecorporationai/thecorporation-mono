@@ -121,19 +121,10 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           registry-url: https://registry.npmjs.org
 
-      - name: Debug NPM token and npmrc
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - name: Configure npm auth
         run: |
-          echo "TOKEN starts with: ${NODE_AUTH_TOKEN:0:4}"
-          echo "TOKEN length: ${#NODE_AUTH_TOKEN}"
-          echo "--- searching for .npmrc ---"
-          find / -name ".npmrc" 2>/dev/null || true
-          echo "--- npm config list ---"
-          npm config list
-          echo "--- writing .npmrc manually ---"
-          echo "//registry.npmjs.org/:_authToken=\${NODE_AUTH_TOKEN}" > "$HOME/.npmrc"
-          cat "$HOME/.npmrc"
+          echo "//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}" > "$HOME/.npmrc"
+          npm whoami
 
       - name: Extract version from tag
         id: version
