@@ -182,7 +182,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          mapfile -t PACKAGES < <(find packages -type f -name package.json | sort)
+          mapfile -t PACKAGES < <(find packages -not -path '*/node_modules/*' -type f -name package.json | sort)
 
           for pkg in "${PACKAGES[@]}"; do
             jq --arg v "$VERSION" '
