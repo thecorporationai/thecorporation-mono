@@ -45,6 +45,13 @@ fn monthly_budget_key(agent_id: &str) -> String {
     format!("aw:budget:agent:{agent_id}:{month}")
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/llm/proxy/{path}",
+    tag = "llm",
+    params(("path" = String, Path, description = "Upstream API path")),
+    responses((status = 200, description = "Proxied LLM response")),
+)]
 async fn proxy_handler(
     State(state): State<AppState>,
     Path(path): Path<String>,
@@ -234,3 +241,7 @@ async fn proxy_handler(
 pub fn llm_proxy_routes() -> Router<AppState> {
     Router::new().route("/v1/llm/proxy/{*path}", post(proxy_handler))
 }
+
+#[derive(utoipa::OpenApi)]
+#[openapi(paths(proxy_handler))]
+pub struct LlmProxyApi;

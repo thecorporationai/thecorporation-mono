@@ -7,7 +7,7 @@ use super::types::Cents;
 use crate::domain::ids::{EntityId, ReconciliationId};
 
 /// Status of a reconciliation.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ReconciliationStatus {
     Balanced,

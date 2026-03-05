@@ -6,7 +6,8 @@ use std::fmt;
 // ── VotingPower ────────────────────────────────────────────────────────
 
 /// The voting weight of a governance seat.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, utoipa::ToSchema)]
+#[schema(value_type = u32)]
 #[serde(transparent)]
 pub struct VotingPower(u32);
 
@@ -56,7 +57,7 @@ impl fmt::Display for VotingPower {
 // ── QuorumThreshold ────────────────────────────────────────────────────
 
 /// The threshold required for a vote to pass.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum QuorumThreshold {
     /// Simple majority (> 50%).
@@ -110,7 +111,7 @@ impl QuorumThreshold {
 ///
 /// Replaces `Option<bool>` for clearer semantics.
 /// Backward-compatible deserialization from `Option<bool>` via `From`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum QuorumStatus {
     /// Quorum status has not yet been determined.
@@ -151,7 +152,7 @@ impl fmt::Display for QuorumThreshold {
 // ── Enums ──────────────────────────────────────────────────────────────
 
 /// The type of governance body.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum BodyType {
     /// Board of directors (C-Corp).
@@ -161,7 +162,7 @@ pub enum BodyType {
 }
 
 /// Whether a governance body is active.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum BodyStatus {
     /// Body is active and can conduct business.
@@ -171,7 +172,7 @@ pub enum BodyStatus {
 }
 
 /// Role of a seat in a governance body.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum SeatRole {
     /// Chairperson of the body.
@@ -185,7 +186,7 @@ pub enum SeatRole {
 }
 
 /// Status of a governance seat.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum SeatStatus {
     /// Seat is currently occupied.
@@ -197,7 +198,7 @@ pub enum SeatStatus {
 }
 
 /// Type of meeting.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum MeetingType {
     /// Regular or special board meeting.
@@ -211,7 +212,7 @@ pub enum MeetingType {
 }
 
 /// Lifecycle status of a meeting.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum MeetingStatus {
     /// Meeting is being planned.
@@ -239,7 +240,7 @@ impl fmt::Display for MeetingStatus {
 }
 
 /// Type of item on a meeting agenda.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum AgendaItemType {
     /// A formal resolution requiring a vote.
@@ -253,7 +254,7 @@ pub enum AgendaItemType {
 }
 
 /// Status of an agenda item.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum AgendaItemStatus {
     /// Not yet discussed.
@@ -269,7 +270,7 @@ pub enum AgendaItemStatus {
 }
 
 /// How a participant voted.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum VoteValue {
     /// In favor.
@@ -283,7 +284,7 @@ pub enum VoteValue {
 }
 
 /// Type of resolution.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ResolutionType {
     /// Ordinary resolution (simple majority).
@@ -295,7 +296,7 @@ pub enum ResolutionType {
 }
 
 /// How votes are counted.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum VotingMethod {
     /// One vote per person/seat.
@@ -305,7 +306,7 @@ pub enum VotingMethod {
 }
 
 /// Status of meeting minutes.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum MinutesStatus {
     /// Minutes are being drafted.

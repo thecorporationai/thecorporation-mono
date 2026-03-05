@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use crate::domain::ids::{ClassificationId, EntityId};
 
 /// Risk level for contractor classification.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum RiskLevel {
     Low,
@@ -15,7 +15,7 @@ pub enum RiskLevel {
 }
 
 /// Classification result.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ClassificationResult {
     Independent,

@@ -10,7 +10,7 @@ use crate::domain::ids::EntityId;
 
 pub const GOVERNANCE_PROFILE_PATH: &str = "governance/profile.json";
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct CompanyAddress {
     pub street: String,
     pub city: String,
@@ -19,7 +19,7 @@ pub struct CompanyAddress {
     pub zip: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct FounderInfo {
     pub name: String,
     #[serde(default)]
@@ -34,7 +34,7 @@ pub struct FounderInfo {
     pub address: Option<CompanyAddress>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct VestingSchedule {
     pub total_months: u32,
     pub cliff_months: u32,
@@ -42,20 +42,20 @@ pub struct VestingSchedule {
     pub acceleration_on_termination: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct DirectorInfo {
     pub name: String,
     #[serde(default)]
     pub address: Option<CompanyAddress>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct OfficerInfo {
     pub name: String,
     pub title: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct StockDetails {
     pub authorized_shares: u64,
     pub par_value_cents: u64,
@@ -67,13 +67,13 @@ fn default_share_class() -> String {
     "Common Stock".to_owned()
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct FiscalYearEnd {
     pub month: u32,
     pub day: u32,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct DocumentOptions {
     #[serde(default = "default_dating_format")]
     pub dating_format: String,
@@ -89,7 +89,7 @@ fn default_dating_format() -> String {
     "blank_line".to_owned()
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct GovernanceProfile {
     entity_id: EntityId,
     entity_type: EntityType,

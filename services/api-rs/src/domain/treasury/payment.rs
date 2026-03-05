@@ -7,7 +7,7 @@ use super::types::{Cents, PaymentMethod};
 use crate::domain::ids::{EntityId, PaymentId};
 
 /// Lifecycle status of a payment.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum PaymentStatus {
     Submitted,

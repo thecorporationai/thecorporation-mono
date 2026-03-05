@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use crate::domain::ids::{ContactId, EntityId, HolderId};
 
 /// Type of holder represented in the cap table.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum HolderType {
     Individual,

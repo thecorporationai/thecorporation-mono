@@ -7,7 +7,7 @@ use super::error::EquityError;
 use crate::domain::ids::{HolderId, InstrumentId, LegalEntityId, PositionId};
 
 /// Lifecycle status for a position.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum PositionStatus {
     Active,

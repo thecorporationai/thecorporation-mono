@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 // ── ContactType ────────────────────────────────────────────────────────
 
 /// Whether a contact is a person or an organization.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ContactType {
     /// A natural person.
@@ -17,7 +17,7 @@ pub enum ContactType {
 // ── ContactCategory ────────────────────────────────────────────────────
 
 /// The role or relationship a contact has with the entity.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ContactCategory {
     /// W-2 employee.
@@ -47,7 +47,7 @@ pub enum ContactCategory {
 // ── ContactStatus ──────────────────────────────────────────────────────
 
 /// Whether a contact record is active.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ContactStatus {
     /// Contact is active and current.
@@ -59,7 +59,7 @@ pub enum ContactStatus {
 // ── CapTableAccess ─────────────────────────────────────────────────────
 
 /// Level of cap table visibility granted to a contact.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum CapTableAccess {
     /// No cap table access.

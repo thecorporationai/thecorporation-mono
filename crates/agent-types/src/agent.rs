@@ -18,6 +18,7 @@ use crate::validated::NonEmpty;
 /// `name` is [`NonEmpty`] — agents must have a non-blank name.  This is
 /// enforced at deserialization time so downstream code never needs to check.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct AgentDefinition {
     pub id: AgentId,
     #[serde(default)]

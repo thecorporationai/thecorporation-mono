@@ -12,7 +12,7 @@ use crate::domain::ids::{
     GovernanceModeEventId, GovernanceTriggerId, IncidentId, IntentId,
 };
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum GovernanceAuditEventType {
     ModeChanged,
@@ -23,13 +23,14 @@ pub enum GovernanceAuditEventType {
     ChainVerificationFailed,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct GovernanceAuditEntry {
     audit_entry_id: GovernanceAuditEntryId,
     entity_id: EntityId,
     event_type: GovernanceAuditEventType,
     action: String,
     #[serde(default)]
+    #[schema(value_type = Object)]
     details: Value,
     #[serde(default)]
     evidence_refs: Vec<String>,
@@ -203,7 +204,7 @@ fn compute_hash(
     hex::encode(hasher.finalize())
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct GovernanceAuditCheckpoint {
     checkpoint_id: GovernanceAuditCheckpointId,
     entity_id: EntityId,
@@ -251,7 +252,7 @@ impl GovernanceAuditCheckpoint {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct GovernanceAuditVerificationReport {
     verification_id: GovernanceAuditVerificationId,
     entity_id: EntityId,

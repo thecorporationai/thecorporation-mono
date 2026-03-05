@@ -24,7 +24,7 @@ use crate::store::workspace_store::WorkspaceStore;
 
 // ── Request types ────────────────────────────────────────────────────
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct CreateProxyRequest {
     pub name: String,
@@ -34,7 +34,7 @@ pub struct CreateProxyRequest {
     pub description: Option<String>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SetSecretsRequest {
     /// Key-value pairs. Values are plaintext — the server encrypts before storing.
@@ -50,7 +50,7 @@ pub struct ProxyPathParams {
 
 // ── Response types ───────────────────────────────────────────────────
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct ProxyResponse {
     pub name: String,
     pub url: String,
@@ -60,7 +60,7 @@ pub struct ProxyResponse {
     pub secret_count: usize,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct SecretNamesResponse {
     pub proxy_name: String,
     pub names: Vec<String>,
@@ -68,7 +68,7 @@ pub struct SecretNamesResponse {
 
 // ── Internal resolve (called by worker) ──────────────────────────────
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ResolveSecretsRequest {
     pub workspace_id: WorkspaceId,
@@ -78,7 +78,7 @@ pub struct ResolveSecretsRequest {
     pub keys: Vec<String>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct ResolveSecretsResponse {
     pub proxy_name: String,
     pub url: String,
@@ -133,6 +133,17 @@ fn require_fernet(state: &AppState) -> Result<&fernet::Fernet, AppError> {
 
 // ── Handlers ─────────────────────────────────────────────────────────
 
+#[utoipa::path(
+    post,
+    path = "/v1/workspaces/{workspace_id}/secret-proxies",
+    tag = "secret_proxies",
+    request_body = CreateProxyRequest,
+    responses(
+        (status = 201, description = "Secret proxy created", body = ProxyResponse),
+        (status = 400, description = "Invalid request"),
+        (status = 409, description = "Proxy already exists"),
+    ),
+)]
 async fn create_proxy(
     RequireAdmin(auth): RequireAdmin,
     Path(workspace_id): Path<WorkspaceId>,
@@ -200,6 +211,14 @@ async fn create_proxy(
     ))
 }
 
+#[utoipa::path(
+    get,
+    path = "/v1/workspaces/{workspace_id}/secret-proxies",
+    tag = "secret_proxies",
+    responses(
+        (status = 200, description = "List of secret proxies", body = Vec<ProxyResponse>),
+    ),
+)]
 async fn list_proxies(
     RequireAdmin(auth): RequireAdmin,
     State(state): State<AppState>,
@@ -244,6 +263,15 @@ async fn list_proxies(
     Ok(Json(proxies))
 }
 
+#[utoipa::path(
+    get,
+    path = "/v1/workspaces/{workspace_id}/secret-proxies/{proxy_name}",
+    tag = "secret_proxies",
+    responses(
+        (status = 200, description = "Secret proxy details", body = ProxyResponse),
+        (status = 404, description = "Proxy not found"),
+    ),
+)]
 async fn get_proxy(
     RequireAdmin(auth): RequireAdmin,
     State(state): State<AppState>,
@@ -283,6 +311,16 @@ async fn get_proxy(
     Ok(Json(proxy))
 }
 
+#[utoipa::path(
+    put,
+    path = "/v1/workspaces/{workspace_id}/secret-proxies/{proxy_name}/secrets",
+    tag = "secret_proxies",
+    request_body = SetSecretsRequest,
+    responses(
+        (status = 200, description = "Secrets updated", body = SecretNamesResponse),
+        (status = 404, description = "Proxy not found"),
+    ),
+)]
 async fn set_secrets(
     RequireAdmin(auth): RequireAdmin,
     State(state): State<AppState>,
@@ -339,6 +377,15 @@ async fn set_secrets(
     Ok(Json(SecretNamesResponse { proxy_name, names }))
 }
 
+#[utoipa::path(
+    get,
+    path = "/v1/workspaces/{workspace_id}/secret-proxies/{proxy_name}/secrets",
+    tag = "secret_proxies",
+    responses(
+        (status = 200, description = "List of secret names", body = SecretNamesResponse),
+        (status = 404, description = "Proxy not found"),
+    ),
+)]
 async fn list_secret_names(
     RequireAdmin(auth): RequireAdmin,
     State(state): State<AppState>,
@@ -381,6 +428,16 @@ async fn list_secret_names(
 /// Called by the worker to get plaintext secret values for opaque token creation.
 /// For `"self"` proxies, decrypts from git. For external proxies, returns the URL
 /// so the worker can forward requests there.
+#[utoipa::path(
+    post,
+    path = "/v1/internal/resolve-secrets",
+    tag = "secret_proxies",
+    request_body = ResolveSecretsRequest,
+    responses(
+        (status = 200, description = "Resolved secrets", body = ResolveSecretsResponse),
+        (status = 404, description = "Proxy or workspace not found"),
+    ),
+)]
 async fn resolve_secrets(
     _worker: RequireInternalWorker,
     State(state): State<AppState>,
@@ -462,3 +519,24 @@ pub fn secret_proxy_routes() -> Router<AppState> {
         )
         .route("/v1/internal/resolve-secrets", post(resolve_secrets))
 }
+
+#[derive(utoipa::OpenApi)]
+#[openapi(
+    paths(
+        create_proxy,
+        list_proxies,
+        get_proxy,
+        set_secrets,
+        list_secret_names,
+        resolve_secrets,
+    ),
+    components(schemas(
+        CreateProxyRequest,
+        SetSecretsRequest,
+        ProxyResponse,
+        SecretNamesResponse,
+        ResolveSecretsRequest,
+        ResolveSecretsResponse,
+    ))
+)]
+pub struct SecretProxiesApi;

@@ -8,7 +8,7 @@ use crate::domain::ids::{EntityId, ResolutionId, ScheduleAmendmentId};
 
 pub const CURRENT_SCHEDULE_PATH: &str = "governance/delegation-schedule/current.json";
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct DelegationSchedule {
     entity_id: EntityId,
     version: u32,
@@ -183,7 +183,7 @@ impl DelegationSchedule {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct ScheduleAmendment {
     schedule_amendment_id: ScheduleAmendmentId,
     entity_id: EntityId,

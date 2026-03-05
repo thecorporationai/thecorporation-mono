@@ -42,7 +42,7 @@ use crate::store::entity_store::EntityStore;
 
 // ── Request types ────────────────────────────────────────────────────
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 pub struct CreateIntentRequest {
     pub entity_id: EntityId,
     pub intent_type: String,
@@ -51,6 +51,7 @@ pub struct CreateIntentRequest {
     pub authority_tier: Option<AuthorityTier>,
     pub description: String,
     #[serde(default = "default_metadata")]
+    #[schema(value_type = Object)]
     pub metadata: serde_json::Value,
 }
 
@@ -58,7 +59,7 @@ fn default_metadata() -> serde_json::Value {
     serde_json::Value::Object(serde_json::Map::new())
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 pub struct CreateObligationRequest {
     pub entity_id: EntityId,
     #[serde(default)]
@@ -72,7 +73,7 @@ pub struct CreateObligationRequest {
     pub due_date: Option<NaiveDate>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 pub struct CreateApprovalArtifactRequest {
     pub entity_id: EntityId,
     pub intent_type: String,
@@ -93,13 +94,13 @@ fn default_explicit_approval() -> bool {
     true
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 pub struct BindApprovalArtifactRequest {
     pub entity_id: EntityId,
     pub approval_artifact_id: ApprovalArtifactId,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 pub struct BindDocumentRequestRequest {
     pub entity_id: EntityId,
     pub request_id: DocumentRequestId,
@@ -107,7 +108,7 @@ pub struct BindDocumentRequestRequest {
 
 // ── Response types ───────────────────────────────────────────────────
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct IntentResponse {
     pub intent_id: IntentId,
     pub entity_id: EntityId,
@@ -127,7 +128,7 @@ pub struct IntentResponse {
     pub created_at: String,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct ObligationResponse {
     pub obligation_id: ObligationId,
     pub entity_id: EntityId,
@@ -144,7 +145,7 @@ pub struct ObligationResponse {
     pub created_at: String,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct ApprovalArtifactResponse {
     pub approval_artifact_id: ApprovalArtifactId,
     pub entity_id: EntityId,
@@ -160,7 +161,7 @@ pub struct ApprovalArtifactResponse {
     pub created_at: String,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct PacketSignatureResponse {
     pub signature_id: PacketSignatureId,
     pub signer_identity: String,
@@ -168,7 +169,7 @@ pub struct PacketSignatureResponse {
     pub signed_at: String,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct TransactionPacketResponse {
     pub packet_id: PacketId,
     pub entity_id: EntityId,
@@ -485,6 +486,17 @@ fn trigger_policy_evidence_lockdown(
 
 // ── Handlers: Intents ────────────────────────────────────────────────
 
+#[utoipa::path(
+    post,
+    path = "/v1/execution/intents",
+    tag = "execution",
+    request_body = CreateIntentRequest,
+    responses(
+        (status = 200, body = IntentResponse),
+        (status = 400, description = "Bad request"),
+        (status = 422, description = "Unprocessable entity"),
+    ),
+)]
 async fn create_intent(
     RequireExecutionWrite(auth): RequireExecutionWrite,
     State(state): State<AppState>,
@@ -545,6 +557,16 @@ async fn create_intent(
     Ok(Json(intent_to_response(&intent)))
 }
 
+#[utoipa::path(
+    get,
+    path = "/v1/entities/{entity_id}/intents",
+    tag = "execution",
+    params(("entity_id" = EntityId, Path, description = "Entity ID")),
+    responses(
+        (status = 200, body = Vec<IntentResponse>),
+        (status = 404, description = "Entity not found"),
+    ),
+)]
 async fn list_intents(
     RequireExecutionRead(auth): RequireExecutionRead,
     State(state): State<AppState>,
@@ -576,6 +598,19 @@ async fn list_intents(
     Ok(Json(intents))
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/intents/{intent_id}/evaluate",
+    tag = "execution",
+    params(
+        ("intent_id" = IntentId, Path, description = "Intent ID"),
+        ("entity_id" = EntityId, Query, description = "Entity ID"),
+    ),
+    responses(
+        (status = 200, body = IntentResponse),
+        (status = 404, description = "Intent not found"),
+    ),
+)]
 async fn evaluate_intent(
     RequireExecutionWrite(auth): RequireExecutionWrite,
     State(state): State<AppState>,
@@ -639,6 +674,20 @@ async fn evaluate_intent(
     Ok(Json(intent_to_response(&intent)))
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/intents/{intent_id}/authorize",
+    tag = "execution",
+    params(
+        ("intent_id" = IntentId, Path, description = "Intent ID"),
+        ("entity_id" = EntityId, Query, description = "Entity ID"),
+    ),
+    responses(
+        (status = 200, body = IntentResponse),
+        (status = 404, description = "Intent not found"),
+        (status = 422, description = "Blocked by policy or missing prerequisites"),
+    ),
+)]
 async fn authorize_intent(
     RequireExecutionWrite(auth): RequireExecutionWrite,
     State(state): State<AppState>,
@@ -712,6 +761,20 @@ async fn authorize_intent(
     Ok(Json(intent_to_response(&intent)))
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/intents/{intent_id}/execute",
+    tag = "execution",
+    params(
+        ("intent_id" = IntentId, Path, description = "Intent ID"),
+        ("entity_id" = EntityId, Query, description = "Entity ID"),
+    ),
+    responses(
+        (status = 200, body = IntentResponse),
+        (status = 404, description = "Intent not found"),
+        (status = 422, description = "Blocked by policy or missing prerequisites"),
+    ),
+)]
 async fn execute_intent(
     RequireExecutionWrite(auth): RequireExecutionWrite,
     State(state): State<AppState>,
@@ -785,6 +848,19 @@ async fn execute_intent(
     Ok(Json(intent_to_response(&intent)))
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/intents/{intent_id}/cancel",
+    tag = "execution",
+    params(
+        ("intent_id" = IntentId, Path, description = "Intent ID"),
+        ("entity_id" = EntityId, Query, description = "Entity ID"),
+    ),
+    responses(
+        (status = 200, body = IntentResponse),
+        (status = 404, description = "Intent not found"),
+    ),
+)]
 async fn cancel_intent(
     RequireExecutionWrite(auth): RequireExecutionWrite,
     State(state): State<AppState>,
@@ -823,6 +899,16 @@ async fn cancel_intent(
     Ok(Json(intent_to_response(&intent)))
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/execution/approval-artifacts",
+    tag = "execution",
+    request_body = CreateApprovalArtifactRequest,
+    responses(
+        (status = 200, body = ApprovalArtifactResponse),
+        (status = 400, description = "Bad request"),
+    ),
+)]
 async fn create_approval_artifact(
     RequireExecutionWrite(auth): RequireExecutionWrite,
     State(state): State<AppState>,
@@ -872,6 +958,16 @@ async fn create_approval_artifact(
     Ok(Json(approval_to_response(&artifact)))
 }
 
+#[utoipa::path(
+    get,
+    path = "/v1/entities/{entity_id}/approval-artifacts",
+    tag = "execution",
+    params(("entity_id" = EntityId, Path, description = "Entity ID")),
+    responses(
+        (status = 200, body = Vec<ApprovalArtifactResponse>),
+        (status = 404, description = "Entity not found"),
+    ),
+)]
 async fn list_approval_artifacts(
     RequireExecutionRead(auth): RequireExecutionRead,
     State(state): State<AppState>,
@@ -901,6 +997,17 @@ async fn list_approval_artifacts(
     Ok(Json(artifacts))
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/intents/{intent_id}/bind-approval-artifact",
+    tag = "execution",
+    params(("intent_id" = IntentId, Path, description = "Intent ID")),
+    request_body = BindApprovalArtifactRequest,
+    responses(
+        (status = 200, body = IntentResponse),
+        (status = 404, description = "Intent or approval artifact not found"),
+    ),
+)]
 async fn bind_approval_artifact_to_intent(
     RequireExecutionWrite(auth): RequireExecutionWrite,
     State(state): State<AppState>,
@@ -949,6 +1056,18 @@ async fn bind_approval_artifact_to_intent(
     Ok(Json(intent_to_response(&intent)))
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/intents/{intent_id}/bind-document-request",
+    tag = "execution",
+    params(("intent_id" = IntentId, Path, description = "Intent ID")),
+    request_body = BindDocumentRequestRequest,
+    responses(
+        (status = 200, body = IntentResponse),
+        (status = 404, description = "Intent or document request not found"),
+        (status = 422, description = "Document request belongs to a different entity"),
+    ),
+)]
 async fn bind_document_request_to_intent(
     RequireExecutionWrite(auth): RequireExecutionWrite,
     State(state): State<AppState>,
@@ -1003,6 +1122,16 @@ async fn bind_document_request_to_intent(
 
 // ── Handlers: Obligations ────────────────────────────────────────────
 
+#[utoipa::path(
+    post,
+    path = "/v1/execution/obligations",
+    tag = "execution",
+    request_body = CreateObligationRequest,
+    responses(
+        (status = 200, body = ObligationResponse),
+        (status = 400, description = "Bad request"),
+    ),
+)]
 async fn create_obligation(
     RequireExecutionWrite(auth): RequireExecutionWrite,
     State(state): State<AppState>,
@@ -1047,6 +1176,16 @@ async fn create_obligation(
     Ok(Json(obligation_to_response(&obligation)))
 }
 
+#[utoipa::path(
+    get,
+    path = "/v1/entities/{entity_id}/obligations",
+    tag = "execution",
+    params(("entity_id" = EntityId, Path, description = "Entity ID")),
+    responses(
+        (status = 200, body = Vec<ObligationResponse>),
+        (status = 404, description = "Entity not found"),
+    ),
+)]
 async fn list_obligations(
     RequireExecutionRead(auth): RequireExecutionRead,
     State(state): State<AppState>,
@@ -1078,6 +1217,19 @@ async fn list_obligations(
     Ok(Json(obligations))
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/obligations/{obligation_id}/fulfill",
+    tag = "execution",
+    params(
+        ("obligation_id" = ObligationId, Path, description = "Obligation ID"),
+        ("entity_id" = EntityId, Query, description = "Entity ID"),
+    ),
+    responses(
+        (status = 200, body = ObligationResponse),
+        (status = 404, description = "Obligation not found"),
+    ),
+)]
 async fn fulfill_obligation(
     RequireExecutionWrite(auth): RequireExecutionWrite,
     State(state): State<AppState>,
@@ -1118,6 +1270,19 @@ async fn fulfill_obligation(
     Ok(Json(obligation_to_response(&obligation)))
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/obligations/{obligation_id}/waive",
+    tag = "execution",
+    params(
+        ("obligation_id" = ObligationId, Path, description = "Obligation ID"),
+        ("entity_id" = EntityId, Query, description = "Entity ID"),
+    ),
+    responses(
+        (status = 200, body = ObligationResponse),
+        (status = 404, description = "Obligation not found"),
+    ),
+)]
 async fn waive_obligation(
     RequireExecutionWrite(auth): RequireExecutionWrite,
     State(state): State<AppState>,
@@ -1158,6 +1323,19 @@ async fn waive_obligation(
     Ok(Json(obligation_to_response(&obligation)))
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/obligations/{obligation_id}/expire",
+    tag = "execution",
+    params(
+        ("obligation_id" = ObligationId, Path, description = "Obligation ID"),
+        ("entity_id" = EntityId, Query, description = "Entity ID"),
+    ),
+    responses(
+        (status = 200, body = ObligationResponse),
+        (status = 404, description = "Obligation not found"),
+    ),
+)]
 async fn expire_obligation(
     RequireExecutionWrite(auth): RequireExecutionWrite,
     State(state): State<AppState>,
@@ -1200,7 +1378,7 @@ async fn expire_obligation(
 
 // ── Receipt handlers ────────────────────────────────────────────────
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct ReceiptResponse {
     pub receipt_id: ReceiptId,
     pub intent_id: IntentId,
@@ -1225,6 +1403,19 @@ fn receipt_to_response(r: &Receipt) -> ReceiptResponse {
     }
 }
 
+#[utoipa::path(
+    get,
+    path = "/v1/receipts/{receipt_id}",
+    tag = "execution",
+    params(
+        ("receipt_id" = ReceiptId, Path, description = "Receipt ID"),
+        ("entity_id" = EntityId, Query, description = "Entity ID"),
+    ),
+    responses(
+        (status = 200, body = ReceiptResponse),
+        (status = 404, description = "Receipt not found"),
+    ),
+)]
 async fn get_receipt(
     RequireExecutionRead(auth): RequireExecutionRead,
     State(state): State<AppState>,
@@ -1249,6 +1440,19 @@ async fn get_receipt(
     Ok(Json(receipt_to_response(&receipt)))
 }
 
+#[utoipa::path(
+    get,
+    path = "/v1/intents/{intent_id}/receipts",
+    tag = "execution",
+    params(
+        ("intent_id" = IntentId, Path, description = "Intent ID"),
+        ("entity_id" = EntityId, Query, description = "Entity ID"),
+    ),
+    responses(
+        (status = 200, body = Vec<ReceiptResponse>),
+        (status = 404, description = "Entity not found"),
+    ),
+)]
 async fn list_receipts_by_intent(
     RequireExecutionRead(auth): RequireExecutionRead,
     State(state): State<AppState>,
@@ -1285,6 +1489,20 @@ async fn list_receipts_by_intent(
 
 // ── Packet handlers ─────────────────────────────────────────────────
 
+#[utoipa::path(
+    get,
+    path = "/v1/execution/packets/{packet_id}",
+    tag = "execution",
+    params(
+        ("packet_id" = PacketId, Path, description = "Packet ID"),
+        ("entity_id" = EntityId, Query, description = "Entity ID"),
+    ),
+    responses(
+        (status = 200, body = TransactionPacketResponse),
+        (status = 403, description = "Packet belongs to a different entity"),
+        (status = 404, description = "Packet not found"),
+    ),
+)]
 async fn get_packet(
     RequireExecutionRead(auth): RequireExecutionRead,
     State(state): State<AppState>,
@@ -1315,6 +1533,16 @@ async fn get_packet(
     Ok(Json(packet_to_response(&packet)))
 }
 
+#[utoipa::path(
+    get,
+    path = "/v1/entities/{entity_id}/packets",
+    tag = "execution",
+    params(("entity_id" = EntityId, Path, description = "Entity ID")),
+    responses(
+        (status = 200, body = Vec<TransactionPacketResponse>),
+        (status = 404, description = "Entity not found"),
+    ),
+)]
 async fn list_entity_packets(
     RequireExecutionRead(auth): RequireExecutionRead,
     State(state): State<AppState>,
@@ -1349,12 +1577,23 @@ async fn list_entity_packets(
 
 // ── Obligation extended ─────────────────────────────────────────────
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 pub struct AssignObligationRequest {
     pub entity_id: EntityId,
     pub assignee_id: ContactId,
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/obligations/{obligation_id}/assign",
+    tag = "execution",
+    params(("obligation_id" = ObligationId, Path, description = "Obligation ID")),
+    request_body = AssignObligationRequest,
+    responses(
+        (status = 200, body = ObligationResponse),
+        (status = 404, description = "Obligation not found"),
+    ),
+)]
 async fn assign_obligation(
     RequireExecutionWrite(auth): RequireExecutionWrite,
     State(state): State<AppState>,
@@ -1395,7 +1634,7 @@ async fn assign_obligation(
     Ok(Json(obligation_to_response(&obligation)))
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct ObligationsSummaryResponse {
     pub total: usize,
     pub pending: usize,
@@ -1404,6 +1643,16 @@ pub struct ObligationsSummaryResponse {
     pub expired: usize,
 }
 
+#[utoipa::path(
+    get,
+    path = "/v1/entities/{entity_id}/obligations/summary",
+    tag = "execution",
+    params(("entity_id" = EntityId, Path, description = "Entity ID")),
+    responses(
+        (status = 200, body = ObligationsSummaryResponse),
+        (status = 404, description = "Entity not found"),
+    ),
+)]
 async fn obligations_summary(
     RequireExecutionRead(auth): RequireExecutionRead,
     State(state): State<AppState>,
@@ -1452,6 +1701,16 @@ async fn obligations_summary(
     Ok(Json(summary))
 }
 
+#[utoipa::path(
+    get,
+    path = "/v1/entities/{entity_id}/obligations/human",
+    tag = "execution",
+    params(("entity_id" = EntityId, Path, description = "Entity ID")),
+    responses(
+        (status = 200, body = Vec<ObligationResponse>),
+        (status = 404, description = "Entity not found"),
+    ),
+)]
 async fn list_human_obligations(
     RequireExecutionRead(auth): RequireExecutionRead,
     State(state): State<AppState>,
@@ -1486,6 +1745,14 @@ async fn list_human_obligations(
 
 // ── Handlers: Global human obligations ──────────────────────────────
 
+#[utoipa::path(
+    get,
+    path = "/v1/human-obligations",
+    tag = "execution",
+    responses(
+        (status = 200, body = Vec<ObligationResponse>),
+    ),
+)]
 async fn list_global_human_obligations(
     RequireExecutionRead(auth): RequireExecutionRead,
     State(state): State<AppState>,
@@ -1525,13 +1792,22 @@ async fn list_global_human_obligations(
 
 // ── Handlers: Signer token ──────────────────────────────────────────
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct SignerTokenResponse {
     pub obligation_id: ObligationId,
     pub token: String,
     pub expires_at: String,
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/human-obligations/{obligation_id}/signer-token",
+    tag = "execution",
+    params(("obligation_id" = ObligationId, Path, description = "Obligation ID")),
+    responses(
+        (status = 200, body = SignerTokenResponse),
+    ),
+)]
 async fn generate_signer_token(
     RequireExecutionWrite(_auth): RequireExecutionWrite,
     Path(obligation_id): Path<ObligationId>,
@@ -1547,6 +1823,19 @@ async fn generate_signer_token(
 
 // ── Handlers: Human obligation fulfill ──────────────────────────────
 
+#[utoipa::path(
+    post,
+    path = "/v1/human-obligations/{obligation_id}/fulfill",
+    tag = "execution",
+    params(
+        ("obligation_id" = ObligationId, Path, description = "Obligation ID"),
+        ("entity_id" = EntityId, Query, description = "Entity ID"),
+    ),
+    responses(
+        (status = 200, body = ObligationResponse),
+        (status = 404, description = "Obligation not found"),
+    ),
+)]
 async fn fulfill_human_obligation(
     RequireExecutionWrite(auth): RequireExecutionWrite,
     State(state): State<AppState>,
@@ -1564,14 +1853,14 @@ async fn fulfill_human_obligation(
 
 // ── Handlers: Document requests ─────────────────────────────────────
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 pub struct CreateDocumentRequestPayload {
     pub description: String,
     pub document_type: String,
     pub entity_id: EntityId,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct DocumentRequestResponse {
     pub request_id: DocumentRequestId,
     pub obligation_id: ObligationId,
@@ -1598,6 +1887,17 @@ fn document_request_to_response(r: &DocumentRequest) -> DocumentRequestResponse 
     }
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/obligations/{obligation_id}/document-requests",
+    tag = "execution",
+    params(("obligation_id" = ObligationId, Path, description = "Obligation ID")),
+    request_body = CreateDocumentRequestPayload,
+    responses(
+        (status = 200, body = DocumentRequestResponse),
+        (status = 404, description = "Obligation not found"),
+    ),
+)]
 async fn create_document_request(
     RequireExecutionWrite(auth): RequireExecutionWrite,
     State(state): State<AppState>,
@@ -1646,6 +1946,19 @@ async fn create_document_request(
     Ok(Json(document_request_to_response(&request)))
 }
 
+#[utoipa::path(
+    get,
+    path = "/v1/obligations/{obligation_id}/document-requests",
+    tag = "execution",
+    params(
+        ("obligation_id" = ObligationId, Path, description = "Obligation ID"),
+        ("entity_id" = EntityId, Query, description = "Entity ID"),
+    ),
+    responses(
+        (status = 200, body = Vec<DocumentRequestResponse>),
+        (status = 404, description = "Obligation not found"),
+    ),
+)]
 async fn list_document_requests(
     RequireExecutionRead(auth): RequireExecutionRead,
     State(state): State<AppState>,
@@ -1681,6 +1994,19 @@ async fn list_document_requests(
     Ok(Json(requests))
 }
 
+#[utoipa::path(
+    patch,
+    path = "/v1/document-requests/{request_id}/fulfill",
+    tag = "execution",
+    params(
+        ("request_id" = DocumentRequestId, Path, description = "Document request ID"),
+        ("entity_id" = EntityId, Query, description = "Entity ID"),
+    ),
+    responses(
+        (status = 200, body = DocumentRequestResponse),
+        (status = 404, description = "Document request not found"),
+    ),
+)]
 async fn fulfill_document_request(
     RequireExecutionWrite(auth): RequireExecutionWrite,
     State(state): State<AppState>,
@@ -1697,6 +2023,19 @@ async fn fulfill_document_request(
     .await
 }
 
+#[utoipa::path(
+    patch,
+    path = "/v1/document-requests/{request_id}/not-applicable",
+    tag = "execution",
+    params(
+        ("request_id" = DocumentRequestId, Path, description = "Document request ID"),
+        ("entity_id" = EntityId, Query, description = "Entity ID"),
+    ),
+    responses(
+        (status = 200, body = DocumentRequestResponse),
+        (status = 404, description = "Document request not found"),
+    ),
+)]
 async fn mark_document_request_na(
     RequireExecutionWrite(auth): RequireExecutionWrite,
     State(state): State<AppState>,
@@ -1760,6 +2099,14 @@ async fn update_document_request_status(
 
 // ── Handlers: Global obligations summary ────────────────────────────
 
+#[utoipa::path(
+    get,
+    path = "/v1/obligations/summary",
+    tag = "execution",
+    responses(
+        (status = 200, body = ObligationsSummaryResponse),
+    ),
+)]
 async fn global_obligations_summary(
     RequireExecutionRead(auth): RequireExecutionRead,
     State(state): State<AppState>,
@@ -1902,3 +2249,70 @@ pub fn execution_routes() -> Router<AppState> {
         // Global obligations summary
         .route("/v1/obligations/summary", get(global_obligations_summary))
 }
+
+#[derive(utoipa::OpenApi)]
+#[openapi(
+    paths(
+        create_intent,
+        list_intents,
+        evaluate_intent,
+        authorize_intent,
+        execute_intent,
+        cancel_intent,
+        bind_approval_artifact_to_intent,
+        bind_document_request_to_intent,
+        create_approval_artifact,
+        list_approval_artifacts,
+        create_obligation,
+        list_obligations,
+        fulfill_obligation,
+        waive_obligation,
+        expire_obligation,
+        assign_obligation,
+        obligations_summary,
+        list_human_obligations,
+        list_global_human_obligations,
+        generate_signer_token,
+        fulfill_human_obligation,
+        create_document_request,
+        list_document_requests,
+        fulfill_document_request,
+        mark_document_request_na,
+        global_obligations_summary,
+        get_receipt,
+        list_receipts_by_intent,
+        get_packet,
+        list_entity_packets,
+    ),
+    components(schemas(
+        CreateIntentRequest,
+        CreateObligationRequest,
+        CreateApprovalArtifactRequest,
+        BindApprovalArtifactRequest,
+        BindDocumentRequestRequest,
+        AssignObligationRequest,
+        CreateDocumentRequestPayload,
+        IntentResponse,
+        ObligationResponse,
+        ApprovalArtifactResponse,
+        TransactionPacketResponse,
+        PacketSignatureResponse,
+        ReceiptResponse,
+        ObligationsSummaryResponse,
+        SignerTokenResponse,
+        DocumentRequestResponse,
+        IntentStatus,
+        ObligationStatus,
+        ObligationType,
+        AssigneeType,
+        AuthorityTier,
+        ReceiptStatus,
+        DocumentRequestStatus,
+        PolicyDecision,
+        WorkflowType,
+        TransactionPacketStatus,
+        PacketItem,
+    )),
+    tags((name = "execution", description = "Execution intents, obligations, and receipts")),
+)]
+pub struct ExecutionApi;

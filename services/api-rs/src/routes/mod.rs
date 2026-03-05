@@ -27,14 +27,14 @@ use crate::store::RepoLayout;
 /// Query params requiring both workspace and entity identification.
 ///
 /// Deprecated: use `EntityIdQuery` with a scoped auth extractor instead.
-#[derive(serde::Deserialize)]
+#[derive(serde::Deserialize, utoipa::IntoParams)]
 pub struct WorkspaceEntityQuery {
     pub workspace_id: WorkspaceId,
     pub entity_id: EntityId,
 }
 
 /// Query param for entity identification (workspace_id comes from auth principal).
-#[derive(serde::Deserialize)]
+#[derive(serde::Deserialize, utoipa::IntoParams)]
 pub struct EntityIdQuery {
     pub entity_id: EntityId,
 }

@@ -23,7 +23,7 @@ mod store;
 mod validate;
 
 #[derive(Parser)]
-#[command(name = "api-rs", about = "Corporate API server")]
+#[command(name = "api-rs", version, about = "Corporate API server")]
 struct Cli {
     /// Skip data validation on server boot.
     #[arg(long)]
@@ -62,7 +62,7 @@ async fn health() -> Json<Value> {
     Json(json!({ "status": "ok" }))
 }
 
-async fn openapi_json() -> Json<Value> {
+async fn openapi_json() -> Json<utoipa::openapi::OpenApi> {
     Json(openapi::openapi_spec())
 }
 

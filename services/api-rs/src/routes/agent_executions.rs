@@ -19,7 +19,7 @@ use agent_types::KillCommand;
 
 // ── Response types ───────────────────────────────────────────────────
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct ExecutionResponse {
     pub execution_id: ExecutionId,
     pub agent_id: String,
@@ -34,7 +34,7 @@ pub struct ExecutionResponse {
     pub reason: Option<String>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct KillResponse {
     pub execution_id: ExecutionId,
     pub status: String,
@@ -93,6 +93,19 @@ async fn authorize_execution(
 
 // ── Handlers ─────────────────────────────────────────────────────────
 
+#[utoipa::path(
+    get,
+    path = "/v1/agents/{agent_id}/executions/{execution_id}",
+    tag = "agent_executions",
+    params(
+        ("agent_id" = AgentId, Path, description = "Agent identifier"),
+        ("execution_id" = ExecutionId, Path, description = "Execution identifier"),
+    ),
+    responses(
+        (status = 200, description = "Execution details", body = ExecutionResponse),
+        (status = 404, description = "Execution not found"),
+    ),
+)]
 async fn get_execution(
     RequireExecutionRead(auth): RequireExecutionRead,
     State(state): State<AppState>,
@@ -129,6 +142,19 @@ async fn get_execution(
     }))
 }
 
+#[utoipa::path(
+    get,
+    path = "/v1/agents/{agent_id}/executions/{execution_id}/result",
+    tag = "agent_executions",
+    params(
+        ("agent_id" = AgentId, Path, description = "Agent identifier"),
+        ("execution_id" = ExecutionId, Path, description = "Execution identifier"),
+    ),
+    responses(
+        (status = 200, description = "Execution result", body = serde_json::Value),
+        (status = 404, description = "Result not found"),
+    ),
+)]
 async fn get_execution_result(
     RequireExecutionRead(auth): RequireExecutionRead,
     State(state): State<AppState>,
@@ -160,6 +186,19 @@ async fn get_execution_result(
     }
 }
 
+#[utoipa::path(
+    get,
+    path = "/v1/agents/{agent_id}/executions/{execution_id}/logs",
+    tag = "agent_executions",
+    params(
+        ("agent_id" = AgentId, Path, description = "Agent identifier"),
+        ("execution_id" = ExecutionId, Path, description = "Execution identifier"),
+    ),
+    responses(
+        (status = 200, description = "Execution log entries", body = Vec<serde_json::Value>),
+        (status = 404, description = "Execution not found"),
+    ),
+)]
 async fn get_execution_logs(
     RequireExecutionRead(auth): RequireExecutionRead,
     State(state): State<AppState>,
@@ -187,6 +226,19 @@ async fn get_execution_logs(
     Ok(Json(logs))
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/agents/{agent_id}/executions/{execution_id}/kill",
+    tag = "agent_executions",
+    params(
+        ("agent_id" = AgentId, Path, description = "Agent identifier"),
+        ("execution_id" = ExecutionId, Path, description = "Execution identifier"),
+    ),
+    responses(
+        (status = 200, description = "Kill result", body = KillResponse),
+        (status = 404, description = "Execution not found"),
+    ),
+)]
 async fn kill_execution(
     RequireExecutionWrite(auth): RequireExecutionWrite,
     State(state): State<AppState>,
@@ -294,3 +346,20 @@ pub fn execution_routes() -> Router<AppState> {
             post(kill_execution),
         )
 }
+
+// ── OpenAPI ──────────────────────────────────────────────────────────
+
+#[derive(utoipa::OpenApi)]
+#[openapi(
+    paths(
+        get_execution,
+        get_execution_result,
+        get_execution_logs,
+        kill_execution,
+    ),
+    components(schemas(
+        ExecutionResponse,
+        KillResponse,
+    )),
+)]
+pub struct AgentExecutionsApi;

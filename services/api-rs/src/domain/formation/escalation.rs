@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::domain::ids::{ComplianceEscalationId, DeadlineId, EntityId, IncidentId, ObligationId};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum EscalationStatus {
     Open,

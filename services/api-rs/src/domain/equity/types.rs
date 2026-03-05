@@ -9,7 +9,8 @@ use std::ops::{Add, Sub};
 // ── ShareCount ─────────────────────────────────────────────────────────
 
 /// A count of shares. Distinct from `Cents` to prevent cross-type arithmetic.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, utoipa::ToSchema)]
+#[schema(value_type = i64)]
 #[serde(transparent)]
 pub struct ShareCount(i64);
 
@@ -99,7 +100,8 @@ impl std::iter::Sum for ShareCount {
 ///
 /// Used in contexts where zero or negative shares are invalid (grants,
 /// transfers, SAFE notes). Deserializes via `TryFrom<i64>`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, utoipa::ToSchema)]
+#[schema(value_type = i64)]
 #[serde(transparent)]
 pub struct PositiveShareCount(ShareCount);
 
@@ -152,7 +154,8 @@ impl From<PositiveShareCount> for ShareCount {
 // ── PricePerShare ──────────────────────────────────────────────────────
 
 /// Price per share, stored as `Cents`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, utoipa::ToSchema)]
+#[schema(value_type = i64)]
 #[serde(transparent)]
 pub struct PricePerShare(Cents);
 
@@ -179,7 +182,8 @@ impl fmt::Display for PricePerShare {
 // ── ValuationCap ───────────────────────────────────────────────────────
 
 /// A valuation cap on a SAFE note, stored as `Cents`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, utoipa::ToSchema)]
+#[schema(value_type = i64)]
 #[serde(transparent)]
 pub struct ValuationCap(Cents);
 
@@ -206,7 +210,8 @@ impl fmt::Display for ValuationCap {
 // ── Percentage ─────────────────────────────────────────────────────────
 
 /// A percentage stored as basis points (10000 = 100%).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, utoipa::ToSchema)]
+#[schema(value_type = u32)]
 #[serde(transparent)]
 pub struct Percentage(u32);
 
@@ -274,7 +279,7 @@ impl fmt::Display for Percentage {
 ///
 /// Replaces `Option<bool>` for clearer semantics.
 /// Backward-compatible deserialization from `Option<bool>` via `From`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum VotingRights {
     /// Voting rights have not been specified.
@@ -305,7 +310,7 @@ impl VotingRights {
 // ── Enums ──────────────────────────────────────────────────────────────
 
 /// The class of stock.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum StockType {
     /// Common stock (C-Corp).
@@ -317,7 +322,7 @@ pub enum StockType {
 }
 
 /// The type of equity grant.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum GrantType {
     /// Common stock grant.
@@ -339,7 +344,7 @@ pub enum GrantType {
 }
 
 /// Lifecycle status of an equity grant.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum GrantStatus {
     /// Grant has been issued but not yet vested.
@@ -367,7 +372,7 @@ impl fmt::Display for GrantStatus {
 }
 
 /// Who is receiving the equity.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum RecipientType {
     /// A human individual.
@@ -381,7 +386,7 @@ pub enum RecipientType {
 }
 
 /// Status of a vesting schedule.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum VestingStatus {
     /// Vesting is actively running.
@@ -391,7 +396,7 @@ pub enum VestingStatus {
 }
 
 /// Type of vesting event.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum VestingEventType {
     /// Initial cliff vesting.
@@ -405,7 +410,7 @@ pub enum VestingEventType {
 }
 
 /// Status of an individual vesting event.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum VestingEventStatus {
     /// Scheduled for a future date.
@@ -419,7 +424,7 @@ pub enum VestingEventStatus {
 }
 
 /// Reason for termination of employment/service.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum TerminationType {
     /// Employee chose to leave.
@@ -433,7 +438,7 @@ pub enum TerminationType {
 }
 
 /// Status of a cap table.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum CapTableStatus {
     /// Cap table is active and in use.
@@ -452,7 +457,7 @@ impl fmt::Display for CapTableStatus {
 }
 
 /// The type of governing document for a share transfer.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum GoverningDocType {
     /// Company bylaws.
@@ -466,7 +471,7 @@ pub enum GoverningDocType {
 }
 
 /// Status of a bylaws review for a transfer.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum BylawsReviewStatus {
     /// Review approved the transfer.
@@ -476,7 +481,7 @@ pub enum BylawsReviewStatus {
 }
 
 /// Rights granted to the transferee.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum TransfereeRights {
     /// Full membership/shareholder rights.
@@ -488,7 +493,7 @@ pub enum TransfereeRights {
 }
 
 /// Type of SAFE note.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum SafeType {
     /// Post-money SAFE (YC standard).
@@ -500,7 +505,7 @@ pub enum SafeType {
 }
 
 /// Lifecycle status of a SAFE note.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum SafeStatus {
     /// SAFE has been issued and is outstanding.
@@ -522,7 +527,7 @@ impl fmt::Display for SafeStatus {
 }
 
 /// Lifecycle status of a funding round.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum FundingRoundStatus {
     /// Term sheet signed, diligence not yet started.
@@ -547,7 +552,7 @@ impl fmt::Display for FundingRoundStatus {
 }
 
 /// Type of 409A or equivalent valuation.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ValuationType {
     /// IRC Section 409A valuation (C-Corp).
@@ -565,7 +570,7 @@ pub enum ValuationType {
 }
 
 /// Lifecycle status of a valuation.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ValuationStatus {
     /// Valuation report is being drafted.
@@ -593,7 +598,7 @@ impl fmt::Display for ValuationStatus {
 }
 
 /// Methodology used for a valuation.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ValuationMethodology {
     /// Discounted cash flow / income approach.
@@ -611,7 +616,7 @@ pub enum ValuationMethodology {
 }
 
 /// Type of share transfer.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum TransferType {
     /// Gifted shares.
@@ -627,7 +632,7 @@ pub enum TransferType {
 }
 
 /// Lifecycle status of a share transfer.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum TransferStatus {
     /// Transfer request drafted.
@@ -664,7 +669,7 @@ impl fmt::Display for TransferStatus {
 }
 
 /// Status of a company repurchase right.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum RepurchaseStatus {
     /// Repurchase right exists but not yet exercised.
@@ -678,7 +683,7 @@ pub enum RepurchaseStatus {
 }
 
 /// Type of entry in an investor's ledger.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum InvestorLedgerEntryType {
     /// Initial SAFE investment.
@@ -692,7 +697,7 @@ pub enum InvestorLedgerEntryType {
 }
 
 /// Type of tax election.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ElectionType {
     /// 83(b) election for RSA grant.

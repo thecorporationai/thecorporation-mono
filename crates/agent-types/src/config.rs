@@ -21,6 +21,7 @@ use crate::validated::{
 /// `name` and `url` are [`NonEmpty`] — deserialization of blank values
 /// fails with a clear error rather than producing a broken tool.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct ToolSpec {
     pub name: NonEmpty,
     #[serde(default)]
@@ -31,8 +32,10 @@ pub struct ToolSpec {
     #[serde(default)]
     pub headers: HashMap<String, String>,
     #[serde(default)]
+    #[cfg_attr(feature = "openapi", schema(value_type = Object))]
     pub parameters: serde_json::Value,
     #[serde(default)]
+    #[cfg_attr(feature = "openapi", schema(value_type = Object))]
     pub body_schema: serde_json::Value,
 }
 
@@ -40,6 +43,7 @@ pub struct ToolSpec {
 
 /// MCP server that runs inside the agent container.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct MCPServerSpec {
     pub name: NonEmpty,
     #[serde(default)]
@@ -55,6 +59,7 @@ pub struct MCPServerSpec {
 
 /// A composable agent skill (maps to tools / MCP servers).
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct SkillSpec {
     pub name: NonEmpty,
     #[serde(default)]
@@ -88,6 +93,7 @@ fn default_true() -> bool {
 /// {"type": "email", "address": "bot@acme.com"}
 /// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ChannelConfig {
     Email {
@@ -140,6 +146,7 @@ impl ChannelConfig {
 /// All limits are validated positive on deserialization — a budget of
 /// zero turns or zero tokens is nonsensical and rejected at parse time.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct BudgetConfig {
     #[serde(default = "default_max_turns", deserialize_with = "deserialize_positive_u32")]
     pub max_turns: u32,
@@ -170,6 +177,7 @@ fn default_max_monthly_cost_cents() -> u64 { 10_000 }
 /// Numeric resource limits are validated positive — a container with
 /// zero memory or zero CPU cannot start, so we reject at parse time.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct SandboxConfig {
     #[serde(default = "default_memory_mb", deserialize_with = "deserialize_positive_u64")]
     pub memory_mb: u64,
@@ -217,10 +225,12 @@ fn default_runtimes() -> Vec<String> { vec!["python".to_owned()] }
 
 /// A skill that an agent can perform (used in api-rs Agent struct).
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct AgentSkill {
     pub name: NonEmpty,
     pub description: String,
     #[serde(default)]
+    #[cfg_attr(feature = "openapi", schema(value_type = Object))]
     pub parameters: serde_json::Value,
 }
 

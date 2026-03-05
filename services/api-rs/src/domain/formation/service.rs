@@ -25,7 +25,7 @@ pub struct FormationResult {
 }
 
 /// Summary of a holder created during cap table setup.
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize, utoipa::ToSchema)]
 pub struct HolderSummary {
     pub holder_id: HolderId,
     pub name: String,

@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use crate::domain::ids::{InstrumentId, LegalEntityId};
 
 /// Instrument kind in the ownership model.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum InstrumentKind {
     CommonEquity,
@@ -19,7 +19,7 @@ pub enum InstrumentKind {
 }
 
 /// Lifecycle status of the instrument.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum InstrumentStatus {
     Active,

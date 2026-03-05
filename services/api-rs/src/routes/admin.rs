@@ -19,22 +19,23 @@ use crate::store::workspace_store::WorkspaceStore;
 
 // ── Response types ───────────────────────────────────────────────────
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct WorkspaceSummary {
     pub workspace_id: WorkspaceId,
     pub name: String,
     pub entity_count: usize,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct AuditEvent {
     pub event_id: String,
     pub event_type: String,
     pub timestamp: String,
+    #[schema(value_type = Object)]
     pub details: serde_json::Value,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct SystemHealth {
     pub status: String,
     pub version: String,
@@ -45,6 +46,14 @@ pub struct SystemHealth {
 
 // ── Handlers ─────────────────────────────────────────────────────────
 
+#[utoipa::path(
+    get,
+    path = "/v1/admin/workspaces",
+    tag = "admin",
+    responses(
+        (status = 200, description = "List all workspaces", body = Vec<WorkspaceSummary>),
+    ),
+)]
 async fn list_workspaces(
     RequireAdmin(_auth): RequireAdmin,
     State(state): State<AppState>,
@@ -82,6 +91,14 @@ async fn list_workspaces(
     Ok(Json(summaries))
 }
 
+#[utoipa::path(
+    get,
+    path = "/v1/admin/audit-events",
+    tag = "admin",
+    responses(
+        (status = 200, description = "List recent audit events", body = Vec<AuditEvent>),
+    ),
+)]
 async fn list_audit_events(
     RequireAdmin(_auth): RequireAdmin,
     State(state): State<AppState>,
@@ -124,6 +141,14 @@ async fn list_audit_events(
     Ok(Json(events))
 }
 
+#[utoipa::path(
+    get,
+    path = "/v1/admin/system-health",
+    tag = "admin",
+    responses(
+        (status = 200, description = "System health status", body = SystemHealth),
+    ),
+)]
 async fn system_health(
     RequireAdmin(_auth): RequireAdmin,
     State(state): State<AppState>,
@@ -153,7 +178,7 @@ async fn system_health(
 
 // ── Workspace status ────────────────────────────────────────────────
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct WorkspaceStatusResponse {
     pub workspace_id: WorkspaceId,
     pub name: String,
@@ -161,6 +186,14 @@ pub struct WorkspaceStatusResponse {
     pub entity_count: usize,
 }
 
+#[utoipa::path(
+    get,
+    path = "/v1/workspace/status",
+    tag = "admin",
+    responses(
+        (status = 200, description = "Current workspace status", body = WorkspaceStatusResponse),
+    ),
+)]
 async fn workspace_status(
     RequireAdmin(auth): RequireAdmin,
     State(state): State<AppState>,
@@ -194,11 +227,19 @@ async fn workspace_status(
     Ok(Json(response))
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct WorkspaceEntitySummary {
     pub entity_id: EntityId,
 }
 
+#[utoipa::path(
+    get,
+    path = "/v1/workspace/entities",
+    tag = "admin",
+    responses(
+        (status = 200, description = "List entities in current workspace", body = Vec<WorkspaceEntitySummary>),
+    ),
+)]
 async fn list_workspace_entities(
     RequireAdmin(auth): RequireAdmin,
     State(state): State<AppState>,
@@ -228,7 +269,7 @@ async fn list_workspace_entities(
 
 // ── Demo seed ──────────────────────────────────────────────────────
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 pub struct DemoSeedRequest {
     #[serde(default = "default_scenario")]
     pub scenario: String,
@@ -238,7 +279,7 @@ fn default_scenario() -> String {
     "startup".to_owned()
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct DemoSeedResponse {
     pub workspace_id: WorkspaceId,
     pub scenario: String,
@@ -246,6 +287,15 @@ pub struct DemoSeedResponse {
     pub message: String,
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/demo/seed",
+    tag = "admin",
+    request_body = DemoSeedRequest,
+    responses(
+        (status = 200, description = "Seed demo data", body = DemoSeedResponse),
+    ),
+)]
 async fn demo_seed(
     RequireAdmin(auth): RequireAdmin,
     State(state): State<AppState>,
@@ -326,13 +376,21 @@ async fn demo_seed(
 
 // ── Config ───────────────────────────────────────────────────────────
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct ConfigResponse {
     pub version: String,
     pub environment: String,
     pub features: Vec<String>,
 }
 
+#[utoipa::path(
+    get,
+    path = "/v1/config",
+    tag = "admin",
+    responses(
+        (status = 200, description = "System configuration", body = ConfigResponse),
+    ),
+)]
 async fn get_config(RequireAdmin(_auth): RequireAdmin) -> Json<ConfigResponse> {
     Json(ConfigResponse {
         version: env!("CARGO_PKG_VERSION").to_owned(),
@@ -347,19 +405,28 @@ async fn get_config(RequireAdmin(_auth): RequireAdmin) -> Json<ConfigResponse> {
 
 // ── Workspace link/claim ────────────────────────────────────────────
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 pub struct WorkspaceLinkRequest {
     pub external_id: String,
     pub provider: String,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct WorkspaceLinkResponse {
     pub workspace_id: WorkspaceId,
     pub linked: bool,
     pub provider: String,
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/workspaces/link",
+    tag = "admin",
+    request_body = WorkspaceLinkRequest,
+    responses(
+        (status = 200, description = "Link workspace to external provider", body = WorkspaceLinkResponse),
+    ),
+)]
 async fn link_workspace(
     RequireAdmin(auth): RequireAdmin,
     State(state): State<AppState>,
@@ -400,17 +467,26 @@ async fn link_workspace(
     }))
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 pub struct WorkspaceClaimRequest {
     pub claim_token: String,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct WorkspaceClaimResponse {
     pub workspace_id: WorkspaceId,
     pub claimed: bool,
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/workspaces/claim",
+    tag = "admin",
+    request_body = WorkspaceClaimRequest,
+    responses(
+        (status = 200, description = "Claim a workspace", body = WorkspaceClaimResponse),
+    ),
+)]
 async fn claim_workspace(
     RequireAdmin(auth): RequireAdmin,
     State(state): State<AppState>,
@@ -438,6 +514,17 @@ async fn claim_workspace(
 
 // ── Handlers: Workspace by path param ───────────────────────────────
 
+#[utoipa::path(
+    get,
+    path = "/v1/workspaces/{workspace_id}/status",
+    tag = "admin",
+    params(
+        ("workspace_id" = WorkspaceId, Path, description = "Workspace ID"),
+    ),
+    responses(
+        (status = 200, description = "Workspace status by ID", body = WorkspaceStatusResponse),
+    ),
+)]
 async fn workspace_status_by_path(
     RequireAdmin(_auth): RequireAdmin,
     State(state): State<AppState>,
@@ -470,6 +557,17 @@ async fn workspace_status_by_path(
     Ok(Json(response))
 }
 
+#[utoipa::path(
+    get,
+    path = "/v1/workspaces/{workspace_id}/entities",
+    tag = "admin",
+    params(
+        ("workspace_id" = WorkspaceId, Path, description = "Workspace ID"),
+    ),
+    responses(
+        (status = 200, description = "List entities in workspace", body = Vec<WorkspaceEntitySummary>),
+    ),
+)]
 async fn workspace_entities_by_path(
     RequireAdmin(_auth): RequireAdmin,
     State(state): State<AppState>,
@@ -497,12 +595,23 @@ async fn workspace_entities_by_path(
 
 // ── Handlers: Workspace contacts ────────────────────────────────────
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct WorkspaceContactSummary {
     pub contact_id: String,
     pub entity_id: String,
 }
 
+#[utoipa::path(
+    get,
+    path = "/v1/workspaces/{workspace_id}/contacts",
+    tag = "admin",
+    params(
+        ("workspace_id" = WorkspaceId, Path, description = "Workspace ID"),
+    ),
+    responses(
+        (status = 200, description = "List contacts in workspace", body = Vec<WorkspaceContactSummary>),
+    ),
+)]
 async fn workspace_contacts(
     RequireAdmin(_auth): RequireAdmin,
     State(state): State<AppState>,
@@ -542,22 +651,38 @@ async fn workspace_contacts(
 
 // ── Handlers: Digests ───────────────────────────────────────────────
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct DigestSummary {
     pub digest_key: String,
     pub generated_at: String,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct DigestTriggerResponse {
     pub triggered: bool,
     pub digest_count: usize,
 }
 
+#[utoipa::path(
+    get,
+    path = "/v1/digests",
+    tag = "admin",
+    responses(
+        (status = 200, description = "List digests", body = Vec<DigestSummary>),
+    ),
+)]
 async fn list_digests(RequireAdmin(_auth): RequireAdmin) -> Json<Vec<DigestSummary>> {
     Json(vec![])
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/digests/trigger",
+    tag = "admin",
+    responses(
+        (status = 200, description = "Trigger digest generation", body = DigestTriggerResponse),
+    ),
+)]
 async fn trigger_digests(RequireAdmin(_auth): RequireAdmin) -> Json<DigestTriggerResponse> {
     Json(DigestTriggerResponse {
         triggered: true,
@@ -565,6 +690,17 @@ async fn trigger_digests(RequireAdmin(_auth): RequireAdmin) -> Json<DigestTrigge
     })
 }
 
+#[utoipa::path(
+    get,
+    path = "/v1/digests/{digest_key}",
+    tag = "admin",
+    params(
+        ("digest_key" = String, Path, description = "Digest key"),
+    ),
+    responses(
+        (status = 200, description = "Get digest by key", body = Object),
+    ),
+)]
 async fn get_digest(
     RequireAdmin(_auth): RequireAdmin,
     Path(digest_key): Path<String>,
@@ -577,13 +713,21 @@ async fn get_digest(
 
 // ── Handlers: Service token / JWKS ──────────────────────────────────
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct ServiceTokenResponse {
     pub token: String,
     pub token_type: String,
     pub expires_in: u64,
 }
 
+#[utoipa::path(
+    get,
+    path = "/v1/service-token",
+    tag = "admin",
+    responses(
+        (status = 200, description = "Get a service token", body = ServiceTokenResponse),
+    ),
+)]
 async fn get_service_token(RequireAdmin(_auth): RequireAdmin) -> Json<ServiceTokenResponse> {
     let token = format!("svc_{}", uuid::Uuid::new_v4().simple());
     Json(ServiceTokenResponse {
@@ -593,16 +737,71 @@ async fn get_service_token(RequireAdmin(_auth): RequireAdmin) -> Json<ServiceTok
     })
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct JwksResponse {
+    #[schema(value_type = Vec<Object>)]
     pub keys: Vec<serde_json::Value>,
 }
 
+#[utoipa::path(
+    get,
+    path = "/v1/jwks",
+    tag = "admin",
+    responses(
+        (status = 200, description = "Get JWKS keys", body = JwksResponse),
+    ),
+)]
 async fn get_jwks(RequireAdmin(_auth): RequireAdmin) -> Json<JwksResponse> {
     Json(JwksResponse { keys: vec![] })
 }
 
 // ── Router ───────────────────────────────────────────────────────────
+
+#[derive(utoipa::OpenApi)]
+#[openapi(
+    paths(
+        list_workspaces,
+        list_audit_events,
+        system_health,
+        workspace_status,
+        list_workspace_entities,
+        demo_seed,
+        get_config,
+        link_workspace,
+        claim_workspace,
+        workspace_status_by_path,
+        workspace_entities_by_path,
+        workspace_contacts,
+        list_digests,
+        trigger_digests,
+        get_digest,
+        get_service_token,
+        get_jwks,
+    ),
+    components(schemas(
+        WorkspaceSummary,
+        AuditEvent,
+        SystemHealth,
+        WorkspaceStatusResponse,
+        WorkspaceEntitySummary,
+        DemoSeedRequest,
+        DemoSeedResponse,
+        ConfigResponse,
+        WorkspaceLinkRequest,
+        WorkspaceLinkResponse,
+        WorkspaceClaimRequest,
+        WorkspaceClaimResponse,
+        WorkspaceContactSummary,
+        DigestSummary,
+        DigestTriggerResponse,
+        ServiceTokenResponse,
+        JwksResponse,
+    )),
+    tags(
+        (name = "admin", description = "Admin endpoints"),
+    ),
+)]
+pub struct AdminApi;
 
 pub fn admin_routes() -> Router<AppState> {
     Router::new()

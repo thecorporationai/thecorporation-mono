@@ -9,7 +9,7 @@ use crate::domain::ids::{
     IntentId,
 };
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum GovernanceTriggerType {
     ExternalSignal,
@@ -19,7 +19,7 @@ pub enum GovernanceTriggerType {
     AuditChainVerificationFailed,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum GovernanceTriggerSource {
     ComplianceScanner,
@@ -27,7 +27,7 @@ pub enum GovernanceTriggerSource {
     ExternalIngestion,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct GovernanceTriggerEvent {
     trigger_id: GovernanceTriggerId,
     entity_id: EntityId,

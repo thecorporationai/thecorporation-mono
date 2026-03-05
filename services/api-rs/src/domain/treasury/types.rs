@@ -11,7 +11,8 @@ use std::ops::{Add, AddAssign, Neg, Sub, SubAssign};
 // ── Monetary newtypes ──────────────────────────────────────────────────
 
 /// Integer cents (USD). $1.00 = 100 cents.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, utoipa::ToSchema)]
+#[schema(value_type = i64)]
 #[serde(transparent)]
 pub struct Cents(i64);
 
@@ -203,7 +204,7 @@ impl LedgerAmount {
 // ── Currency ───────────────────────────────────────────────────────────
 
 /// Supported currencies. Currently USD only.
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum Currency {
     /// United States Dollar.
@@ -214,7 +215,7 @@ pub enum Currency {
 // ── Account Types ──────────────────────────────────────────────────────
 
 /// The five fundamental accounting categories.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum AccountType {
     /// Assets owned by the entity.
@@ -244,7 +245,7 @@ impl AccountType {
 // ── Side ───────────────────────────────────────────────────────────────
 
 /// Debit or credit side of a ledger entry.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum Side {
     /// Left side of the T-account.
@@ -266,7 +267,7 @@ impl Side {
 // ── Chart of Accounts ──────────────────────────────────────────────────
 
 /// Standard GL account codes with integer discriminants matching the code number.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, utoipa::ToSchema)]
 pub enum GlAccountCode {
     /// 1000 — Cash and cash equivalents.
     Cash = 1000,
@@ -321,7 +322,7 @@ impl GlAccountCode {
 // ── Bank Account Types ─────────────────────────────────────────────────
 
 /// Type of bank account held by the entity.
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum BankAccountType {
     /// Standard checking account.
@@ -334,7 +335,7 @@ pub enum BankAccountType {
 // ── Payment Method ─────────────────────────────────────────────────────
 
 /// How a payment is made or received.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum PaymentMethod {
     /// Bank-to-bank transfer.
@@ -352,7 +353,7 @@ pub enum PaymentMethod {
 // ── Bank Account Status ────────────────────────────────────────────────
 
 /// Lifecycle status of a bank account connection.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum BankAccountStatus {
     /// Awaiting review / compliance check.
@@ -376,7 +377,7 @@ impl fmt::Display for BankAccountStatus {
 // ── KYB Status ─────────────────────────────────────────────────────────
 
 /// Know Your Business verification status.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum KybStatus {
     /// Submitted, awaiting verification.
@@ -403,7 +404,7 @@ impl fmt::Display for KybStatus {
 // ── Invoice Status ─────────────────────────────────────────────────────
 
 /// Lifecycle status of an invoice.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum InvoiceStatus {
     /// Not yet sent.

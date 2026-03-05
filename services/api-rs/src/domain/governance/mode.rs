@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use crate::domain::ids::{ContactId, EntityId};
 
 /// Governance mode for policy enforcement.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum GovernanceMode {
     Normal,

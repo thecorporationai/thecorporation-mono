@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use crate::domain::ids::{ControlLinkId, LegalEntityId};
 
 /// Type of control relationship.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ControlType {
     Voting,

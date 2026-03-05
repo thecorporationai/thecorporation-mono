@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::domain::ids::{EntityId, IncidentId};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum IncidentSeverity {
     Low,
@@ -14,14 +14,14 @@ pub enum IncidentSeverity {
     Critical,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum IncidentStatus {
     Open,
     Resolved,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct GovernanceIncident {
     incident_id: IncidentId,
     entity_id: EntityId,

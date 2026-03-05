@@ -8,7 +8,7 @@ use super::types::{Cents, Currency, Side};
 use crate::domain::ids::{AccountId, EntityId, JournalEntryId, LedgerLineId};
 
 /// Status of a journal entry.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum JournalEntryStatus {
     Draft,

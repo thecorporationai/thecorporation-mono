@@ -9,6 +9,8 @@ use uuid::Uuid;
 macro_rules! define_id {
     ($name:ident) => {
         #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+        #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+        #[cfg_attr(feature = "openapi", schema(value_type = uuid::Uuid, format = "uuid"))]
         #[serde(transparent)]
         pub struct $name(Uuid);
 

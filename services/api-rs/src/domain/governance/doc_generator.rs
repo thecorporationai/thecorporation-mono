@@ -32,7 +32,7 @@ impl GovernanceDocEntityType {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct GeneratedGovernanceDocument {
     pub path: String,
     pub source_path: String,
@@ -40,7 +40,7 @@ pub struct GeneratedGovernanceDocument {
     pub bytes: usize,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct GovernanceDocManifest {
     pub version: u32,
     pub entity_type: String,
@@ -49,7 +49,7 @@ pub struct GovernanceDocManifest {
     pub documents: Vec<GeneratedGovernanceDocument>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct GovernanceDocBundleManifest {
     pub bundle_id: GovernanceDocBundleId,
     pub entity_id: EntityId,
@@ -63,7 +63,7 @@ pub struct GovernanceDocBundleManifest {
     pub warnings: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct GovernanceDocBundleCurrent {
     pub bundle_id: GovernanceDocBundleId,
     pub entity_id: EntityId,
@@ -72,7 +72,7 @@ pub struct GovernanceDocBundleCurrent {
     pub template_version: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct GovernanceDocBundleSummary {
     pub bundle_id: GovernanceDocBundleId,
     pub entity_id: EntityId,

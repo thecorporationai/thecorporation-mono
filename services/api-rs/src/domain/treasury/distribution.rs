@@ -7,7 +7,7 @@ use super::types::Cents;
 use crate::domain::ids::{DistributionId, EntityId};
 
 /// Type of distribution.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum DistributionType {
     Dividend,
@@ -16,7 +16,7 @@ pub enum DistributionType {
 }
 
 /// Status of a distribution.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum DistributionStatus {
     Pending,

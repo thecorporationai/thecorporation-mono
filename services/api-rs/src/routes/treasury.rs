@@ -34,13 +34,13 @@ use crate::store::entity_store::EntityStore;
 
 // ── Request types ────────────────────────────────────────────────────
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 pub struct CreateAccountRequest {
     pub entity_id: EntityId,
     pub account_code: GlAccountCode,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 pub struct LedgerLineRequest {
     pub account_id: AccountId,
     pub side: Side,
@@ -49,7 +49,7 @@ pub struct LedgerLineRequest {
     pub memo: Option<String>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 pub struct CreateJournalEntryRequest {
     pub entity_id: EntityId,
     pub description: String,
@@ -57,7 +57,7 @@ pub struct CreateJournalEntryRequest {
     pub lines: Vec<LedgerLineRequest>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 pub struct CreateInvoiceRequest {
     pub entity_id: EntityId,
     pub customer_name: String,
@@ -66,7 +66,7 @@ pub struct CreateInvoiceRequest {
     pub due_date: NaiveDate,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 pub struct CreateBankAccountRequest {
     pub entity_id: EntityId,
     pub bank_name: String,
@@ -76,7 +76,7 @@ pub struct CreateBankAccountRequest {
 
 // ── Response types ───────────────────────────────────────────────────
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct AccountResponse {
     pub account_id: AccountId,
     pub entity_id: EntityId,
@@ -89,7 +89,7 @@ pub struct AccountResponse {
     pub created_at: String,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct JournalEntryResponse {
     pub journal_entry_id: JournalEntryId,
     pub entity_id: EntityId,
@@ -101,7 +101,7 @@ pub struct JournalEntryResponse {
     pub created_at: String,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct InvoiceResponse {
     pub invoice_id: InvoiceId,
     pub entity_id: EntityId,
@@ -113,7 +113,7 @@ pub struct InvoiceResponse {
     pub created_at: String,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct BankAccountResponse {
     pub bank_account_id: BankAccountId,
     pub entity_id: EntityId,
@@ -195,6 +195,15 @@ fn open_store<'a>(
 
 // ── Handlers: Accounts ───────────────────────────────────────────────
 
+#[utoipa::path(
+    post,
+    path = "/v1/treasury/accounts",
+    tag = "treasury",
+    request_body = CreateAccountRequest,
+    responses(
+        (status = 200, description = "Account created", body = AccountResponse),
+    ),
+)]
 async fn create_account(
     RequireTreasuryWrite(auth): RequireTreasuryWrite,
     State(state): State<AppState>,
@@ -230,6 +239,15 @@ async fn create_account(
     Ok(Json(account_to_response(&account)))
 }
 
+#[utoipa::path(
+    get,
+    path = "/v1/entities/{entity_id}/accounts",
+    tag = "treasury",
+    params(("entity_id" = EntityId, Path, description = "Entity ID")),
+    responses(
+        (status = 200, description = "List of accounts", body = Vec<AccountResponse>),
+    ),
+)]
 async fn list_accounts(
     RequireTreasuryRead(auth): RequireTreasuryRead,
     State(state): State<AppState>,
@@ -263,6 +281,15 @@ async fn list_accounts(
 
 // ── Handlers: Journal Entries ────────────────────────────────────────
 
+#[utoipa::path(
+    post,
+    path = "/v1/treasury/journal-entries",
+    tag = "treasury",
+    request_body = CreateJournalEntryRequest,
+    responses(
+        (status = 200, description = "Journal entry created", body = JournalEntryResponse),
+    ),
+)]
 async fn create_journal_entry(
     RequireTreasuryWrite(auth): RequireTreasuryWrite,
     State(state): State<AppState>,
@@ -326,6 +353,15 @@ async fn create_journal_entry(
     Ok(Json(journal_entry_to_response(&entry)))
 }
 
+#[utoipa::path(
+    get,
+    path = "/v1/entities/{entity_id}/journal-entries",
+    tag = "treasury",
+    params(("entity_id" = EntityId, Path, description = "Entity ID")),
+    responses(
+        (status = 200, description = "List of journal entries", body = Vec<JournalEntryResponse>),
+    ),
+)]
 async fn list_journal_entries(
     RequireTreasuryRead(auth): RequireTreasuryRead,
     State(state): State<AppState>,
@@ -357,6 +393,18 @@ async fn list_journal_entries(
     Ok(Json(entries))
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/journal-entries/{entry_id}/post",
+    tag = "treasury",
+    params(
+        ("entry_id" = JournalEntryId, Path, description = "Journal entry ID"),
+        super::EntityIdQuery,
+    ),
+    responses(
+        (status = 200, description = "Journal entry posted", body = JournalEntryResponse),
+    ),
+)]
 async fn post_journal_entry(
     RequireTreasuryWrite(auth): RequireTreasuryWrite,
     State(state): State<AppState>,
@@ -395,6 +443,18 @@ async fn post_journal_entry(
     Ok(Json(journal_entry_to_response(&entry)))
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/journal-entries/{entry_id}/void",
+    tag = "treasury",
+    params(
+        ("entry_id" = JournalEntryId, Path, description = "Journal entry ID"),
+        super::EntityIdQuery,
+    ),
+    responses(
+        (status = 200, description = "Journal entry voided", body = JournalEntryResponse),
+    ),
+)]
 async fn void_journal_entry(
     RequireTreasuryWrite(auth): RequireTreasuryWrite,
     State(state): State<AppState>,
@@ -435,6 +495,15 @@ async fn void_journal_entry(
 
 // ── Handlers: Invoices ───────────────────────────────────────────────
 
+#[utoipa::path(
+    post,
+    path = "/v1/treasury/invoices",
+    tag = "treasury",
+    request_body = CreateInvoiceRequest,
+    responses(
+        (status = 200, description = "Invoice created", body = InvoiceResponse),
+    ),
+)]
 async fn create_invoice(
     RequireTreasuryWrite(auth): RequireTreasuryWrite,
     State(state): State<AppState>,
@@ -483,6 +552,15 @@ async fn create_invoice(
     Ok(Json(invoice_to_response(&invoice)))
 }
 
+#[utoipa::path(
+    get,
+    path = "/v1/entities/{entity_id}/invoices",
+    tag = "treasury",
+    params(("entity_id" = EntityId, Path, description = "Entity ID")),
+    responses(
+        (status = 200, description = "List of invoices", body = Vec<InvoiceResponse>),
+    ),
+)]
 async fn list_invoices(
     RequireTreasuryRead(auth): RequireTreasuryRead,
     State(state): State<AppState>,
@@ -514,6 +592,18 @@ async fn list_invoices(
     Ok(Json(invoices))
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/invoices/{invoice_id}/send",
+    tag = "treasury",
+    params(
+        ("invoice_id" = InvoiceId, Path, description = "Invoice ID"),
+        super::EntityIdQuery,
+    ),
+    responses(
+        (status = 200, description = "Invoice sent", body = InvoiceResponse),
+    ),
+)]
 async fn send_invoice(
     RequireTreasuryWrite(auth): RequireTreasuryWrite,
     State(state): State<AppState>,
@@ -552,6 +642,18 @@ async fn send_invoice(
     Ok(Json(invoice_to_response(&invoice)))
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/invoices/{invoice_id}/mark-paid",
+    tag = "treasury",
+    params(
+        ("invoice_id" = InvoiceId, Path, description = "Invoice ID"),
+        super::EntityIdQuery,
+    ),
+    responses(
+        (status = 200, description = "Invoice marked as paid", body = InvoiceResponse),
+    ),
+)]
 async fn mark_invoice_paid(
     RequireTreasuryWrite(auth): RequireTreasuryWrite,
     State(state): State<AppState>,
@@ -590,6 +692,18 @@ async fn mark_invoice_paid(
     Ok(Json(invoice_to_response(&invoice)))
 }
 
+#[utoipa::path(
+    get,
+    path = "/v1/invoices/{invoice_id}/status",
+    tag = "treasury",
+    params(
+        ("invoice_id" = InvoiceId, Path, description = "Invoice ID"),
+        super::EntityIdQuery,
+    ),
+    responses(
+        (status = 200, description = "Invoice status", body = InvoiceResponse),
+    ),
+)]
 async fn get_invoice_status(
     RequireTreasuryRead(auth): RequireTreasuryRead,
     State(state): State<AppState>,
@@ -614,7 +728,7 @@ async fn get_invoice_status(
     Ok(Json(invoice_to_response(&invoice)))
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct PayInstructionsResponse {
     pub invoice_id: InvoiceId,
     pub amount_cents: i64,
@@ -623,6 +737,18 @@ pub struct PayInstructionsResponse {
     pub instructions: String,
 }
 
+#[utoipa::path(
+    get,
+    path = "/v1/invoices/{invoice_id}/pay-instructions",
+    tag = "treasury",
+    params(
+        ("invoice_id" = InvoiceId, Path, description = "Invoice ID"),
+        super::EntityIdQuery,
+    ),
+    responses(
+        (status = 200, description = "Payment instructions for invoice", body = PayInstructionsResponse),
+    ),
+)]
 async fn get_pay_instructions(
     RequireTreasuryRead(auth): RequireTreasuryRead,
     State(state): State<AppState>,
@@ -660,6 +786,15 @@ async fn get_pay_instructions(
 
 // ── Handlers: Bank Accounts ──────────────────────────────────────────
 
+#[utoipa::path(
+    post,
+    path = "/v1/treasury/bank-accounts",
+    tag = "treasury",
+    request_body = CreateBankAccountRequest,
+    responses(
+        (status = 200, description = "Bank account created", body = BankAccountResponse),
+    ),
+)]
 async fn create_bank_account(
     RequireTreasuryWrite(auth): RequireTreasuryWrite,
     State(state): State<AppState>,
@@ -700,6 +835,15 @@ async fn create_bank_account(
     Ok(Json(bank_account_to_response(&bank_account)))
 }
 
+#[utoipa::path(
+    get,
+    path = "/v1/entities/{entity_id}/bank-accounts",
+    tag = "treasury",
+    params(("entity_id" = EntityId, Path, description = "Entity ID")),
+    responses(
+        (status = 200, description = "List of bank accounts", body = Vec<BankAccountResponse>),
+    ),
+)]
 async fn list_bank_accounts(
     RequireTreasuryRead(auth): RequireTreasuryRead,
     State(state): State<AppState>,
@@ -731,6 +875,18 @@ async fn list_bank_accounts(
     Ok(Json(bank_accounts))
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/bank-accounts/{bank_account_id}/activate",
+    tag = "treasury",
+    params(
+        ("bank_account_id" = BankAccountId, Path, description = "Bank account ID"),
+        super::EntityIdQuery,
+    ),
+    responses(
+        (status = 200, description = "Bank account activated", body = BankAccountResponse),
+    ),
+)]
 async fn activate_bank_account(
     RequireTreasuryWrite(auth): RequireTreasuryWrite,
     State(state): State<AppState>,
@@ -771,6 +927,18 @@ async fn activate_bank_account(
     Ok(Json(bank_account_to_response(&bank_account)))
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/bank-accounts/{bank_account_id}/close",
+    tag = "treasury",
+    params(
+        ("bank_account_id" = BankAccountId, Path, description = "Bank account ID"),
+        super::EntityIdQuery,
+    ),
+    responses(
+        (status = 200, description = "Bank account closed", body = BankAccountResponse),
+    ),
+)]
 async fn close_bank_account(
     RequireTreasuryWrite(auth): RequireTreasuryWrite,
     State(state): State<AppState>,
@@ -813,7 +981,7 @@ async fn close_bank_account(
 
 // ── Request types: Payments, Payroll, Distributions, Reconciliation ──
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 pub struct SubmitPaymentRequest {
     pub entity_id: EntityId,
     pub amount_cents: i64,
@@ -827,7 +995,7 @@ fn default_payment_method() -> PaymentMethod {
     PaymentMethod::Ach
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 pub struct ExecutePaymentRequest {
     pub entity_id: EntityId,
     pub amount_cents: i64,
@@ -837,14 +1005,14 @@ pub struct ExecutePaymentRequest {
     pub description: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 pub struct CreatePayrollRunRequest {
     pub entity_id: EntityId,
     pub pay_period_start: chrono::NaiveDate,
     pub pay_period_end: chrono::NaiveDate,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 pub struct CreateDistributionRequest {
     pub entity_id: EntityId,
     #[serde(default = "default_distribution_type")]
@@ -857,7 +1025,7 @@ fn default_distribution_type() -> DistributionType {
     DistributionType::Dividend
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 pub struct ReconcileLedgerRequest {
     pub entity_id: EntityId,
     #[serde(default)]
@@ -866,7 +1034,7 @@ pub struct ReconcileLedgerRequest {
 
 // ── Response types ──────────────────────────────────────────────────
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct PaymentResponse {
     pub payment_id: PaymentId,
     pub entity_id: EntityId,
@@ -878,7 +1046,7 @@ pub struct PaymentResponse {
     pub created_at: String,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct PayrollRunResponse {
     pub payroll_run_id: PayrollRunId,
     pub entity_id: EntityId,
@@ -888,7 +1056,7 @@ pub struct PayrollRunResponse {
     pub created_at: String,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct DistributionResponse {
     pub distribution_id: DistributionId,
     pub entity_id: EntityId,
@@ -899,7 +1067,7 @@ pub struct DistributionResponse {
     pub created_at: String,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct ReconciliationResponse {
     pub reconciliation_id: ReconciliationId,
     pub entity_id: EntityId,
@@ -913,6 +1081,15 @@ pub struct ReconciliationResponse {
 
 // ── Handlers: Payments ──────────────────────────────────────────────
 
+#[utoipa::path(
+    post,
+    path = "/v1/payments",
+    tag = "treasury",
+    request_body = SubmitPaymentRequest,
+    responses(
+        (status = 200, description = "Payment submitted", body = PaymentResponse),
+    ),
+)]
 async fn submit_payment(
     RequireTreasuryWrite(auth): RequireTreasuryWrite,
     State(state): State<AppState>,
@@ -964,6 +1141,15 @@ async fn submit_payment(
     }))
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/payments/execute",
+    tag = "treasury",
+    request_body = ExecutePaymentRequest,
+    responses(
+        (status = 200, description = "Payment executed", body = PaymentResponse),
+    ),
+)]
 async fn execute_payment(
     RequireTreasuryWrite(auth): RequireTreasuryWrite,
     State(state): State<AppState>,
@@ -1018,6 +1204,15 @@ async fn execute_payment(
 
 // ── Handlers: Payroll ───────────────────────────────────────────────
 
+#[utoipa::path(
+    post,
+    path = "/v1/payroll/runs",
+    tag = "treasury",
+    request_body = CreatePayrollRunRequest,
+    responses(
+        (status = 200, description = "Payroll run created", body = PayrollRunResponse),
+    ),
+)]
 async fn create_payroll_run(
     RequireTreasuryWrite(auth): RequireTreasuryWrite,
     State(state): State<AppState>,
@@ -1057,6 +1252,15 @@ async fn create_payroll_run(
 
 // ── Handlers: Distributions ─────────────────────────────────────────
 
+#[utoipa::path(
+    post,
+    path = "/v1/distributions",
+    tag = "treasury",
+    request_body = CreateDistributionRequest,
+    responses(
+        (status = 200, description = "Distribution created", body = DistributionResponse),
+    ),
+)]
 async fn create_distribution(
     RequireTreasuryWrite(auth): RequireTreasuryWrite,
     State(state): State<AppState>,
@@ -1108,6 +1312,15 @@ async fn create_distribution(
 
 // ── Handlers: Reconciliation ────────────────────────────────────────
 
+#[utoipa::path(
+    post,
+    path = "/v1/ledger/reconcile",
+    tag = "treasury",
+    request_body = ReconcileLedgerRequest,
+    responses(
+        (status = 200, description = "Ledger reconciled", body = ReconciliationResponse),
+    ),
+)]
 async fn reconcile_ledger(
     RequireTreasuryWrite(auth): RequireTreasuryWrite,
     State(state): State<AppState>,
@@ -1177,7 +1390,7 @@ use crate::domain::ids::StripeConnectionId;
 use crate::domain::treasury::spending_limit::SpendingLimit;
 use crate::domain::treasury::stripe_connection::StripeConnection;
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct StripeAccountResponse {
     pub entity_id: EntityId,
     pub stripe_account_id: String,
@@ -1185,6 +1398,15 @@ pub struct StripeAccountResponse {
     pub created_at: String,
 }
 
+#[utoipa::path(
+    get,
+    path = "/v1/entities/{entity_id}/stripe-account",
+    tag = "treasury",
+    params(("entity_id" = EntityId, Path, description = "Entity ID")),
+    responses(
+        (status = 200, description = "Stripe account details", body = StripeAccountResponse),
+    ),
+)]
 async fn get_stripe_account(
     RequireTreasuryRead(auth): RequireTreasuryRead,
     State(state): State<AppState>,
@@ -1231,7 +1453,7 @@ async fn get_stripe_account(
     }))
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct SpendingLimitResponse {
     pub spending_limit_id: SpendingLimitId,
     pub entity_id: EntityId,
@@ -1252,7 +1474,7 @@ fn spending_limit_to_response(sl: &SpendingLimit) -> SpendingLimitResponse {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 pub struct CreateSpendingLimitRequest {
     pub entity_id: EntityId,
     pub amount_cents: i64,
@@ -1260,6 +1482,15 @@ pub struct CreateSpendingLimitRequest {
     pub category: String,
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/spending-limits",
+    tag = "treasury",
+    request_body = CreateSpendingLimitRequest,
+    responses(
+        (status = 200, description = "Spending limit created", body = SpendingLimitResponse),
+    ),
+)]
 async fn create_spending_limit(
     RequireTreasuryWrite(auth): RequireTreasuryWrite,
     State(state): State<AppState>,
@@ -1293,6 +1524,15 @@ async fn create_spending_limit(
     Ok(Json(spending_limit_to_response(&sl)))
 }
 
+#[utoipa::path(
+    get,
+    path = "/v1/entities/{entity_id}/spending-limits",
+    tag = "treasury",
+    params(("entity_id" = EntityId, Path, description = "Entity ID")),
+    responses(
+        (status = 200, description = "List of spending limits", body = Vec<SpendingLimitResponse>),
+    ),
+)]
 async fn list_spending_limits(
     RequireTreasuryRead(auth): RequireTreasuryRead,
     State(state): State<AppState>,
@@ -1324,7 +1564,7 @@ async fn list_spending_limits(
     Ok(Json(limits))
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct FinancialStatementResponse {
     pub entity_id: EntityId,
     pub statement_type: String,
@@ -1336,7 +1576,7 @@ pub struct FinancialStatementResponse {
     pub net_income_cents: i64,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::IntoParams)]
 pub struct FinancialStatementQuery {
     #[serde(default = "default_statement_type")]
     pub statement_type: String,
@@ -1346,6 +1586,18 @@ fn default_statement_type() -> String {
     "balance_sheet".to_owned()
 }
 
+#[utoipa::path(
+    get,
+    path = "/v1/entities/{entity_id}/financial-statements",
+    tag = "treasury",
+    params(
+        ("entity_id" = EntityId, Path, description = "Entity ID"),
+        FinancialStatementQuery,
+    ),
+    responses(
+        (status = 200, description = "Financial statements", body = FinancialStatementResponse),
+    ),
+)]
 async fn get_financial_statements(
     RequireTreasuryRead(auth): RequireTreasuryRead,
     State(state): State<AppState>,
@@ -1415,7 +1667,7 @@ async fn get_financial_statements(
     Ok(Json(statement))
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 pub struct SeedChartOfAccountsRequest {
     pub entity_id: EntityId,
     #[serde(default = "default_template")]
@@ -1426,13 +1678,22 @@ fn default_template() -> String {
     "standard".to_owned()
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct SeedChartOfAccountsResponse {
     pub entity_id: EntityId,
     pub accounts_created: usize,
     pub template: String,
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/treasury/seed-chart-of-accounts",
+    tag = "treasury",
+    request_body = SeedChartOfAccountsRequest,
+    responses(
+        (status = 200, description = "Chart of accounts seeded", body = SeedChartOfAccountsResponse),
+    ),
+)]
 async fn seed_chart_of_accounts(
     RequireTreasuryWrite(auth): RequireTreasuryWrite,
     State(state): State<AppState>,
@@ -1481,6 +1742,18 @@ async fn seed_chart_of_accounts(
 
 // ── Handlers: Get Invoice ────────────────────────────────────────────
 
+#[utoipa::path(
+    get,
+    path = "/v1/invoices/{invoice_id}",
+    tag = "treasury",
+    params(
+        ("invoice_id" = InvoiceId, Path, description = "Invoice ID"),
+        super::EntityIdQuery,
+    ),
+    responses(
+        (status = 200, description = "Invoice details", body = InvoiceResponse),
+    ),
+)]
 async fn get_invoice(
     RequireTreasuryRead(auth): RequireTreasuryRead,
     State(state): State<AppState>,
@@ -1507,7 +1780,7 @@ async fn get_invoice(
 
 // ── Handlers: Invoice from agent request ────────────────────────────
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 pub struct AgentInvoiceRequest {
     pub entity_id: EntityId,
     pub customer_name: String,
@@ -1516,7 +1789,7 @@ pub struct AgentInvoiceRequest {
     pub due_date: NaiveDate,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct PaymentOfferResponse {
     pub invoice_id: InvoiceId,
     pub entity_id: EntityId,
@@ -1525,6 +1798,15 @@ pub struct PaymentOfferResponse {
     pub status: InvoiceStatus,
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/invoices/from-agent-request",
+    tag = "treasury",
+    request_body = AgentInvoiceRequest,
+    responses(
+        (status = 200, description = "Invoice created from agent request", body = PaymentOfferResponse),
+    ),
+)]
 async fn from_agent_request(
     RequireTreasuryWrite(auth): RequireTreasuryWrite,
     State(state): State<AppState>,
@@ -1584,11 +1866,20 @@ async fn from_agent_request(
 
 // ── Handlers: Treasury advanced (stripe-accounts, chart-of-accounts, payouts, payment-intents) ──
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 pub struct CreateStripeAccountRequest {
     pub entity_id: EntityId,
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/treasury/stripe-accounts",
+    tag = "treasury",
+    request_body = CreateStripeAccountRequest,
+    responses(
+        (status = 200, description = "Stripe account created", body = StripeAccountResponse),
+    ),
+)]
 async fn create_stripe_account(
     RequireTreasuryWrite(auth): RequireTreasuryWrite,
     State(state): State<AppState>,
@@ -1628,12 +1919,21 @@ async fn create_stripe_account(
     }))
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct ChartOfAccountsResponse {
     pub entity_id: EntityId,
     pub accounts: Vec<AccountResponse>,
 }
 
+#[utoipa::path(
+    get,
+    path = "/v1/treasury/chart-of-accounts/{entity_id}",
+    tag = "treasury",
+    params(("entity_id" = EntityId, Path, description = "Entity ID")),
+    responses(
+        (status = 200, description = "Chart of accounts", body = ChartOfAccountsResponse),
+    ),
+)]
 async fn get_chart_of_accounts(
     RequireTreasuryRead(auth): RequireTreasuryRead,
     State(state): State<AppState>,
@@ -1668,7 +1968,7 @@ async fn get_chart_of_accounts(
     }))
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 pub struct CreatePayoutRequest {
     pub entity_id: EntityId,
     pub amount_cents: i64,
@@ -1677,7 +1977,7 @@ pub struct CreatePayoutRequest {
     pub description: Option<String>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct PayoutResponse {
     pub payout_id: String,
     pub entity_id: EntityId,
@@ -1687,6 +1987,15 @@ pub struct PayoutResponse {
     pub created_at: String,
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/treasury/payouts",
+    tag = "treasury",
+    request_body = CreatePayoutRequest,
+    responses(
+        (status = 200, description = "Payout created", body = PayoutResponse),
+    ),
+)]
 async fn create_payout(
     RequireTreasuryWrite(auth): RequireTreasuryWrite,
     State(state): State<AppState>,
@@ -1743,7 +2052,7 @@ async fn create_payout(
     }))
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 pub struct CreatePaymentIntentRequest {
     pub entity_id: EntityId,
     pub amount_cents: i64,
@@ -1751,7 +2060,7 @@ pub struct CreatePaymentIntentRequest {
     pub description: Option<String>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct PaymentIntentResponse {
     pub payment_intent_id: String,
     pub entity_id: EntityId,
@@ -1762,6 +2071,15 @@ pub struct PaymentIntentResponse {
     pub created_at: String,
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/treasury/payment-intents",
+    tag = "treasury",
+    request_body = CreatePaymentIntentRequest,
+    responses(
+        (status = 200, description = "Payment intent created", body = PaymentIntentResponse),
+    ),
+)]
 async fn create_payment_intent(
     RequireTreasuryWrite(auth): RequireTreasuryWrite,
     State(state): State<AppState>,
@@ -1823,6 +2141,15 @@ async fn create_payment_intent(
     }))
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/treasury/webhooks/stripe",
+    tag = "treasury",
+    request_body(content = String, content_type = "application/json"),
+    responses(
+        (status = 200, description = "Webhook received", body = serde_json::Value),
+    ),
+)]
 async fn treasury_stripe_webhook(
     headers: HeaderMap,
     body: Bytes,
@@ -1941,3 +2268,79 @@ pub fn treasury_routes() -> Router<AppState> {
         // Alias: bank-accounts
         .route("/v1/bank-accounts", post(create_bank_account))
 }
+
+#[derive(utoipa::OpenApi)]
+#[openapi(
+    paths(
+        create_account,
+        list_accounts,
+        create_journal_entry,
+        list_journal_entries,
+        post_journal_entry,
+        void_journal_entry,
+        create_invoice,
+        list_invoices,
+        send_invoice,
+        mark_invoice_paid,
+        get_invoice_status,
+        get_pay_instructions,
+        create_bank_account,
+        list_bank_accounts,
+        activate_bank_account,
+        close_bank_account,
+        submit_payment,
+        execute_payment,
+        create_payroll_run,
+        create_distribution,
+        reconcile_ledger,
+        get_stripe_account,
+        create_spending_limit,
+        list_spending_limits,
+        get_financial_statements,
+        seed_chart_of_accounts,
+        get_invoice,
+        from_agent_request,
+        create_stripe_account,
+        get_chart_of_accounts,
+        create_payout,
+        create_payment_intent,
+        treasury_stripe_webhook,
+    ),
+    components(schemas(
+        CreateAccountRequest,
+        AccountResponse,
+        LedgerLineRequest,
+        CreateJournalEntryRequest,
+        JournalEntryResponse,
+        CreateInvoiceRequest,
+        InvoiceResponse,
+        CreateBankAccountRequest,
+        BankAccountResponse,
+        PayInstructionsResponse,
+        SubmitPaymentRequest,
+        ExecutePaymentRequest,
+        PaymentResponse,
+        CreatePayrollRunRequest,
+        PayrollRunResponse,
+        CreateDistributionRequest,
+        DistributionResponse,
+        ReconcileLedgerRequest,
+        ReconciliationResponse,
+        StripeAccountResponse,
+        SpendingLimitResponse,
+        CreateSpendingLimitRequest,
+        FinancialStatementResponse,
+        SeedChartOfAccountsRequest,
+        SeedChartOfAccountsResponse,
+        AgentInvoiceRequest,
+        PaymentOfferResponse,
+        CreateStripeAccountRequest,
+        ChartOfAccountsResponse,
+        CreatePayoutRequest,
+        PayoutResponse,
+        CreatePaymentIntentRequest,
+        PaymentIntentResponse,
+    )),
+    tags((name = "treasury", description = "Treasury, banking, and financial operations")),
+)]
+pub struct TreasuryApi;

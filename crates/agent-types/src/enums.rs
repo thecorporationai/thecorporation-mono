@@ -23,6 +23,7 @@ impl std::error::Error for ParseEnumError {}
 // ── AgentStatus ──────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum AgentStatus {
     Active,
@@ -61,6 +62,7 @@ impl std::str::FromStr for AgentStatus {
 // ── HttpMethod ───────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "UPPERCASE")]
 pub enum HttpMethod {
     Get,
@@ -117,6 +119,7 @@ impl std::str::FromStr for HttpMethod {
 // ── ChannelType ──────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum ChannelType {
     Email,
@@ -158,6 +161,7 @@ impl std::str::FromStr for ChannelType {
 // ── NetworkEgress ────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum NetworkEgress {
     Restricted,
@@ -199,6 +203,7 @@ impl std::str::FromStr for NetworkEgress {
 // ── Transport ────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum Transport {
     Stdio,
@@ -229,6 +234,7 @@ impl fmt::Display for Transport {
 // ── LogLevel ─────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum LogLevel {
     Debug,

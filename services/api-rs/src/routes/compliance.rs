@@ -37,14 +37,14 @@ use crate::store::entity_store::EntityStore;
 
 // ── Request types ────────────────────────────────────────────────────
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 pub struct FileTaxDocumentRequest {
     pub entity_id: EntityId,
     pub document_type: String,
     pub tax_year: i32,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 pub struct CreateDeadlineRequest {
     pub entity_id: EntityId,
     pub deadline_type: String,
@@ -64,18 +64,19 @@ fn default_deadline_severity() -> DeadlineSeverity {
     DeadlineSeverity::Medium
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 pub struct ScanComplianceRequest {
     pub entity_id: EntityId,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 pub struct ClassifyContractorRequest {
     pub entity_id: EntityId,
     pub contractor_name: String,
     #[serde(default = "default_state")]
     pub state: String,
     #[serde(default)]
+    #[schema(value_type = Object)]
     pub factors: serde_json::Value,
 }
 
@@ -83,7 +84,7 @@ fn default_state() -> String {
     "CA".to_owned()
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 pub struct ResolveEscalationWithEvidenceRequest {
     pub entity_id: EntityId,
     #[serde(default)]
@@ -102,7 +103,7 @@ pub struct ResolveEscalationWithEvidenceRequest {
 
 // ── Response types ───────────────────────────────────────────────────
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct TaxFilingResponse {
     pub filing_id: TaxFilingId,
     pub entity_id: EntityId,
@@ -113,7 +114,7 @@ pub struct TaxFilingResponse {
     pub created_at: String,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct DeadlineResponse {
     pub deadline_id: DeadlineId,
     pub entity_id: EntityId,
@@ -127,7 +128,7 @@ pub struct DeadlineResponse {
     pub created_at: String,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct ClassificationResponse {
     pub classification_id: ClassificationId,
     pub entity_id: EntityId,
@@ -139,7 +140,7 @@ pub struct ClassificationResponse {
     pub created_at: String,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct ComplianceEscalationResponse {
     pub escalation_id: ComplianceEscalationId,
     pub entity_id: EntityId,
@@ -153,14 +154,14 @@ pub struct ComplianceEscalationResponse {
     pub created_at: String,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct ComplianceScanResponse {
     pub scanned_deadlines: usize,
     pub escalations_created: usize,
     pub incidents_created: usize,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct ResolveEscalationWithEvidenceResponse {
     pub escalation: ComplianceEscalationResponse,
     pub evidence_link_id: ComplianceEvidenceLinkId,
@@ -251,6 +252,16 @@ fn milestone_specs() -> [(&'static str, i64, &'static str, &'static str); 6] {
 
 // ── Handlers ─────────────────────────────────────────────────────────
 
+#[utoipa::path(
+    post,
+    path = "/v1/tax/filings",
+    tag = "compliance",
+    request_body = FileTaxDocumentRequest,
+    responses(
+        (status = 200, description = "Tax document filed", body = TaxFilingResponse),
+        (status = 400, description = "Invalid request"),
+    ),
+)]
 async fn file_tax_document(
     RequireAdmin(auth): RequireAdmin,
     State(state): State<AppState>,
@@ -301,6 +312,16 @@ async fn file_tax_document(
     }))
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/deadlines",
+    tag = "compliance",
+    request_body = CreateDeadlineRequest,
+    responses(
+        (status = 200, description = "Deadline created", body = DeadlineResponse),
+        (status = 400, description = "Invalid request"),
+    ),
+)]
 async fn create_deadline(
     RequireAdmin(auth): RequireAdmin,
     State(state): State<AppState>,
@@ -344,6 +365,16 @@ async fn create_deadline(
     Ok(Json(deadline_to_response(&deadline)))
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/contractors/classify",
+    tag = "compliance",
+    request_body = ClassifyContractorRequest,
+    responses(
+        (status = 200, description = "Contractor classified", body = ClassificationResponse),
+        (status = 400, description = "Invalid request"),
+    ),
+)]
 async fn classify_contractor(
     RequireAdmin(auth): RequireAdmin,
     State(state): State<AppState>,
@@ -411,6 +442,16 @@ async fn classify_contractor(
     }))
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/compliance/escalations/scan",
+    tag = "compliance",
+    request_body = ScanComplianceRequest,
+    responses(
+        (status = 200, description = "Compliance scan completed", body = ComplianceScanResponse),
+        (status = 400, description = "Invalid request"),
+    ),
+)]
 async fn scan_compliance_escalations(
     RequireAdmin(auth): RequireAdmin,
     State(state): State<AppState>,
@@ -571,6 +612,18 @@ async fn scan_compliance_escalations(
     Ok(Json(response))
 }
 
+#[utoipa::path(
+    get,
+    path = "/v1/entities/{entity_id}/compliance/escalations",
+    tag = "compliance",
+    params(
+        ("entity_id" = EntityId, Path, description = "Entity ID"),
+    ),
+    responses(
+        (status = 200, description = "List of compliance escalations", body = Vec<ComplianceEscalationResponse>),
+        (status = 404, description = "Entity not found"),
+    ),
+)]
 async fn list_entity_escalations(
     RequireAdmin(auth): RequireAdmin,
     State(state): State<AppState>,
@@ -601,6 +654,19 @@ async fn list_entity_escalations(
     Ok(Json(escalations))
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/compliance/escalations/{escalation_id}/resolve-with-evidence",
+    tag = "compliance",
+    params(
+        ("escalation_id" = ComplianceEscalationId, Path, description = "Escalation ID"),
+    ),
+    request_body = ResolveEscalationWithEvidenceRequest,
+    responses(
+        (status = 200, description = "Escalation resolved with evidence", body = ResolveEscalationWithEvidenceResponse),
+        (status = 404, description = "Escalation not found"),
+    ),
+)]
 async fn resolve_escalation_with_evidence(
     RequireAdmin(auth): RequireAdmin,
     State(state): State<AppState>,
@@ -769,3 +835,30 @@ pub fn compliance_routes() -> Router<AppState> {
             post(resolve_escalation_with_evidence),
         )
 }
+
+#[derive(utoipa::OpenApi)]
+#[openapi(
+    paths(
+        file_tax_document,
+        create_deadline,
+        classify_contractor,
+        scan_compliance_escalations,
+        list_entity_escalations,
+        resolve_escalation_with_evidence,
+    ),
+    components(schemas(
+        FileTaxDocumentRequest,
+        CreateDeadlineRequest,
+        ScanComplianceRequest,
+        ClassifyContractorRequest,
+        ResolveEscalationWithEvidenceRequest,
+        TaxFilingResponse,
+        DeadlineResponse,
+        ClassificationResponse,
+        ComplianceEscalationResponse,
+        ComplianceScanResponse,
+        ResolveEscalationWithEvidenceResponse,
+    )),
+    tags((name = "compliance", description = "Compliance checks and monitoring")),
+)]
+pub struct ComplianceApi;

@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use super::instrument::InstrumentKind;
 use crate::domain::ids::EquityRuleSetId;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum AntiDilutionMethod {
     None,

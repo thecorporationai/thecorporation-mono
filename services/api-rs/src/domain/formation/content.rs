@@ -13,7 +13,7 @@ use crate::domain::ids::{AgentId, EntityId};
 // ── Input types ──────────────────────────────────────────────────────────
 
 /// A member/founder as provided in the formation request.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct MemberInput {
     pub name: String,
     pub investor_type: InvestorType,
@@ -54,7 +54,7 @@ pub struct MemberInput {
 }
 
 /// A mailing address.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct Address {
     pub street: String,
     #[serde(default)]
@@ -65,7 +65,7 @@ pub struct Address {
 }
 
 /// Officer title for a corporate officer.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum OfficerTitle {
     Ceo,
@@ -77,7 +77,7 @@ pub enum OfficerTitle {
 }
 
 /// Vesting schedule for founder shares.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct VestingSchedule {
     /// Total vesting period in months (e.g. 48).
     pub total_months: i32,
@@ -89,7 +89,7 @@ pub struct VestingSchedule {
 }
 
 /// Classification of a member/investor.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum InvestorType {
     NaturalPerson,
@@ -98,7 +98,7 @@ pub enum InvestorType {
 }
 
 /// Role a member holds in the entity.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum MemberRole {
     Director,

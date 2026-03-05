@@ -60,19 +60,19 @@ use crate::store::entity_store::EntityStore;
 
 // ── Query types ──────────────────────────────────────────────────────
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema, utoipa::IntoParams)]
 pub struct BodyQuery {
     pub entity_id: EntityId,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema, utoipa::IntoParams)]
 pub struct MeetingQuery {
     pub entity_id: EntityId,
 }
 
 // ── Request types ────────────────────────────────────────────────────
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 pub struct CreateGovernanceBodyRequest {
     pub entity_id: EntityId,
     pub body_type: BodyType,
@@ -81,7 +81,7 @@ pub struct CreateGovernanceBodyRequest {
     pub voting_method: VotingMethod,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 pub struct CreateSeatRequest {
     pub holder_id: ContactId,
     pub role: SeatRole,
@@ -93,7 +93,7 @@ pub struct CreateSeatRequest {
     pub voting_power: Option<u32>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 pub struct ScheduleMeetingRequest {
     pub entity_id: EntityId,
     pub body_id: GovernanceBodyId,
@@ -109,25 +109,25 @@ pub struct ScheduleMeetingRequest {
     pub agenda_item_titles: Vec<String>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 pub struct ConveneMeetingRequest {
     pub present_seat_ids: Vec<GovernanceSeatId>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 pub struct CastVoteRequest {
     pub voter_id: ContactId,
     pub vote_value: VoteValue,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 pub struct ComputeResolutionRequest {
     pub resolution_text: String,
     #[serde(default)]
     pub effective_date: Option<NaiveDate>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 pub struct SetGovernanceModeRequest {
     pub entity_id: EntityId,
     pub mode: GovernanceMode,
@@ -139,7 +139,7 @@ pub struct SetGovernanceModeRequest {
     pub evidence_refs: Vec<String>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 pub struct CreateIncidentRequest {
     pub entity_id: EntityId,
     pub severity: IncidentSeverity,
@@ -147,19 +147,19 @@ pub struct CreateIncidentRequest {
     pub description: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 pub struct FinalizeAgendaItemRequest {
     pub entity_id: EntityId,
     pub status: AgendaItemStatus,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 pub struct AttachResolutionDocumentRequest {
     pub entity_id: EntityId,
     pub document_id: DocumentId,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 pub struct AmendDelegationScheduleRequest {
     pub entity_id: EntityId,
     #[serde(default)]
@@ -176,7 +176,7 @@ pub struct AmendDelegationScheduleRequest {
     pub rationale: Option<String>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 pub struct ReauthorizeDelegationScheduleRequest {
     pub entity_id: EntityId,
     pub meeting_id: MeetingId,
@@ -185,7 +185,7 @@ pub struct ReauthorizeDelegationScheduleRequest {
     pub rationale: Option<String>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 pub struct UpdateGovernanceProfileRequest {
     pub legal_name: String,
     pub jurisdiction: String,
@@ -211,13 +211,13 @@ pub struct UpdateGovernanceProfileRequest {
     pub incomplete_profile: Option<bool>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 pub struct GenerateGovernanceDocBundleRequest {
     #[serde(default)]
     pub template_version: Option<String>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 pub struct InternalLockdownTriggerRequest {
     pub idempotency_key: String,
     pub trigger_type: GovernanceTriggerType,
@@ -232,12 +232,13 @@ pub struct InternalLockdownTriggerRequest {
     pub linked_escalation_id: Option<ComplianceEscalationId>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 pub struct CreateGovernanceAuditEventRequest {
     pub entity_id: EntityId,
     pub event_type: GovernanceAuditEventType,
     pub action: String,
     #[serde(default)]
+    #[schema(value_type = Object)]
     pub details: serde_json::Value,
     #[serde(default)]
     pub evidence_refs: Vec<String>,
@@ -251,21 +252,22 @@ pub struct CreateGovernanceAuditEventRequest {
     pub linked_mode_event_id: Option<GovernanceModeEventId>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 pub struct WriteGovernanceAuditCheckpointRequest {
     pub entity_id: EntityId,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 pub struct VerifyGovernanceAuditChainRequest {
     pub entity_id: EntityId,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 pub struct EvaluateGovernanceRequest {
     pub entity_id: EntityId,
     pub intent_type: String,
     #[serde(default = "default_evaluate_metadata")]
+    #[schema(value_type = Object)]
     pub metadata: serde_json::Value,
 }
 
@@ -275,7 +277,7 @@ fn default_evaluate_metadata() -> serde_json::Value {
 
 // ── Response types ───────────────────────────────────────────────────
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct GovernanceBodyResponse {
     pub body_id: GovernanceBodyId,
     pub entity_id: EntityId,
@@ -287,7 +289,7 @@ pub struct GovernanceBodyResponse {
     pub created_at: String,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct GovernanceSeatResponse {
     pub seat_id: GovernanceSeatId,
     pub body_id: GovernanceBodyId,
@@ -300,7 +302,7 @@ pub struct GovernanceSeatResponse {
     pub created_at: String,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct MeetingResponse {
     pub meeting_id: MeetingId,
     pub body_id: GovernanceBodyId,
@@ -314,7 +316,7 @@ pub struct MeetingResponse {
     pub created_at: String,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct AgendaItemResponse {
     pub agenda_item_id: AgendaItemId,
     pub meeting_id: MeetingId,
@@ -326,7 +328,7 @@ pub struct AgendaItemResponse {
     pub created_at: String,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct VoteResponse {
     pub vote_id: VoteId,
     pub agenda_item_id: AgendaItemId,
@@ -337,7 +339,7 @@ pub struct VoteResponse {
     pub cast_at: String,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct ResolutionResponse {
     pub resolution_id: ResolutionId,
     pub meeting_id: MeetingId,
@@ -354,7 +356,7 @@ pub struct ResolutionResponse {
     pub created_at: String,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct GovernanceModeResponse {
     pub entity_id: EntityId,
     pub mode: GovernanceMode,
@@ -363,7 +365,7 @@ pub struct GovernanceModeResponse {
     pub created_at: String,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct IncidentResponse {
     pub incident_id: IncidentId,
     pub entity_id: EntityId,
@@ -375,14 +377,14 @@ pub struct IncidentResponse {
     pub resolved_at: Option<String>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct GenerateGovernanceDocBundleResponse {
     pub manifest: GovernanceDocBundleManifest,
     pub current: GovernanceDocBundleCurrent,
     pub summary: GovernanceDocBundleSummary,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct InternalLockdownTriggerResponse {
     pub trigger_id: GovernanceTriggerId,
     pub incident_id: IncidentId,
@@ -391,7 +393,7 @@ pub struct InternalLockdownTriggerResponse {
     pub idempotent_replay: bool,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct DelegationScheduleChangeResponse {
     pub schedule: DelegationSchedule,
     pub amendment: ScheduleAmendment,
@@ -644,6 +646,18 @@ fn validate_schedule_resolution(
 
 // ── Handlers: Governance profile + doc bundles ──────────────────────
 
+#[utoipa::path(
+    get,
+    path = "/v1/entities/{entity_id}/governance/profile",
+    tag = "governance",
+    params(
+        ("entity_id" = EntityId, Path, description = "Entity ID"),
+    ),
+    responses(
+        (status = 200, description = "Governance profile", body = GovernanceProfile),
+        (status = 404, description = "Entity not found"),
+    ),
+)]
 async fn get_governance_profile(
     RequireGovernanceRead(auth): RequireGovernanceRead,
     State(state): State<AppState>,
@@ -666,6 +680,19 @@ async fn get_governance_profile(
     Ok(Json(profile))
 }
 
+#[utoipa::path(
+    put,
+    path = "/v1/entities/{entity_id}/governance/profile",
+    tag = "governance",
+    params(
+        ("entity_id" = EntityId, Path, description = "Entity ID"),
+    ),
+    request_body = UpdateGovernanceProfileRequest,
+    responses(
+        (status = 200, description = "Updated governance profile", body = GovernanceProfile),
+        (status = 422, description = "Validation error"),
+    ),
+)]
 async fn update_governance_profile(
     RequireGovernanceWrite(auth): RequireGovernanceWrite,
     State(state): State<AppState>,
@@ -713,6 +740,19 @@ async fn update_governance_profile(
     Ok(Json(profile))
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/entities/{entity_id}/governance/doc-bundles/generate",
+    tag = "governance",
+    params(
+        ("entity_id" = EntityId, Path, description = "Entity ID"),
+    ),
+    request_body = GenerateGovernanceDocBundleRequest,
+    responses(
+        (status = 200, description = "Generated governance doc bundle", body = GenerateGovernanceDocBundleResponse),
+        (status = 422, description = "Validation error"),
+    ),
+)]
 async fn generate_governance_doc_bundle(
     RequireGovernanceWrite(auth): RequireGovernanceWrite,
     State(state): State<AppState>,
@@ -782,6 +822,18 @@ async fn generate_governance_doc_bundle(
     Ok(Json(response))
 }
 
+#[utoipa::path(
+    get,
+    path = "/v1/entities/{entity_id}/governance/doc-bundles/current",
+    tag = "governance",
+    params(
+        ("entity_id" = EntityId, Path, description = "Entity ID"),
+    ),
+    responses(
+        (status = 200, description = "Current governance doc bundle", body = GovernanceDocBundleCurrent),
+        (status = 404, description = "No bundle generated yet"),
+    ),
+)]
 async fn get_current_governance_doc_bundle(
     RequireGovernanceRead(auth): RequireGovernanceRead,
     State(state): State<AppState>,
@@ -808,6 +860,17 @@ async fn get_current_governance_doc_bundle(
     Ok(Json(current))
 }
 
+#[utoipa::path(
+    get,
+    path = "/v1/entities/{entity_id}/governance/doc-bundles",
+    tag = "governance",
+    params(
+        ("entity_id" = EntityId, Path, description = "Entity ID"),
+    ),
+    responses(
+        (status = 200, description = "List of governance doc bundle summaries", body = Vec<GovernanceDocBundleSummary>),
+    ),
+)]
 async fn list_governance_doc_bundles(
     RequireGovernanceRead(auth): RequireGovernanceRead,
     State(state): State<AppState>,
@@ -829,6 +892,19 @@ async fn list_governance_doc_bundles(
     Ok(Json(summaries))
 }
 
+#[utoipa::path(
+    get,
+    path = "/v1/entities/{entity_id}/governance/doc-bundles/{bundle_id}",
+    tag = "governance",
+    params(
+        ("entity_id" = EntityId, Path, description = "Entity ID"),
+        ("bundle_id" = GovernanceDocBundleId, Path, description = "Bundle ID"),
+    ),
+    responses(
+        (status = 200, description = "Governance doc bundle manifest", body = GovernanceDocBundleManifest),
+        (status = 404, description = "Bundle not found"),
+    ),
+)]
 async fn get_governance_doc_bundle(
     RequireGovernanceRead(auth): RequireGovernanceRead,
     State(state): State<AppState>,
@@ -863,6 +939,17 @@ async fn get_governance_doc_bundle(
     Ok(Json(manifest))
 }
 
+#[utoipa::path(
+    get,
+    path = "/v1/entities/{entity_id}/governance/triggers",
+    tag = "governance",
+    params(
+        ("entity_id" = EntityId, Path, description = "Entity ID"),
+    ),
+    responses(
+        (status = 200, description = "List of governance trigger events", body = Vec<GovernanceTriggerEvent>),
+    ),
+)]
 async fn list_governance_triggers(
     RequireGovernanceRead(auth): RequireGovernanceRead,
     State(state): State<AppState>,
@@ -898,6 +985,17 @@ async fn list_governance_triggers(
     Ok(Json(triggers))
 }
 
+#[utoipa::path(
+    get,
+    path = "/v1/entities/{entity_id}/governance/mode-history",
+    tag = "governance",
+    params(
+        ("entity_id" = EntityId, Path, description = "Entity ID"),
+    ),
+    responses(
+        (status = 200, description = "List of governance mode change events", body = Vec<GovernanceModeChangeEvent>),
+    ),
+)]
 async fn list_governance_mode_history(
     RequireGovernanceRead(auth): RequireGovernanceRead,
     State(state): State<AppState>,
@@ -933,6 +1031,20 @@ async fn list_governance_mode_history(
     Ok(Json(events))
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/internal/workspaces/{workspace_id}/entities/{entity_id}/governance/triggers/lockdown",
+    tag = "governance",
+    params(
+        ("workspace_id" = WorkspaceId, Path, description = "Workspace ID"),
+        ("entity_id" = EntityId, Path, description = "Entity ID"),
+    ),
+    request_body = InternalLockdownTriggerRequest,
+    responses(
+        (status = 200, description = "Lockdown trigger result", body = InternalLockdownTriggerResponse),
+        (status = 404, description = "Entity not found"),
+    ),
+)]
 async fn ingest_lockdown_trigger(
     _worker: RequireInternalWorker,
     State(state): State<AppState>,
@@ -975,6 +1087,17 @@ async fn ingest_lockdown_trigger(
     Ok(Json(response))
 }
 
+#[utoipa::path(
+    get,
+    path = "/v1/entities/{entity_id}/governance/audit/entries",
+    tag = "governance",
+    params(
+        ("entity_id" = EntityId, Path, description = "Entity ID"),
+    ),
+    responses(
+        (status = 200, description = "List of governance audit entries", body = Vec<GovernanceAuditEntry>),
+    ),
+)]
 async fn list_governance_audit_entries(
     RequireGovernanceRead(auth): RequireGovernanceRead,
     State(state): State<AppState>,
@@ -997,6 +1120,16 @@ async fn list_governance_audit_entries(
     Ok(Json(entries))
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/governance/audit/events",
+    tag = "governance",
+    request_body = CreateGovernanceAuditEventRequest,
+    responses(
+        (status = 200, description = "Created governance audit entry", body = GovernanceAuditEntry),
+        (status = 400, description = "Invalid request"),
+    ),
+)]
 async fn create_governance_audit_event(
     RequireGovernanceWrite(auth): RequireGovernanceWrite,
     State(state): State<AppState>,
@@ -1046,6 +1179,16 @@ async fn create_governance_audit_event(
     Ok(Json(entry))
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/governance/audit/checkpoints",
+    tag = "governance",
+    request_body = WriteGovernanceAuditCheckpointRequest,
+    responses(
+        (status = 200, description = "Written governance audit checkpoint", body = GovernanceAuditCheckpoint),
+        (status = 422, description = "No audit entries to checkpoint"),
+    ),
+)]
 async fn write_governance_audit_checkpoint(
     RequireGovernanceWrite(auth): RequireGovernanceWrite,
     State(state): State<AppState>,
@@ -1126,6 +1269,17 @@ async fn write_governance_audit_checkpoint(
     Ok(Json(checkpoint))
 }
 
+#[utoipa::path(
+    get,
+    path = "/v1/entities/{entity_id}/governance/audit/checkpoints",
+    tag = "governance",
+    params(
+        ("entity_id" = EntityId, Path, description = "Entity ID"),
+    ),
+    responses(
+        (status = 200, description = "List of governance audit checkpoints", body = Vec<GovernanceAuditCheckpoint>),
+    ),
+)]
 async fn list_governance_audit_checkpoints(
     RequireGovernanceRead(auth): RequireGovernanceRead,
     State(state): State<AppState>,
@@ -1163,6 +1317,15 @@ async fn list_governance_audit_checkpoints(
     Ok(Json(checkpoints))
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/governance/audit/verify",
+    tag = "governance",
+    request_body = VerifyGovernanceAuditChainRequest,
+    responses(
+        (status = 200, description = "Governance audit chain verification report", body = GovernanceAuditVerificationReport),
+    ),
+)]
 async fn verify_governance_audit_chain(
     RequireGovernanceWrite(auth): RequireGovernanceWrite,
     State(state): State<AppState>,
@@ -1306,6 +1469,17 @@ async fn verify_governance_audit_chain(
     Ok(Json(report))
 }
 
+#[utoipa::path(
+    get,
+    path = "/v1/entities/{entity_id}/governance/audit/verifications",
+    tag = "governance",
+    params(
+        ("entity_id" = EntityId, Path, description = "Entity ID"),
+    ),
+    responses(
+        (status = 200, description = "List of governance audit verification reports", body = Vec<GovernanceAuditVerificationReport>),
+    ),
+)]
 async fn list_governance_audit_verifications(
     RequireGovernanceRead(auth): RequireGovernanceRead,
     State(state): State<AppState>,
@@ -1345,6 +1519,15 @@ async fn list_governance_audit_verifications(
 
 // ── Handlers: Governance bodies ──────────────────────────────────────
 
+#[utoipa::path(
+    post,
+    path = "/v1/governance-bodies",
+    tag = "governance",
+    request_body = CreateGovernanceBodyRequest,
+    responses(
+        (status = 200, description = "Created governance body", body = GovernanceBodyResponse),
+    ),
+)]
 async fn create_governance_body(
     RequireGovernanceWrite(auth): RequireGovernanceWrite,
     State(state): State<AppState>,
@@ -1387,6 +1570,17 @@ async fn create_governance_body(
     Ok(Json(body_to_response(&body)))
 }
 
+#[utoipa::path(
+    get,
+    path = "/v1/entities/{entity_id}/governance-bodies",
+    tag = "governance",
+    params(
+        ("entity_id" = EntityId, Path, description = "Entity ID"),
+    ),
+    responses(
+        (status = 200, description = "List of governance bodies for entity", body = Vec<GovernanceBodyResponse>),
+    ),
+)]
 async fn list_governance_bodies(
     RequireGovernanceRead(auth): RequireGovernanceRead,
     State(state): State<AppState>,
@@ -1423,6 +1617,15 @@ async fn list_governance_bodies(
 
 // ── Handlers: Governance mode + incidents ───────────────────────────
 
+#[utoipa::path(
+    get,
+    path = "/v1/governance/mode",
+    tag = "governance",
+    params(super::EntityIdQuery),
+    responses(
+        (status = 200, description = "Current governance mode", body = GovernanceModeResponse),
+    ),
+)]
 async fn get_governance_mode(
     RequireGovernanceRead(auth): RequireGovernanceRead,
     State(state): State<AppState>,
@@ -1444,6 +1647,16 @@ async fn get_governance_mode(
     Ok(Json(mode_to_response(&mode)))
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/governance/mode",
+    tag = "governance",
+    request_body = SetGovernanceModeRequest,
+    responses(
+        (status = 200, description = "Updated governance mode", body = GovernanceModeResponse),
+        (status = 422, description = "Validation error"),
+    ),
+)]
 async fn set_governance_mode(
     RequireGovernanceWrite(auth): RequireGovernanceWrite,
     State(state): State<AppState>,
@@ -1500,6 +1713,15 @@ async fn set_governance_mode(
     Ok(Json(mode_to_response(&mode)))
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/governance/incidents",
+    tag = "governance",
+    request_body = CreateIncidentRequest,
+    responses(
+        (status = 200, description = "Created governance incident", body = IncidentResponse),
+    ),
+)]
 async fn create_incident(
     RequireGovernanceWrite(auth): RequireGovernanceWrite,
     State(state): State<AppState>,
@@ -1538,6 +1760,17 @@ async fn create_incident(
     Ok(Json(incident_to_response(&incident)))
 }
 
+#[utoipa::path(
+    get,
+    path = "/v1/entities/{entity_id}/governance/incidents",
+    tag = "governance",
+    params(
+        ("entity_id" = EntityId, Path, description = "Entity ID"),
+    ),
+    responses(
+        (status = 200, description = "List of governance incidents", body = Vec<IncidentResponse>),
+    ),
+)]
 async fn list_incidents(
     RequireGovernanceRead(auth): RequireGovernanceRead,
     State(state): State<AppState>,
@@ -1569,6 +1802,19 @@ async fn list_incidents(
     Ok(Json(incidents))
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/governance/incidents/{incident_id}/resolve",
+    tag = "governance",
+    params(
+        ("incident_id" = IncidentId, Path, description = "Incident ID"),
+        super::EntityIdQuery,
+    ),
+    responses(
+        (status = 200, description = "Resolved incident", body = IncidentResponse),
+        (status = 404, description = "Incident not found"),
+    ),
+)]
 async fn resolve_incident(
     RequireGovernanceWrite(auth): RequireGovernanceWrite,
     State(state): State<AppState>,
@@ -1606,6 +1852,15 @@ async fn resolve_incident(
 
 // ── Handlers: Delegation schedule ───────────────────────────────────
 
+#[utoipa::path(
+    get,
+    path = "/v1/governance/delegation-schedule",
+    tag = "governance",
+    params(super::EntityIdQuery),
+    responses(
+        (status = 200, description = "Current delegation schedule", body = DelegationSchedule),
+    ),
+)]
 async fn get_delegation_schedule(
     RequireGovernanceRead(auth): RequireGovernanceRead,
     State(state): State<AppState>,
@@ -1627,6 +1882,17 @@ async fn get_delegation_schedule(
     Ok(Json(schedule))
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/governance/delegation-schedule/amend",
+    tag = "governance",
+    request_body = AmendDelegationScheduleRequest,
+    responses(
+        (status = 200, description = "Amended delegation schedule", body = DelegationScheduleChangeResponse),
+        (status = 400, description = "Invalid request"),
+        (status = 422, description = "Authority expansion requires resolution"),
+    ),
+)]
 async fn amend_delegation_schedule(
     RequireGovernanceWrite(auth): RequireGovernanceWrite,
     State(state): State<AppState>,
@@ -1756,6 +2022,17 @@ async fn amend_delegation_schedule(
     Ok(Json(response))
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/governance/delegation-schedule/reauthorize",
+    tag = "governance",
+    request_body = ReauthorizeDelegationScheduleRequest,
+    responses(
+        (status = 200, description = "Reauthorized delegation schedule", body = DelegationScheduleChangeResponse),
+        (status = 404, description = "Meeting or resolution not found"),
+        (status = 422, description = "Resolution did not pass"),
+    ),
+)]
 async fn reauthorize_delegation_schedule(
     RequireGovernanceWrite(auth): RequireGovernanceWrite,
     State(state): State<AppState>,
@@ -1823,6 +2100,15 @@ async fn reauthorize_delegation_schedule(
     Ok(Json(response))
 }
 
+#[utoipa::path(
+    get,
+    path = "/v1/governance/delegation-schedule/history",
+    tag = "governance",
+    params(super::EntityIdQuery),
+    responses(
+        (status = 200, description = "List of delegation schedule amendments", body = Vec<ScheduleAmendment>),
+    ),
+)]
 async fn list_delegation_schedule_history(
     RequireGovernanceRead(auth): RequireGovernanceRead,
     State(state): State<AppState>,
@@ -1857,6 +2143,15 @@ async fn list_delegation_schedule_history(
 
 // ── Handlers: Policy evaluation (dry-run) ───────────────────────────
 
+#[utoipa::path(
+    post,
+    path = "/v1/governance/evaluate",
+    tag = "governance",
+    request_body = EvaluateGovernanceRequest,
+    responses(
+        (status = 200, description = "Policy evaluation decision", body = PolicyDecision),
+    ),
+)]
 async fn evaluate_governance(
     RequireGovernanceRead(auth): RequireGovernanceRead,
     State(state): State<AppState>,
@@ -1896,6 +2191,20 @@ async fn evaluate_governance(
 
 // ── Handlers: Governance seats ───────────────────────────────────────
 
+#[utoipa::path(
+    post,
+    path = "/v1/governance-bodies/{body_id}/seats",
+    tag = "governance",
+    params(
+        ("body_id" = GovernanceBodyId, Path, description = "Governance body ID"),
+        BodyQuery,
+    ),
+    request_body = CreateSeatRequest,
+    responses(
+        (status = 200, description = "Created governance seat", body = GovernanceSeatResponse),
+        (status = 404, description = "Governance body not found"),
+    ),
+)]
 async fn create_seat(
     RequireGovernanceWrite(auth): RequireGovernanceWrite,
     State(state): State<AppState>,
@@ -1951,6 +2260,18 @@ async fn create_seat(
     Ok(Json(seat_to_response(&seat)))
 }
 
+#[utoipa::path(
+    get,
+    path = "/v1/governance-bodies/{body_id}/seats",
+    tag = "governance",
+    params(
+        ("body_id" = GovernanceBodyId, Path, description = "Governance body ID"),
+        BodyQuery,
+    ),
+    responses(
+        (status = 200, description = "List of governance seats for body", body = Vec<GovernanceSeatResponse>),
+    ),
+)]
 async fn list_seats(
     RequireGovernanceRead(auth): RequireGovernanceRead,
     State(state): State<AppState>,
@@ -1986,6 +2307,19 @@ async fn list_seats(
     Ok(Json(seats))
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/governance-seats/{seat_id}/resign",
+    tag = "governance",
+    params(
+        ("seat_id" = GovernanceSeatId, Path, description = "Governance seat ID"),
+        BodyQuery,
+    ),
+    responses(
+        (status = 200, description = "Resigned governance seat", body = GovernanceSeatResponse),
+        (status = 404, description = "Seat not found"),
+    ),
+)]
 async fn resign_seat(
     RequireGovernanceWrite(auth): RequireGovernanceWrite,
     State(state): State<AppState>,
@@ -2026,6 +2360,16 @@ async fn resign_seat(
 
 // ── Handlers: Meetings ───────────────────────────────────────────────
 
+#[utoipa::path(
+    post,
+    path = "/v1/meetings",
+    tag = "governance",
+    request_body = ScheduleMeetingRequest,
+    responses(
+        (status = 200, description = "Scheduled meeting", body = MeetingResponse),
+        (status = 404, description = "Governance body not found"),
+    ),
+)]
 async fn schedule_meeting(
     RequireGovernanceWrite(auth): RequireGovernanceWrite,
     State(state): State<AppState>,
@@ -2104,6 +2448,18 @@ async fn schedule_meeting(
     }))
 }
 
+#[utoipa::path(
+    get,
+    path = "/v1/governance-bodies/{body_id}/meetings",
+    tag = "governance",
+    params(
+        ("body_id" = GovernanceBodyId, Path, description = "Governance body ID"),
+        BodyQuery,
+    ),
+    responses(
+        (status = 200, description = "List of meetings for body", body = Vec<MeetingResponse>),
+    ),
+)]
 async fn list_meetings(
     RequireGovernanceRead(auth): RequireGovernanceRead,
     State(state): State<AppState>,
@@ -2139,6 +2495,19 @@ async fn list_meetings(
     Ok(Json(meetings))
 }
 
+#[utoipa::path(
+    get,
+    path = "/v1/meetings/{meeting_id}/agenda-items",
+    tag = "governance",
+    params(
+        ("meeting_id" = MeetingId, Path, description = "Meeting ID"),
+        MeetingQuery,
+    ),
+    responses(
+        (status = 200, description = "List of agenda items for meeting", body = Vec<AgendaItemResponse>),
+        (status = 404, description = "Meeting not found"),
+    ),
+)]
 async fn list_agenda_items(
     RequireGovernanceRead(auth): RequireGovernanceRead,
     State(state): State<AppState>,
@@ -2177,6 +2546,19 @@ async fn list_agenda_items(
     Ok(Json(agenda_items))
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/meetings/{meeting_id}/notice",
+    tag = "governance",
+    params(
+        ("meeting_id" = MeetingId, Path, description = "Meeting ID"),
+        MeetingQuery,
+    ),
+    responses(
+        (status = 200, description = "Meeting with notice sent", body = MeetingResponse),
+        (status = 404, description = "Meeting not found"),
+    ),
+)]
 async fn send_notice(
     RequireGovernanceWrite(auth): RequireGovernanceWrite,
     State(state): State<AppState>,
@@ -2215,6 +2597,20 @@ async fn send_notice(
     Ok(Json(meeting_to_response(&meeting)))
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/meetings/{meeting_id}/convene",
+    tag = "governance",
+    params(
+        ("meeting_id" = MeetingId, Path, description = "Meeting ID"),
+        MeetingQuery,
+    ),
+    request_body = ConveneMeetingRequest,
+    responses(
+        (status = 200, description = "Convened meeting", body = MeetingResponse),
+        (status = 404, description = "Meeting not found"),
+    ),
+)]
 async fn convene_meeting(
     RequireGovernanceWrite(auth): RequireGovernanceWrite,
     State(state): State<AppState>,
@@ -2277,6 +2673,19 @@ async fn convene_meeting(
     Ok(Json(meeting_to_response(&meeting)))
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/meetings/{meeting_id}/adjourn",
+    tag = "governance",
+    params(
+        ("meeting_id" = MeetingId, Path, description = "Meeting ID"),
+        MeetingQuery,
+    ),
+    responses(
+        (status = 200, description = "Adjourned meeting", body = MeetingResponse),
+        (status = 404, description = "Meeting not found"),
+    ),
+)]
 async fn adjourn_meeting(
     RequireGovernanceWrite(auth): RequireGovernanceWrite,
     State(state): State<AppState>,
@@ -2315,6 +2724,19 @@ async fn adjourn_meeting(
     Ok(Json(meeting_to_response(&meeting)))
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/meetings/{meeting_id}/cancel",
+    tag = "governance",
+    params(
+        ("meeting_id" = MeetingId, Path, description = "Meeting ID"),
+        MeetingQuery,
+    ),
+    responses(
+        (status = 200, description = "Cancelled meeting", body = MeetingResponse),
+        (status = 404, description = "Meeting not found"),
+    ),
+)]
 async fn cancel_meeting(
     RequireGovernanceWrite(auth): RequireGovernanceWrite,
     State(state): State<AppState>,
@@ -2355,6 +2777,22 @@ async fn cancel_meeting(
 
 // ── Handlers: Votes ──────────────────────────────────────────────────
 
+#[utoipa::path(
+    post,
+    path = "/v1/meetings/{meeting_id}/agenda-items/{item_id}/vote",
+    tag = "governance",
+    params(
+        ("meeting_id" = MeetingId, Path, description = "Meeting ID"),
+        ("item_id" = AgendaItemId, Path, description = "Agenda item ID"),
+        MeetingQuery,
+    ),
+    request_body = CastVoteRequest,
+    responses(
+        (status = 200, description = "Cast vote", body = VoteResponse),
+        (status = 404, description = "Meeting or agenda item not found"),
+        (status = 409, description = "Duplicate vote"),
+    ),
+)]
 async fn cast_vote(
     RequireGovernanceVote(auth): RequireGovernanceVote,
     State(state): State<AppState>,
@@ -2453,6 +2891,19 @@ async fn cast_vote(
     Ok(Json(vote_to_response(&vote)))
 }
 
+#[utoipa::path(
+    get,
+    path = "/v1/meetings/{meeting_id}/agenda-items/{item_id}/votes",
+    tag = "governance",
+    params(
+        ("meeting_id" = MeetingId, Path, description = "Meeting ID"),
+        ("item_id" = AgendaItemId, Path, description = "Agenda item ID"),
+        MeetingQuery,
+    ),
+    responses(
+        (status = 200, description = "List of votes for agenda item", body = Vec<VoteResponse>),
+    ),
+)]
 async fn list_votes(
     RequireGovernanceRead(auth): RequireGovernanceRead,
     State(state): State<AppState>,
@@ -2485,6 +2936,22 @@ async fn list_votes(
     Ok(Json(votes))
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/meetings/{meeting_id}/agenda-items/{item_id}/finalize",
+    tag = "governance",
+    params(
+        ("meeting_id" = MeetingId, Path, description = "Meeting ID"),
+        ("item_id" = AgendaItemId, Path, description = "Agenda item ID"),
+    ),
+    request_body = FinalizeAgendaItemRequest,
+    responses(
+        (status = 200, description = "Finalized agenda item", body = AgendaItemResponse),
+        (status = 404, description = "Meeting or agenda item not found"),
+        (status = 409, description = "Agenda item already finalized"),
+        (status = 422, description = "Cannot finalize without resolution"),
+    ),
+)]
 async fn finalize_agenda_item(
     RequireGovernanceWrite(auth): RequireGovernanceWrite,
     State(state): State<AppState>,
@@ -2560,6 +3027,22 @@ async fn finalize_agenda_item(
 
 // ── Handlers: Resolutions ────────────────────────────────────────────
 
+#[utoipa::path(
+    post,
+    path = "/v1/meetings/{meeting_id}/agenda-items/{item_id}/resolution",
+    tag = "governance",
+    params(
+        ("meeting_id" = MeetingId, Path, description = "Meeting ID"),
+        ("item_id" = AgendaItemId, Path, description = "Agenda item ID"),
+        MeetingQuery,
+    ),
+    request_body = ComputeResolutionRequest,
+    responses(
+        (status = 200, description = "Computed resolution", body = ResolutionResponse),
+        (status = 404, description = "Meeting or agenda item not found"),
+        (status = 409, description = "Resolution already exists for agenda item"),
+    ),
+)]
 async fn compute_resolution(
     RequireGovernanceRead(auth): RequireGovernanceRead,
     State(state): State<AppState>,
@@ -2675,6 +3158,18 @@ async fn compute_resolution(
     Ok(Json(resolution_to_response(&resolution)))
 }
 
+#[utoipa::path(
+    get,
+    path = "/v1/meetings/{meeting_id}/resolutions",
+    tag = "governance",
+    params(
+        ("meeting_id" = MeetingId, Path, description = "Meeting ID"),
+        MeetingQuery,
+    ),
+    responses(
+        (status = 200, description = "List of resolutions for meeting", body = Vec<ResolutionResponse>),
+    ),
+)]
 async fn list_resolutions(
     RequireGovernanceRead(auth): RequireGovernanceRead,
     State(state): State<AppState>,
@@ -2707,6 +3202,21 @@ async fn list_resolutions(
     Ok(Json(resolutions))
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/meetings/{meeting_id}/resolutions/{resolution_id}/attach-document",
+    tag = "governance",
+    params(
+        ("meeting_id" = MeetingId, Path, description = "Meeting ID"),
+        ("resolution_id" = ResolutionId, Path, description = "Resolution ID"),
+    ),
+    request_body = AttachResolutionDocumentRequest,
+    responses(
+        (status = 200, description = "Resolution with attached document", body = ResolutionResponse),
+        (status = 404, description = "Resolution or document not found"),
+        (status = 409, description = "Resolution already has a document attached"),
+    ),
+)]
 async fn attach_resolution_document(
     RequireGovernanceWrite(auth): RequireGovernanceWrite,
     State(state): State<AppState>,
@@ -2763,12 +3273,21 @@ async fn attach_resolution_document(
 
 // ── Handlers: Scan expired seats ─────────────────────────────────────
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct ScanExpiredResponse {
     pub scanned: usize,
     pub expired: usize,
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/governance-seats/scan-expired",
+    tag = "governance",
+    params(super::EntityIdQuery),
+    responses(
+        (status = 200, description = "Scan expired seats result", body = ScanExpiredResponse),
+    ),
+)]
 async fn scan_expired_seats(
     RequireGovernanceWrite(auth): RequireGovernanceWrite,
     State(state): State<AppState>,
@@ -2833,7 +3352,7 @@ async fn scan_expired_seats(
 
 // ── Handlers: Written consent ────────────────────────────────────────
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 pub struct WrittenConsentRequest {
     pub body_id: GovernanceBodyId,
     pub entity_id: EntityId,
@@ -2841,7 +3360,7 @@ pub struct WrittenConsentRequest {
     pub description: String,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct WrittenConsentResponse {
     pub meeting_id: MeetingId,
     pub body_id: GovernanceBodyId,
@@ -2851,6 +3370,16 @@ pub struct WrittenConsentResponse {
     pub created_at: String,
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/meetings/written-consent",
+    tag = "governance",
+    request_body = WrittenConsentRequest,
+    responses(
+        (status = 200, description = "Written consent meeting created", body = WrittenConsentResponse),
+        (status = 404, description = "Governance body not found"),
+    ),
+)]
 async fn written_consent(
     RequireGovernanceWrite(auth): RequireGovernanceWrite,
     State(state): State<AppState>,
@@ -2910,6 +3439,15 @@ async fn written_consent(
 
 // ── Handlers: List all meetings (global) ────────────────────────────
 
+#[utoipa::path(
+    get,
+    path = "/v1/meetings",
+    tag = "governance",
+    params(super::EntityIdQuery),
+    responses(
+        (status = 200, description = "List of all meetings", body = Vec<MeetingResponse>),
+    ),
+)]
 async fn list_all_meetings(
     RequireGovernanceRead(auth): RequireGovernanceRead,
     State(state): State<AppState>,
@@ -2943,6 +3481,15 @@ async fn list_all_meetings(
 
 // ── Handlers: List all governance bodies (global) ───────────────────
 
+#[utoipa::path(
+    get,
+    path = "/v1/governance-bodies",
+    tag = "governance",
+    params(super::EntityIdQuery),
+    responses(
+        (status = 200, description = "List of all governance bodies", body = Vec<GovernanceBodyResponse>),
+    ),
+)]
 async fn list_all_governance_bodies(
     RequireGovernanceRead(auth): RequireGovernanceRead,
     State(state): State<AppState>,
@@ -3128,3 +3675,108 @@ pub fn governance_routes() -> Router<AppState> {
         // List all governance bodies
         .route("/v1/governance-bodies", get(list_all_governance_bodies))
 }
+
+#[derive(utoipa::OpenApi)]
+#[openapi(
+    paths(
+        get_governance_profile,
+        update_governance_profile,
+        generate_governance_doc_bundle,
+        get_current_governance_doc_bundle,
+        list_governance_doc_bundles,
+        get_governance_doc_bundle,
+        list_governance_triggers,
+        list_governance_mode_history,
+        ingest_lockdown_trigger,
+        list_governance_audit_entries,
+        create_governance_audit_event,
+        write_governance_audit_checkpoint,
+        list_governance_audit_checkpoints,
+        verify_governance_audit_chain,
+        list_governance_audit_verifications,
+        create_governance_body,
+        list_governance_bodies,
+        get_governance_mode,
+        set_governance_mode,
+        create_incident,
+        list_incidents,
+        resolve_incident,
+        get_delegation_schedule,
+        amend_delegation_schedule,
+        reauthorize_delegation_schedule,
+        list_delegation_schedule_history,
+        evaluate_governance,
+        create_seat,
+        list_seats,
+        resign_seat,
+        schedule_meeting,
+        list_meetings,
+        list_agenda_items,
+        send_notice,
+        convene_meeting,
+        adjourn_meeting,
+        cancel_meeting,
+        cast_vote,
+        list_votes,
+        finalize_agenda_item,
+        compute_resolution,
+        list_resolutions,
+        attach_resolution_document,
+        scan_expired_seats,
+        written_consent,
+        list_all_meetings,
+        list_all_governance_bodies,
+    ),
+    components(schemas(
+        BodyQuery,
+        MeetingQuery,
+        CreateGovernanceBodyRequest,
+        CreateSeatRequest,
+        ScheduleMeetingRequest,
+        ConveneMeetingRequest,
+        CastVoteRequest,
+        ComputeResolutionRequest,
+        SetGovernanceModeRequest,
+        CreateIncidentRequest,
+        FinalizeAgendaItemRequest,
+        AttachResolutionDocumentRequest,
+        AmendDelegationScheduleRequest,
+        ReauthorizeDelegationScheduleRequest,
+        UpdateGovernanceProfileRequest,
+        GenerateGovernanceDocBundleRequest,
+        InternalLockdownTriggerRequest,
+        CreateGovernanceAuditEventRequest,
+        WriteGovernanceAuditCheckpointRequest,
+        VerifyGovernanceAuditChainRequest,
+        EvaluateGovernanceRequest,
+        WrittenConsentRequest,
+        GovernanceBodyResponse,
+        GovernanceSeatResponse,
+        MeetingResponse,
+        AgendaItemResponse,
+        VoteResponse,
+        ResolutionResponse,
+        GovernanceModeResponse,
+        IncidentResponse,
+        GenerateGovernanceDocBundleResponse,
+        InternalLockdownTriggerResponse,
+        DelegationScheduleChangeResponse,
+        ScanExpiredResponse,
+        WrittenConsentResponse,
+        GovernanceProfile,
+        GovernanceDocBundleCurrent,
+        GovernanceDocBundleSummary,
+        GovernanceDocBundleManifest,
+        GovernanceTriggerEvent,
+        GovernanceModeChangeEvent,
+        GovernanceAuditEntry,
+        GovernanceAuditCheckpoint,
+        GovernanceAuditVerificationReport,
+        GovernanceIncident,
+        DelegationSchedule,
+        ScheduleAmendment,
+        PolicyDecision,
+    )),
+    tags((name = "governance", description = "Governance bodies, meetings, voting, and resolutions")),
+)]
+pub struct GovernanceApi;

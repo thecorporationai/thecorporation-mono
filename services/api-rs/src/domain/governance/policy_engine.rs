@@ -16,7 +16,7 @@ use super::policy_ast::{
 use super::proof_obligations::{enforce_proof_obligations, verify_decision};
 use super::typed_intent::{ParsedGovernanceMetadata, TypedIntent};
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum AuthoritySource {
     Law,
@@ -87,7 +87,7 @@ impl Ord for AuthoritySource {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct PolicyPrecedenceTrace {
     pub source: AuthoritySource,
     pub outcome: String,
@@ -95,14 +95,14 @@ pub struct PolicyPrecedenceTrace {
     pub reason: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct PolicyConflict {
     pub higher_source: AuthoritySource,
     pub lower_source: AuthoritySource,
     pub reason: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct PolicyDecision {
     pub(super) tier: AuthorityTier,
     pub(super) policy_mapped: bool,

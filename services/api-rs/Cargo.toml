@@ -26,7 +26,7 @@ git2 = { version = "0.20", default-features = false }
 ssh-key = { version = "0.6", features = ["ed25519", "crypto"] }
 
 # Shared agent types (IDs, enums, config structs)
-agent-types = { path = "../../crates/agent-types" }
+agent-types = { path = "../../crates/agent-types", features = ["openapi"] }
 
 # Types
 uuid = { version = "1", features = ["v4", "serde"] }
@@ -70,8 +70,8 @@ typst-syntax = "0.14"
 comemo = "0.5"
 typst-assets = { version = "0.14", features = ["fonts"] }
 
-# OpenAPI — spec is built programmatically in src/openapi.rs
-# utoipa annotations can be added incrementally for full schema generation
+# OpenAPI — auto-generated from code via utoipa derive macros
+utoipa = { version = "5", features = ["axum_extras", "chrono", "uuid"] }
 
 [features]
 default = []

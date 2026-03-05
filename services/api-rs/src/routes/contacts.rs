@@ -21,7 +21,7 @@ use crate::store::entity_store::EntityStore;
 
 // ── Request types ────────────────────────────────────────────────────
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct CreateContactRequest {
     pub entity_id: EntityId,
@@ -34,7 +34,7 @@ pub struct CreateContactRequest {
 
 // ── Response types ───────────────────────────────────────────────────
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct ContactResponse {
     pub contact_id: ContactId,
     pub entity_id: EntityId,
@@ -84,6 +84,15 @@ fn open_store<'a>(
 
 // ── Handlers ─────────────────────────────────────────────────────────
 
+#[utoipa::path(
+    post,
+    path = "/v1/contacts",
+    tag = "contacts",
+    request_body = CreateContactRequest,
+    responses(
+        (status = 200, description = "Contact created", body = ContactResponse),
+    ),
+)]
 async fn create_contact(
     RequireContactsWrite(auth): RequireContactsWrite,
     State(state): State<AppState>,
@@ -130,6 +139,14 @@ async fn create_contact(
     Ok(Json(contact_to_response(&contact)))
 }
 
+#[utoipa::path(
+    get,
+    path = "/v1/entities/{entity_id}/contacts",
+    tag = "contacts",
+    responses(
+        (status = 200, description = "List of contacts for entity", body = Vec<ContactResponse>),
+    ),
+)]
 async fn list_contacts(
     RequireContactsRead(auth): RequireContactsRead,
     State(state): State<AppState>,
@@ -166,6 +183,18 @@ async fn list_contacts(
 
 // ── Extended contact handlers ────────────────────────────────────────
 
+#[utoipa::path(
+    get,
+    path = "/v1/contacts/{contact_id}",
+    tag = "contacts",
+    params(
+        ("contact_id" = ContactId, Path, description = "Contact ID"),
+    ),
+    responses(
+        (status = 200, description = "Contact details", body = ContactResponse),
+        (status = 404, description = "Contact not found"),
+    ),
+)]
 async fn get_contact(
     RequireContactsRead(auth): RequireContactsRead,
     State(state): State<AppState>,
@@ -193,7 +222,7 @@ async fn get_contact(
     Ok(Json(contact_to_response(&contact)))
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct UpdateContactRequest {
     pub entity_id: EntityId,
@@ -209,6 +238,19 @@ pub struct UpdateContactRequest {
     pub cap_table_access: Option<CapTableAccess>,
 }
 
+#[utoipa::path(
+    patch,
+    path = "/v1/contacts/{contact_id}",
+    tag = "contacts",
+    params(
+        ("contact_id" = ContactId, Path, description = "Contact ID"),
+    ),
+    request_body = UpdateContactRequest,
+    responses(
+        (status = 200, description = "Contact updated", body = ContactResponse),
+        (status = 404, description = "Contact not found"),
+    ),
+)]
 async fn update_contact(
     RequireContactsWrite(auth): RequireContactsWrite,
     State(state): State<AppState>,
@@ -270,7 +312,7 @@ async fn update_contact(
     Ok(Json(contact_to_response(&contact)))
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct ContactProfileResponse {
     pub contact_id: ContactId,
     pub name: String,
@@ -280,6 +322,18 @@ pub struct ContactProfileResponse {
     pub entities: Vec<EntityId>,
 }
 
+#[utoipa::path(
+    get,
+    path = "/v1/contacts/{contact_id}/profile",
+    tag = "contacts",
+    params(
+        ("contact_id" = ContactId, Path, description = "Contact ID"),
+    ),
+    responses(
+        (status = 200, description = "Contact profile", body = ContactProfileResponse),
+        (status = 404, description = "Contact not found"),
+    ),
+)]
 async fn get_contact_profile(
     RequireContactsRead(auth): RequireContactsRead,
     State(state): State<AppState>,
@@ -316,7 +370,7 @@ async fn get_contact_profile(
 
 use crate::domain::contacts::notification_prefs::NotificationPrefs as NotifPrefsRecord;
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct NotificationPrefsResponse {
     pub contact_id: ContactId,
     pub email_enabled: bool,
@@ -335,6 +389,18 @@ fn prefs_to_response(p: &NotifPrefsRecord) -> NotificationPrefsResponse {
     }
 }
 
+#[utoipa::path(
+    get,
+    path = "/v1/contacts/{contact_id}/notification-prefs",
+    tag = "contacts",
+    params(
+        ("contact_id" = ContactId, Path, description = "Contact ID"),
+    ),
+    responses(
+        (status = 200, description = "Notification preferences", body = NotificationPrefsResponse),
+        (status = 404, description = "Contact not found"),
+    ),
+)]
 async fn get_notification_prefs(
     RequireContactsRead(auth): RequireContactsRead,
     State(state): State<AppState>,
@@ -381,7 +447,7 @@ async fn get_notification_prefs(
     Ok(Json(prefs_to_response(&prefs)))
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct UpdateNotificationPrefsRequest {
     pub entity_id: EntityId,
@@ -393,6 +459,19 @@ pub struct UpdateNotificationPrefsRequest {
     pub webhook_enabled: Option<bool>,
 }
 
+#[utoipa::path(
+    patch,
+    path = "/v1/contacts/{contact_id}/notification-prefs",
+    tag = "contacts",
+    params(
+        ("contact_id" = ContactId, Path, description = "Contact ID"),
+    ),
+    request_body = UpdateNotificationPrefsRequest,
+    responses(
+        (status = 200, description = "Notification preferences updated", body = NotificationPrefsResponse),
+        (status = 404, description = "Contact not found"),
+    ),
+)]
 async fn update_notification_prefs(
     RequireContactsWrite(auth): RequireContactsWrite,
     State(state): State<AppState>,
@@ -469,3 +548,25 @@ pub fn contacts_routes() -> Router<AppState> {
         )
         .route("/v1/entities/{entity_id}/contacts", get(list_contacts))
 }
+
+#[derive(utoipa::OpenApi)]
+#[openapi(
+    paths(
+        create_contact,
+        list_contacts,
+        get_contact,
+        update_contact,
+        get_contact_profile,
+        get_notification_prefs,
+        update_notification_prefs,
+    ),
+    components(schemas(
+        CreateContactRequest,
+        ContactResponse,
+        UpdateContactRequest,
+        ContactProfileResponse,
+        NotificationPrefsResponse,
+        UpdateNotificationPrefsRequest,
+    ))
+)]
+pub struct ContactsApi;

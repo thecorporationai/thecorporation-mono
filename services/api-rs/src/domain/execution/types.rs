@@ -6,7 +6,7 @@ use std::fmt;
 // ── IntentStatus ───────────────────────────────────────────────────────
 
 /// Lifecycle status of an execution intent.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum IntentStatus {
     /// Intent has been submitted.
@@ -39,7 +39,7 @@ impl fmt::Display for IntentStatus {
 // ── ObligationStatus ───────────────────────────────────────────────────
 
 /// Lifecycle status of a compliance or operational obligation.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ObligationStatus {
     /// Obligation is required but not yet started.
@@ -72,7 +72,8 @@ impl fmt::Display for ObligationStatus {
 ///
 /// Obligation types are not a fixed enum because they vary by jurisdiction,
 /// entity type, and operational context.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, utoipa::ToSchema)]
+#[schema(value_type = String)]
 #[serde(transparent)]
 pub struct ObligationType(String);
 
@@ -114,7 +115,7 @@ impl From<&str> for ObligationType {
 // ── AssigneeType ───────────────────────────────────────────────────────
 
 /// Who is responsible for fulfilling an obligation.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum AssigneeType {
     /// Handled internally by the platform or entity.
@@ -128,7 +129,7 @@ pub enum AssigneeType {
 // ── AuthorityTier ──────────────────────────────────────────────────────
 
 /// The authority level required to approve an action.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, utoipa::ToSchema)]
 pub enum AuthorityTier {
     /// Lowest authority level — routine operations.
     #[serde(rename = "tier_1")]
@@ -175,7 +176,7 @@ impl fmt::Display for AuthorityTier {
 // ── ReceiptStatus ──────────────────────────────────────────────────────
 
 /// Status of an execution receipt.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ReceiptStatus {
     /// Receipt is pending confirmation.
@@ -189,7 +190,7 @@ pub enum ReceiptStatus {
 // ── DocumentRequestStatus ──────────────────────────────────────────────
 
 /// Status of a request for a document from a stakeholder.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum DocumentRequestStatus {
     /// Document has been requested.

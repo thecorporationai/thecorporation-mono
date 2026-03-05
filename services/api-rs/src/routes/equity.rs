@@ -67,7 +67,7 @@ use crate::store::stored_entity::StoredEntity;
 
 // ── Queries ──────────────────────────────────────────────────────────
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, Default, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum CapTableBasis {
     #[default]
@@ -76,7 +76,7 @@ pub enum CapTableBasis {
     FullyDiluted,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema, utoipa::IntoParams)]
 pub struct CapTableQuery {
     #[serde(default)]
     pub basis: CapTableBasis,
@@ -84,13 +84,13 @@ pub struct CapTableQuery {
     pub issuer_legal_entity_id: Option<LegalEntityId>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema, utoipa::IntoParams)]
 pub struct ControlMapQuery {
     pub entity_id: EntityId,
     pub root_entity_id: LegalEntityId,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema, utoipa::IntoParams)]
 pub struct DilutionPreviewQuery {
     pub entity_id: EntityId,
     pub round_id: EquityRoundId,
@@ -98,7 +98,7 @@ pub struct DilutionPreviewQuery {
 
 // ── Request types ───────────────────────────────────────────────────
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct CreateHolderRequest {
     pub entity_id: EntityId,
@@ -111,7 +111,7 @@ pub struct CreateHolderRequest {
     pub external_reference: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct CreateLegalEntityRequest {
     pub entity_id: EntityId,
@@ -121,7 +121,7 @@ pub struct CreateLegalEntityRequest {
     pub role: LegalEntityRole,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct CreateControlLinkRequest {
     pub entity_id: EntityId,
@@ -134,7 +134,7 @@ pub struct CreateControlLinkRequest {
     pub notes: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct CreateInstrumentRequest {
     pub entity_id: EntityId,
@@ -146,10 +146,11 @@ pub struct CreateInstrumentRequest {
     #[serde(default)]
     pub issue_price_cents: Option<i64>,
     #[serde(default)]
+    #[schema(value_type = Object)]
     pub terms: serde_json::Value,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct AdjustPositionRequest {
     pub entity_id: EntityId,
@@ -163,7 +164,7 @@ pub struct AdjustPositionRequest {
     pub source_reference: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct CreateRoundRequest {
     pub entity_id: EntityId,
@@ -178,10 +179,11 @@ pub struct CreateRoundRequest {
     #[serde(default)]
     pub conversion_target_instrument_id: Option<InstrumentId>,
     #[serde(default)]
+    #[schema(value_type = Object)]
     pub metadata: serde_json::Value,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ApplyRoundTermsRequest {
     pub entity_id: EntityId,
@@ -189,10 +191,11 @@ pub struct ApplyRoundTermsRequest {
     #[serde(default)]
     pub conversion_precedence: Vec<InstrumentKind>,
     #[serde(default)]
+    #[schema(value_type = Object)]
     pub protective_provisions: serde_json::Value,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct BoardApproveRoundRequest {
     pub entity_id: EntityId,
@@ -200,7 +203,7 @@ pub struct BoardApproveRoundRequest {
     pub resolution_id: ResolutionId,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct AcceptRoundRequest {
     pub entity_id: EntityId,
@@ -211,7 +214,7 @@ pub struct AcceptRoundRequest {
 
 // ── Staged equity round types ───────────────────────────────────────
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct PendingSecurity {
     pub holder_id: HolderId,
     pub instrument_id: InstrumentId,
@@ -223,13 +226,13 @@ pub struct PendingSecurity {
     pub grant_type: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct PendingSecuritiesFile {
     pub round_id: EquityRoundId,
     pub securities: Vec<PendingSecurity>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct StartStagedRoundRequest {
     pub entity_id: EntityId,
@@ -242,10 +245,11 @@ pub struct StartStagedRoundRequest {
     #[serde(default)]
     pub target_raise_cents: Option<i64>,
     #[serde(default)]
+    #[schema(value_type = Object)]
     pub metadata: serde_json::Value,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct AddSecurityRequest {
     pub entity_id: EntityId,
@@ -262,13 +266,13 @@ pub struct AddSecurityRequest {
     pub grant_type: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct IssueStagedRoundRequest {
     pub entity_id: EntityId,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, utoipa::ToSchema)]
 pub struct IssueStagedRoundResponse {
     pub round: RoundResponse,
     pub positions: Vec<PositionResponse>,
@@ -278,7 +282,7 @@ pub struct IssueStagedRoundResponse {
     pub agenda_item_id: Option<AgendaItemId>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct PreviewConversionRequest {
     pub entity_id: EntityId,
@@ -287,7 +291,7 @@ pub struct PreviewConversionRequest {
     pub source_reference: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ExecuteConversionRequest {
     pub entity_id: EntityId,
@@ -297,7 +301,7 @@ pub struct ExecuteConversionRequest {
     pub source_reference: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct CreateTransferWorkflowRequest {
     pub entity_id: EntityId,
@@ -315,7 +319,7 @@ pub struct CreateTransferWorkflowRequest {
     pub prepare_intent_id: IntentId,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct GenerateWorkflowDocsRequest {
     pub entity_id: EntityId,
@@ -323,13 +327,13 @@ pub struct GenerateWorkflowDocsRequest {
     pub documents: Vec<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SubmitTransferReviewRequest {
     pub entity_id: EntityId,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct RecordTransferReviewRequest {
     pub entity_id: EntityId,
@@ -338,7 +342,7 @@ pub struct RecordTransferReviewRequest {
     pub reviewer: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct RecordTransferRofrRequest {
     pub entity_id: EntityId,
@@ -346,7 +350,7 @@ pub struct RecordTransferRofrRequest {
     pub waived: bool,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct RecordTransferBoardApprovalRequest {
     pub entity_id: EntityId,
@@ -354,14 +358,14 @@ pub struct RecordTransferBoardApprovalRequest {
     pub resolution_id: ResolutionId,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct RecordTransferExecutionRequest {
     pub entity_id: EntityId,
     pub intent_id: IntentId,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct CreateFundraisingWorkflowRequest {
     pub entity_id: EntityId,
@@ -376,11 +380,12 @@ pub struct CreateFundraisingWorkflowRequest {
     #[serde(default)]
     pub conversion_target_instrument_id: Option<InstrumentId>,
     #[serde(default)]
+    #[schema(value_type = Object)]
     pub metadata: serde_json::Value,
     pub prepare_intent_id: IntentId,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ApplyFundraisingTermsRequest {
     pub entity_id: EntityId,
@@ -388,10 +393,11 @@ pub struct ApplyFundraisingTermsRequest {
     #[serde(default)]
     pub conversion_precedence: Vec<InstrumentKind>,
     #[serde(default)]
+    #[schema(value_type = Object)]
     pub protective_provisions: serde_json::Value,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct RecordFundraisingBoardApprovalRequest {
     pub entity_id: EntityId,
@@ -399,7 +405,7 @@ pub struct RecordFundraisingBoardApprovalRequest {
     pub resolution_id: ResolutionId,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct RecordFundraisingAcceptanceRequest {
     pub entity_id: EntityId,
@@ -408,14 +414,14 @@ pub struct RecordFundraisingAcceptanceRequest {
     pub accepted_by_contact_id: Option<ContactId>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct RecordFundraisingCloseRequest {
     pub entity_id: EntityId,
     pub intent_id: IntentId,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct PrepareWorkflowExecutionRequest {
     pub entity_id: EntityId,
@@ -427,7 +433,7 @@ pub struct PrepareWorkflowExecutionRequest {
     pub phase: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct CompileWorkflowPacketRequest {
     pub entity_id: EntityId,
@@ -437,13 +443,13 @@ pub struct CompileWorkflowPacketRequest {
     pub phase: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct StartWorkflowSignaturesRequest {
     pub entity_id: EntityId,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct RecordWorkflowSignatureRequest {
     pub entity_id: EntityId,
@@ -452,7 +458,7 @@ pub struct RecordWorkflowSignatureRequest {
     pub channel: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct FinalizeWorkflowRequest {
     pub entity_id: EntityId,
@@ -462,7 +468,7 @@ pub struct FinalizeWorkflowRequest {
 
 // ── Response types ──────────────────────────────────────────────────
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, utoipa::ToSchema)]
 pub struct HolderResponse {
     pub holder_id: HolderId,
     pub contact_id: ContactId,
@@ -472,7 +478,7 @@ pub struct HolderResponse {
     pub created_at: String,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, utoipa::ToSchema)]
 pub struct LegalEntityResponse {
     pub legal_entity_id: LegalEntityId,
     pub workspace_id: WorkspaceId,
@@ -482,7 +488,7 @@ pub struct LegalEntityResponse {
     pub created_at: String,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, utoipa::ToSchema)]
 pub struct ControlLinkResponse {
     pub control_link_id: ControlLinkId,
     pub parent_legal_entity_id: LegalEntityId,
@@ -492,7 +498,7 @@ pub struct ControlLinkResponse {
     pub created_at: String,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, utoipa::ToSchema)]
 pub struct InstrumentResponse {
     pub instrument_id: InstrumentId,
     pub issuer_legal_entity_id: LegalEntityId,
@@ -504,7 +510,7 @@ pub struct InstrumentResponse {
     pub created_at: String,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, utoipa::ToSchema)]
 pub struct PositionResponse {
     pub position_id: PositionId,
     pub issuer_legal_entity_id: LegalEntityId,
@@ -516,7 +522,7 @@ pub struct PositionResponse {
     pub updated_at: String,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, utoipa::ToSchema)]
 pub struct RoundResponse {
     pub round_id: EquityRoundId,
     pub issuer_legal_entity_id: LegalEntityId,
@@ -535,14 +541,14 @@ pub struct RoundResponse {
     pub created_at: String,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, utoipa::ToSchema)]
 pub struct RuleSetResponse {
     pub rule_set_id: EquityRuleSetId,
     pub anti_dilution_method: AntiDilutionMethod,
     pub conversion_precedence: Vec<InstrumentKind>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, utoipa::ToSchema)]
 pub struct CapTableInstrumentSummary {
     pub instrument_id: InstrumentId,
     pub symbol: String,
@@ -552,7 +558,7 @@ pub struct CapTableInstrumentSummary {
     pub diluted_units: i64,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, utoipa::ToSchema)]
 pub struct CapTableHolderSummary {
     pub holder_id: HolderId,
     pub name: String,
@@ -564,7 +570,7 @@ pub struct CapTableHolderSummary {
     pub fully_diluted_bps: u32,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, utoipa::ToSchema)]
 pub struct CapTableResponse {
     pub entity_id: EntityId,
     pub issuer_legal_entity_id: LegalEntityId,
@@ -575,7 +581,7 @@ pub struct CapTableResponse {
     pub generated_at: String,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, utoipa::ToSchema)]
 pub struct ConversionPreviewLine {
     pub source_position_id: PositionId,
     pub holder_id: HolderId,
@@ -586,7 +592,7 @@ pub struct ConversionPreviewLine {
     pub basis: String,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, utoipa::ToSchema)]
 pub struct ConversionPreviewResponse {
     pub entity_id: EntityId,
     pub round_id: EquityRoundId,
@@ -596,7 +602,7 @@ pub struct ConversionPreviewResponse {
     pub total_new_units: i64,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, utoipa::ToSchema)]
 pub struct ConversionExecuteResponse {
     pub conversion_execution_id: ConversionExecutionId,
     pub round_id: EquityRoundId,
@@ -605,7 +611,7 @@ pub struct ConversionExecuteResponse {
     pub total_new_units: i64,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, utoipa::ToSchema)]
 pub struct ControlMapEdge {
     pub parent_legal_entity_id: LegalEntityId,
     pub child_legal_entity_id: LegalEntityId,
@@ -613,14 +619,14 @@ pub struct ControlMapEdge {
     pub voting_power_bps: Option<u32>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, utoipa::ToSchema)]
 pub struct ControlMapResponse {
     pub root_entity_id: LegalEntityId,
     pub traversed_entities: Vec<LegalEntityId>,
     pub edges: Vec<ControlMapEdge>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, utoipa::ToSchema)]
 pub struct DilutionPreviewResponse {
     pub round_id: EquityRoundId,
     pub issuer_legal_entity_id: LegalEntityId,
@@ -630,13 +636,14 @@ pub struct DilutionPreviewResponse {
     pub projected_dilution_bps: u32,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, utoipa::ToSchema)]
 pub struct TransferWorkflowResponse {
     pub transfer_workflow_id: TransferWorkflowId,
     pub transfer_id: TransferId,
     pub prepare_intent_id: IntentId,
     pub execute_intent_id: Option<IntentId>,
     pub transfer_status: TransferStatus,
+    #[schema(value_type = String)]
     pub execution_status: TransferExecutionStatus,
     pub active_packet_id: Option<PacketId>,
     pub last_packet_hash: Option<String>,
@@ -647,13 +654,14 @@ pub struct TransferWorkflowResponse {
     pub updated_at: String,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, utoipa::ToSchema)]
 pub struct FundraisingWorkflowResponse {
     pub fundraising_workflow_id: FundraisingWorkflowId,
     pub round_id: EquityRoundId,
     pub prepare_intent_id: IntentId,
     pub accept_intent_id: Option<IntentId>,
     pub close_intent_id: Option<IntentId>,
+    #[schema(value_type = String)]
     pub execution_status: FundraisingExecutionStatus,
     pub active_packet_id: Option<PacketId>,
     pub last_packet_hash: Option<String>,
@@ -667,7 +675,7 @@ pub struct FundraisingWorkflowResponse {
     pub updated_at: String,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, utoipa::ToSchema)]
 pub struct TransactionPacketResponse {
     pub packet_id: PacketId,
     pub entity_id: EntityId,
@@ -683,7 +691,7 @@ pub struct TransactionPacketResponse {
     pub finalized_at: Option<String>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, utoipa::ToSchema)]
 pub struct PacketSignatureResponse {
     pub signature_id: PacketSignatureId,
     pub signer_identity: String,
@@ -691,7 +699,7 @@ pub struct PacketSignatureResponse {
     pub signed_at: String,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, utoipa::ToSchema)]
 pub struct WorkflowStatusResponse {
     pub workflow_type: WorkflowType,
     pub workflow_id: String,
@@ -1621,6 +1629,16 @@ fn to_packet_items(documents: &[String]) -> Vec<PacketItem> {
 
 // ── Handlers ─────────────────────────────────────────────────────────
 
+#[utoipa::path(
+    post,
+    path = "/v1/equity/holders",
+    tag = "equity",
+    request_body = CreateHolderRequest,
+    responses(
+        (status = 200, description = "Holder created", body = HolderResponse),
+        (status = 400, description = "Invalid request"),
+    ),
+)]
 async fn create_holder(
     RequireEquityWrite(auth): RequireEquityWrite,
     State(state): State<AppState>,
@@ -1666,6 +1684,16 @@ async fn create_holder(
     Ok(Json(holder_to_response(&holder)))
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/equity/entities",
+    tag = "equity",
+    request_body = CreateLegalEntityRequest,
+    responses(
+        (status = 200, description = "Legal entity created", body = LegalEntityResponse),
+        (status = 400, description = "Invalid request"),
+    ),
+)]
 async fn create_legal_entity(
     RequireEquityWrite(auth): RequireEquityWrite,
     State(state): State<AppState>,
@@ -1712,6 +1740,16 @@ async fn create_legal_entity(
     Ok(Json(legal_entity_to_response(&legal_entity)))
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/equity/control-links",
+    tag = "equity",
+    request_body = CreateControlLinkRequest,
+    responses(
+        (status = 200, description = "Control link created", body = ControlLinkResponse),
+        (status = 400, description = "Invalid request"),
+    ),
+)]
 async fn create_control_link(
     RequireEquityWrite(auth): RequireEquityWrite,
     State(state): State<AppState>,
@@ -1764,6 +1802,16 @@ async fn create_control_link(
     Ok(Json(control_link_to_response(&link)))
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/equity/instruments",
+    tag = "equity",
+    request_body = CreateInstrumentRequest,
+    responses(
+        (status = 200, description = "Instrument created", body = InstrumentResponse),
+        (status = 400, description = "Invalid request"),
+    ),
+)]
 async fn create_instrument(
     RequireEquityWrite(auth): RequireEquityWrite,
     State(state): State<AppState>,
@@ -1827,6 +1875,16 @@ async fn create_instrument(
     Ok(Json(instrument_to_response(&instrument)))
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/equity/positions/adjust",
+    tag = "equity",
+    request_body = AdjustPositionRequest,
+    responses(
+        (status = 200, description = "Position adjusted", body = PositionResponse),
+        (status = 400, description = "Invalid request"),
+    ),
+)]
 async fn adjust_position(
     RequireEquityWrite(auth): RequireEquityWrite,
     State(state): State<AppState>,
@@ -1927,6 +1985,16 @@ async fn adjust_position(
     Ok(Json(position_to_response(&position)))
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/equity/rounds",
+    tag = "equity",
+    request_body = CreateRoundRequest,
+    responses(
+        (status = 200, description = "Equity round created", body = RoundResponse),
+        (status = 400, description = "Invalid request"),
+    ),
+)]
 async fn create_round(
     RequireEquityWrite(auth): RequireEquityWrite,
     State(state): State<AppState>,
@@ -1989,6 +2057,20 @@ async fn create_round(
     Ok(Json(round_to_response(&round)))
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/equity/rounds/{round_id}/apply-terms",
+    tag = "equity",
+    params(
+        ("round_id" = EquityRoundId, Path, description = "Equity round ID"),
+    ),
+    request_body = ApplyRoundTermsRequest,
+    responses(
+        (status = 200, description = "Round terms applied", body = RuleSetResponse),
+        (status = 400, description = "Invalid request"),
+        (status = 404, description = "Round not found"),
+    ),
+)]
 async fn apply_round_terms(
     RequireEquityWrite(auth): RequireEquityWrite,
     State(state): State<AppState>,
@@ -2047,6 +2129,20 @@ async fn apply_round_terms(
     Ok(Json(rule_set_to_response(&rules)))
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/equity/rounds/{round_id}/board-approve",
+    tag = "equity",
+    params(
+        ("round_id" = EquityRoundId, Path, description = "Equity round ID"),
+    ),
+    request_body = BoardApproveRoundRequest,
+    responses(
+        (status = 200, description = "Round board-approved", body = RoundResponse),
+        (status = 400, description = "Invalid request"),
+        (status = 404, description = "Round not found"),
+    ),
+)]
 async fn board_approve_round(
     RequireEquityWrite(auth): RequireEquityWrite,
     State(state): State<AppState>,
@@ -2093,6 +2189,20 @@ async fn board_approve_round(
     Ok(Json(round_to_response(&round)))
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/equity/rounds/{round_id}/accept",
+    tag = "equity",
+    params(
+        ("round_id" = EquityRoundId, Path, description = "Equity round ID"),
+    ),
+    request_body = AcceptRoundRequest,
+    responses(
+        (status = 200, description = "Round accepted", body = RoundResponse),
+        (status = 400, description = "Invalid request"),
+        (status = 404, description = "Round not found"),
+    ),
+)]
 async fn accept_round(
     RequireEquityWrite(auth): RequireEquityWrite,
     State(state): State<AppState>,
@@ -2150,6 +2260,16 @@ async fn accept_round(
     Ok(Json(round_to_response(&round)))
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/equity/transfer-workflows",
+    tag = "equity",
+    request_body = CreateTransferWorkflowRequest,
+    responses(
+        (status = 200, description = "Transfer workflow created", body = TransferWorkflowResponse),
+        (status = 400, description = "Invalid request"),
+    ),
+)]
 async fn create_transfer_workflow(
     RequireEquityWrite(auth): RequireEquityWrite,
     State(state): State<AppState>,
@@ -2248,6 +2368,19 @@ async fn create_transfer_workflow(
     Ok(Json(transfer_workflow_to_response(&workflow)))
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/equity/transfer-workflows/{workflow_id}/generate-docs",
+    tag = "equity",
+    params(
+        ("workflow_id" = TransferWorkflowId, Path, description = "Transfer workflow ID"),
+    ),
+    request_body = GenerateWorkflowDocsRequest,
+    responses(
+        (status = 200, description = "Transfer workflow documents generated", body = TransferWorkflowResponse),
+        (status = 404, description = "Workflow not found"),
+    ),
+)]
 async fn generate_transfer_workflow_docs(
     RequireEquityWrite(auth): RequireEquityWrite,
     State(state): State<AppState>,
@@ -2308,6 +2441,19 @@ async fn generate_transfer_workflow_docs(
     Ok(Json(transfer_workflow_to_response(&workflow)))
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/equity/transfer-workflows/{workflow_id}/submit-review",
+    tag = "equity",
+    params(
+        ("workflow_id" = TransferWorkflowId, Path, description = "Transfer workflow ID"),
+    ),
+    request_body = SubmitTransferReviewRequest,
+    responses(
+        (status = 200, description = "Transfer workflow submitted for review", body = TransferWorkflowResponse),
+        (status = 404, description = "Workflow not found"),
+    ),
+)]
 async fn submit_transfer_workflow_for_review(
     RequireEquityWrite(auth): RequireEquityWrite,
     State(state): State<AppState>,
@@ -2374,6 +2520,20 @@ async fn submit_transfer_workflow_for_review(
     Ok(Json(transfer_workflow_to_response(&workflow)))
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/equity/transfer-workflows/{workflow_id}/record-review",
+    tag = "equity",
+    params(
+        ("workflow_id" = TransferWorkflowId, Path, description = "Transfer workflow ID"),
+    ),
+    request_body = RecordTransferReviewRequest,
+    responses(
+        (status = 200, description = "Transfer workflow review recorded", body = TransferWorkflowResponse),
+        (status = 400, description = "Invalid request"),
+        (status = 404, description = "Workflow not found"),
+    ),
+)]
 async fn record_transfer_workflow_review(
     RequireEquityWrite(auth): RequireEquityWrite,
     State(state): State<AppState>,
@@ -2447,6 +2607,19 @@ async fn record_transfer_workflow_review(
     Ok(Json(transfer_workflow_to_response(&workflow)))
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/equity/transfer-workflows/{workflow_id}/record-rofr",
+    tag = "equity",
+    params(
+        ("workflow_id" = TransferWorkflowId, Path, description = "Transfer workflow ID"),
+    ),
+    request_body = RecordTransferRofrRequest,
+    responses(
+        (status = 200, description = "Transfer workflow ROFR recorded", body = TransferWorkflowResponse),
+        (status = 404, description = "Workflow not found"),
+    ),
+)]
 async fn record_transfer_workflow_rofr(
     RequireEquityWrite(auth): RequireEquityWrite,
     State(state): State<AppState>,
@@ -2513,6 +2686,19 @@ async fn record_transfer_workflow_rofr(
     Ok(Json(transfer_workflow_to_response(&workflow)))
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/equity/transfer-workflows/{workflow_id}/record-board-approval",
+    tag = "equity",
+    params(
+        ("workflow_id" = TransferWorkflowId, Path, description = "Transfer workflow ID"),
+    ),
+    request_body = RecordTransferBoardApprovalRequest,
+    responses(
+        (status = 200, description = "Transfer workflow board approval recorded", body = TransferWorkflowResponse),
+        (status = 404, description = "Workflow not found"),
+    ),
+)]
 async fn record_transfer_workflow_board_approval(
     RequireEquityWrite(auth): RequireEquityWrite,
     State(state): State<AppState>,
@@ -2587,6 +2773,19 @@ async fn record_transfer_workflow_board_approval(
     Ok(Json(transfer_workflow_to_response(&workflow)))
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/equity/transfer-workflows/{workflow_id}/record-execution",
+    tag = "equity",
+    params(
+        ("workflow_id" = TransferWorkflowId, Path, description = "Transfer workflow ID"),
+    ),
+    request_body = RecordTransferExecutionRequest,
+    responses(
+        (status = 200, description = "Transfer workflow execution recorded", body = TransferWorkflowResponse),
+        (status = 404, description = "Workflow not found"),
+    ),
+)]
 async fn record_transfer_workflow_execution(
     RequireEquityWrite(auth): RequireEquityWrite,
     State(state): State<AppState>,
@@ -2671,6 +2870,19 @@ async fn record_transfer_workflow_execution(
     Ok(Json(transfer_workflow_to_response(&workflow)))
 }
 
+#[utoipa::path(
+    get,
+    path = "/v1/equity/transfer-workflows/{workflow_id}",
+    tag = "equity",
+    params(
+        ("workflow_id" = TransferWorkflowId, Path, description = "Transfer workflow ID"),
+        super::EntityIdQuery,
+    ),
+    responses(
+        (status = 200, description = "Transfer workflow details", body = TransferWorkflowResponse),
+        (status = 404, description = "Workflow not found"),
+    ),
+)]
 async fn get_transfer_workflow(
     RequireEquityRead(auth): RequireEquityRead,
     State(state): State<AppState>,
@@ -2706,6 +2918,16 @@ async fn get_transfer_workflow(
     Ok(Json(transfer_workflow_to_response(&workflow)))
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/equity/fundraising-workflows",
+    tag = "equity",
+    request_body = CreateFundraisingWorkflowRequest,
+    responses(
+        (status = 200, description = "Fundraising workflow created", body = FundraisingWorkflowResponse),
+        (status = 400, description = "Invalid request"),
+    ),
+)]
 async fn create_fundraising_workflow(
     RequireEquityWrite(auth): RequireEquityWrite,
     State(state): State<AppState>,
@@ -2808,6 +3030,19 @@ async fn create_fundraising_workflow(
     Ok(Json(fundraising_workflow_to_response(&workflow)))
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/equity/fundraising-workflows/{workflow_id}/apply-terms",
+    tag = "equity",
+    params(
+        ("workflow_id" = FundraisingWorkflowId, Path, description = "Fundraising workflow ID"),
+    ),
+    request_body = ApplyFundraisingTermsRequest,
+    responses(
+        (status = 200, description = "Fundraising workflow terms applied", body = FundraisingWorkflowResponse),
+        (status = 404, description = "Workflow not found"),
+    ),
+)]
 async fn apply_fundraising_workflow_terms(
     RequireEquityWrite(auth): RequireEquityWrite,
     State(state): State<AppState>,
@@ -2886,6 +3121,19 @@ async fn apply_fundraising_workflow_terms(
     Ok(Json(fundraising_workflow_to_response(&workflow)))
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/equity/fundraising-workflows/{workflow_id}/generate-board-packet",
+    tag = "equity",
+    params(
+        ("workflow_id" = FundraisingWorkflowId, Path, description = "Fundraising workflow ID"),
+    ),
+    request_body = GenerateWorkflowDocsRequest,
+    responses(
+        (status = 200, description = "Board packet generated", body = FundraisingWorkflowResponse),
+        (status = 404, description = "Workflow not found"),
+    ),
+)]
 async fn generate_fundraising_board_packet(
     RequireEquityWrite(auth): RequireEquityWrite,
     State(state): State<AppState>,
@@ -2944,6 +3192,19 @@ async fn generate_fundraising_board_packet(
     Ok(Json(fundraising_workflow_to_response(&workflow)))
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/equity/fundraising-workflows/{workflow_id}/record-board-approval",
+    tag = "equity",
+    params(
+        ("workflow_id" = FundraisingWorkflowId, Path, description = "Fundraising workflow ID"),
+    ),
+    request_body = RecordFundraisingBoardApprovalRequest,
+    responses(
+        (status = 200, description = "Fundraising board approval recorded", body = FundraisingWorkflowResponse),
+        (status = 404, description = "Workflow not found"),
+    ),
+)]
 async fn record_fundraising_workflow_board_approval(
     RequireEquityWrite(auth): RequireEquityWrite,
     State(state): State<AppState>,
@@ -3021,6 +3282,19 @@ async fn record_fundraising_workflow_board_approval(
     Ok(Json(fundraising_workflow_to_response(&workflow)))
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/equity/fundraising-workflows/{workflow_id}/record-investor-acceptance",
+    tag = "equity",
+    params(
+        ("workflow_id" = FundraisingWorkflowId, Path, description = "Fundraising workflow ID"),
+    ),
+    request_body = RecordFundraisingAcceptanceRequest,
+    responses(
+        (status = 200, description = "Investor acceptance recorded", body = FundraisingWorkflowResponse),
+        (status = 404, description = "Workflow not found"),
+    ),
+)]
 async fn record_fundraising_workflow_acceptance(
     RequireEquityWrite(auth): RequireEquityWrite,
     State(state): State<AppState>,
@@ -3105,6 +3379,19 @@ async fn record_fundraising_workflow_acceptance(
     Ok(Json(fundraising_workflow_to_response(&workflow)))
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/equity/fundraising-workflows/{workflow_id}/generate-closing-packet",
+    tag = "equity",
+    params(
+        ("workflow_id" = FundraisingWorkflowId, Path, description = "Fundraising workflow ID"),
+    ),
+    request_body = GenerateWorkflowDocsRequest,
+    responses(
+        (status = 200, description = "Closing packet generated", body = FundraisingWorkflowResponse),
+        (status = 404, description = "Workflow not found"),
+    ),
+)]
 async fn generate_fundraising_closing_packet(
     RequireEquityWrite(auth): RequireEquityWrite,
     State(state): State<AppState>,
@@ -3163,6 +3450,19 @@ async fn generate_fundraising_closing_packet(
     Ok(Json(fundraising_workflow_to_response(&workflow)))
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/equity/fundraising-workflows/{workflow_id}/record-close",
+    tag = "equity",
+    params(
+        ("workflow_id" = FundraisingWorkflowId, Path, description = "Fundraising workflow ID"),
+    ),
+    request_body = RecordFundraisingCloseRequest,
+    responses(
+        (status = 200, description = "Fundraising close recorded", body = FundraisingWorkflowResponse),
+        (status = 404, description = "Workflow not found"),
+    ),
+)]
 async fn record_fundraising_workflow_close(
     RequireEquityWrite(auth): RequireEquityWrite,
     State(state): State<AppState>,
@@ -3247,6 +3547,19 @@ async fn record_fundraising_workflow_close(
     Ok(Json(fundraising_workflow_to_response(&workflow)))
 }
 
+#[utoipa::path(
+    get,
+    path = "/v1/equity/fundraising-workflows/{workflow_id}",
+    tag = "equity",
+    params(
+        ("workflow_id" = FundraisingWorkflowId, Path, description = "Fundraising workflow ID"),
+        super::EntityIdQuery,
+    ),
+    responses(
+        (status = 200, description = "Fundraising workflow details", body = FundraisingWorkflowResponse),
+        (status = 404, description = "Workflow not found"),
+    ),
+)]
 async fn get_fundraising_workflow(
     RequireEquityRead(auth): RequireEquityRead,
     State(state): State<AppState>,
@@ -3282,6 +3595,19 @@ async fn get_fundraising_workflow(
     Ok(Json(fundraising_workflow_to_response(&workflow)))
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/equity/transfer-workflows/{workflow_id}/prepare-execution",
+    tag = "equity",
+    params(
+        ("workflow_id" = TransferWorkflowId, Path, description = "Transfer workflow ID"),
+    ),
+    request_body = PrepareWorkflowExecutionRequest,
+    responses(
+        (status = 200, description = "Transfer workflow execution prepared", body = TransferWorkflowResponse),
+        (status = 404, description = "Workflow not found"),
+    ),
+)]
 async fn prepare_transfer_workflow_execution(
     RequireEquityWrite(auth): RequireEquityWrite,
     State(state): State<AppState>,
@@ -3382,6 +3708,19 @@ async fn prepare_transfer_workflow_execution(
     Ok(Json(transfer_workflow_to_response(&response)))
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/equity/fundraising-workflows/{workflow_id}/prepare-execution",
+    tag = "equity",
+    params(
+        ("workflow_id" = FundraisingWorkflowId, Path, description = "Fundraising workflow ID"),
+    ),
+    request_body = PrepareWorkflowExecutionRequest,
+    responses(
+        (status = 200, description = "Fundraising workflow execution prepared", body = FundraisingWorkflowResponse),
+        (status = 404, description = "Workflow not found"),
+    ),
+)]
 async fn prepare_fundraising_workflow_execution(
     RequireEquityWrite(auth): RequireEquityWrite,
     State(state): State<AppState>,
@@ -3482,6 +3821,20 @@ async fn prepare_fundraising_workflow_execution(
     Ok(Json(fundraising_workflow_to_response(&response)))
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/equity/transfer-workflows/{workflow_id}/compile-packet",
+    tag = "equity",
+    params(
+        ("workflow_id" = TransferWorkflowId, Path, description = "Transfer workflow ID"),
+    ),
+    request_body = CompileWorkflowPacketRequest,
+    responses(
+        (status = 200, description = "Transfer workflow packet compiled", body = TransactionPacketResponse),
+        (status = 404, description = "Workflow not found"),
+        (status = 422, description = "Workflow not ready for packet compilation"),
+    ),
+)]
 async fn compile_transfer_workflow_packet(
     RequireEquityWrite(auth): RequireEquityWrite,
     State(state): State<AppState>,
@@ -3560,6 +3913,20 @@ async fn compile_transfer_workflow_packet(
     Ok(Json(packet_to_response(&packet)))
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/equity/fundraising-workflows/{workflow_id}/compile-packet",
+    tag = "equity",
+    params(
+        ("workflow_id" = FundraisingWorkflowId, Path, description = "Fundraising workflow ID"),
+    ),
+    request_body = CompileWorkflowPacketRequest,
+    responses(
+        (status = 200, description = "Fundraising workflow packet compiled", body = TransactionPacketResponse),
+        (status = 404, description = "Workflow not found"),
+        (status = 422, description = "Workflow not ready for packet compilation"),
+    ),
+)]
 async fn compile_fundraising_workflow_packet(
     RequireEquityWrite(auth): RequireEquityWrite,
     State(state): State<AppState>,
@@ -3658,6 +4025,20 @@ async fn compile_fundraising_workflow_packet(
     Ok(Json(packet_to_response(&packet)))
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/equity/transfer-workflows/{workflow_id}/start-signatures",
+    tag = "equity",
+    params(
+        ("workflow_id" = TransferWorkflowId, Path, description = "Transfer workflow ID"),
+    ),
+    request_body = StartWorkflowSignaturesRequest,
+    responses(
+        (status = 200, description = "Signature collection started", body = TransactionPacketResponse),
+        (status = 404, description = "Workflow not found"),
+        (status = 422, description = "Workflow has no compiled packet"),
+    ),
+)]
 async fn start_transfer_workflow_signatures(
     RequireEquityWrite(auth): RequireEquityWrite,
     State(state): State<AppState>,
@@ -3716,6 +4097,20 @@ async fn start_transfer_workflow_signatures(
     Ok(Json(packet_to_response(&packet)))
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/equity/fundraising-workflows/{workflow_id}/start-signatures",
+    tag = "equity",
+    params(
+        ("workflow_id" = FundraisingWorkflowId, Path, description = "Fundraising workflow ID"),
+    ),
+    request_body = StartWorkflowSignaturesRequest,
+    responses(
+        (status = 200, description = "Signature collection started", body = TransactionPacketResponse),
+        (status = 404, description = "Workflow not found"),
+        (status = 422, description = "Workflow has no compiled packet"),
+    ),
+)]
 async fn start_fundraising_workflow_signatures(
     RequireEquityWrite(auth): RequireEquityWrite,
     State(state): State<AppState>,
@@ -3774,6 +4169,20 @@ async fn start_fundraising_workflow_signatures(
     Ok(Json(packet_to_response(&packet)))
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/equity/transfer-workflows/{workflow_id}/record-signature",
+    tag = "equity",
+    params(
+        ("workflow_id" = TransferWorkflowId, Path, description = "Transfer workflow ID"),
+    ),
+    request_body = RecordWorkflowSignatureRequest,
+    responses(
+        (status = 200, description = "Signature recorded", body = TransactionPacketResponse),
+        (status = 400, description = "Invalid request"),
+        (status = 404, description = "Workflow not found"),
+    ),
+)]
 async fn record_transfer_workflow_signature(
     RequireEquityWrite(auth): RequireEquityWrite,
     State(state): State<AppState>,
@@ -3846,6 +4255,20 @@ async fn record_transfer_workflow_signature(
     Ok(Json(packet_to_response(&packet)))
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/equity/fundraising-workflows/{workflow_id}/record-signature",
+    tag = "equity",
+    params(
+        ("workflow_id" = FundraisingWorkflowId, Path, description = "Fundraising workflow ID"),
+    ),
+    request_body = RecordWorkflowSignatureRequest,
+    responses(
+        (status = 200, description = "Signature recorded", body = TransactionPacketResponse),
+        (status = 400, description = "Invalid request"),
+        (status = 404, description = "Workflow not found"),
+    ),
+)]
 async fn record_fundraising_workflow_signature(
     RequireEquityWrite(auth): RequireEquityWrite,
     State(state): State<AppState>,
@@ -3918,6 +4341,20 @@ async fn record_fundraising_workflow_signature(
     Ok(Json(packet_to_response(&packet)))
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/equity/transfer-workflows/{workflow_id}/finalize",
+    tag = "equity",
+    params(
+        ("workflow_id" = TransferWorkflowId, Path, description = "Transfer workflow ID"),
+    ),
+    request_body = FinalizeWorkflowRequest,
+    responses(
+        (status = 200, description = "Transfer workflow finalized", body = TransferWorkflowResponse),
+        (status = 404, description = "Workflow not found"),
+        (status = 422, description = "Workflow not ready for finalization"),
+    ),
+)]
 async fn finalize_transfer_workflow(
     RequireEquityWrite(auth): RequireEquityWrite,
     State(state): State<AppState>,
@@ -4017,6 +4454,20 @@ async fn finalize_transfer_workflow(
     Ok(Json(transfer_workflow_to_response(&workflow)))
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/equity/fundraising-workflows/{workflow_id}/finalize",
+    tag = "equity",
+    params(
+        ("workflow_id" = FundraisingWorkflowId, Path, description = "Fundraising workflow ID"),
+    ),
+    request_body = FinalizeWorkflowRequest,
+    responses(
+        (status = 200, description = "Fundraising workflow finalized", body = FundraisingWorkflowResponse),
+        (status = 404, description = "Workflow not found"),
+        (status = 422, description = "Workflow not ready for finalization"),
+    ),
+)]
 async fn finalize_fundraising_workflow(
     RequireEquityWrite(auth): RequireEquityWrite,
     State(state): State<AppState>,
@@ -4132,6 +4583,21 @@ async fn finalize_fundraising_workflow(
     Ok(Json(fundraising_workflow_to_response(&workflow)))
 }
 
+#[utoipa::path(
+    get,
+    path = "/v1/equity/workflows/{workflow_type}/{workflow_id}/status",
+    tag = "equity",
+    params(
+        ("workflow_type" = String, Path, description = "Workflow type (transfer or fundraising)"),
+        ("workflow_id" = String, Path, description = "Workflow ID"),
+        super::EntityIdQuery,
+    ),
+    responses(
+        (status = 200, description = "Workflow status", body = WorkflowStatusResponse),
+        (status = 400, description = "Invalid workflow type"),
+        (status = 404, description = "Workflow not found"),
+    ),
+)]
 async fn get_workflow_status(
     RequireEquityRead(auth): RequireEquityRead,
     State(state): State<AppState>,
@@ -4207,6 +4673,19 @@ async fn get_workflow_status(
     Ok(Json(response))
 }
 
+#[utoipa::path(
+    get,
+    path = "/v1/entities/{entity_id}/cap-table",
+    tag = "equity",
+    params(
+        ("entity_id" = EntityId, Path, description = "Entity ID"),
+        CapTableQuery,
+    ),
+    responses(
+        (status = 200, description = "Cap table", body = CapTableResponse),
+        (status = 404, description = "Entity not found"),
+    ),
+)]
 async fn get_cap_table(
     RequireEquityRead(auth): RequireEquityRead,
     State(state): State<AppState>,
@@ -4246,6 +4725,17 @@ async fn get_cap_table(
     Ok(Json(response))
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/equity/conversions/preview",
+    tag = "equity",
+    request_body = PreviewConversionRequest,
+    responses(
+        (status = 200, description = "Conversion preview", body = ConversionPreviewResponse),
+        (status = 400, description = "Invalid request"),
+        (status = 404, description = "Round not found"),
+    ),
+)]
 async fn preview_conversion(
     RequireEquityRead(auth): RequireEquityRead,
     State(state): State<AppState>,
@@ -4306,6 +4796,17 @@ async fn preview_conversion(
     Ok(Json(preview))
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/equity/conversions/execute",
+    tag = "equity",
+    request_body = ExecuteConversionRequest,
+    responses(
+        (status = 200, description = "Conversion executed", body = ConversionExecuteResponse),
+        (status = 400, description = "Invalid request"),
+        (status = 404, description = "Round not found"),
+    ),
+)]
 async fn execute_conversion(
     RequireEquityWrite(auth): RequireEquityWrite,
     State(state): State<AppState>,
@@ -4564,6 +5065,16 @@ async fn execute_conversion(
     Ok(Json(result))
 }
 
+#[utoipa::path(
+    get,
+    path = "/v1/equity/control-map",
+    tag = "equity",
+    params(ControlMapQuery),
+    responses(
+        (status = 200, description = "Control map", body = ControlMapResponse),
+        (status = 404, description = "Root entity not found"),
+    ),
+)]
 async fn get_control_map(
     RequireEquityRead(auth): RequireEquityRead,
     State(state): State<AppState>,
@@ -4624,6 +5135,16 @@ async fn get_control_map(
     Ok(Json(response))
 }
 
+#[utoipa::path(
+    get,
+    path = "/v1/equity/dilution/preview",
+    tag = "equity",
+    params(DilutionPreviewQuery),
+    responses(
+        (status = 200, description = "Dilution preview", body = DilutionPreviewResponse),
+        (status = 404, description = "Round not found"),
+    ),
+)]
 async fn get_dilution_preview(
     RequireEquityRead(auth): RequireEquityRead,
     State(state): State<AppState>,
@@ -4699,6 +5220,16 @@ async fn get_dilution_preview(
 
 // ── Staged equity round handlers ────────────────────────────────────
 
+#[utoipa::path(
+    post,
+    path = "/v1/equity/rounds/staged",
+    tag = "equity",
+    request_body = StartStagedRoundRequest,
+    responses(
+        (status = 200, description = "Staged round started", body = RoundResponse),
+        (status = 400, description = "Invalid request"),
+    ),
+)]
 async fn start_staged_round(
     RequireEquityWrite(auth): RequireEquityWrite,
     State(state): State<AppState>,
@@ -4772,6 +5303,20 @@ async fn start_staged_round(
     Ok(Json(round_to_response(&round)))
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/equity/rounds/{round_id}/securities",
+    tag = "equity",
+    params(
+        ("round_id" = EquityRoundId, Path, description = "Equity round ID"),
+    ),
+    request_body = AddSecurityRequest,
+    responses(
+        (status = 200, description = "Security added to staged round", body = PendingSecurity),
+        (status = 400, description = "Invalid request"),
+        (status = 404, description = "Round not found"),
+    ),
+)]
 async fn add_round_security(
     RequireEquityWrite(auth): RequireEquityWrite,
     State(state): State<AppState>,
@@ -4977,6 +5522,20 @@ async fn add_round_security(
     Ok(Json(security))
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/equity/rounds/{round_id}/issue",
+    tag = "equity",
+    params(
+        ("round_id" = EquityRoundId, Path, description = "Equity round ID"),
+    ),
+    request_body = IssueStagedRoundRequest,
+    responses(
+        (status = 200, description = "Staged round issued", body = IssueStagedRoundResponse),
+        (status = 400, description = "Invalid request"),
+        (status = 404, description = "Round not found"),
+    ),
+)]
 async fn issue_staged_round(
     RequireEquityWrite(auth): RequireEquityWrite,
     State(state): State<AppState>,
@@ -5171,7 +5730,7 @@ async fn issue_staged_round(
 
 // ── Valuation types ─────────────────────────────────────────────────
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct CreateValuationRequest {
     pub entity_id: EntityId,
@@ -5190,13 +5749,13 @@ pub struct CreateValuationRequest {
     pub report_document_id: Option<DocumentId>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SubmitValuationForApprovalRequest {
     pub entity_id: EntityId,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ApproveValuationRequest {
     pub entity_id: EntityId,
@@ -5204,7 +5763,7 @@ pub struct ApproveValuationRequest {
     pub resolution_id: Option<ResolutionId>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, utoipa::ToSchema)]
 pub struct ValuationResponse {
     pub valuation_id: ValuationId,
     pub entity_id: EntityId,
@@ -5249,6 +5808,16 @@ fn valuation_to_response(v: &Valuation) -> ValuationResponse {
 
 // ── Valuation handlers ──────────────────────────────────────────────
 
+#[utoipa::path(
+    post,
+    path = "/v1/valuations",
+    tag = "equity",
+    request_body = CreateValuationRequest,
+    responses(
+        (status = 200, description = "Valuation created", body = ValuationResponse),
+        (status = 400, description = "Invalid request"),
+    ),
+)]
 async fn create_valuation(
     RequireEquityWrite(auth): RequireEquityWrite,
     State(state): State<AppState>,
@@ -5290,6 +5859,18 @@ async fn create_valuation(
     Ok(Json(valuation_to_response(&valuation)))
 }
 
+#[utoipa::path(
+    get,
+    path = "/v1/entities/{entity_id}/valuations",
+    tag = "equity",
+    params(
+        ("entity_id" = EntityId, Path, description = "Entity ID"),
+    ),
+    responses(
+        (status = 200, description = "List of valuations", body = Vec<ValuationResponse>),
+        (status = 404, description = "Entity not found"),
+    ),
+)]
 async fn list_valuations(
     RequireEquityRead(auth): RequireEquityRead,
     State(state): State<AppState>,
@@ -5314,6 +5895,18 @@ async fn list_valuations(
     Ok(Json(valuations))
 }
 
+#[utoipa::path(
+    get,
+    path = "/v1/entities/{entity_id}/current-409a",
+    tag = "equity",
+    params(
+        ("entity_id" = EntityId, Path, description = "Entity ID"),
+    ),
+    responses(
+        (status = 200, description = "Current 409A valuation", body = ValuationResponse),
+        (status = 404, description = "No current 409A valuation found"),
+    ),
+)]
 async fn get_current_409a(
     RequireEquityRead(auth): RequireEquityRead,
     State(state): State<AppState>,
@@ -5340,6 +5933,20 @@ async fn get_current_409a(
     Ok(Json(valuation_to_response(&valuation)))
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/valuations/{valuation_id}/submit-for-approval",
+    tag = "equity",
+    params(
+        ("valuation_id" = ValuationId, Path, description = "Valuation ID"),
+    ),
+    request_body = SubmitValuationForApprovalRequest,
+    responses(
+        (status = 200, description = "Valuation submitted for approval", body = ValuationResponse),
+        (status = 400, description = "Invalid request"),
+        (status = 404, description = "Valuation not found"),
+    ),
+)]
 async fn submit_valuation_for_approval(
     RequireEquityWrite(auth): RequireEquityWrite,
     State(state): State<AppState>,
@@ -5454,6 +6061,20 @@ async fn submit_valuation_for_approval(
     Ok(Json(result))
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/valuations/{valuation_id}/approve",
+    tag = "equity",
+    params(
+        ("valuation_id" = ValuationId, Path, description = "Valuation ID"),
+    ),
+    request_body = ApproveValuationRequest,
+    responses(
+        (status = 200, description = "Valuation approved", body = ValuationResponse),
+        (status = 400, description = "Invalid request"),
+        (status = 404, description = "Valuation not found"),
+    ),
+)]
 async fn approve_valuation(
     RequireEquityWrite(auth): RequireEquityWrite,
     State(state): State<AppState>,
@@ -5523,6 +6144,130 @@ async fn approve_valuation(
 
     Ok(Json(valuation_to_response(&valuation)))
 }
+
+// ── OpenAPI ──────────────────────────────────────────────────────────
+
+#[derive(utoipa::OpenApi)]
+#[openapi(
+    paths(
+        create_holder,
+        create_legal_entity,
+        create_control_link,
+        create_instrument,
+        adjust_position,
+        create_round,
+        start_staged_round,
+        add_round_security,
+        issue_staged_round,
+        apply_round_terms,
+        board_approve_round,
+        accept_round,
+        create_transfer_workflow,
+        get_transfer_workflow,
+        generate_transfer_workflow_docs,
+        submit_transfer_workflow_for_review,
+        record_transfer_workflow_review,
+        record_transfer_workflow_rofr,
+        record_transfer_workflow_board_approval,
+        record_transfer_workflow_execution,
+        prepare_transfer_workflow_execution,
+        compile_transfer_workflow_packet,
+        start_transfer_workflow_signatures,
+        record_transfer_workflow_signature,
+        finalize_transfer_workflow,
+        create_fundraising_workflow,
+        get_fundraising_workflow,
+        apply_fundraising_workflow_terms,
+        generate_fundraising_board_packet,
+        record_fundraising_workflow_board_approval,
+        record_fundraising_workflow_acceptance,
+        generate_fundraising_closing_packet,
+        record_fundraising_workflow_close,
+        prepare_fundraising_workflow_execution,
+        compile_fundraising_workflow_packet,
+        start_fundraising_workflow_signatures,
+        record_fundraising_workflow_signature,
+        finalize_fundraising_workflow,
+        get_workflow_status,
+        preview_conversion,
+        execute_conversion,
+        get_cap_table,
+        get_control_map,
+        get_dilution_preview,
+        create_valuation,
+        list_valuations,
+        get_current_409a,
+        submit_valuation_for_approval,
+        approve_valuation,
+    ),
+    components(schemas(
+        CapTableBasis,
+        CapTableQuery,
+        ControlMapQuery,
+        DilutionPreviewQuery,
+        CreateHolderRequest,
+        CreateLegalEntityRequest,
+        CreateControlLinkRequest,
+        CreateInstrumentRequest,
+        AdjustPositionRequest,
+        CreateRoundRequest,
+        ApplyRoundTermsRequest,
+        BoardApproveRoundRequest,
+        AcceptRoundRequest,
+        PendingSecurity,
+        PendingSecuritiesFile,
+        StartStagedRoundRequest,
+        AddSecurityRequest,
+        IssueStagedRoundRequest,
+        IssueStagedRoundResponse,
+        PreviewConversionRequest,
+        ExecuteConversionRequest,
+        CreateTransferWorkflowRequest,
+        GenerateWorkflowDocsRequest,
+        SubmitTransferReviewRequest,
+        RecordTransferReviewRequest,
+        RecordTransferRofrRequest,
+        RecordTransferBoardApprovalRequest,
+        RecordTransferExecutionRequest,
+        CreateFundraisingWorkflowRequest,
+        ApplyFundraisingTermsRequest,
+        RecordFundraisingBoardApprovalRequest,
+        RecordFundraisingAcceptanceRequest,
+        RecordFundraisingCloseRequest,
+        PrepareWorkflowExecutionRequest,
+        CompileWorkflowPacketRequest,
+        StartWorkflowSignaturesRequest,
+        RecordWorkflowSignatureRequest,
+        FinalizeWorkflowRequest,
+        CreateValuationRequest,
+        SubmitValuationForApprovalRequest,
+        ApproveValuationRequest,
+        HolderResponse,
+        LegalEntityResponse,
+        ControlLinkResponse,
+        InstrumentResponse,
+        PositionResponse,
+        RoundResponse,
+        RuleSetResponse,
+        CapTableInstrumentSummary,
+        CapTableHolderSummary,
+        CapTableResponse,
+        ConversionPreviewLine,
+        ConversionPreviewResponse,
+        ConversionExecuteResponse,
+        ControlMapEdge,
+        ControlMapResponse,
+        DilutionPreviewResponse,
+        TransferWorkflowResponse,
+        FundraisingWorkflowResponse,
+        TransactionPacketResponse,
+        PacketSignatureResponse,
+        WorkflowStatusResponse,
+        ValuationResponse,
+    )),
+    tags((name = "equity", description = "Cap table, instruments, rounds, and conversions")),
+)]
+pub struct EquityApi;
 
 // ── Router ───────────────────────────────────────────────────────────
 

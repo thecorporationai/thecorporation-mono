@@ -34,7 +34,7 @@ use crate::store::entity_store::EntityStore;
 
 // ── Request / Response types ────────────────────────────────────────────
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 pub struct CreateFormationRequest {
     pub entity_type: EntityType,
     pub legal_name: String,
@@ -68,7 +68,7 @@ pub struct CreateFormationRequest {
     pub company_address: Option<crate::domain::formation::content::Address>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct FormationResponse {
     pub formation_id: EntityId,
     pub entity_id: EntityId,
@@ -77,7 +77,7 @@ pub struct FormationResponse {
     pub next_action: Option<String>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct FormationWithCapTableResponse {
     pub formation_id: EntityId,
     pub entity_id: EntityId,
@@ -91,7 +91,7 @@ pub struct FormationWithCapTableResponse {
     pub holders: Vec<service::HolderSummary>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct FormationStatusResponse {
     pub entity_id: EntityId,
     pub legal_name: String,
@@ -103,7 +103,7 @@ pub struct FormationStatusResponse {
     pub next_action: Option<String>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct DocumentSummary {
     pub document_id: DocumentId,
     pub document_type: DocumentType,
@@ -113,13 +113,14 @@ pub struct DocumentSummary {
     pub created_at: String,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct DocumentResponse {
     pub document_id: DocumentId,
     pub entity_id: EntityId,
     pub document_type: DocumentType,
     pub title: String,
     pub status: DocumentStatus,
+    #[schema(value_type = Object)]
     pub content: serde_json::Value,
     pub content_hash: String,
     pub version: u32,
@@ -127,7 +128,7 @@ pub struct DocumentResponse {
     pub created_at: String,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct SignatureSummary {
     pub signature_id: SignatureId,
     pub signer_name: String,
@@ -135,7 +136,7 @@ pub struct SignatureSummary {
     pub signed_at: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 pub struct SignDocumentRequest {
     pub signer_name: String,
     pub signer_role: String,
@@ -154,7 +155,7 @@ fn default_filing_attestation_consent() -> String {
     "I attest the filing information is accurate and authorized.".to_owned()
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct SignDocumentResponse {
     pub signature_id: SignatureId,
     pub document_id: DocumentId,
@@ -162,19 +163,19 @@ pub struct SignDocumentResponse {
     pub signed_at: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 pub struct ConfirmFilingRequest {
     pub external_filing_id: String,
     #[serde(default)]
     pub receipt_reference: Option<String>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 pub struct ConfirmEinRequest {
     pub ein: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 pub struct FilingAttestationRequest {
     pub signer_name: String,
     pub signer_role: String,
@@ -185,7 +186,7 @@ pub struct FilingAttestationRequest {
     pub notes: Option<String>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 pub struct RegisteredAgentConsentEvidenceRequest {
     pub evidence_uri: String,
     #[serde(default)]
@@ -194,7 +195,7 @@ pub struct RegisteredAgentConsentEvidenceRequest {
     pub notes: Option<String>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 pub struct ExecuteServiceAgreementRequest {
     #[serde(default)]
     pub contract_id: Option<ContractId>,
@@ -204,7 +205,7 @@ pub struct ExecuteServiceAgreementRequest {
     pub notes: Option<String>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct FormationGatesResponse {
     pub entity_id: EntityId,
     pub filing_submission_blockers: Vec<String>,
@@ -225,7 +226,7 @@ pub struct FormationGatesResponse {
 
 // ── Staged formation request / response types ──────────────────────────
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 pub struct CreatePendingFormationRequest {
     pub entity_type: EntityType,
     pub legal_name: String,
@@ -237,7 +238,7 @@ fn default_staged_jurisdiction() -> Option<Jurisdiction> {
     None
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct PendingFormationResponse {
     pub entity_id: EntityId,
     pub legal_name: String,
@@ -246,7 +247,7 @@ pub struct PendingFormationResponse {
     pub formation_status: FormationStatus,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 pub struct AddFounderRequest {
     pub name: String,
     #[serde(default)]
@@ -261,14 +262,14 @@ pub struct AddFounderRequest {
     pub is_incorporator: Option<bool>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct AddFounderResponse {
     pub entity_id: EntityId,
     pub member_count: usize,
     pub members: Vec<FounderSummary>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct FounderSummary {
     pub name: String,
     pub email: Option<String>,
@@ -323,6 +324,16 @@ fn open_formation_store<'a>(
 
 // ── Handlers ────────────────────────────────────────────────────────────
 
+#[utoipa::path(
+    post,
+    path = "/v1/formations",
+    tag = "formation",
+    request_body = CreateFormationRequest,
+    responses(
+        (status = 200, description = "Formation created", body = FormationResponse),
+        (status = 400, description = "Invalid request"),
+    ),
+)]
 async fn create_formation(
     RequireFormationCreate(auth): RequireFormationCreate,
     State(state): State<AppState>,
@@ -376,6 +387,16 @@ async fn create_formation(
     }))
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/formations/with-cap-table",
+    tag = "formation",
+    request_body = CreateFormationRequest,
+    responses(
+        (status = 200, description = "Formation created with cap table", body = FormationWithCapTableResponse),
+        (status = 400, description = "Invalid request"),
+    ),
+)]
 async fn create_formation_with_cap_table(
     RequireFormationCreate(auth): RequireFormationCreate,
     State(state): State<AppState>,
@@ -448,6 +469,18 @@ async fn create_formation_with_cap_table(
     }))
 }
 
+#[utoipa::path(
+    get,
+    path = "/v1/formations/{entity_id}",
+    tag = "formation",
+    params(
+        ("entity_id" = EntityId, Path, description = "Entity ID"),
+    ),
+    responses(
+        (status = 200, description = "Formation status", body = FormationStatusResponse),
+        (status = 404, description = "Entity not found"),
+    ),
+)]
 async fn get_formation(
     RequireFormationRead(auth): RequireFormationRead,
     State(state): State<AppState>,
@@ -481,6 +514,18 @@ async fn get_formation(
     }))
 }
 
+#[utoipa::path(
+    get,
+    path = "/v1/formations/{entity_id}/documents",
+    tag = "formation",
+    params(
+        ("entity_id" = EntityId, Path, description = "Entity ID"),
+    ),
+    responses(
+        (status = 200, description = "List of formation documents", body = Vec<DocumentSummary>),
+        (status = 404, description = "Entity not found"),
+    ),
+)]
 async fn list_documents(
     RequireFormationRead(auth): RequireFormationRead,
     State(state): State<AppState>,
@@ -525,6 +570,19 @@ async fn list_documents(
     Ok(Json(summaries))
 }
 
+#[utoipa::path(
+    get,
+    path = "/v1/documents/{document_id}",
+    tag = "formation",
+    params(
+        ("document_id" = DocumentId, Path, description = "Document ID"),
+        ("entity_id" = EntityId, Query, description = "Entity ID"),
+    ),
+    responses(
+        (status = 200, description = "Document details", body = DocumentResponse),
+        (status = 404, description = "Document not found"),
+    ),
+)]
 async fn get_document(
     RequireFormationRead(auth): RequireFormationRead,
     State(state): State<AppState>,
@@ -581,6 +639,21 @@ async fn get_document(
     }))
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/documents/{document_id}/sign",
+    tag = "formation",
+    params(
+        ("document_id" = DocumentId, Path, description = "Document ID"),
+        ("entity_id" = EntityId, Query, description = "Entity ID"),
+    ),
+    request_body = SignDocumentRequest,
+    responses(
+        (status = 200, description = "Document signed", body = SignDocumentResponse),
+        (status = 400, description = "Invalid request"),
+        (status = 404, description = "Document not found"),
+    ),
+)]
 async fn sign_document(
     RequireFormationSign(auth): RequireFormationSign,
     State(state): State<AppState>,
@@ -664,6 +737,19 @@ async fn sign_document(
     }))
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/formations/{entity_id}/mark-documents-signed",
+    tag = "formation",
+    params(
+        ("entity_id" = EntityId, Path, description = "Entity ID"),
+    ),
+    responses(
+        (status = 200, description = "Documents marked as signed", body = FormationStatusResponse),
+        (status = 400, description = "Not all documents are fully signed"),
+        (status = 404, description = "Entity not found"),
+    ),
+)]
 async fn mark_documents_signed(
     RequireFormationSign(auth): RequireFormationSign,
     State(state): State<AppState>,
@@ -729,6 +815,19 @@ async fn mark_documents_signed(
     }))
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/formations/{entity_id}/submit-filing",
+    tag = "formation",
+    params(
+        ("entity_id" = EntityId, Path, description = "Entity ID"),
+    ),
+    responses(
+        (status = 200, description = "Filing submitted", body = FormationStatusResponse),
+        (status = 400, description = "Filing submission blocked"),
+        (status = 404, description = "Entity not found"),
+    ),
+)]
 async fn submit_filing(
     RequireFormationCreate(auth): RequireFormationCreate,
     State(state): State<AppState>,
@@ -782,6 +881,19 @@ async fn submit_filing(
     }))
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/formations/{entity_id}/filing-attestation",
+    tag = "formation",
+    params(
+        ("entity_id" = EntityId, Path, description = "Entity ID"),
+    ),
+    request_body = FilingAttestationRequest,
+    responses(
+        (status = 200, description = "Filing attestation recorded", body = FormationGatesResponse),
+        (status = 404, description = "Entity not found"),
+    ),
+)]
 async fn record_filing_attestation(
     RequireFormationCreate(auth): RequireFormationCreate,
     State(state): State<AppState>,
@@ -832,6 +944,19 @@ async fn record_filing_attestation(
     Ok(Json(response))
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/formations/{entity_id}/registered-agent-consent-evidence",
+    tag = "formation",
+    params(
+        ("entity_id" = EntityId, Path, description = "Entity ID"),
+    ),
+    request_body = RegisteredAgentConsentEvidenceRequest,
+    responses(
+        (status = 200, description = "Registered agent consent evidence added", body = FormationGatesResponse),
+        (status = 404, description = "Entity not found"),
+    ),
+)]
 async fn add_registered_agent_consent_evidence(
     RequireFormationCreate(auth): RequireFormationCreate,
     State(state): State<AppState>,
@@ -876,6 +1001,20 @@ async fn add_registered_agent_consent_evidence(
     Ok(Json(response))
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/formations/{entity_id}/service-agreement/execute",
+    tag = "formation",
+    params(
+        ("entity_id" = EntityId, Path, description = "Entity ID"),
+    ),
+    request_body = ExecuteServiceAgreementRequest,
+    responses(
+        (status = 200, description = "Service agreement executed", body = FormationGatesResponse),
+        (status = 404, description = "Entity or contract not found"),
+        (status = 422, description = "Validation error"),
+    ),
+)]
 async fn execute_service_agreement(
     RequireFormationCreate(auth): RequireFormationCreate,
     State(state): State<AppState>,
@@ -936,6 +1075,18 @@ async fn execute_service_agreement(
     Ok(Json(response))
 }
 
+#[utoipa::path(
+    get,
+    path = "/v1/formations/{entity_id}/gates",
+    tag = "formation",
+    params(
+        ("entity_id" = EntityId, Path, description = "Entity ID"),
+    ),
+    responses(
+        (status = 200, description = "Formation gates status", body = FormationGatesResponse),
+        (status = 404, description = "Entity not found"),
+    ),
+)]
 async fn get_formation_gates(
     RequireFormationRead(auth): RequireFormationRead,
     State(state): State<AppState>,
@@ -964,6 +1115,19 @@ async fn get_formation_gates(
     Ok(Json(response))
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/formations/{entity_id}/filing-confirmation",
+    tag = "formation",
+    params(
+        ("entity_id" = EntityId, Path, description = "Entity ID"),
+    ),
+    request_body = ConfirmFilingRequest,
+    responses(
+        (status = 200, description = "Filing confirmed", body = FormationStatusResponse),
+        (status = 404, description = "Entity not found"),
+    ),
+)]
 async fn confirm_filing(
     RequireFormationCreate(auth): RequireFormationCreate,
     State(state): State<AppState>,
@@ -1034,6 +1198,18 @@ async fn confirm_filing(
     }))
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/formations/{entity_id}/apply-ein",
+    tag = "formation",
+    params(
+        ("entity_id" = EntityId, Path, description = "Entity ID"),
+    ),
+    responses(
+        (status = 200, description = "EIN application submitted", body = FormationStatusResponse),
+        (status = 404, description = "Entity not found"),
+    ),
+)]
 async fn apply_ein(
     RequireFormationCreate(auth): RequireFormationCreate,
     State(state): State<AppState>,
@@ -1078,6 +1254,20 @@ async fn apply_ein(
     }))
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/formations/{entity_id}/ein-confirmation",
+    tag = "formation",
+    params(
+        ("entity_id" = EntityId, Path, description = "Entity ID"),
+    ),
+    request_body = ConfirmEinRequest,
+    responses(
+        (status = 200, description = "EIN confirmed", body = FormationStatusResponse),
+        (status = 400, description = "Invalid EIN format"),
+        (status = 404, description = "Entity not found"),
+    ),
+)]
 async fn confirm_ein(
     RequireFormationCreate(auth): RequireFormationCreate,
     State(state): State<AppState>,
@@ -1165,13 +1355,15 @@ async fn confirm_ein(
 
 // ── Contract / Document management ──────────────────────────────────
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 pub struct GenerateContractRequest {
     pub entity_id: EntityId,
     pub template_type: ContractTemplateType,
     pub counterparty_name: String,
+    #[schema(value_type = String)]
     pub effective_date: chrono::NaiveDate,
     #[serde(default = "default_params")]
+    #[schema(value_type = Object)]
     pub parameters: serde_json::Value,
 }
 
@@ -1179,31 +1371,42 @@ fn default_params() -> serde_json::Value {
     serde_json::json!({})
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct ContractResponse {
     pub contract_id: ContractId,
     pub entity_id: EntityId,
     pub template_type: ContractTemplateType,
     pub counterparty_name: String,
+    #[schema(value_type = String)]
     pub effective_date: chrono::NaiveDate,
     pub status: ContractStatus,
     pub document_id: DocumentId,
     pub created_at: String,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct SigningLinkResponse {
     pub document_id: DocumentId,
     pub signing_url: String,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct AmendmentHistoryEntry {
     pub version: u32,
     pub amended_at: String,
     pub description: String,
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/contracts",
+    tag = "formation",
+    request_body = GenerateContractRequest,
+    responses(
+        (status = 200, description = "Contract generated", body = ContractResponse),
+        (status = 404, description = "Entity not found"),
+    ),
+)]
 async fn generate_contract(
     RequireFormationCreate(auth): RequireFormationCreate,
     State(state): State<AppState>,
@@ -1261,6 +1464,19 @@ async fn generate_contract(
     }))
 }
 
+#[utoipa::path(
+    get,
+    path = "/v1/sign/{document_id}",
+    tag = "formation",
+    params(
+        ("document_id" = DocumentId, Path, description = "Document ID"),
+        ("entity_id" = EntityId, Query, description = "Entity ID"),
+    ),
+    responses(
+        (status = 200, description = "Signing link", body = SigningLinkResponse),
+        (status = 404, description = "Document not found"),
+    ),
+)]
 async fn get_signing_link(
     RequireFormationRead(auth): RequireFormationRead,
     State(state): State<AppState>,
@@ -1289,6 +1505,20 @@ async fn get_signing_link(
     }))
 }
 
+#[utoipa::path(
+    get,
+    path = "/v1/documents/{document_id}/pdf",
+    tag = "formation",
+    params(
+        ("document_id" = DocumentId, Path, description = "Document ID"),
+        ("entity_id" = EntityId, Query, description = "Entity ID"),
+    ),
+    responses(
+        (status = 200, description = "PDF document", content_type = "application/pdf"),
+        (status = 404, description = "Document not found"),
+        (status = 422, description = "Document has no governance tag"),
+    ),
+)]
 async fn get_document_pdf(
     RequireFormationRead(auth): RequireFormationRead,
     State(state): State<AppState>,
@@ -1374,12 +1604,23 @@ async fn get_document_pdf(
     ))
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema, utoipa::IntoParams)]
 pub struct PreviewDocumentQuery {
     pub entity_id: EntityId,
     pub document_id: String,
 }
 
+#[utoipa::path(
+    get,
+    path = "/v1/documents/preview/pdf",
+    tag = "formation",
+    params(PreviewDocumentQuery),
+    responses(
+        (status = 200, description = "Preview PDF document", content_type = "application/pdf"),
+        (status = 404, description = "Document definition not found"),
+        (status = 422, description = "Document does not apply to entity type"),
+    ),
+)]
 /// Preview a governance document as PDF without requiring a saved Document record.
 async fn preview_document_pdf(
     RequireFormationRead(auth): RequireFormationRead,
@@ -1452,14 +1693,14 @@ async fn preview_document_pdf(
     ))
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 pub struct DocumentCopyRequest {
     pub entity_id: EntityId,
     #[serde(default)]
     pub recipient_email: Option<String>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct DocumentCopyResponse {
     pub document_id: DocumentId,
     pub request_id: String,
@@ -1469,6 +1710,19 @@ pub struct DocumentCopyResponse {
     pub created_at: String,
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/documents/{document_id}/request-copy",
+    tag = "formation",
+    params(
+        ("document_id" = DocumentId, Path, description = "Document ID"),
+    ),
+    request_body = DocumentCopyRequest,
+    responses(
+        (status = 200, description = "Document copy requested", body = DocumentCopyResponse),
+        (status = 404, description = "Document not found"),
+    ),
+)]
 async fn request_document_copy(
     RequireFormationCreate(auth): RequireFormationCreate,
     State(state): State<AppState>,
@@ -1501,6 +1755,19 @@ async fn request_document_copy(
     }))
 }
 
+#[utoipa::path(
+    get,
+    path = "/v1/documents/{document_id}/amendment-history",
+    tag = "formation",
+    params(
+        ("document_id" = DocumentId, Path, description = "Document ID"),
+        ("entity_id" = EntityId, Query, description = "Entity ID"),
+    ),
+    responses(
+        (status = 200, description = "Amendment history", body = Vec<AmendmentHistoryEntry>),
+        (status = 404, description = "Document not found"),
+    ),
+)]
 async fn get_amendment_history(
     RequireFormationRead(auth): RequireFormationRead,
     State(state): State<AppState>,
@@ -1543,6 +1810,18 @@ async fn get_amendment_history(
 
 // ── Governance documents ────────────────────────────────────────────
 
+#[utoipa::path(
+    get,
+    path = "/v1/entities/{entity_id}/governance-documents",
+    tag = "formation",
+    params(
+        ("entity_id" = EntityId, Path, description = "Entity ID"),
+    ),
+    responses(
+        (status = 200, description = "List of governance documents", body = Vec<DocumentSummary>),
+        (status = 404, description = "Entity not found"),
+    ),
+)]
 async fn list_governance_documents(
     RequireFormationRead(auth): RequireFormationRead,
     State(state): State<AppState>,
@@ -1590,6 +1869,18 @@ async fn list_governance_documents(
     Ok(Json(docs))
 }
 
+#[utoipa::path(
+    get,
+    path = "/v1/entities/{entity_id}/governance-documents/current",
+    tag = "formation",
+    params(
+        ("entity_id" = EntityId, Path, description = "Entity ID"),
+    ),
+    responses(
+        (status = 200, description = "Current governance document", body = DocumentSummary),
+        (status = 404, description = "Entity or governance document not found"),
+    ),
+)]
 async fn get_current_governance_document(
     RequireFormationRead(auth): RequireFormationRead,
     State(state): State<AppState>,
@@ -1642,6 +1933,14 @@ async fn get_current_governance_document(
 
 // ── Entity lifecycle ────────────────────────────────────────────────
 
+#[utoipa::path(
+    get,
+    path = "/v1/entities",
+    tag = "formation",
+    responses(
+        (status = 200, description = "List of entities", body = Vec<FormationStatusResponse>),
+    ),
+)]
 async fn list_entities(
     RequireFormationRead(auth): RequireFormationRead,
     State(state): State<AppState>,
@@ -1680,11 +1979,24 @@ async fn list_entities(
     Ok(Json(entities))
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 pub struct ConvertEntityRequest {
     pub target_type: EntityType,
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/entities/{entity_id}/convert",
+    tag = "formation",
+    params(
+        ("entity_id" = EntityId, Path, description = "Entity ID"),
+    ),
+    request_body = ConvertEntityRequest,
+    responses(
+        (status = 200, description = "Entity converted", body = FormationStatusResponse),
+        (status = 404, description = "Entity not found"),
+    ),
+)]
 async fn convert_entity(
     RequireFormationCreate(auth): RequireFormationCreate,
     State(state): State<AppState>,
@@ -1735,12 +2047,25 @@ async fn convert_entity(
     }))
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 pub struct DissolveEntityRequest {
     #[serde(default)]
     pub reason: Option<String>,
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/entities/{entity_id}/dissolve",
+    tag = "formation",
+    params(
+        ("entity_id" = EntityId, Path, description = "Entity ID"),
+    ),
+    request_body = DissolveEntityRequest,
+    responses(
+        (status = 200, description = "Entity dissolved"),
+        (status = 404, description = "Entity not found"),
+    ),
+)]
 async fn dissolve_entity(
     RequireFormationCreate(auth): RequireFormationCreate,
     State(state): State<AppState>,
@@ -1787,6 +2112,16 @@ async fn dissolve_entity(
 
 // ── Staged formation handlers ────────────────────────────────────────
 
+#[utoipa::path(
+    post,
+    path = "/v1/formations/pending",
+    tag = "formation",
+    request_body = CreatePendingFormationRequest,
+    responses(
+        (status = 200, description = "Pending formation created", body = PendingFormationResponse),
+        (status = 400, description = "Invalid request"),
+    ),
+)]
 async fn create_pending_formation(
     RequireFormationCreate(auth): RequireFormationCreate,
     State(state): State<AppState>,
@@ -1828,6 +2163,19 @@ async fn create_pending_formation(
     }))
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/formations/{entity_id}/founders",
+    tag = "formation",
+    params(
+        ("entity_id" = EntityId, Path, description = "Entity ID"),
+    ),
+    request_body = AddFounderRequest,
+    responses(
+        (status = 200, description = "Founder added", body = AddFounderResponse),
+        (status = 404, description = "Entity not found"),
+    ),
+)]
 async fn add_founder(
     RequireFormationCreate(auth): RequireFormationCreate,
     State(state): State<AppState>,
@@ -1879,6 +2227,18 @@ async fn add_founder(
     }))
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/formations/{entity_id}/finalize",
+    tag = "formation",
+    params(
+        ("entity_id" = EntityId, Path, description = "Entity ID"),
+    ),
+    responses(
+        (status = 200, description = "Formation finalized with cap table", body = FormationWithCapTableResponse),
+        (status = 404, description = "Entity not found"),
+    ),
+)]
 async fn finalize_pending_formation(
     RequireFormationCreate(auth): RequireFormationCreate,
     State(state): State<AppState>,
@@ -1990,3 +2350,71 @@ pub fn formation_routes() -> Router<AppState> {
             get(get_current_governance_document),
         )
 }
+
+#[derive(utoipa::OpenApi)]
+#[openapi(
+    paths(
+        create_formation,
+        create_formation_with_cap_table,
+        get_formation,
+        list_documents,
+        get_document,
+        sign_document,
+        mark_documents_signed,
+        submit_filing,
+        record_filing_attestation,
+        add_registered_agent_consent_evidence,
+        execute_service_agreement,
+        get_formation_gates,
+        confirm_filing,
+        apply_ein,
+        confirm_ein,
+        generate_contract,
+        get_signing_link,
+        get_document_pdf,
+        preview_document_pdf,
+        request_document_copy,
+        get_amendment_history,
+        list_governance_documents,
+        get_current_governance_document,
+        list_entities,
+        convert_entity,
+        dissolve_entity,
+        create_pending_formation,
+        add_founder,
+        finalize_pending_formation,
+    ),
+    components(schemas(
+        CreateFormationRequest,
+        FormationResponse,
+        FormationWithCapTableResponse,
+        FormationStatusResponse,
+        DocumentSummary,
+        DocumentResponse,
+        SignatureSummary,
+        SignDocumentRequest,
+        SignDocumentResponse,
+        ConfirmFilingRequest,
+        ConfirmEinRequest,
+        FilingAttestationRequest,
+        RegisteredAgentConsentEvidenceRequest,
+        ExecuteServiceAgreementRequest,
+        FormationGatesResponse,
+        CreatePendingFormationRequest,
+        PendingFormationResponse,
+        AddFounderRequest,
+        AddFounderResponse,
+        FounderSummary,
+        GenerateContractRequest,
+        ContractResponse,
+        SigningLinkResponse,
+        AmendmentHistoryEntry,
+        PreviewDocumentQuery,
+        DocumentCopyRequest,
+        DocumentCopyResponse,
+        ConvertEntityRequest,
+        DissolveEntityRequest,
+    )),
+    tags((name = "formation", description = "Entity formation and document management")),
+)]
+pub struct FormationApi;

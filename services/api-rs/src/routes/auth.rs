@@ -28,7 +28,7 @@ type HmacSha256 = Hmac<Sha256>;
 
 // ── Request types ────────────────────────────────────────────────────
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ProvisionWorkspaceRequest {
     pub name: String,
@@ -36,7 +36,7 @@ pub struct ProvisionWorkspaceRequest {
     pub owner_email: Option<String>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct CreateApiKeyRequest {
     pub name: String,
@@ -54,7 +54,7 @@ fn default_scopes() -> Vec<Scope> {
     vec![]
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct TokenExchangeRequest {
     pub api_key: String,
@@ -62,7 +62,7 @@ pub struct TokenExchangeRequest {
     pub ttl_seconds: i64,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ChatSessionRequest {
     pub email: String,
@@ -74,7 +74,7 @@ fn default_ttl() -> i64 {
 
 // ── Response types ───────────────────────────────────────────────────
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct ProvisionWorkspaceResponse {
     pub workspace_id: WorkspaceId,
     pub name: String,
@@ -82,7 +82,7 @@ pub struct ProvisionWorkspaceResponse {
     pub api_key_id: ApiKeyId,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct ApiKeyResponse {
     pub key_id: ApiKeyId,
     pub workspace_id: WorkspaceId,
@@ -97,14 +97,14 @@ pub struct ApiKeyResponse {
     pub raw_key: Option<String>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct TokenExchangeResponse {
     pub access_token: String,
     pub token_type: String,
     pub expires_in: i64,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct ChatSessionResponse {
     pub ws_token: String,
     pub expires_at: String,
@@ -118,6 +118,16 @@ struct ChatOwnerRecord {
 
 // ── Handlers ─────────────────────────────────────────────────────────
 
+#[utoipa::path(
+    post,
+    path = "/v1/workspaces/provision",
+    tag = "auth",
+    request_body = ProvisionWorkspaceRequest,
+    responses(
+        (status = 201, description = "Workspace provisioned", body = ProvisionWorkspaceResponse),
+        (status = 400, description = "Invalid request"),
+    ),
+)]
 async fn provision_workspace(
     State(state): State<AppState>,
     Json(req): Json<ProvisionWorkspaceRequest>,
@@ -165,6 +175,16 @@ async fn provision_workspace(
     ))
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/api-keys",
+    tag = "auth",
+    request_body = CreateApiKeyRequest,
+    responses(
+        (status = 201, description = "API key created", body = ApiKeyResponse),
+        (status = 400, description = "Invalid request"),
+    ),
+)]
 async fn create_api_key(
     RequireAdmin(auth): RequireAdmin,
     State(state): State<AppState>,
@@ -219,6 +239,14 @@ async fn create_api_key(
     ))
 }
 
+#[utoipa::path(
+    get,
+    path = "/v1/api-keys",
+    tag = "auth",
+    responses(
+        (status = 200, description = "List of API keys", body = Vec<ApiKeyResponse>),
+    ),
+)]
 async fn list_api_keys(
     RequireAdmin(auth): RequireAdmin,
     State(state): State<AppState>,
@@ -261,6 +289,16 @@ async fn list_api_keys(
     Ok(Json(keys))
 }
 
+#[utoipa::path(
+    delete,
+    path = "/v1/api-keys/{key_id}",
+    tag = "auth",
+    params(("key_id" = ApiKeyId, Path, description = "API key ID to revoke")),
+    responses(
+        (status = 204, description = "API key revoked"),
+        (status = 404, description = "API key not found"),
+    ),
+)]
 async fn revoke_api_key(
     RequireAdmin(auth): RequireAdmin,
     State(state): State<AppState>,
@@ -294,6 +332,16 @@ async fn revoke_api_key(
     Ok(StatusCode::NO_CONTENT)
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/api-keys/{key_id}/rotate",
+    tag = "auth",
+    params(("key_id" = ApiKeyId, Path, description = "API key ID to rotate")),
+    responses(
+        (status = 200, description = "Rotated API key", body = ApiKeyResponse),
+        (status = 404, description = "API key not found"),
+    ),
+)]
 async fn rotate_api_key(
     RequireAdmin(auth): RequireAdmin,
     State(state): State<AppState>,
@@ -363,6 +411,17 @@ async fn rotate_api_key(
     }))
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/auth/token-exchange",
+    tag = "auth",
+    request_body = TokenExchangeRequest,
+    responses(
+        (status = 200, description = "Token exchange successful", body = TokenExchangeResponse),
+        (status = 400, description = "Invalid request"),
+        (status = 401, description = "Invalid API key"),
+    ),
+)]
 async fn token_exchange(
     State(state): State<AppState>,
     Json(req): Json<TokenExchangeRequest>,
@@ -493,6 +552,17 @@ fn mint_chat_ws_token(
     Ok(format!("{payload_b64}.{signature_b64}"))
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/chat/session",
+    tag = "auth",
+    request_body = ChatSessionRequest,
+    responses(
+        (status = 200, description = "Chat session created", body = ChatSessionResponse),
+        (status = 400, description = "Invalid email"),
+        (status = 503, description = "Chat sessions not configured"),
+    ),
+)]
 async fn create_chat_session(
     State(state): State<AppState>,
     Json(req): Json<ChatSessionRequest>,
@@ -602,3 +672,27 @@ pub fn auth_routes() -> Router<AppState> {
         .route("/v1/api-keys/{key_id}/rotate", post(rotate_api_key))
         .route("/v1/auth/token-exchange", post(token_exchange))
 }
+
+#[derive(utoipa::OpenApi)]
+#[openapi(
+    paths(
+        provision_workspace,
+        create_api_key,
+        list_api_keys,
+        revoke_api_key,
+        rotate_api_key,
+        token_exchange,
+        create_chat_session,
+    ),
+    components(schemas(
+        ProvisionWorkspaceRequest,
+        ProvisionWorkspaceResponse,
+        CreateApiKeyRequest,
+        ApiKeyResponse,
+        TokenExchangeRequest,
+        TokenExchangeResponse,
+        ChatSessionRequest,
+        ChatSessionResponse,
+    )),
+)]
+pub struct AuthApi;

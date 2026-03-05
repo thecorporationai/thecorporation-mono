@@ -6,7 +6,7 @@ use std::fmt;
 // ── Enums ──────────────────────────────────────────────────────────────
 
 /// The legal structure of a business entity.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum EntityType {
     /// C-Corporation (or S-Corporation).
@@ -25,7 +25,7 @@ impl fmt::Display for EntityType {
 }
 
 /// High-level state of a forming entity.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum FormationState {
     /// Entity is in the process of being formed.
@@ -35,7 +35,7 @@ pub enum FormationState {
 }
 
 /// Detailed formation workflow status with valid state transitions.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum FormationStatus {
     /// Initial state — formation request received.
@@ -99,7 +99,7 @@ impl fmt::Display for FormationStatus {
 }
 
 /// Type of legal document.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum DocumentType {
     /// Articles of Incorporation (C-Corp).
@@ -121,7 +121,7 @@ pub enum DocumentType {
 }
 
 /// Status of a document in the signing workflow.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum DocumentStatus {
     /// Document has been drafted but not signed.
@@ -135,7 +135,7 @@ pub enum DocumentStatus {
 }
 
 /// Status of an EIN (Employer Identification Number) application.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum EinStatus {
     /// Application has been submitted.
@@ -145,7 +145,7 @@ pub enum EinStatus {
 }
 
 /// IRS tax classification election for the entity.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum IrsTaxClassification {
     /// Single-member LLC treated as disregarded entity.
@@ -157,7 +157,7 @@ pub enum IrsTaxClassification {
 }
 
 /// Type of state filing for entity formation.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum FilingType {
     /// Certificate of Formation (LLC).
@@ -176,7 +176,7 @@ impl fmt::Display for FilingType {
 }
 
 /// Status of a formation filing with the state.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum FilingStatus {
     /// Filing has been prepared but not yet submitted.
@@ -202,7 +202,8 @@ const MAX_JURISDICTION_LEN: usize = 200;
 /// A validated jurisdiction (e.g., "Delaware", "California").
 ///
 /// Guarantees: non-empty, at most 200 characters.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, utoipa::ToSchema)]
+#[schema(value_type = String)]
 #[serde(transparent)]
 pub struct Jurisdiction(String);
 

@@ -63,7 +63,7 @@ where
 
 // ── Request / Response types ────────────────────────────────────────────
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 pub struct CreateBranchRequest {
     name: BranchName,
     #[serde(default = "default_branch")]
@@ -84,7 +84,7 @@ fn default_branch() -> BranchName {
     BranchName::main()
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct CreateBranchResponse {
     branch: String,
     base_commit: String,
@@ -100,7 +100,7 @@ impl CreateBranchResponse {
     }
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct BranchListEntry {
     name: String,
     head_oid: String,
@@ -116,7 +116,7 @@ impl BranchListEntry {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 pub struct MergeBranchRequest {
     #[serde(default = "default_branch")]
     into: BranchName,
@@ -138,7 +138,7 @@ impl MergeBranchRequest {
     }
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct MergeBranchResponse {
     merged: bool,
     strategy: String,
@@ -161,6 +161,16 @@ impl MergeBranchResponse {
 
 // ── Handlers ────────────────────────────────────────────────────────────
 
+#[utoipa::path(
+    post,
+    path = "/v1/branches",
+    tag = "branches",
+    request_body = CreateBranchRequest,
+    responses(
+        (status = 201, description = "Branch created", body = CreateBranchResponse),
+        (status = 400, description = "Invalid branch name"),
+    ),
+)]
 async fn create_branch(
     RequireBranchCreate(auth): RequireBranchCreate,
     State(state): State<AppState>,
@@ -194,6 +204,14 @@ async fn create_branch(
     ))
 }
 
+#[utoipa::path(
+    get,
+    path = "/v1/branches",
+    tag = "branches",
+    responses(
+        (status = 200, description = "List of branches", body = Vec<BranchListEntry>),
+    ),
+)]
 async fn list_branches(
     RequireBranchCreate(auth): RequireBranchCreate,
     State(state): State<AppState>,
@@ -226,6 +244,19 @@ async fn list_branches(
     Ok(Json(entries))
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/branches/{name}/merge",
+    tag = "branches",
+    params(
+        ("name" = String, Path, description = "Branch name to merge"),
+    ),
+    request_body = MergeBranchRequest,
+    responses(
+        (status = 200, description = "Merge result", body = MergeBranchResponse),
+        (status = 400, description = "Invalid branch name"),
+    ),
+)]
 async fn merge_branch(
     RequireBranchMerge(auth): RequireBranchMerge,
     State(state): State<AppState>,
@@ -285,6 +316,18 @@ async fn merge_branch(
     Ok(Json(response))
 }
 
+#[utoipa::path(
+    delete,
+    path = "/v1/branches/{name}",
+    tag = "branches",
+    params(
+        ("name" = String, Path, description = "Branch name to delete"),
+    ),
+    responses(
+        (status = 204, description = "Branch deleted"),
+        (status = 400, description = "Invalid branch name"),
+    ),
+)]
 async fn delete_branch_handler(
     RequireBranchDelete(auth): RequireBranchDelete,
     State(state): State<AppState>,
@@ -311,6 +354,18 @@ async fn delete_branch_handler(
     Ok(StatusCode::NO_CONTENT)
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/branches/{name}/prune",
+    tag = "branches",
+    params(
+        ("name" = String, Path, description = "Branch name to prune"),
+    ),
+    responses(
+        (status = 204, description = "Branch pruned"),
+        (status = 400, description = "Invalid branch name"),
+    ),
+)]
 /// Prune a branch (POST alternative to DELETE for clients that don't support DELETE).
 async fn prune_branch(
     RequireBranchDelete(auth): RequireBranchDelete,
@@ -336,6 +391,27 @@ pub fn branch_routes() -> Router<AppState> {
         .route("/v1/branches/{name}/prune", post(prune_branch))
         .route("/v1/branches/{name}", delete(delete_branch_handler))
 }
+
+// ── OpenAPI ─────────────────────────────────────────────────────────────
+
+#[derive(utoipa::OpenApi)]
+#[openapi(
+    paths(
+        create_branch,
+        list_branches,
+        merge_branch,
+        delete_branch_handler,
+        prune_branch,
+    ),
+    components(schemas(
+        CreateBranchRequest,
+        CreateBranchResponse,
+        BranchListEntry,
+        MergeBranchRequest,
+        MergeBranchResponse,
+    )),
+)]
+pub struct BranchesApi;
 
 // ── Tests ───────────────────────────────────────────────────────────────
 

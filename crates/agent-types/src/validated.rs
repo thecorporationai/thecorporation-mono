@@ -41,6 +41,8 @@ impl std::error::Error for ParseError {}
 /// `NonEmpty::parse()` or serde deserialization, both of which reject
 /// blank strings.  Downstream code never needs to re-check for emptiness.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+#[cfg_attr(feature = "openapi", schema(value_type = String))]
 pub struct NonEmpty(String);
 
 impl NonEmpty {
@@ -130,6 +132,8 @@ impl<'de> Deserialize<'de> for NonEmpty {
 /// but it rejects obviously malformed expressions at the system boundary.
 /// The full matching logic lives in the worker's cron module.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+#[cfg_attr(feature = "openapi", schema(value_type = String))]
 pub struct CronExpr(String);
 
 impl CronExpr {

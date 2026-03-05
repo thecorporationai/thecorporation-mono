@@ -29,7 +29,7 @@ use agent_types::{AgentDefinition, ChannelType, InboundMessage, JobPayload, RpcR
 
 // ── Request types ────────────────────────────────────────────────────
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct CreateAgentRequest {
     pub name: String,
@@ -45,7 +45,7 @@ pub struct CreateAgentRequest {
     pub scopes: Vec<Scope>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct UpdateAgentRequest {
     #[serde(default)]
@@ -74,27 +74,29 @@ pub struct UpdateAgentRequest {
     pub scopes: Option<Vec<Scope>>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct AddSkillRequest {
     /// Parsed at deserialization — empty names are rejected by `NonEmpty`.
     pub name: NonEmpty,
     pub description: String,
     #[serde(default)]
+    #[schema(value_type = Object)]
     pub parameters: serde_json::Value,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SendMessageRequest {
     pub message: String,
     #[serde(default)]
+    #[schema(value_type = Object)]
     pub metadata: serde_json::Value,
 }
 
 // ── Response types ───────────────────────────────────────────────────
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct AgentResponse {
     pub agent_id: AgentId,
     pub workspace_id: WorkspaceId,
@@ -119,7 +121,7 @@ pub struct AgentResponse {
     pub created_at: String,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct MessageResponse {
     pub agent_id: AgentId,
     pub message_id: MessageId,
@@ -129,13 +131,13 @@ pub struct MessageResponse {
     pub message: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct WorkerWorkspaceQuery {
     pub workspace_id: WorkspaceId,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct InternalChannelResponse {
     #[serde(rename = "type")]
     pub channel_type: String,
@@ -143,7 +145,7 @@ pub struct InternalChannelResponse {
     pub schedule: Option<String>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct InternalCronAgentResponse {
     pub agent_id: String,
     pub workspace_id: String,
@@ -244,6 +246,15 @@ async fn enforce_monthly_budget(
 
 // ── Handlers ─────────────────────────────────────────────────────────
 
+#[utoipa::path(
+    post,
+    path = "/v1/agents",
+    tag = "agents",
+    request_body = CreateAgentRequest,
+    responses(
+        (status = 201, description = "Agent created", body = AgentResponse),
+    ),
+)]
 async fn create_agent(
     RequireAdmin(auth): RequireAdmin,
     State(state): State<AppState>,
@@ -295,6 +306,14 @@ async fn create_agent(
     Ok((StatusCode::CREATED, Json(agent_to_response(&agent))))
 }
 
+#[utoipa::path(
+    get,
+    path = "/v1/agents",
+    tag = "agents",
+    responses(
+        (status = 200, description = "List all agents", body = Vec<AgentResponse>),
+    ),
+)]
 async fn list_agents(
     RequireAdmin(auth): RequireAdmin,
     State(state): State<AppState>,
@@ -326,6 +345,18 @@ async fn list_agents(
     Ok(Json(agents))
 }
 
+#[utoipa::path(
+    patch,
+    path = "/v1/agents/{agent_id}",
+    tag = "agents",
+    params(
+        ("agent_id" = AgentId, Path, description = "Agent ID"),
+    ),
+    request_body = UpdateAgentRequest,
+    responses(
+        (status = 200, description = "Agent updated", body = AgentResponse),
+    ),
+)]
 async fn update_agent(
     RequireAdmin(auth): RequireAdmin,
     State(state): State<AppState>,
@@ -396,6 +427,18 @@ async fn update_agent(
     Ok(Json(agent_to_response(&agent)))
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/agents/{agent_id}/skills",
+    tag = "agents",
+    params(
+        ("agent_id" = AgentId, Path, description = "Agent ID"),
+    ),
+    request_body = AddSkillRequest,
+    responses(
+        (status = 200, description = "Skill added to agent", body = AgentResponse),
+    ),
+)]
 async fn add_agent_skill(
     RequireAdmin(auth): RequireAdmin,
     State(state): State<AppState>,
@@ -434,6 +477,18 @@ async fn add_agent_skill(
     Ok(Json(agent_to_response(&agent)))
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/agents/{agent_id}/messages",
+    tag = "agents",
+    params(
+        ("agent_id" = AgentId, Path, description = "Agent ID"),
+    ),
+    request_body = SendMessageRequest,
+    responses(
+        (status = 200, description = "Message sent to agent", body = MessageResponse),
+    ),
+)]
 async fn send_agent_message(
     RequireAdmin(auth): RequireAdmin,
     State(state): State<AppState>,
@@ -558,6 +613,19 @@ async fn send_agent_message(
     }))
 }
 
+#[utoipa::path(
+    get,
+    path = "/v1/agents/{agent_id}/messages/{message_id}",
+    tag = "agents",
+    params(
+        ("agent_id" = AgentId, Path, description = "Agent ID"),
+        ("message_id" = MessageId, Path, description = "Message ID"),
+        ("workspace_id" = WorkspaceId, Query, description = "Workspace ID"),
+    ),
+    responses(
+        (status = 200, description = "Get agent message (internal)", body = Object),
+    ),
+)]
 async fn get_agent_message_internal(
     _worker: RequireInternalWorker,
     State(state): State<AppState>,
@@ -746,6 +814,17 @@ fn validate_parent(
 
 // ── Resolved agent endpoint ──────────────────────────────────────────
 
+#[utoipa::path(
+    get,
+    path = "/v1/agents/{agent_id}/resolved",
+    tag = "agents",
+    params(
+        ("agent_id" = AgentId, Path, description = "Agent ID"),
+    ),
+    responses(
+        (status = 200, description = "Get resolved agent with inherited config", body = AgentResponse),
+    ),
+)]
 async fn get_resolved_agent(
     RequireAdmin(auth): RequireAdmin,
     State(state): State<AppState>,
@@ -768,6 +847,18 @@ async fn get_resolved_agent(
     Ok(Json(agent_to_response(&agent)))
 }
 
+#[utoipa::path(
+    get,
+    path = "/v1/internal/agents/{agent_id}/resolved",
+    tag = "agents",
+    params(
+        ("agent_id" = AgentId, Path, description = "Agent ID"),
+        ("workspace_id" = WorkspaceId, Query, description = "Workspace ID"),
+    ),
+    responses(
+        (status = 200, description = "Get resolved agent definition (internal)", body = Object),
+    ),
+)]
 async fn get_resolved_agent_internal(
     _worker: RequireInternalWorker,
     State(state): State<AppState>,
@@ -791,6 +882,14 @@ async fn get_resolved_agent_internal(
     Ok(Json(agent_to_definition(&agent)?))
 }
 
+#[utoipa::path(
+    get,
+    path = "/v1/internal/agents/active",
+    tag = "agents",
+    responses(
+        (status = 200, description = "List active agents with cron channels (internal)", body = Vec<InternalCronAgentResponse>),
+    ),
+)]
 async fn list_active_agents_internal(
     _worker: RequireInternalWorker,
     State(state): State<AppState>,
@@ -847,7 +946,7 @@ async fn list_active_agents_internal(
 
 // ── Agent token minting ──────────────────────────────────────────────
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct MintAgentTokenRequest {
     pub workspace_id: WorkspaceId,
@@ -856,7 +955,7 @@ pub struct MintAgentTokenRequest {
     pub ttl_seconds: Option<i64>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct MintAgentTokenResponse {
     pub access_token: String,
     pub token_type: String,
@@ -864,6 +963,15 @@ pub struct MintAgentTokenResponse {
     pub scopes: Vec<Scope>,
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/internal/agent-token",
+    tag = "agents",
+    request_body = MintAgentTokenRequest,
+    responses(
+        (status = 200, description = "Mint an agent token (internal)", body = MintAgentTokenResponse),
+    ),
+)]
 async fn mint_agent_token(
     _worker: RequireInternalWorker,
     State(state): State<AppState>,
@@ -915,6 +1023,39 @@ async fn mint_agent_token(
 }
 
 // ── Router ───────────────────────────────────────────────────────────
+
+#[derive(utoipa::OpenApi)]
+#[openapi(
+    paths(
+        create_agent,
+        list_agents,
+        update_agent,
+        add_agent_skill,
+        send_agent_message,
+        get_agent_message_internal,
+        get_resolved_agent,
+        get_resolved_agent_internal,
+        list_active_agents_internal,
+        mint_agent_token,
+    ),
+    components(schemas(
+        CreateAgentRequest,
+        UpdateAgentRequest,
+        AddSkillRequest,
+        SendMessageRequest,
+        AgentResponse,
+        MessageResponse,
+        WorkerWorkspaceQuery,
+        InternalChannelResponse,
+        InternalCronAgentResponse,
+        MintAgentTokenRequest,
+        MintAgentTokenResponse,
+    )),
+    tags(
+        (name = "agents", description = "Agent management endpoints"),
+    ),
+)]
+pub struct AgentsApi;
 
 pub fn agent_routes() -> Router<AppState> {
     Router::new()

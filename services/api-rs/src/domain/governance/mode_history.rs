@@ -8,7 +8,7 @@ use crate::domain::ids::{
     ContactId, EntityId, GovernanceModeEventId, GovernanceTriggerId, IncidentId,
 };
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct GovernanceModeChangeEvent {
     mode_event_id: GovernanceModeEventId,
     entity_id: EntityId,

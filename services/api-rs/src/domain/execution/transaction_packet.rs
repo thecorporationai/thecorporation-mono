@@ -6,14 +6,14 @@ use sha2::{Digest, Sha256};
 
 use crate::domain::ids::{EntityId, IntentId, PacketId, PacketSignatureId};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum WorkflowType {
     Transfer,
     Fundraising,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum TransactionPacketStatus {
     Drafted,
@@ -24,7 +24,7 @@ pub enum TransactionPacketStatus {
     Failed,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct PacketItem {
     pub item_id: String,
     pub title: String,

@@ -10,27 +10,34 @@ use serde::{Deserialize, Serialize};
 use super::AppState;
 use crate::error::AppError;
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 pub struct ResolveRequest {
     pub token: String,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct ResolveResponse {
     pub value: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 pub struct InterpolateRequest {
     pub execution_id: String,
     pub template: String,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct InterpolateResponse {
     pub result: String,
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/secrets/resolve",
+    tag = "secrets",
+    request_body = ResolveRequest,
+    responses((status = 200, body = ResolveResponse)),
+)]
 async fn resolve_token(
     State(state): State<AppState>,
     Json(req): Json<ResolveRequest>,
@@ -82,6 +89,13 @@ async fn resolve_token(
     Ok(Json(ResolveResponse { value }))
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/secrets/interpolate",
+    tag = "secrets",
+    request_body = InterpolateRequest,
+    responses((status = 200, body = InterpolateResponse)),
+)]
 async fn interpolate_template(
     State(state): State<AppState>,
     Json(req): Json<InterpolateRequest>,
@@ -132,3 +146,10 @@ pub fn secrets_routes() -> Router<AppState> {
         .route("/v1/secrets/resolve", post(resolve_token))
         .route("/v1/secrets/interpolate", post(interpolate_template))
 }
+
+#[derive(utoipa::OpenApi)]
+#[openapi(
+    paths(resolve_token, interpolate_template),
+    components(schemas(ResolveRequest, ResolveResponse, InterpolateRequest, InterpolateResponse)),
+)]
+pub struct SecretsProxyApi;

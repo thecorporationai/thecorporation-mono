@@ -12,8 +12,9 @@ use serde::{Deserialize, Serialize};
 ///
 /// Guarantees: non-empty, no `..`, no spaces, no leading `-`, no null bytes.
 /// Implements `Deref<Target=str>` for transparent use with `&str` parameters.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, utoipa::ToSchema)]
 #[serde(try_from = "String")]
+#[schema(value_type = String)]
 pub struct BranchName(String);
 
 impl BranchName {
