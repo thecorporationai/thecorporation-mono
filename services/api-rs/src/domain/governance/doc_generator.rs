@@ -491,7 +491,7 @@ pub fn render_document_from_ast(
     out
 }
 
-fn resolve_profile_field(key: &str, profile: &GovernanceProfile) -> Option<String> {
+pub(super) fn resolve_profile_field(key: &str, profile: &GovernanceProfile) -> Option<String> {
     match key {
         "effective_date" => Some(profile.effective_date().to_string()),
         "adopted_by" => Some(profile.adopted_by().to_owned()),
@@ -625,7 +625,7 @@ fn render_node(
     }
 }
 
-fn format_company_address(addr: &CompanyAddress) -> String {
+pub(super) fn format_company_address(addr: &CompanyAddress) -> String {
     let mut parts = vec![addr.street.clone(), addr.city.clone()];
     if let Some(county) = &addr.county {
         parts.push(county.clone());
@@ -635,7 +635,7 @@ fn format_company_address(addr: &CompanyAddress) -> String {
     parts.join(", ")
 }
 
-fn format_fiscal_year_end(fy: &FiscalYearEnd) -> String {
+pub(super) fn format_fiscal_year_end(fy: &FiscalYearEnd) -> String {
     let month_name = match fy.month {
         1 => "January",
         2 => "February",
@@ -654,7 +654,7 @@ fn format_fiscal_year_end(fy: &FiscalYearEnd) -> String {
     format!("{} {}", month_name, fy.day)
 }
 
-fn format_par_value(cents: u64) -> String {
+pub(super) fn format_par_value(cents: u64) -> String {
     if cents == 0 {
         return "0".to_owned();
     }
@@ -672,7 +672,7 @@ fn format_par_value(cents: u64) -> String {
     }
 }
 
-fn format_number_with_commas(n: u64) -> String {
+pub(super) fn format_number_with_commas(n: u64) -> String {
     let s = n.to_string();
     let mut result = String::new();
     for (i, ch) in s.chars().enumerate() {
@@ -684,7 +684,7 @@ fn format_number_with_commas(n: u64) -> String {
     result
 }
 
-fn format_json_value(v: &serde_json::Value) -> String {
+pub(super) fn format_json_value(v: &serde_json::Value) -> String {
     match v {
         serde_json::Value::Null => "N/A".to_owned(),
         serde_json::Value::String(s) => s.clone(),
@@ -709,7 +709,7 @@ fn format_json_value(v: &serde_json::Value) -> String {
     }
 }
 
-fn capitalize(s: &str) -> String {
+pub(super) fn capitalize(s: &str) -> String {
     let mut chars = s.chars();
     match chars.next() {
         None => String::new(),
@@ -1028,7 +1028,7 @@ fn render_data_table(
 }
 
 /// Substitute `{{key}}` placeholders in text with values from the AST or profile.
-fn substitute(text: &str, ast: &GovernanceDocAst, profile: &GovernanceProfile) -> String {
+pub(super) fn substitute(text: &str, ast: &GovernanceDocAst, profile: &GovernanceProfile) -> String {
     let mut result = text.to_owned();
 
     // AST-derived substitutions

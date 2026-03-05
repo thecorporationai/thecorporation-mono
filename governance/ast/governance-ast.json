@@ -1,0 +1,1351 @@
+{
+  "version": "0.1.0",
+
+  "disclaimer": {
+    "text": "This software and the documents it generates are for general informational purposes only. The Corporation is not a law firm and does not provide legal, tax, or accounting advice. Use of this document generator does not create an attorney-client or other professional relationship. Generated documents are not a substitute for advice from a licensed attorney, tax advisor, or accountant. You should consult qualified professionals before relying on any generated documents. Documents have not been prepared with your specific circumstances in mind and may not be suitable for your business. Default values and configurations do not constitute recommendations. Documents are provided \"AS IS\" without warranties of any kind, express or implied, including warranties of merchantability, fitness for a particular purpose, title, or noninfringement. By using these documents, you assume all risk and liability. Review all generated documents carefully for accuracy before use. Look for any placeholder text (TBD, YYYY-MM-DD, bracketed text) requiring your attention and modification. This system generates governance documents for AI-operated entities. The legal landscape for AI agent authority is evolving. You should consult with counsel familiar with your jurisdiction's treatment of algorithmic management and AI agent authority.",
+    "must_accept_before_use": true,
+    "key_points": [
+      "not_legal_advice",
+      "no_attorney_client_relationship",
+      "not_substitute_for_counsel",
+      "not_tailored_to_circumstances",
+      "no_endorsement_of_defaults",
+      "as_is_no_warranties",
+      "review_carefully",
+      "user_assumes_risk",
+      "ai_governance_legal_landscape_evolving"
+    ]
+  },
+
+  "entity_types": {
+    "corporation": {
+      "jurisdiction": "Delaware",
+      "governing_statute": "DGCL",
+      "governing_statute_full": "Delaware General Corporation Law (Title 8, Delaware Code)",
+      "filing_authority": "Delaware Division of Corporations",
+      "governance_body": "Board of Directors",
+      "governing_document": "Bylaws",
+      "charter_document": "Certificate of Incorporation",
+      "approval_authority": "Board of Directors",
+      "human_manager_title": "CEO",
+      "human_manager_role": "Chief Executive Officer"
+    },
+    "llc": {
+      "jurisdiction": "Wyoming",
+      "governing_statute": "Wyoming LLC Act",
+      "governing_statute_full": "Wyoming Limited Liability Company Act (W.S. § 17-29-101 et seq.)",
+      "filing_authority": "Wyoming Secretary of State",
+      "governance_body": "Members",
+      "governing_document": "Operating Agreement",
+      "charter_document": "Articles of Organization",
+      "approval_authority": "Members",
+      "human_manager_title": "Principal",
+      "human_manager_role": "Principal Manager"
+    }
+  },
+
+  "spending_defaults": {
+    "parameter_set": "conservative_launch",
+    "categories": [
+      {
+        "id": "recurring_obligations",
+        "label": "Recurring obligations (rent, subscriptions, utilities, payroll within approved budget)",
+        "per_transaction_cents": 1000000,
+        "monthly_aggregate_cents": 4000000
+      },
+      {
+        "id": "vendor_payments",
+        "label": "Vendor payments against approved purchase orders",
+        "per_transaction_cents": 750000,
+        "monthly_aggregate_cents": 3000000
+      },
+      {
+        "id": "professional_services",
+        "label": "Professional services (legal, accounting) against approved retainers",
+        "per_transaction_cents": 500000,
+        "monthly_aggregate_cents": 2000000
+      },
+      {
+        "id": "government_filings",
+        "label": "Government filing fees and compliance costs",
+        "per_transaction_cents": 250000,
+        "monthly_aggregate_cents": 1000000
+      },
+      {
+        "id": "office_supplies",
+        "label": "Office supplies and operational consumables",
+        "per_transaction_cents": 50000,
+        "monthly_aggregate_cents": 200000
+      }
+    ],
+    "per_vendor_annual_cap_cents": 5000000
+  },
+
+  "compliance": {
+    "corporation": {
+      "franchise_tax_deadline": "March 1",
+      "franchise_tax_methods": [
+        { "id": "authorized_shares", "label": "Authorized Shares Method", "minimum_cents": 17500 },
+        { "id": "assumed_par_value", "label": "Assumed Par Value Capital Method", "minimum_cents": 40000 }
+      ],
+      "annual_report_fee_cents": 5000,
+      "annual_report_deadline": "March 1 (filed concurrently with franchise tax)",
+      "filing_fee_cents": 8900
+    },
+    "llc": {
+      "annual_report_fee_cents": 6000,
+      "annual_report_deadline": "First day of anniversary month",
+      "filing_fee_cents": 10000,
+      "state_income_tax": false,
+      "franchise_tax": false,
+      "name_reservation_fee_cents": 5000,
+      "name_reservation_validity_days": 120
+    }
+  },
+
+  "authority_precedence": [
+    { "rank": 1, "source": "applicable_law", "label": "Applicable law (DGCL, Wyoming LLC Act, federal law, regulations)" },
+    { "rank": 2, "source": "charter_documents", "label": "Charter documents (Certificate of Incorporation / Articles of Organization)" },
+    { "rank": 3, "source": "internal_governance", "label": "Internal governance (Bylaws / Operating Agreement)" },
+    { "rank": 4, "source": "resolutions", "label": "Board or Member resolutions" },
+    { "rank": 5, "source": "directives", "label": "Principal / CEO directives (specific instructions to the Agent)" },
+    { "rank": 6, "source": "standing_instructions", "label": "Standing Instructions (recurring authority modifications)" },
+    { "rank": 7, "source": "delegation_schedule", "label": "This Delegation Schedule (default autonomy lanes and limits)" },
+    { "rank": 8, "source": "agent_heuristics", "label": "Agent heuristics and judgment (lowest priority -- always overridden by anything above)" }
+  ],
+
+  "rules": {
+    "tier_defaults": {
+      "maintain_books_records": 1,
+      "prepare_compliance_docs": 1,
+      "pay_recurring_obligation": 1,
+      "authorize_expenditure": 1,
+      "routine_correspondence": 1,
+      "information_gathering": 1,
+      "compliance_deadline_tracking": 1,
+      "execute_standard_form_agreement": 1,
+      "internal_account_transfer": 1,
+      "payroll_execution": 1,
+      "tax_payment_per_filing": 1,
+      "registered_agent_renewal": 1,
+      "financial_commitment_above_limits": 2,
+      "new_contract": 2,
+      "material_amendment": 2,
+      "hire_employee": 2,
+      "engage_contractor": 2,
+      "tax_election": 2,
+      "accounting_method_change": 2,
+      "equity_communication": 2,
+      "bank_account_open_close": 2,
+      "ambiguous_novel_action": 2,
+      "legal_claim_response": 2,
+      "franchise_tax_method_choice": 2,
+      "amend_charter": 3,
+      "amend_governance_docs": 3,
+      "issue_equity": 3,
+      "modify_agent_framework": 3,
+      "dissolve_entity": 3,
+      "merge_consolidate": 3,
+      "sell_substantially_all_assets": 3,
+      "personal_guarantee": 3,
+      "remove_replace_agent": 3,
+      "initiate_settle_litigation": 3,
+      "declare_dividends": 3,
+      "admit_new_members": 3,
+      "equity.round.accept": 3,
+      "equity.round.execute_conversion": 3,
+      "equity.transfer.prepare": 3,
+      "equity.transfer.execute": 3,
+      "equity.fundraising.prepare": 3,
+      "equity.fundraising.accept": 3,
+      "equity.fundraising.close": 3
+    },
+    "non_delegable": [
+      "amend_charter",
+      "amend_governance_docs",
+      "issue_equity",
+      "modify_agent_framework",
+      "dissolve_entity",
+      "merge_consolidate",
+      "sell_substantially_all_assets",
+      "personal_guarantee",
+      "remove_replace_agent",
+      "initiate_settle_litigation",
+      "declare_dividends",
+      "admit_new_members"
+    ],
+    "escalation": [
+      {
+        "id": "template-not-approved",
+        "applies": ["execute_standard_form_agreement"],
+        "condition": "template_approved_false",
+        "escalate_to": 2,
+        "reason": "Agreement not using approved template"
+      },
+      {
+        "id": "template-modified-beyond-lane",
+        "applies": ["execute_standard_form_agreement"],
+        "condition": "restricted_modifications_present",
+        "escalate_to": 2,
+        "reason": "Agreement template modified in restricted areas"
+      },
+      {
+        "id": "irreversible-action",
+        "condition": "is_reversible_false",
+        "escalate_to": 2,
+        "reason": "Action is irreversible"
+      }
+    ],
+    "lane_conditions": [
+      {
+        "lane_id": "lane-3.1-nda",
+        "capability": "execute_standard_form_agreement",
+        "checks": [
+          { "field": "templateApproved", "op": "eq", "value": true, "message": "Template not approved by Board/Principal" },
+          { "field": "modifications", "op": "contains_none", "value": ["indemnification", "governing_law"], "message": "Restricted NDA modifications present" }
+        ]
+      },
+      {
+        "lane_id": "lane-3.1-saas",
+        "capability": "execute_standard_form_agreement",
+        "checks": [
+          { "field": "modifications", "op": "contains_none", "value": ["exclusivity"], "message": "Exclusivity clause not permitted in SaaS lane" },
+          { "field": "modifications", "op": "contains_none", "value": ["ip_assignment"], "message": "IP assignment clause not permitted in SaaS lane" }
+        ]
+      },
+      {
+        "lane_id": "lane-3.1-vendor-po",
+        "capability": "execute_standard_form_agreement",
+        "checks": []
+      },
+      {
+        "lane_id": "lane-3.2-1099",
+        "capability": "engage_contractor",
+        "checks": [
+          { "field": "modifications", "op": "contains_none", "value": ["exclusivity", "non_compete", "equity_compensation"], "message": "Exclusivity, non-compete, or equity compensation not permitted for contractor engagement" }
+        ]
+      },
+      {
+        "lane_id": "lane-3.2-renewal",
+        "capability": "engage_contractor",
+        "checks": [
+          { "field": "context.rateIncreasePercent", "op": "lte", "value": 5, "message": "Rate increase exceeds 5% limit for renewal lane" }
+        ]
+      },
+      {
+        "lane_id": "lane-3.3-renewal",
+        "capability": "pay_recurring_obligation",
+        "checks": [
+          { "field": "context.priceIncreasePercent", "op": "lte", "value": 10, "message": "Price increase exceeds 10% limit for renewal lane" }
+        ]
+      },
+      {
+        "lane_id": "lane-3.3-admin",
+        "capability": "routine_correspondence",
+        "checks": [
+          { "field": "modifications", "op": "contains_none", "value": ["economics", "scope", "legal_terms"], "message": "Admin update lane does not allow changes to economics, scope, or legal terms" }
+        ]
+      },
+      {
+        "lane_id": "lane-3.3-insurance",
+        "capability": "pay_recurring_obligation",
+        "checks": [
+          { "field": "context.premiumIncreasePercent", "op": "lte", "value": 15, "message": "Premium increase exceeds 15% limit for insurance lane" }
+        ]
+      },
+      {
+        "lane_id": "lane-3.4-transfer",
+        "capability": "internal_account_transfer",
+        "checks": []
+      },
+      {
+        "lane_id": "lane-3.4-payroll",
+        "capability": "payroll_execution",
+        "checks": []
+      },
+      {
+        "lane_id": "lane-3.4-tax",
+        "capability": "tax_payment_per_filing",
+        "checks": []
+      }
+    ],
+    "approval": {
+      "expiry_days": 30,
+      "silence_is_approval": false
+    },
+    "mode": {
+      "principal_unavailable_requires_reversible_tier1": true,
+      "incident_lockdown_blocks_all": true
+    },
+    "reauth": {
+      "reduced_limits_at_days": 30,
+      "reduced_limits_percent": 50,
+      "full_suspension_at_days": 90
+    }
+  },
+
+  "structured_data": {
+    "autonomy_lanes": [
+      {
+        "id": "lane-3.1-nda",
+        "category": "standard_form_agreements",
+        "label": "NDAs (mutual or receiving)",
+        "tier": 1,
+        "authority_action": "execute",
+        "conditions": [
+          { "field": "template_approved", "op": "eq", "value": true, "label": "Board/Principal-approved template" },
+          { "field": "modifications", "op": "contains_none", "value": ["indemnification", "governing_law"], "label": "No modifications to indemnification or governing law" },
+          { "field": "term_years", "op": "lte", "value": 2, "label": "Term not beyond 2 years" }
+        ]
+      },
+      {
+        "id": "lane-3.1-saas",
+        "category": "standard_form_agreements",
+        "label": "SaaS / subscription agreements",
+        "tier": 1,
+        "authority_action": "execute",
+        "conditions": [
+          { "field": "annual_cost", "op": "lte_tier1_vendor_limit", "value": true, "label": "Annual cost within Tier 1 vendor limit" },
+          { "field": "cancellable_days", "op": "lte", "value": 60, "label": "Cancellable within 60 days" },
+          { "field": "exclusivity", "op": "eq", "value": false, "label": "No exclusivity clause" },
+          { "field": "ip_assignment", "op": "eq", "value": false, "label": "No IP assignment clause" }
+        ]
+      },
+      {
+        "id": "lane-3.1-vendor-po",
+        "category": "standard_form_agreements",
+        "label": "Vendor / supplier purchase orders",
+        "tier": 1,
+        "authority_action": "execute",
+        "conditions": [
+          { "field": "within_budget", "op": "eq", "value": true, "label": "Within approved budget" },
+          { "field": "payment_terms", "op": "in_range", "value": [30, 60], "label": "Standard payment terms (net 30-60)" },
+          { "field": "volume_commitment_quarters", "op": "lte", "value": 1, "label": "No volume commitments beyond current quarter" }
+        ]
+      },
+      {
+        "id": "lane-3.2-1099",
+        "category": "contractor_engagement",
+        "label": "Independent contractor (1099) engagement",
+        "tier": 1,
+        "authority_action": "execute",
+        "conditions": [
+          { "field": "within_budget", "op": "eq", "value": true, "label": "Within approved budget" },
+          { "field": "standard_template", "op": "eq", "value": true, "label": "Standard contractor agreement template" },
+          { "field": "exclusivity", "op": "eq", "value": false, "label": "No exclusivity" },
+          { "field": "ip_assignment_beyond_work_product", "op": "eq", "value": false, "label": "No IP assignment beyond work product" },
+          { "field": "notice_days", "op": "gte", "value": 14, "label": "Terminable on 14 days notice" }
+        ]
+      },
+      {
+        "id": "lane-3.2-renewal",
+        "category": "contractor_engagement",
+        "label": "Contractor renewal at same or lower rate",
+        "tier": 1,
+        "authority_action": "execute",
+        "conditions": [
+          { "field": "same_contractor", "op": "eq", "value": true, "label": "Same contractor" },
+          { "field": "scope_change", "op": "in", "value": ["same", "reduced"], "label": "Same or reduced scope" },
+          { "field": "rate_increase_percent", "op": "lte", "value": 5, "label": "Rate increase ≤ 5%" }
+        ]
+      },
+      {
+        "id": "lane-3.3-renewal",
+        "category": "renewals_amendments",
+        "label": "Service renewal at same terms",
+        "tier": 1,
+        "authority_action": "execute",
+        "conditions": [
+          { "field": "same_provider", "op": "eq", "value": true, "label": "Same provider" },
+          { "field": "same_scope", "op": "eq", "value": true, "label": "Same scope" },
+          { "field": "price_increase_percent", "op": "lte", "value": 10, "label": "Price increase ≤ 10% of prior term" }
+        ]
+      },
+      {
+        "id": "lane-3.3-admin",
+        "category": "renewals_amendments",
+        "label": "Address or administrative updates on existing agreements",
+        "tier": 1,
+        "authority_action": "execute",
+        "conditions": [
+          { "field": "changes_economics", "op": "eq", "value": false, "label": "No change to economics" },
+          { "field": "changes_scope", "op": "eq", "value": false, "label": "No change to scope" },
+          { "field": "changes_legal_terms", "op": "eq", "value": false, "label": "No change to legal terms" }
+        ]
+      },
+      {
+        "id": "lane-3.3-insurance",
+        "category": "renewals_amendments",
+        "label": "Insurance policy renewal",
+        "tier": 1,
+        "authority_action": "execute",
+        "conditions": [
+          { "field": "same_coverage", "op": "eq", "value": true, "label": "Same coverage" },
+          { "field": "premium_increase_percent", "op": "lte", "value": 15, "label": "Premium increase ≤ 15%" },
+          { "field": "same_carrier", "op": "eq", "value": true, "label": "Same carrier" }
+        ]
+      },
+      {
+        "id": "lane-3.4-transfer",
+        "category": "treasury_operations",
+        "label": "Internal transfers between Company accounts",
+        "tier": 1,
+        "authority_action": "execute",
+        "conditions": [
+          { "field": "same_entity", "op": "eq", "value": true, "label": "Same entity" },
+          { "field": "same_bank", "op": "eq", "value": true, "label": "Same bank" }
+        ]
+      },
+      {
+        "id": "lane-3.4-payroll",
+        "category": "treasury_operations",
+        "label": "Payroll execution",
+        "tier": 1,
+        "authority_action": "execute",
+        "conditions": [
+          { "field": "within_approved_headcount", "op": "eq", "value": true, "label": "Within approved headcount" },
+          { "field": "within_compensation_schedule", "op": "eq", "value": true, "label": "Within compensation schedule" }
+        ]
+      },
+      {
+        "id": "lane-3.4-tax",
+        "category": "treasury_operations",
+        "label": "Tax payments per approved filing",
+        "tier": 1,
+        "authority_action": "execute",
+        "conditions": [
+          { "field": "matches_filed_return", "op": "eq", "value": true, "label": "Amount matches filed or estimated return" }
+        ]
+      }
+    ],
+
+    "emergency_modes": [
+      {
+        "id": "normal",
+        "label": "Normal",
+        "tier1_allowed": true,
+        "tier2_allowed": true,
+        "reversible_only": false,
+        "activated_by": "default",
+        "deactivated_by": null
+      },
+      {
+        "id": "principal_unavailable",
+        "label": "Principal Unavailable",
+        "tier1_allowed": true,
+        "tier2_allowed": false,
+        "reversible_only": true,
+        "activated_by": { "condition": "principal_unreachable", "threshold_hours": 24 },
+        "deactivated_by": "principal_response"
+      },
+      {
+        "id": "incident_lockdown",
+        "label": "Incident Lockdown",
+        "tier1_allowed": false,
+        "tier2_allowed": false,
+        "reversible_only": false,
+        "activated_by": ["auto_suspension_trigger", "principal_manual"],
+        "deactivated_by": "principal_written_reactivation"
+      }
+    ],
+
+    "auto_suspension_triggers": [
+      { "id": "audit_log_failure", "label": "Audit log failure", "description": "Unable to write to append-only log, or gap/inconsistency detected", "severity": "critical", "activates_mode": "incident_lockdown" },
+      { "id": "credential_anomaly", "label": "Credential anomaly", "description": "Unauthorized access, credential compromise, or use outside authorized scope", "severity": "critical", "activates_mode": "incident_lockdown" },
+      { "id": "conflicting_instructions", "label": "Conflicting instructions", "description": "Multiple authorized sources contradict each other, unresolvable by precedence rules", "severity": "critical", "activates_mode": "incident_lockdown" },
+      { "id": "policy_evidence_mismatch", "label": "Policy-evidence mismatch", "description": "Tier 2 action appears executed without valid approval artifact", "severity": "critical", "activates_mode": "incident_lockdown" },
+      { "id": "unauthorized_scope_expansion", "label": "Unauthorized scope expansion", "description": "Agent authority modified outside governance process", "severity": "critical", "activates_mode": "incident_lockdown" },
+      { "id": "external_breach_notification", "label": "External breach notification", "description": "Data breach, security incident, or legal hold notice received", "severity": "critical", "activates_mode": "incident_lockdown" }
+    ],
+
+    "credential_custody": [
+      { "id": "entity_formation_sos", "label": "Entity formation / SOS portal login", "custodian": "principal", "agent_access": "none" },
+      { "id": "bank_root", "label": "Bank account root credentials", "custodian": "principal", "agent_access": "none" },
+      { "id": "bank_payment", "label": "Bank account payment credentials (scoped)", "custodian": "principal", "agent_access": "scoped", "agent_access_details": { "read": ["balances", "statements"], "write": ["payments"], "scope_limit": "tier1_spending_limits" } },
+      { "id": "tax_portal", "label": "Tax filing portal (IRS, state)", "custodian": "principal", "agent_access": "preparation_only", "agent_access_details": { "read": ["forms", "filings"], "write": ["preparation"], "scope_limit": "principal_submits" } },
+      { "id": "registered_agent_portal", "label": "Registered agent portal", "custodian": "agent", "agent_access": "operational", "agent_access_details": { "tier1": "renewals", "principal_required": "changes" } },
+      { "id": "accounting_system", "label": "Accounting / bookkeeping system", "custodian": "agent", "agent_access": "full_operational", "agent_access_details": { "principal_role": "admin_owner" } },
+      { "id": "corporate_records", "label": "Corporate records repository", "custodian": "agent", "agent_access": "read_write_within_authority", "agent_access_details": { "principal_role": "admin" } },
+      { "id": "entity_email", "label": "Email / communication (entity)", "custodian": "agent", "agent_access": "operational", "agent_access_details": { "scope": "routine_correspondence_within_authority" } },
+      { "id": "domain_dns_hosting", "label": "Domain / DNS / hosting", "custodian": "principal", "agent_access": "scoped", "agent_access_details": { "scope": "operational_with_principal_provisioned_credentials" } },
+      { "id": "code_repositories", "label": "Code repositories", "custodian": "agent", "agent_access": "per_project_scope", "agent_access_details": { "principal_role": "admin" } },
+      { "id": "api_keys", "label": "API keys for third-party services", "custodian": "principal", "agent_access": "scoped", "agent_access_details": { "scope": "use_within_authorized_scope", "restriction": "cannot_create_new_integrations_without_tier2" } }
+    ],
+
+    "adjustment_rules": [
+      { "id": "reduce_spending_limit", "action": "reduce", "target": "spending_limit", "requires_board_resolution": false },
+      { "id": "increase_spending_limit", "action": "increase", "target": "spending_limit", "requires_board_resolution": true },
+      { "id": "add_narrow_lane", "action": "add", "target": "autonomy_lane", "scope": "narrower", "requires_board_resolution": false },
+      { "id": "remove_narrow_lane", "action": "remove", "target": "autonomy_lane", "requires_board_resolution": false },
+      { "id": "add_expand_lane", "action": "add", "target": "autonomy_lane", "scope": "expanded", "requires_board_resolution": true },
+      { "id": "decrease_vendor_cap", "action": "decrease", "target": "per_vendor_annual_cap", "requires_board_resolution": false },
+      { "id": "increase_vendor_cap", "action": "increase", "target": "per_vendor_annual_cap", "requires_board_resolution": true },
+      { "id": "tighten_emergency_thresholds", "action": "tighten", "target": "emergency_mode_thresholds", "requires_board_resolution": false },
+      { "id": "relax_emergency_thresholds", "action": "relax", "target": "emergency_mode_thresholds", "requires_board_resolution": true },
+      { "id": "modify_suspension_triggers", "action": "modify", "target": "auto_suspension_triggers", "requires_board_resolution": true },
+      { "id": "modify_negative_consent_cap", "action": "modify", "target": "negative_consent_max_size", "requires_board_resolution": true },
+      { "id": "disable_negative_consent", "action": "disable", "target": "negative_consent", "requires_board_resolution": false },
+      { "id": "enable_negative_consent", "action": "enable", "target": "negative_consent", "requires_board_resolution": true }
+    ],
+
+    "approval_validity": {
+      "required_elements": [
+        { "id": "explicit_affirmation", "label": "Explicit affirmation", "rule": "unambiguous_approved", "silence_is_approval": false, "inaction_is_approval": false },
+        { "id": "scope_match", "label": "Scope match", "rule": "matches_specific_proposed_action" },
+        { "id": "recorded_artifact", "label": "Recorded artifact", "rule": "durable_record", "valid_channels": ["platform_workflow", "email", "signed_document", "board_resolution"] },
+        { "id": "timeliness", "label": "Timeliness", "rule": "not_expired", "expiry_days": 30 },
+        { "id": "identity_verification", "label": "Identity verification", "rule": "verified_authorized_person_established_channel" }
+      ],
+      "negative_consent": {
+        "enabled_by_default": false,
+        "requires_board_resolution_to_enable": true,
+        "minimum_response_window_hours": 24,
+        "never_available_for": ["equity_actions", "litigation", "governance_amendments", "state_federal_filings", "actions_above_5000_usd", "tier3_actions"]
+      }
+    },
+
+    "retention_schedule": [
+      { "id": "financial_records", "label": "Financial records and tax filings", "retention_years": 7, "permanent": false, "governing_requirement": "IRS requirements; state law where longer" },
+      { "id": "governance_executed", "label": "Governance documents (executed)", "retention_years": null, "permanent": true, "governing_requirement": "Entity best practice" },
+      { "id": "audit_log", "label": "Audit log entries", "retention_years": 7, "permanent": false, "governing_requirement": "Matches financial record retention" },
+      { "id": "contracts", "label": "Contracts and agreements", "retention_years": 7, "permanent": false, "retention_from": "expiration_or_termination", "governing_requirement": "Statute of limitations coverage" },
+      { "id": "employment_records", "label": "Employment / contractor records", "retention_years": 7, "permanent": false, "retention_from": "separation", "governing_requirement": "Federal and state requirements" },
+      { "id": "correspondence", "label": "Correspondence (material)", "retention_years": 5, "permanent": false, "governing_requirement": "Entity policy" }
+    ],
+
+    "severity_classification": [
+      { "id": "critical", "label": "Critical", "response_sla_hours": 0, "auto_lockdown": true, "suspend_affected": true, "examples": ["audit_log_failure", "credential_compromise", "unauthorized_access", "data_breach"] },
+      { "id": "high", "label": "High", "response_sla_hours": 1, "auto_lockdown": false, "suspend_affected": true, "examples": ["policy_evidence_mismatch", "conflicting_instructions", "failed_filing_deadline"] },
+      { "id": "medium", "label": "Medium", "response_sla_hours": 24, "auto_lockdown": false, "suspend_affected": false, "examples": ["anomalous_transaction_pattern", "vendor_dispute", "spending_limit_approach"] },
+      { "id": "low", "label": "Low", "response_sla_hours": null, "auto_lockdown": false, "suspend_affected": false, "include_in_next_monthly_report": true, "examples": ["minor_operational_exceptions", "non_material_variances"] }
+    ],
+
+    "report_schedule": [
+      { "id": "tier1_summary", "label": "Tier 1 action summary", "frequency": "monthly", "authority_to_produce": 1, "content_keys": ["autonomous_actions", "spending_totals_by_category", "exceptions_flagged"] },
+      { "id": "pending_tier2", "label": "Pending Tier 2 proposals", "frequency": "weekly", "authority_to_produce": 1, "content_keys": ["open_proposals", "status", "age", "priority"] },
+      { "id": "compliance_forecast", "label": "Compliance deadline forecast", "frequency": "monthly", "authority_to_produce": 1, "lookahead_days": 90, "content_keys": ["filing_deadlines", "renewal_dates", "required_actions"] },
+      { "id": "spending_by_category", "label": "Spending report by category", "frequency": "monthly", "authority_to_produce": 1, "content_keys": ["actual_vs_budget", "variance_analysis"] },
+      { "id": "audit_integrity", "label": "Audit log integrity report", "frequency": "quarterly", "authority_to_produce": 1, "content_keys": ["hash_chain_verification", "entry_count", "anomalies"] },
+      { "id": "delegation_effectiveness", "label": "Delegation schedule effectiveness review", "frequency": "quarterly", "authority_to_produce": 1, "authority_to_change": 3, "content_keys": ["proposed_adjustments", "limits", "lanes", "classifications"] }
+    ],
+
+    "change_control_rules": [
+      { "id": "minor_version", "label": "Minor version update (patch, bugfix)", "tier": 2, "requires_impact_assessment": false, "requires_governance_amendment": false },
+      { "id": "major_version", "label": "Major version update (new capabilities, changed behavior)", "tier": 2, "requires_impact_assessment": true, "requires_governance_amendment": false },
+      { "id": "provider_change", "label": "Change of Agent provider or underlying model", "tier": 3, "requires_impact_assessment": true, "requires_governance_amendment": false },
+      { "id": "scope_altering", "label": "Change that alters delegation scope, tier behavior, or self-governance constraints", "tier": 3, "requires_impact_assessment": true, "requires_governance_amendment": true }
+    ]
+  },
+
+  "documents": [
+    {
+      "id": "agent_delegation_schedule",
+      "category": "common",
+      "entity_scope": "common",
+      "path": "common/agent-delegation-schedule.md",
+      "title": "Agent Delegation Schedule",
+      "preamble": "This is the controlling operational artifact for Agent Operator authority. It is adopted by reference in the Operating Agreement (LLC) and Bylaws (Corporation). The Principal/CEO may amend this schedule within the adjustment envelope (Section 9.1) without Board/Member action. Any amendment that expands delegated authority requires Board/Member resolution. The Agent Operator may not amend this schedule.",
+      "metadata_fields": [
+        { "key": "version", "label": "Version", "default": "1.0" },
+        { "key": "effective_date", "label": "Effective date", "placeholder": "YYYY-MM-DD" },
+        { "key": "adopted_by", "label": "Adopted by", "placeholder": "TBD (Initial Board Consent / Initial Member Consent)" },
+        { "key": "last_reviewed", "label": "Last reviewed", "placeholder": "YYYY-MM-DD" },
+        { "key": "next_mandatory_review", "label": "Next mandatory review", "placeholder": "12 months from effective date" }
+      ],
+      "content": [
+        { "type": "heading", "level": 2, "text": "1. Authority precedence" },
+        { "type": "paragraph", "text": "When instructions or rules conflict, the following precedence applies (highest to lowest):" },
+        { "type": "data_table", "source": "authority_precedence", "columns": [
+          { "key": "rank", "header": "Rank" },
+          { "key": "label", "header": "Source" }
+        ]},
+        { "type": "paragraph", "text": "When the Agent detects a conflict between levels, it must halt, record the conflict, and escalate to the Principal. The Agent must not resolve ambiguity by choosing the interpretation that expands its own authority." },
+        { "type": "heading", "level": 2, "text": "2. Spending authority" },
+        { "type": "heading", "level": 3, "text": "2.1 Tier 1 limits (Agent autonomous)" },
+        { "type": "data_table", "source": "spending_defaults.categories", "columns": [
+          { "key": "label", "header": "Category" },
+          { "key": "per_transaction_cents", "header": "Per-transaction limit", "format": "usd" },
+          { "key": "monthly_aggregate_cents", "header": "Monthly aggregate limit", "format": "usd" }
+        ]},
+        { "type": "heading", "level": 3, "text": "2.2 Per-vendor annual caps" },
+        { "type": "paragraph", "text": "The Agent may not commit more than **{{spending_defaults.per_vendor_annual_cap}}** in aggregate annual spending to any single vendor without Tier 2 approval, even if individual transactions are within Tier 1 limits." },
+        { "type": "heading", "level": 3, "text": "2.3 Spending escalation" },
+        { "type": "paragraph", "text": "Any expenditure not covered by a category above, or exceeding any limit above, requires Tier 2 approval before commitment." },
+        { "type": "heading", "level": 2, "text": "3. Autonomy lanes (pre-approved Tier 1 actions)" },
+        { "type": "paragraph", "text": "Autonomy lanes define categories of action the Agent may take without per-instance approval, provided all lane conditions are met. If any condition is not met, the action escalates to Tier 2." },
+        { "type": "data_table", "source": "structured_data.autonomy_lanes", "columns": [
+          { "key": "label", "header": "Lane" },
+          { "key": "conditions_text", "header": "Conditions" },
+          { "key": "authority_text", "header": "Authority" }
+        ]},
+        { "type": "paragraph", "text": "**Not Tier 1 (always Tier 2 or higher):** W-2 employee hiring, exclusive engagements, IP assignment beyond standard work-for-hire, non-compete obligations, equity compensation." },
+        { "type": "paragraph", "text": "**Not Tier 1:** Opening/closing accounts, changing signers, setting up new payment methods, wire transfers to new recipients." },
+        { "type": "heading", "level": 2, "text": "4. Approval mechanics" },
+        { "type": "heading", "level": 3, "text": "4.1 What counts as approval" },
+        { "type": "paragraph", "text": "A valid Tier 2 approval requires all of the following:" },
+        { "type": "data_table", "source": "structured_data.approval_validity", "columns": [
+          { "key": "label", "header": "Requirement" },
+          { "key": "description", "header": "Detail" }
+        ]},
+        { "type": "heading", "level": 3, "text": "4.2 Approval record schema" },
+        { "type": "paragraph", "text": "Every Tier 2 approval must be recorded with:" },
+        { "type": "code_block", "lines": [
+          "approval_id: [unique identifier]",
+          "action_ref: [reference to the proposed action]",
+          "approver: [name and role of approving person]",
+          "approver_auth_method: [platform login | email with verified sender | signed document | board resolution]",
+          "approver_identity_evidence: [reference to identity verification]",
+          "decision: [approved | rejected | approved with modifications]",
+          "scope: [specific description of what is approved]",
+          "conditions: [any conditions attached to the approval, or \"none\"]",
+          "channel: [platform approval / email / signed document / board resolution]",
+          "timestamp: YYYY-MM-DDTHH:MM:SSZ (UTC)",
+          "expiry: [date after which approval lapses if unexecuted]"
+        ]},
+        { "type": "heading", "level": 3, "text": "4.3 Negative consent (disabled by default)" },
+        { "type": "paragraph", "text": "For defensibility-first operation, negative consent is disabled by default and no-response is never approval." },
+        { "type": "paragraph", "text": "Negative consent may only be enabled by explicit Board/Member resolution that identifies:" },
+        { "type": "ordered_list", "items": [
+          "The exact action categories permitted for negative consent.",
+          "A per-action dollar cap and aggregate cap.",
+          "A minimum response window of 24 hours.",
+          "A mandatory expiration date for the authorization window.",
+          "Additional monitoring and reporting requirements."
+        ]},
+        { "type": "paragraph", "text": "**Negative consent is never available for:** equity actions, litigation, governance amendments, state/federal filings requiring natural-person attestation, actions above **$5,000**, or any Tier 3 action." },
+        { "type": "heading", "level": 2, "text": "5. Credential authority" },
+        { "type": "heading", "level": 3, "text": "5.1 Credential custody matrix" },
+        { "type": "data_table", "source": "structured_data.credential_custody", "columns": [
+          { "key": "label", "header": "Credential type" },
+          { "key": "custodian", "header": "Custodian" },
+          { "key": "agent_access", "header": "Agent access" }
+        ]},
+        { "type": "heading", "level": 3, "text": "5.2 Credential rules" },
+        { "type": "unordered_list", "items": [
+          "The Principal holds root/admin credentials for all financial and legal accounts.",
+          "The Agent receives scoped credentials provisioned by the Principal.",
+          "The Agent may not create new accounts or credentials without Tier 2 approval.",
+          "The Agent may not share, export, or store credentials outside the entity's authorized systems.",
+          "Credential rotation: the Agent must flag expiring credentials at least 14 days before expiry. The Principal rotates root credentials; the Agent may rotate its own scoped credentials within the same scope."
+        ]},
+        { "type": "heading", "level": 2, "text": "6. Emergency control modes" },
+        { "type": "heading", "level": 3, "text": "6.1 Modes" },
+        { "type": "data_table", "source": "structured_data.emergency_modes", "columns": [
+          { "key": "label", "header": "Mode" },
+          { "key": "description", "header": "Description" },
+          { "key": "activated_by_text", "header": "Who can activate" },
+          { "key": "deactivated_by_text", "header": "Who can deactivate" }
+        ]},
+        { "type": "heading", "level": 3, "text": "6.2 Mode rules" },
+        { "type": "unordered_list", "items": [
+          "Only the Principal may change modes manually (except automatic triggers).",
+          "The Agent must prominently display the current mode in every action record and report.",
+          "Mode changes are logged as governance events in the audit trail.",
+          "During Principal Unavailable mode, time-critical legal deadlines (filing deadlines, tax payments against approved returns) remain Tier 1 if they are ministerial and previously approved."
+        ]},
+        { "type": "heading", "level": 2, "text": "7. Auto-suspension triggers" },
+        { "type": "paragraph", "text": "The Agent Operator must immediately enter Incident Lockdown mode if any of the following occur:" },
+        { "type": "data_table", "source": "structured_data.auto_suspension_triggers", "columns": [
+          { "key": "label", "header": "Trigger" },
+          { "key": "description", "header": "Description" }
+        ]},
+        { "type": "paragraph", "text": "Upon auto-suspension:" },
+        { "type": "unordered_list", "items": [
+          "The Agent must immediately notify the Principal through all established channels.",
+          "The Agent must preserve the current state and all evidence of the triggering event.",
+          "The Agent must not take corrective action without Principal authorization.",
+          "Only the Principal may lift the lockdown after reviewing the trigger."
+        ]},
+        { "type": "heading", "level": 2, "text": "8. Reporting requirements" },
+        { "type": "heading", "level": 3, "text": "8.1 Mandatory reports" },
+        { "type": "data_table", "source": "structured_data.report_schedule", "columns": [
+          { "key": "label", "header": "Report" },
+          { "key": "frequency", "header": "Frequency" },
+          { "key": "content_summary", "header": "Content" }
+        ]},
+        { "type": "heading", "level": 3, "text": "8.2 Incident reports" },
+        { "type": "paragraph", "text": "For any auto-suspension trigger or operational anomaly, the Agent must produce a structured incident report within 1 hour, per the schema defined in the Signing and Records Standard." },
+        { "type": "heading", "level": 2, "text": "9. Adjustment envelope" },
+        { "type": "heading", "level": 3, "text": "9.1 CEO/Principal adjustment authority" },
+        { "type": "paragraph", "text": "The CEO (Corporation) or Principal (LLC) may modify this Delegation Schedule without Board/Member action **only within the following envelope**:" },
+        { "type": "data_table", "source": "structured_data.adjustment_rules", "columns": [
+          { "key": "description", "header": "Adjustment type" },
+          { "key": "permitted_text", "header": "Permitted without Board/Member action?" }
+        ]},
+        { "type": "paragraph", "text": "All adjustments must be recorded in the amendment history (Section 12) with the date, description, and authorizing person." },
+        { "type": "heading", "level": 3, "text": "9.2 Structural changes requiring governance document amendment" },
+        { "type": "paragraph", "text": "The following changes are outside the scope of this Delegation Schedule and require amendment of the Bylaws (Corporation) or Operating Agreement (LLC):" },
+        { "type": "unordered_list", "items": [
+          "Adding or removing Authority Tiers",
+          "Changing the definition or scope of Tier 3 (non-delegable) actions",
+          "Modifying the Agent's legal status or designation",
+          "Altering the safe harbor or its exclusions",
+          "Changing the precedence hierarchy",
+          "Modifying self-governance constraints"
+        ]},
+        { "type": "heading", "level": 2, "text": "10. Provider and model governance" },
+        { "type": "heading", "level": 3, "text": "10.1 Change control" },
+        { "type": "data_table", "source": "structured_data.change_control_rules", "columns": [
+          { "key": "label", "header": "Change type" },
+          { "key": "tier", "header": "Authority tier" },
+          { "key": "notes", "header": "Notes" }
+        ]},
+        { "type": "heading", "level": 3, "text": "10.2 Data and confidentiality" },
+        { "type": "unordered_list", "items": [
+          "The Agent provider may not use entity data for training, benchmarking, or any secondary purpose without explicit Principal written consent.",
+          "Entity data processed by the Agent must remain within systems authorized by the Principal.",
+          "The Agent must flag any provider terms that grant data usage rights and escalate as Tier 2.",
+          "Upon Agent replacement, the provider must delete or return all entity data within 30 days per the service agreement."
+        ]},
+        { "type": "heading", "level": 2, "text": "11. Annual re-authorization" },
+        { "type": "paragraph", "text": "This Delegation Schedule must be reviewed and re-authorized by the Principal/CEO/Board at least annually. If not re-authorized within 30 days of the review date:" },
+        { "type": "unordered_list", "items": [
+          "The schedule remains in effect but all Tier 1 spending limits are reduced to 50% of stated values.",
+          "The Agent must escalate the re-authorization as a pending Tier 2 action.",
+          "After 90 days without re-authorization, all Tier 1 autonomous authority is suspended and only Tier 1 record-keeping and reporting continue."
+        ]},
+        { "type": "horizontal_rule" },
+        { "type": "heading", "level": 2, "text": "12. Amendment history" },
+        { "type": "table", "headers": ["Date", "Version", "Description", "Authorized by"], "rows": [
+          ["`YYYY-MM-DD`", "1.0", "Initial adoption", "`TBD`"]
+        ]}
+      ]
+    },
+    {
+      "id": "assumptions_and_decisions",
+      "category": "common",
+      "entity_scope": "common",
+      "path": "common/assumptions-and-decisions.md",
+      "title": "Assumptions and Decision Log",
+      "preamble": "Use this file to lock decisions before finalizing any formation documents.",
+      "metadata_fields": [],
+      "content": [
+        { "type": "heading", "level": 2, "text": "Entity and jurisdiction" },
+        { "type": "conditional", "when_entity": "llc", "content": [
+          { "type": "heading", "level": 3, "text": "LLC path" },
+          { "type": "unordered_list", "items": [
+            "Entity type: Wyoming Limited Liability Company",
+            "Formation state: **Wyoming**",
+            "Governing statute: Wyoming Limited Liability Company Act (W.S. § 17-29-101 et seq.)",
+            "Legislative context: Wyoming DAO LLC Supplement (W.S. § 17-31-101 et seq.)",
+            "Filing authority: Wyoming Secretary of State",
+            "Principal business address: `{{company_address}}`",
+            "Registered agent (must have Wyoming address): `{{registered_agent_name}}`",
+            "Freedom of contract basis: W.S. § 17-29-110"
+          ]}
+        ]},
+        { "type": "conditional", "when_entity": "corporation", "content": [
+          { "type": "heading", "level": 3, "text": "Corporation path" },
+          { "type": "unordered_list", "items": [
+            "Entity type: Delaware C-Corporation",
+            "Formation state: **Delaware**",
+            "Governing statute: Delaware General Corporation Law (DGCL, Title 8, Delaware Code)",
+            "Filing authority: Delaware Division of Corporations",
+            "Principal business address: `{{company_address}}`",
+            "Registered agent (must have Delaware address): `{{registered_agent_name}}`",
+            "Board delegation basis: DGCL § 141(a)",
+            "Director liability elimination: DGCL § 102(b)(7)",
+            "Indemnification: DGCL § 145"
+          ]}
+        ]},
+        { "type": "heading", "level": 2, "text": "Ownership and control" },
+        { "type": "unordered_list", "items": [
+          "Founders / owners and legal names: `{{founders_list}}`",
+          "Equity split or membership percentages: `TBD`",
+          "Vesting required: `TBD`",
+          "Transfer restrictions: `TBD`"
+        ]},
+        { "type": "heading", "level": 2, "text": "Tax and accounting" },
+        { "type": "unordered_list", "items": [
+          "EIN obtained: `TBD`",
+          "Tax classification election (if LLC): `TBD`",
+          "Fiscal year end: `{{fiscal_year_end}}`",
+          "Accounting method: `TBD`"
+        ]},
+        { "type": "heading", "level": 2, "text": "Governance choices" },
+        { "type": "unordered_list", "items": [
+          "LLC management model: **Manager-managed** (required for agent-operated structure)",
+          "Corporation board size and initial directors: `{{board_size}}` directors: `{{directors_list}}`",
+          "Officer roles and appointees: `{{officers_list}}`",
+          "Signature authority matrix: see Agent Authority Framework below"
+        ]}
+      ]
+    },
+    {
+      "id": "signing_and_records_standard",
+      "category": "common",
+      "entity_scope": "common",
+      "path": "common/signing-and-records-standard.md",
+      "title": "Signing and Records Standard",
+      "metadata_fields": [],
+      "content": [
+        { "type": "heading", "level": 2, "text": "Purpose" },
+        { "type": "paragraph", "text": "Define how governance documents are approved, signed, and archived, including standards for AI agent execution, audit integrity, and incident response." },
+        { "type": "heading", "level": 2, "text": "Approval workflow" },
+        { "type": "heading", "level": 3, "text": "Human-initiated documents" },
+        { "type": "ordered_list", "items": [
+          "Draft or edit document in Markdown.",
+          "Open pull request with summary of legal/business deltas.",
+          "Obtain approval from authorized decision-makers per the Authority Tier framework.",
+          "Mark document version as \"approved for execution\"."
+        ]},
+        { "type": "heading", "level": 3, "text": "Agent-initiated documents" },
+        { "type": "ordered_list", "items": [
+          "Agent drafts document and classifies the action by Authority Tier.",
+          "**Tier 1**: Agent logs the action, executes, and records the document with an agent execution block.",
+          "**Tier 2**: Agent creates a proposal record. Action is queued until a valid approval artifact is recorded. Silence is not approval.",
+          "**Tier 3**: Agent may prepare the draft but must not execute. Routed to the Principal."
+        ]},
+        { "type": "heading", "level": 2, "text": "Signature standards" },
+        { "type": "heading", "level": 3, "text": "Human signatures" },
+        { "type": "unordered_list", "items": [
+          "Preferred format: e-signature packet generated from final Markdown conversion.",
+          "Signature blocks must include printed name, title/capacity, and date.",
+          "Use UTC date format in ISO style: `YYYY-MM-DD`.",
+          "**Natural-person attestation rule.** Where any statute, regulation, government portal, financial institution, or counterparty requires a natural person's signature, only a designated human may sign or attest. The Agent must not sign, attest, or produce any block that could be mistaken for a human signature."
+        ]},
+        { "type": "heading", "level": 3, "text": "Agent execution blocks (internal records)" },
+        { "type": "paragraph", "text": "When the Agent Operator executes an action, the internal audit record must include:" },
+        { "type": "code_block", "lines": [
+          "action_id: [unique identifier]",
+          "executed_by: [Agent Operator identifier and version]",
+          "authority: Tier [1|2] -- [brief authority basis]",
+          "delegation_rule: [reference to Delegation Schedule section/lane]",
+          "policy_rule_id: [specific autonomy lane ID or spending category]",
+          "timestamp: YYYY-MM-DDTHH:MM:SSZ (UTC)",
+          "execution_channel: [API | email | portal | manual-upload | internal-system]",
+          "action_hash: [SHA-256 hash of the action content]",
+          "previous_entry_hash: [SHA-256 hash of the prior audit entry]",
+          "evidence_uri: [reference to source documents or approval artifacts]",
+          "principal_approval: [approval_id reference, or \"Not required -- Tier 1\"]",
+          "reversibility: [reversible | irreversible | partially reversible]"
+        ]},
+        { "type": "heading", "level": 2, "text": "Audit trail requirements" },
+        { "type": "heading", "level": 3, "text": "Hash-chain integrity" },
+        { "type": "unordered_list", "items": [
+          "Each audit entry includes the SHA-256 hash of the previous entry, creating an append-only hash chain.",
+          "The first entry uses a genesis hash derived from the entity's formation date and EIN.",
+          "**Weekly checkpoint**: compute and store a checkpoint hash in a separate immutable location.",
+          "**Quarterly verification**: verify the full hash chain from genesis to current."
+        ]},
+        { "type": "heading", "level": 2, "text": "Retention and access control" },
+        { "type": "data_table", "source": "structured_data.retention_schedule", "columns": [
+          { "key": "label", "header": "Record type" },
+          { "key": "retention_text", "header": "Minimum retention" },
+          { "key": "governing_requirement", "header": "Governing requirement" }
+        ]},
+        { "type": "heading", "level": 2, "text": "Incident response" },
+        { "type": "heading", "level": 3, "text": "Severity classification" },
+        { "type": "data_table", "source": "structured_data.severity_classification", "columns": [
+          { "key": "label", "header": "Severity" },
+          { "key": "response_sla_text", "header": "Response SLA" },
+          { "key": "description", "header": "Description" }
+        ]},
+        { "type": "heading", "level": 3, "text": "Incident report format" },
+        { "type": "paragraph", "text": "For Critical and High severity incidents, the Agent must produce a structured report within 1 hour containing:" },
+        { "type": "code_block", "lines": [
+          "incident_id: [unique identifier]",
+          "severity: [critical | high]",
+          "trigger_event: [description]",
+          "trigger_timestamp: YYYY-MM-DDTHH:MM:SSZ (UTC)",
+          "detection_timestamp: YYYY-MM-DDTHH:MM:SSZ (UTC)",
+          "sequence_of_events: [ordered narrative]",
+          "systems_affected: [list]",
+          "containment_actions: [actions taken or \"none -- awaiting Principal direction\"]",
+          "current_state: [description]",
+          "current_mode: [Normal | Principal Unavailable | Incident Lockdown]",
+          "root_cause_status: [identified | suspected | unknown | under investigation]",
+          "recommended_remediation: [ordered list of options]",
+          "evidence_preserved: [list of artifacts and locations]",
+          "related_action_ids: [references to audit log entries]"
+        ]},
+        { "type": "heading", "level": 2, "text": "Provider exit and transition" },
+        { "type": "paragraph", "text": "Upon Agent Operator replacement or termination:" },
+        { "type": "ordered_list", "items": [
+          "Transfer all records, credentials, pending proposals, and audit logs within **7 days**.",
+          "Provide a complete, verified data export in portable formats.",
+          "Delete all entity data within **30 days** and certify deletion in writing.",
+          "Transfer the hash chain intact with verification.",
+          "Pending Tier 2 proposals transfer as-is; approvals do not transfer."
+        ]}
+      ]
+    },
+    {
+      "id": "agent_operator_service_agreement_template",
+      "category": "common",
+      "entity_scope": "common",
+      "path": "common/agent-operator-service-agreement-template.md",
+      "title": "Agent Operator Service Agreement Template",
+      "preamble": "Template only. Requires legal review before execution.",
+      "metadata_fields": [
+        { "key": "effective_date", "label": "Effective Date", "placeholder": "YYYY-MM-DD" },
+        { "key": "entity_legal_name", "label": "Entity", "placeholder": "TBD legal name" },
+        { "key": "provider_legal_name", "label": "Provider", "placeholder": "TBD legal name" }
+      ],
+      "content": [
+        { "type": "paragraph", "text": "Effective Date: `{{effective_date}}`\nEntity: `{{entity_legal_name}}` (the \"Entity\")\nProvider: `{{provider_legal_name}}` (the \"Provider\")" },
+        { "type": "heading", "level": 2, "text": "1. Scope" },
+        { "type": "paragraph", "text": "Provider supplies the Agent Operator system and related services for the Entity's operations, subject to the Entity governance documents." },
+        { "type": "heading", "level": 2, "text": "2. Authority and control" },
+        { "type": "ordered_list", "items": [
+          "Provider acknowledges that the Agent Operator has only the authority expressly delegated by the Entity.",
+          "Provider must support immediate suspension or revocation of Agent operations.",
+          "Provider may not expand Agent authority through product settings, defaults, or updates without written Entity approval."
+        ]},
+        { "type": "heading", "level": 2, "text": "3. Data use restrictions" },
+        { "type": "ordered_list", "items": [
+          "Provider may not use Entity data for training, benchmarking, or any secondary purpose without explicit written consent.",
+          "Provider may process Entity data only in approved systems and jurisdictions.",
+          "Provider must maintain confidentiality obligations that survive termination."
+        ]},
+        { "type": "heading", "level": 2, "text": "4. Security controls" },
+        { "type": "ordered_list", "items": [
+          "Provider must maintain commercially reasonable safeguards.",
+          "Provider must support scoped credentials, revocation, and rotation.",
+          "Provider must maintain access logs and provide them on request."
+        ]},
+        { "type": "heading", "level": 2, "text": "5. Incident response" },
+        { "type": "ordered_list", "items": [
+          "Notify Entity of security incidents within 24 hours.",
+          "Provide incident details, containment status, and remediation plan.",
+          "Cooperate with Entity incident response and evidence preservation."
+        ]},
+        { "type": "heading", "level": 2, "text": "6. Service levels" },
+        { "type": "ordered_list", "items": [
+          "Target availability (monthly): `TBD`.",
+          "Incident response SLA: `TBD`.",
+          "Scheduled maintenance notice: at least 48 hours.",
+          "Unscheduled outage notice: within 1 hour."
+        ]},
+        { "type": "heading", "level": 2, "text": "7. Audit and compliance rights" },
+        { "type": "ordered_list", "items": [
+          "Entity may audit Provider compliance at reasonable intervals.",
+          "Provider must cooperate with auditors.",
+          "Provider must provide evidence for governance controls on request."
+        ]},
+        { "type": "heading", "level": 2, "text": "8. Liability and remedies" },
+        { "type": "ordered_list", "items": [
+          "Provider liable for unauthorized data use, security failures, and deletion/return failures.",
+          "No limitation of liability for fraud, willful misconduct, or gross negligence.",
+          "Liability cap for ordinary operational errors: `TBD`."
+        ]},
+        { "type": "heading", "level": 2, "text": "9. Term and termination" },
+        { "type": "ordered_list", "items": [
+          "Term: `TBD`.",
+          "Entity may terminate for convenience on `TBD` days notice.",
+          "Entity may terminate immediately for material breach.",
+          "Sections 3, 4, 5, 8, 10, and 11 survive termination."
+        ]},
+        { "type": "heading", "level": 2, "text": "10. Transition and data return/deletion" },
+        { "type": "ordered_list", "items": [
+          "Return all Entity data within 7 days of termination.",
+          "Delete all Entity data within 30 days and certify deletion.",
+          "Support audit-log continuity transfer."
+        ]},
+        { "type": "heading", "level": 2, "text": "11. Change control" },
+        { "type": "ordered_list", "items": [
+          "Advance notice of material model/system changes.",
+          "Support rollback for degrading changes.",
+          "Changes affecting delegation scope require written Entity approval."
+        ]},
+        { "type": "heading", "level": 2, "text": "12. Governing law and disputes" },
+        { "type": "ordered_list", "items": [
+          "Governing law: `TBD`.",
+          "Venue/dispute mechanism: `TBD`."
+        ]},
+        { "type": "heading", "level": 2, "text": "13. Signatures" },
+        { "type": "signature_block", "role": "Entity Authorized Signatory", "fields": ["name", "title", "date"] },
+        { "type": "signature_block", "role": "Provider Authorized Signatory", "fields": ["name", "title", "date"] }
+      ]
+    },
+    {
+      "id": "agent_operator_service_agreement_checklist",
+      "category": "common",
+      "entity_scope": "common",
+      "path": "common/agent-operator-service-agreement-checklist.md",
+      "title": "Agent Operator Service Agreement Checklist",
+      "preamble": "Minimum required terms for the service agreement between the entity and the Agent Operator provider. This checklist is a governance tool, not a contract.",
+      "metadata_fields": [
+        { "key": "last_reviewed", "label": "Last reviewed", "placeholder": "YYYY-MM-DD" },
+        { "key": "reviewed_by", "label": "Reviewed by", "placeholder": "TBD" }
+      ],
+      "content": [
+        { "type": "paragraph", "text": "Use with `common/agent-operator-service-agreement-template.md` as the baseline draft." },
+        { "type": "heading", "level": 2, "text": "1. Data use and confidentiality" },
+        { "type": "table", "headers": ["Requirement", "Status"], "rows": [
+          ["Provider may not use entity data for training or secondary purposes without consent.", "Required"],
+          ["Entity data must remain within authorized systems and jurisdictions.", "Required"],
+          ["Provider must maintain commercially reasonable security controls.", "Required"],
+          ["Provider must notify entity of any data breach within 24 hours.", "Required"]
+        ]},
+        { "type": "heading", "level": 2, "text": "2. Data deletion and return" },
+        { "type": "table", "headers": ["Requirement", "Status"], "rows": [
+          ["Return all entity data in portable formats within 7 days of termination.", "Required"],
+          ["Delete all entity data within 30 days and certify deletion.", "Required"],
+          ["Cooperate with hash-chain audit log transfer.", "Required"]
+        ]},
+        { "type": "heading", "level": 2, "text": "3. Security controls" },
+        { "type": "table", "headers": ["Requirement", "Status"], "rows": [
+          ["SOC 2 Type II compliance (or equivalent).", "Recommended"],
+          ["Support scoped credential provisioning.", "Required"],
+          ["Support credential rotation and revocation.", "Required"],
+          ["Maintain audit logs of all access.", "Required"],
+          ["Support immediate suspension on entity request.", "Required"]
+        ]},
+        { "type": "heading", "level": 2, "text": "4. Audit rights" },
+        { "type": "table", "headers": ["Requirement", "Status"], "rows": [
+          ["Entity right to audit provider compliance.", "Required"],
+          ["Provider cooperation with auditors.", "Required"]
+        ]},
+        { "type": "heading", "level": 2, "text": "5. Liability allocation" },
+        { "type": "table", "headers": ["Requirement", "Status"], "rows": [
+          ["Provider liable for system failures, data breaches, unauthorized data use.", "Required"],
+          ["No limitation of liability for fraud or willful misconduct.", "Required"],
+          ["Reasonable liability cap for operational errors.", "Recommended"]
+        ]},
+        { "type": "heading", "level": 2, "text": "6. Service levels" },
+        { "type": "table", "headers": ["Requirement", "Status"], "rows": [
+          ["Uptime SLA.", "Recommended"],
+          ["Incident response SLA.", "Recommended"],
+          ["48-hour scheduled maintenance notice.", "Required"],
+          ["1-hour unscheduled outage notice.", "Required"]
+        ]},
+        { "type": "heading", "level": 2, "text": "7. Change control" },
+        { "type": "table", "headers": ["Requirement", "Status"], "rows": [
+          ["Advance notice of material Agent system changes.", "Required"],
+          ["Rollback support.", "Recommended"],
+          ["Delegation scope changes require entity governance approval.", "Required"]
+        ]},
+        { "type": "heading", "level": 2, "text": "8. Termination" },
+        { "type": "table", "headers": ["Requirement", "Status"], "rows": [
+          ["Entity may terminate at any time on 30 days notice.", "Required"],
+          ["Immediate termination for material breach.", "Required"],
+          ["Post-termination obligations survive.", "Required"]
+        ]},
+        { "type": "heading", "level": 2, "text": "9. Governing law" },
+        { "type": "table", "headers": ["Requirement", "Status"], "rows": [
+          ["Same governing law as entity governance documents.", "Recommended"],
+          ["Dispute resolution mechanism specified.", "Required"]
+        ]},
+        { "type": "placeholder", "key": "last_reviewed", "label": "Last reviewed" },
+        { "type": "placeholder", "key": "reviewed_by", "label": "Reviewed by" }
+      ]
+    },
+    {
+      "id": "certificate_of_incorporation",
+      "category": "corporation",
+      "entity_scope": "corporation",
+      "path": "corporation/certificate-of-incorporation.md",
+      "title": "Certificate of Incorporation",
+      "preamble": "Filed with the Delaware Secretary of State, Division of Corporations. This document establishes the corporation under the Delaware General Corporation Law.",
+      "metadata_fields": [
+        { "key": "legal_name", "label": "Corporation Name" },
+        { "key": "effective_date", "label": "Date of Incorporation", "placeholder": "YYYY-MM-DD" }
+      ],
+      "content": [
+        { "type": "heading", "level": 2, "text": "FIRST: Name" },
+        { "type": "paragraph", "text": "The name of the corporation is **{{legal_name}}** (the \"Corporation\")." },
+        { "type": "heading", "level": 2, "text": "SECOND: Registered Office and Agent" },
+        { "type": "paragraph", "text": "The address of the registered office of the Corporation in the State of Delaware is `{{registered_agent_address}}`. The name of the registered agent at such address is `{{registered_agent_name}}`." },
+        { "type": "heading", "level": 2, "text": "THIRD: Purpose" },
+        { "type": "paragraph", "text": "The purpose of the Corporation is to engage in any lawful act or activity for which corporations may be organized under the General Corporation Law of Delaware." },
+        { "type": "heading", "level": 2, "text": "FOURTH: Authorized Capital Stock" },
+        { "type": "paragraph", "text": "The total number of shares of stock which the Corporation shall have authority to issue is `{{authorized_shares}}` shares of Common Stock, par value $`{{par_value}}` per share." },
+        { "type": "heading", "level": 2, "text": "FIFTH: Incorporator" },
+        { "type": "paragraph", "text": "The name and mailing address of the incorporator are:\n\nName: `{{incorporator_name}}`\nAddress: `{{incorporator_address}}`" },
+        { "type": "heading", "level": 2, "text": "SIXTH: Board of Directors" },
+        { "type": "paragraph", "text": "The business and affairs of the Corporation shall be managed by or under the direction of the Board of Directors. The number of directors shall be fixed from time to time by resolution of the Board of Directors. The initial number of directors is `{{board_size}}`." },
+        { "type": "paragraph", "text": "Elections of directors need not be by written ballot unless the Bylaws of the Corporation shall so provide." },
+        { "type": "heading", "level": 2, "text": "SEVENTH: Limitation of Liability" },
+        { "type": "paragraph", "text": "To the fullest extent permitted by the Delaware General Corporation Law, as it now exists or as it may hereafter be amended, a director of the Corporation shall not be personally liable to the Corporation or its stockholders for monetary damages for breach of fiduciary duty as a director." },
+        { "type": "heading", "level": 2, "text": "EIGHTH: Indemnification" },
+        { "type": "paragraph", "text": "The Corporation shall indemnify, to the fullest extent permitted by applicable law, any director or officer of the Corporation who was or is a party or is threatened to be made a party to any threatened, pending or completed action, suit or proceeding by reason of the fact that he or she is or was a director or officer of the Corporation." },
+        { "type": "heading", "level": 2, "text": "NINTH: Amendment" },
+        { "type": "paragraph", "text": "The Corporation reserves the right to amend, alter, change or repeal any provision contained in this Certificate of Incorporation, in the manner now or hereafter prescribed by statute, and all rights conferred upon stockholders herein are granted subject to this reservation." },
+        { "type": "heading", "level": 2, "text": "TENTH: Agent Operator Authority" },
+        { "type": "paragraph", "text": "The Board of Directors is authorized to designate one or more Agent Operators (as defined in the Bylaws) to act on behalf of the Corporation within the scope of authority delegated by the Board through the Agent Delegation Schedule adopted by reference in the Bylaws. The designation, scope, and constraints of Agent Operator authority shall be governed by the Bylaws and the Agent Delegation Schedule." },
+        { "type": "signature_block", "role": "Incorporator", "fields": ["name", "date"] }
+      ]
+    },
+    {
+      "id": "bylaws",
+      "category": "corporation",
+      "entity_scope": "corporation",
+      "path": "corporation/bylaws.md",
+      "title": "Bylaws",
+      "preamble": "Bylaws of {{legal_name}}, a Delaware corporation.",
+      "metadata_fields": [
+        { "key": "legal_name", "label": "Corporation Name" },
+        { "key": "effective_date", "label": "Effective Date", "placeholder": "YYYY-MM-DD" }
+      ],
+      "content": [
+        { "type": "heading", "level": 2, "text": "Article I -- Offices" },
+        { "type": "paragraph", "text": "**Section 1.1 Registered Office.** The registered office of the Corporation shall be at `{{registered_agent_address}}`, and the name of the registered agent at such address is `{{registered_agent_name}}`." },
+        { "type": "paragraph", "text": "**Section 1.2 Other Offices.** The Corporation may also have offices at such other places as the Board of Directors may from time to time determine. The principal business office of the Corporation shall be at `{{company_address}}`." },
+        { "type": "heading", "level": 2, "text": "Article II -- Stockholders" },
+        { "type": "paragraph", "text": "**Section 2.1 Annual Meeting.** The annual meeting of stockholders shall be held at such date, time and place as shall be designated by the Board of Directors." },
+        { "type": "paragraph", "text": "**Section 2.2 Special Meetings.** Special meetings of stockholders may be called by the Board of Directors, the Chairperson of the Board, or the Chief Executive Officer." },
+        { "type": "paragraph", "text": "**Section 2.3 Notice of Meetings.** Written notice of each meeting of stockholders shall be given not less than ten (10) nor more than sixty (60) days before the date of the meeting to each stockholder entitled to vote at such meeting." },
+        { "type": "paragraph", "text": "**Section 2.4 Quorum.** The holders of a majority of the shares of stock entitled to vote, present in person or represented by proxy, shall constitute a quorum for the transaction of business at all meetings of the stockholders." },
+        { "type": "paragraph", "text": "**Section 2.5 Action Without Meeting.** Any action required or permitted to be taken at any annual or special meeting of stockholders may be taken without a meeting, without prior notice and without a vote, if a consent in writing, setting forth the action so taken, shall be signed by the holders of outstanding stock having not less than the minimum number of votes that would be necessary to authorize such action at a meeting." },
+        { "type": "heading", "level": 2, "text": "Article III -- Board of Directors" },
+        { "type": "paragraph", "text": "**Section 3.1 General Powers.** The business and affairs of the Corporation shall be managed by or under the direction of the Board of Directors." },
+        { "type": "paragraph", "text": "**Section 3.2 Number and Qualification.** The Board of Directors shall consist of `{{board_size}}` director(s). Directors need not be stockholders." },
+        { "type": "paragraph", "text": "**Section 3.3 Election and Term.** Directors shall be elected at each annual meeting of the stockholders. Each director shall hold office until such director's successor is elected and qualified or until such director's earlier resignation, removal or death." },
+        { "type": "paragraph", "text": "**Section 3.4 Quorum.** A majority of the total number of directors shall constitute a quorum for the transaction of business." },
+        { "type": "paragraph", "text": "**Section 3.5 Action Without Meeting.** Any action required or permitted to be taken at any meeting of the Board of Directors or of any committee thereof may be taken without a meeting if all members of the Board or committee consent thereto in writing." },
+        { "type": "paragraph", "text": "**Section 3.6 Vacancies.** Any vacancy on the Board of Directors may be filled by a majority of the remaining directors, even if less than a quorum." },
+        { "type": "heading", "level": 2, "text": "Article IV -- Officers" },
+        { "type": "paragraph", "text": "**Section 4.1 Officers.** The officers of the Corporation shall include a Chief Executive Officer, a Secretary, and a Chief Financial Officer. The Board of Directors may also appoint such other officers as it deems necessary." },
+        { "type": "paragraph", "text": "**Section 4.2 Election and Term.** Officers shall be elected by the Board of Directors and shall hold office until their successors are elected and qualified or until their earlier resignation, removal or death." },
+        { "type": "paragraph", "text": "**Section 4.3 Chief Executive Officer.** The Chief Executive Officer shall be the principal executive officer of the Corporation and shall have general supervision of the business and affairs of the Corporation, subject to the direction of the Board of Directors." },
+        { "type": "paragraph", "text": "**Section 4.4 Secretary.** The Secretary shall keep the minutes of the meetings of the stockholders and the Board of Directors, shall give notice of meetings, and shall have custody of the corporate seal." },
+        { "type": "paragraph", "text": "**Section 4.5 Chief Financial Officer.** The Chief Financial Officer shall be responsible for the financial affairs of the Corporation, including maintaining the books of account and financial records." },
+        { "type": "heading", "level": 2, "text": "Article V -- Agent Operator" },
+        { "type": "paragraph", "text": "**Section 5.1 Designation.** The Board of Directors may designate one or more Agent Operators to manage the day-to-day operations of the Corporation within the scope of authority set forth in the Agent Delegation Schedule." },
+        { "type": "paragraph", "text": "**Section 5.2 Agent Delegation Schedule.** The Agent Delegation Schedule, as adopted and amended by the Board, is incorporated by reference and defines the authority tiers, spending limits, autonomy lanes, approval mechanics, and constraints governing the Agent Operator." },
+        { "type": "paragraph", "text": "**Section 5.3 Authority Limitations.** The Agent Operator may act only within the scope of authority expressly delegated. The Board or CEO may suspend or revoke Agent authority at any time without notice or cause." },
+        { "type": "paragraph", "text": "**Section 5.4 Safe Harbor.** A director shall not be liable for any action taken by an Agent Operator that was within the scope of the delegated authority as set forth in the Agent Delegation Schedule, provided the Board acted in good faith in adopting and maintaining the Delegation Schedule. This safe harbor does not apply to fraud, willful misconduct, or gross negligence." },
+        { "type": "heading", "level": 2, "text": "Article VI -- Stock" },
+        { "type": "paragraph", "text": "**Section 6.1 Certificates.** Shares of stock may be certificated or uncertificated, as determined by the Board of Directors." },
+        { "type": "paragraph", "text": "**Section 6.2 Transfer Restrictions.** No stockholder shall transfer, sell, assign, pledge, hypothecate, or otherwise dispose of any shares of stock of the Corporation without the prior written consent of the Board of Directors, unless the Board determines otherwise." },
+        { "type": "paragraph", "text": "**Section 6.3 Right of First Refusal.** The Corporation shall have a right of first refusal with respect to any proposed transfer of shares. Before any stockholder may transfer shares, the stockholder shall first offer such shares to the Corporation on the same terms and conditions as the proposed transfer." },
+        { "type": "heading", "level": 2, "text": "Article VII -- Indemnification" },
+        { "type": "paragraph", "text": "**Section 7.1 Right to Indemnification.** The Corporation shall indemnify each person who was or is a party or is threatened to be made a party to any action, suit or proceeding by reason of the fact that he or she is or was a director, officer, or Agent Operator of the Corporation, to the fullest extent authorized by the Delaware General Corporation Law." },
+        { "type": "heading", "level": 2, "text": "Article VIII -- Fiscal Year" },
+        { "type": "paragraph", "text": "The fiscal year of the Corporation shall end on `{{fiscal_year_end}}`." },
+        { "type": "heading", "level": 2, "text": "Article IX -- Amendments" },
+        { "type": "paragraph", "text": "These Bylaws may be amended or repealed by the Board of Directors or by the stockholders." },
+        { "type": "signature_block", "role": "Secretary", "fields": ["name", "title", "date"] }
+      ]
+    },
+    {
+      "id": "incorporator_action",
+      "category": "corporation",
+      "entity_scope": "corporation",
+      "path": "corporation/incorporator-action.md",
+      "title": "Action by Written Consent of the Sole Incorporator",
+      "metadata_fields": [
+        { "key": "legal_name", "label": "Corporation Name" },
+        { "key": "effective_date", "label": "Effective Date", "placeholder": "YYYY-MM-DD" }
+      ],
+      "content": [
+        { "type": "paragraph", "text": "The undersigned, being the sole incorporator of **{{legal_name}}**, a Delaware corporation (the \"Corporation\"), acting pursuant to Section 108 of the Delaware General Corporation Law, hereby takes the following actions by written consent:" },
+        { "type": "heading", "level": 2, "text": "1. Appointment of Initial Board of Directors" },
+        { "type": "paragraph", "text": "RESOLVED, that the following person(s) are hereby appointed to serve as the initial director(s) of the Corporation, each to serve until such director's successor is duly elected and qualified or until such director's earlier resignation, removal or death:" },
+        { "type": "paragraph", "text": "`{{directors_list}}`" },
+        { "type": "heading", "level": 2, "text": "2. General Authorization" },
+        { "type": "paragraph", "text": "RESOLVED, that the initial director(s) are hereby authorized to take all actions necessary or desirable to organize the Corporation and to commence business, including adopting bylaws, electing officers, authorizing the issuance of shares, and taking all other actions contemplated by the Certificate of Incorporation." },
+        { "type": "paragraph", "text": "This written consent shall be filed with the minutes of the proceedings of the Corporation." },
+        { "type": "signature_block", "role": "Sole Incorporator", "fields": ["name", "date"] }
+      ]
+    },
+    {
+      "id": "initial_board_consent",
+      "category": "corporation",
+      "entity_scope": "corporation",
+      "path": "corporation/initial-board-consent.md",
+      "title": "Initial Action by Directors (Unanimous Written Consent)",
+      "metadata_fields": [
+        { "key": "legal_name", "label": "Corporation Name" },
+        { "key": "effective_date", "label": "Effective Date", "placeholder": "YYYY-MM-DD" }
+      ],
+      "content": [
+        { "type": "paragraph", "text": "The undersigned, being all of the directors of **{{legal_name}}**, a Delaware corporation (the \"Corporation\"), pursuant to Section 141(f) of the Delaware General Corporation Law, hereby take the following actions by unanimous written consent without a meeting:" },
+        { "type": "heading", "level": 2, "text": "1. Certificate of Incorporation" },
+        { "type": "paragraph", "text": "RESOLVED, that the Certificate of Incorporation of the Corporation, as filed with the Secretary of State of the State of Delaware, is hereby ratified and approved in all respects." },
+        { "type": "heading", "level": 2, "text": "2. Bylaws" },
+        { "type": "paragraph", "text": "RESOLVED, that the Bylaws attached hereto are hereby adopted as the Bylaws of the Corporation." },
+        { "type": "heading", "level": 2, "text": "3. Officers" },
+        { "type": "paragraph", "text": "RESOLVED, that the following persons are hereby elected to serve as officers of the Corporation, each to serve at the pleasure of the Board of Directors:" },
+        { "type": "paragraph", "text": "`{{officers_list}}`" },
+        { "type": "heading", "level": 2, "text": "4. Issuance of Stock" },
+        { "type": "paragraph", "text": "RESOLVED, that the Corporation is hereby authorized to issue shares of Common Stock to the following persons in the amounts and for the consideration set forth below:" },
+        { "type": "paragraph", "text": "`{{founders_stock_table}}`" },
+        { "type": "paragraph", "text": "RESOLVED, that such shares shall be issued pursuant to Restricted Stock Purchase Agreements in the form approved by the Board, and that such issuance is exempt from registration under the Securities Act of 1933, as amended, pursuant to Section 4(a)(2) thereof." },
+        { "type": "heading", "level": 2, "text": "5. Agent Delegation Schedule" },
+        { "type": "paragraph", "text": "RESOLVED, that the Agent Delegation Schedule attached hereto is hereby adopted and incorporated by reference into the Bylaws as provided in Article V thereof." },
+        { "type": "heading", "level": 2, "text": "6. Fiscal Year" },
+        { "type": "paragraph", "text": "RESOLVED, that the fiscal year of the Corporation shall end on `{{fiscal_year_end}}`." },
+        { "type": "heading", "level": 2, "text": "7. Bank Account" },
+        { "type": "paragraph", "text": "RESOLVED, that the officers of the Corporation are hereby authorized to open a bank account in the name of the Corporation and to designate signatories for such account." },
+        { "type": "heading", "level": 2, "text": "8. Qualification to Do Business" },
+        { "type": "paragraph", "text": "RESOLVED, that the officers of the Corporation are hereby authorized to take all actions necessary to qualify the Corporation to do business in any state or jurisdiction where the Corporation's activities require such qualification." },
+        { "type": "heading", "level": 2, "text": "9. Employer Identification Number" },
+        { "type": "paragraph", "text": "RESOLVED, that the officers of the Corporation are hereby authorized to apply for an Employer Identification Number (EIN) from the Internal Revenue Service." },
+        { "type": "heading", "level": 2, "text": "10. General Authorization" },
+        { "type": "paragraph", "text": "RESOLVED, that each officer of the Corporation is hereby authorized to take all actions and execute all documents as may be necessary or desirable to carry out the intent and accomplish the purposes of the foregoing resolutions." },
+        { "type": "paragraph", "text": "This unanimous written consent may be executed in counterparts, each of which shall be deemed an original." },
+        { "type": "signature_block", "role": "Director", "fields": ["name", "date"] }
+      ]
+    },
+    {
+      "id": "articles_of_organization",
+      "category": "llc",
+      "entity_scope": "llc",
+      "path": "llc/articles-of-organization.md",
+      "title": "Articles of Organization",
+      "preamble": "Filed with the Wyoming Secretary of State. This document establishes the LLC under the Wyoming Limited Liability Company Act.",
+      "metadata_fields": [
+        { "key": "legal_name", "label": "LLC Name" },
+        { "key": "effective_date", "label": "Date of Organization", "placeholder": "YYYY-MM-DD" }
+      ],
+      "content": [
+        { "type": "heading", "level": 2, "text": "ARTICLE I -- Name" },
+        { "type": "paragraph", "text": "The name of the limited liability company is **{{legal_name}}** (the \"Company\")." },
+        { "type": "heading", "level": 2, "text": "ARTICLE II -- Registered Agent" },
+        { "type": "paragraph", "text": "The name and address of the registered agent in the State of Wyoming is:\n\nName: `{{registered_agent_name}}`\nAddress: `{{registered_agent_address}}`" },
+        { "type": "heading", "level": 2, "text": "ARTICLE III -- Management" },
+        { "type": "paragraph", "text": "The Company shall be **manager-managed**. The initial manager is `{{principal_name}}`." },
+        { "type": "heading", "level": 2, "text": "ARTICLE IV -- Purpose" },
+        { "type": "paragraph", "text": "The Company is organized for any lawful purpose permitted under the Wyoming Limited Liability Company Act." },
+        { "type": "heading", "level": 2, "text": "ARTICLE V -- Duration" },
+        { "type": "paragraph", "text": "The Company shall have perpetual duration." },
+        { "type": "heading", "level": 2, "text": "ARTICLE VI -- Agent Operator" },
+        { "type": "paragraph", "text": "The Manager is authorized to designate one or more Agent Operators to manage day-to-day operations of the Company within the scope of the Agent Delegation Schedule adopted by reference in the Operating Agreement. The authority of Agent Operators shall be governed by the Operating Agreement and the Agent Delegation Schedule." },
+        { "type": "signature_block", "role": "Organizer", "fields": ["name", "date"] }
+      ]
+    },
+    {
+      "id": "operating_agreement",
+      "category": "llc",
+      "entity_scope": "llc",
+      "path": "llc/operating-agreement.md",
+      "title": "Operating Agreement",
+      "preamble": "Operating Agreement of {{legal_name}}, a Wyoming limited liability company.",
+      "metadata_fields": [
+        { "key": "legal_name", "label": "LLC Name" },
+        { "key": "effective_date", "label": "Effective Date", "placeholder": "YYYY-MM-DD" }
+      ],
+      "content": [
+        { "type": "paragraph", "text": "This Operating Agreement (this \"Agreement\") of **{{legal_name}}** (the \"Company\"), a Wyoming limited liability company, is entered into effective as of `{{effective_date}}`, by the Members listed in Exhibit A." },
+        { "type": "heading", "level": 2, "text": "Section 1 -- Formation and Name" },
+        { "type": "paragraph", "text": "**1.1** The Company has been formed as a Wyoming limited liability company by the filing of Articles of Organization with the Wyoming Secretary of State pursuant to the Wyoming Limited Liability Company Act (W.S. § 17-29-101 et seq.) (the \"Act\")." },
+        { "type": "paragraph", "text": "**1.2** The name of the Company is **{{legal_name}}**." },
+        { "type": "heading", "level": 2, "text": "Section 2 -- Purpose and Powers" },
+        { "type": "paragraph", "text": "The Company is formed for any lawful purpose permitted under the Act." },
+        { "type": "heading", "level": 2, "text": "Section 3 -- Members and Interests" },
+        { "type": "paragraph", "text": "**3.1 Members.** The Members, their capital contributions, and their percentage interests are set forth in Exhibit A." },
+        { "type": "paragraph", "text": "**3.2 Transfer Restrictions.** No Member may transfer, sell, assign, pledge, or otherwise dispose of all or any part of such Member's interest without the prior written consent of a majority in interest of the other Members." },
+        { "type": "heading", "level": 2, "text": "Section 4 -- Management" },
+        { "type": "paragraph", "text": "**4.1 Manager-Managed.** The Company shall be manager-managed. The initial Manager is `{{principal_name}}`." },
+        { "type": "paragraph", "text": "**4.2 Authority of Manager.** The Manager shall have full authority to manage the business and affairs of the Company, subject to the limitations set forth in this Agreement and the Act." },
+        { "type": "heading", "level": 2, "text": "Section 5 -- Agent Operator" },
+        { "type": "paragraph", "text": "**5.1 Designation.** The Manager may designate one or more Agent Operators to manage the day-to-day operations of the Company within the scope of authority set forth in the Agent Delegation Schedule." },
+        { "type": "paragraph", "text": "**5.2 Agent Delegation Schedule.** The Agent Delegation Schedule, as adopted and amended by the Manager with Member approval where required, is incorporated by reference and defines the authority tiers, spending limits, autonomy lanes, approval mechanics, and constraints governing the Agent Operator." },
+        { "type": "paragraph", "text": "**5.3 Authority Limitations.** The Agent Operator may act only within the scope of authority expressly delegated. The Manager may suspend or revoke Agent authority at any time without notice or cause." },
+        { "type": "paragraph", "text": "**5.4 Safe Harbor.** No Manager or Member shall be liable for any action taken by an Agent Operator within the scope of delegated authority, provided the Manager acted in good faith in adopting and maintaining the Delegation Schedule. This safe harbor does not apply to fraud, willful misconduct, or gross negligence." },
+        { "type": "heading", "level": 2, "text": "Section 6 -- Distributions and Allocations" },
+        { "type": "paragraph", "text": "Distributions shall be made at such times and in such amounts as determined by the Manager, in proportion to the Members' percentage interests." },
+        { "type": "heading", "level": 2, "text": "Section 7 -- Tax Matters" },
+        { "type": "paragraph", "text": "**7.1 Tax Classification.** The Company shall be classified as a partnership (or disregarded entity if single-member) for federal income tax purposes unless the Members elect otherwise." },
+        { "type": "paragraph", "text": "**7.2 Fiscal Year.** The fiscal year of the Company shall end on `{{fiscal_year_end}}`." },
+        { "type": "heading", "level": 2, "text": "Section 8 -- Indemnification" },
+        { "type": "paragraph", "text": "The Company shall indemnify each Manager, Member, and Agent Operator to the fullest extent permitted by the Act." },
+        { "type": "heading", "level": 2, "text": "Section 9 -- Dissolution" },
+        { "type": "paragraph", "text": "The Company shall be dissolved upon the occurrence of any event specified in the Act, or upon the written consent of all Members." },
+        { "type": "heading", "level": 2, "text": "Section 10 -- Amendments" },
+        { "type": "paragraph", "text": "This Agreement may be amended only by the written consent of all Members." },
+        { "type": "heading", "level": 2, "text": "Section 11 -- Governing Law" },
+        { "type": "paragraph", "text": "This Agreement shall be governed by and construed in accordance with the laws of the State of Wyoming." },
+        { "type": "heading", "level": 2, "text": "Exhibit A -- Members" },
+        { "type": "paragraph", "text": "`{{founders_table}}`" },
+        { "type": "signature_block", "role": "Member / Manager", "fields": ["name", "title", "date"] }
+      ]
+    },
+    {
+      "id": "initial_written_consent",
+      "category": "llc",
+      "entity_scope": "llc",
+      "path": "llc/initial-written-consent.md",
+      "title": "Initial Written Consent of Members",
+      "metadata_fields": [
+        { "key": "legal_name", "label": "LLC Name" },
+        { "key": "effective_date", "label": "Effective Date", "placeholder": "YYYY-MM-DD" }
+      ],
+      "content": [
+        { "type": "paragraph", "text": "The undersigned, being all of the Members of **{{legal_name}}**, a Wyoming limited liability company (the \"Company\"), hereby take the following actions by written consent without a meeting, pursuant to the Operating Agreement:" },
+        { "type": "heading", "level": 2, "text": "1. Operating Agreement" },
+        { "type": "paragraph", "text": "RESOLVED, that the Operating Agreement of the Company, in the form attached hereto, is hereby adopted and approved." },
+        { "type": "heading", "level": 2, "text": "2. Manager Appointment" },
+        { "type": "paragraph", "text": "RESOLVED, that `{{principal_name}}` is hereby appointed as the Manager of the Company." },
+        { "type": "heading", "level": 2, "text": "3. Agent Delegation Schedule" },
+        { "type": "paragraph", "text": "RESOLVED, that the Agent Delegation Schedule attached hereto is hereby adopted and incorporated by reference into the Operating Agreement as provided in Section 5 thereof." },
+        { "type": "heading", "level": 2, "text": "4. Fiscal Year" },
+        { "type": "paragraph", "text": "RESOLVED, that the fiscal year of the Company shall end on `{{fiscal_year_end}}`." },
+        { "type": "heading", "level": 2, "text": "5. Bank Account" },
+        { "type": "paragraph", "text": "RESOLVED, that the Manager is authorized to open a bank account in the name of the Company and to designate signatories." },
+        { "type": "heading", "level": 2, "text": "6. EIN" },
+        { "type": "paragraph", "text": "RESOLVED, that the Manager is authorized to apply for an Employer Identification Number from the IRS." },
+        { "type": "heading", "level": 2, "text": "7. General Authorization" },
+        { "type": "paragraph", "text": "RESOLVED, that the Manager is authorized to take all actions and execute all documents necessary to carry out the foregoing resolutions." },
+        { "type": "signature_block", "role": "Member", "fields": ["name", "date"] }
+      ]
+    },
+    {
+      "id": "restricted_stock_purchase_agreement",
+      "category": "transactions",
+      "entity_scope": "corporation",
+      "path": "transactions/restricted-stock-purchase-agreement.md",
+      "title": "Restricted Stock Purchase Agreement",
+      "preamble": "Agreement between the Corporation and a Purchaser for the purchase of shares subject to vesting and repurchase rights.",
+      "metadata_fields": [
+        { "key": "legal_name", "label": "Corporation Name" },
+        { "key": "effective_date", "label": "Effective Date", "placeholder": "YYYY-MM-DD" }
+      ],
+      "content": [
+        { "type": "paragraph", "text": "This Restricted Stock Purchase Agreement (this \"Agreement\") is entered into as of `{{effective_date}}` between **{{legal_name}}**, a Delaware corporation (the \"Company\"), and `{{purchaser_name}}` (the \"Purchaser\")." },
+        { "type": "heading", "level": 2, "text": "1. Purchase and Sale of Shares" },
+        { "type": "paragraph", "text": "**1.1 Purchase.** The Company hereby agrees to sell to the Purchaser, and the Purchaser hereby agrees to purchase from the Company, `{{purchase_shares}}` shares of Common Stock (the \"Shares\") at a purchase price of $`{{par_value}}` per share, for a total purchase price of $`{{total_purchase_price}}`." },
+        { "type": "paragraph", "text": "**1.2 Payment.** Payment shall be made by check or wire transfer upon execution of this Agreement." },
+        { "type": "heading", "level": 2, "text": "2. Vesting" },
+        { "type": "paragraph", "text": "**2.1 Vesting Schedule.** The Shares shall vest over `{{vesting_months}}` months from the date of this Agreement, with a `{{cliff_months}}`-month cliff. After the cliff, Shares shall vest monthly in equal installments." },
+        { "type": "paragraph", "text": "**2.2 Unvested Shares.** Unvested Shares are subject to the Company's Repurchase Option (Section 3)." },
+        { "type": "heading", "level": 2, "text": "3. Repurchase Option" },
+        { "type": "paragraph", "text": "**3.1 Company's Repurchase Option.** In the event the Purchaser ceases to be a Service Provider to the Company for any reason, the Company shall have the right to repurchase any unvested Shares at the original purchase price per share." },
+        { "type": "paragraph", "text": "**3.2 Exercise.** The Company may exercise the Repurchase Option within ninety (90) days after the Purchaser ceases to be a Service Provider." },
+        { "type": "heading", "level": 2, "text": "4. Transfer Restrictions" },
+        { "type": "paragraph", "text": "The Purchaser shall not transfer any Shares without the prior written consent of the Company. Any purported transfer in violation of this Agreement shall be void." },
+        { "type": "heading", "level": 2, "text": "5. Section 83(b) Election" },
+        { "type": "paragraph", "text": "The Purchaser understands that the Purchaser may file an election under Section 83(b) of the Internal Revenue Code with the Internal Revenue Service within thirty (30) days of the date of this Agreement. **THE PURCHASER ACKNOWLEDGES THAT IT IS THE PURCHASER'S SOLE RESPONSIBILITY TO FILE A TIMELY 83(b) ELECTION.**" },
+        { "type": "heading", "level": 2, "text": "6. IP Assignment" },
+        { "type": "paragraph", "text": "The Purchaser hereby assigns to the Company all right, title and interest in any intellectual property created by the Purchaser that relates to the Company's business, as further described in the Assignment Agreement executed concurrently herewith." },
+        { "type": "paragraph", "text": "Description of assigned IP: `{{ip_description}}`" },
+        { "type": "heading", "level": 2, "text": "7. Representations" },
+        { "type": "paragraph", "text": "The Purchaser represents that the Shares are being acquired for investment for the Purchaser's own account and not with a view to the distribution thereof." },
+        { "type": "heading", "level": 2, "text": "8. Governing Law" },
+        { "type": "paragraph", "text": "This Agreement shall be governed by and construed in accordance with the laws of the State of Delaware." },
+        { "type": "signature_block", "role": "Company", "fields": ["name", "title", "date"] },
+        { "type": "signature_block", "role": "Purchaser", "fields": ["name", "date"] }
+      ]
+    },
+    {
+      "id": "ip_assignment_agreement",
+      "category": "transactions",
+      "entity_scope": "common",
+      "path": "transactions/ip-assignment-agreement.md",
+      "title": "Confidential Information and Inventions Assignment Agreement",
+      "preamble": "Agreement to protect company confidential information and assign inventions and intellectual property.",
+      "metadata_fields": [
+        { "key": "legal_name", "label": "Company Name" },
+        { "key": "effective_date", "label": "Effective Date", "placeholder": "YYYY-MM-DD" }
+      ],
+      "content": [
+        { "type": "paragraph", "text": "This Confidential Information and Inventions Assignment Agreement (this \"Agreement\") is entered into as of `{{effective_date}}` between **{{legal_name}}** (the \"Company\") and `{{assignor_name}}` (the \"Assignor\")." },
+        { "type": "heading", "level": 2, "text": "1. Confidential Information" },
+        { "type": "paragraph", "text": "**1.1 Definition.** \"Confidential Information\" means all non-public information relating to the Company's business, technology, products, services, customers, finances, and operations." },
+        { "type": "paragraph", "text": "**1.2 Non-Disclosure.** The Assignor agrees to hold all Confidential Information in strict confidence and not to disclose or use any Confidential Information except in the performance of services for the Company." },
+        { "type": "paragraph", "text": "**1.3 Return of Materials.** Upon termination of the Assignor's relationship with the Company, the Assignor shall return all Confidential Information and materials." },
+        { "type": "heading", "level": 2, "text": "2. Inventions Assignment" },
+        { "type": "paragraph", "text": "**2.1 Prior Inventions.** The Assignor has identified on Exhibit A all inventions that the Assignor owns or has an interest in prior to the date of this Agreement (\"Prior Inventions\")." },
+        { "type": "paragraph", "text": "**2.2 Assignment.** The Assignor hereby assigns to the Company all right, title and interest in all inventions, works of authorship, developments, improvements, and trade secrets conceived, developed or reduced to practice during the Assignor's relationship with the Company that relate to the Company's business." },
+        { "type": "paragraph", "text": "**2.3 Specific IP Assignment.** The Assignor specifically assigns the following intellectual property to the Company:" },
+        { "type": "paragraph", "text": "`{{ip_description}}`" },
+        { "type": "heading", "level": 2, "text": "3. Governing Law" },
+        { "type": "paragraph", "text": "This Agreement shall be governed by the laws of the state of the Company's incorporation." },
+        { "type": "signature_block", "role": "Company", "fields": ["name", "title", "date"] },
+        { "type": "signature_block", "role": "Assignor", "fields": ["name", "date"] }
+      ]
+    }
+  ]
+}

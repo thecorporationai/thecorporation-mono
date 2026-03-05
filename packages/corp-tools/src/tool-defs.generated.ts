@@ -1136,6 +1136,30 @@ export const GENERATED_TOOL_DEFINITIONS: Record<string, unknown>[] = [
   {
     "type": "function",
     "function": {
+      "name": "preview_document_pdf",
+      "description": "Preview a governance document as PDF without requiring a saved document. Useful for reviewing templates before formation.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "entity_id": {
+            "type": "string",
+            "description": "Entity whose profile to use for rendering"
+          },
+          "document_id": {
+            "type": "string",
+            "description": "AST document definition ID (e.g. 'bylaws', 'agent_delegation_schedule')"
+          }
+        },
+        "required": [
+          "entity_id",
+          "document_id"
+        ]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
       "name": "convert_entity",
       "description": "Convert entity type",
       "parameters": {

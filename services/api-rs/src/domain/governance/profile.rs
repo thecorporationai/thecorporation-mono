@@ -11,6 +11,85 @@ use crate::domain::ids::EntityId;
 pub const GOVERNANCE_PROFILE_PATH: &str = "governance/profile.json";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CompanyAddress {
+    pub street: String,
+    pub city: String,
+    pub county: Option<String>,
+    pub state: String,
+    pub zip: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FounderInfo {
+    pub name: String,
+    #[serde(default)]
+    pub shares: Option<u64>,
+    #[serde(default)]
+    pub vesting: Option<VestingSchedule>,
+    #[serde(default)]
+    pub ip_contribution: Option<String>,
+    #[serde(default)]
+    pub email: Option<String>,
+    #[serde(default)]
+    pub address: Option<CompanyAddress>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VestingSchedule {
+    pub total_months: u32,
+    pub cliff_months: u32,
+    #[serde(default)]
+    pub acceleration_on_termination: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DirectorInfo {
+    pub name: String,
+    #[serde(default)]
+    pub address: Option<CompanyAddress>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OfficerInfo {
+    pub name: String,
+    pub title: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StockDetails {
+    pub authorized_shares: u64,
+    pub par_value_cents: u64,
+    #[serde(default = "default_share_class")]
+    pub share_class: String,
+}
+
+fn default_share_class() -> String {
+    "Common Stock".to_owned()
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FiscalYearEnd {
+    pub month: u32,
+    pub day: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DocumentOptions {
+    #[serde(default = "default_dating_format")]
+    pub dating_format: String,
+    #[serde(default)]
+    pub transfer_restrictions: bool,
+    #[serde(default)]
+    pub right_of_first_refusal: bool,
+    #[serde(default)]
+    pub s_corp_election: bool,
+}
+
+fn default_dating_format() -> String {
+    "blank_line".to_owned()
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GovernanceProfile {
     entity_id: EntityId,
     entity_type: EntityType,
@@ -34,6 +113,20 @@ pub struct GovernanceProfile {
     principal_name: Option<String>,
     #[serde(default)]
     principal_title: Option<String>,
+    #[serde(default)]
+    company_address: Option<CompanyAddress>,
+    #[serde(default)]
+    founders: Vec<FounderInfo>,
+    #[serde(default)]
+    directors: Vec<DirectorInfo>,
+    #[serde(default)]
+    officers: Vec<OfficerInfo>,
+    #[serde(default)]
+    stock_details: Option<StockDetails>,
+    #[serde(default)]
+    fiscal_year_end: Option<FiscalYearEnd>,
+    #[serde(default)]
+    document_options: Option<DocumentOptions>,
     #[serde(default)]
     incomplete_profile: bool,
     version: u32,
@@ -62,6 +155,13 @@ impl GovernanceProfile {
             incorporator_address: None,
             principal_name: None,
             principal_title: None,
+            company_address: None,
+            founders: Vec::new(),
+            directors: Vec::new(),
+            officers: Vec::new(),
+            stock_details: None,
+            fiscal_year_end: None,
+            document_options: None,
             incomplete_profile: true,
             version: 1,
             created_at: now,
@@ -84,6 +184,33 @@ impl GovernanceProfile {
         }
         if self.version == 0 {
             return Err("version must be >= 1".to_owned());
+        }
+        if let Some(addr) = &self.company_address {
+            if addr.street.trim().is_empty() {
+                return Err("company_address.street must not be empty".to_owned());
+            }
+            if addr.city.trim().is_empty() {
+                return Err("company_address.city must not be empty".to_owned());
+            }
+            if addr.state.trim().is_empty() {
+                return Err("company_address.state must not be empty".to_owned());
+            }
+            if addr.zip.trim().is_empty() {
+                return Err("company_address.zip must not be empty".to_owned());
+            }
+        }
+        if let Some(stock) = &self.stock_details {
+            if stock.authorized_shares == 0 {
+                return Err("stock_details.authorized_shares must be > 0".to_owned());
+            }
+        }
+        if let Some(fy) = &self.fiscal_year_end {
+            if fy.month == 0 || fy.month > 12 {
+                return Err("fiscal_year_end.month must be 1-12".to_owned());
+            }
+            if fy.day == 0 || fy.day > 31 {
+                return Err("fiscal_year_end.day must be 1-31".to_owned());
+            }
         }
         Ok(())
     }
@@ -123,6 +250,41 @@ impl GovernanceProfile {
             self.incomplete_profile = v;
         }
         self.version = self.version.saturating_add(1);
+        self.updated_at = Utc::now();
+    }
+
+    pub fn set_company_address(&mut self, address: CompanyAddress) {
+        self.company_address = Some(address);
+        self.updated_at = Utc::now();
+    }
+
+    pub fn set_founders(&mut self, founders: Vec<FounderInfo>) {
+        self.founders = founders;
+        self.updated_at = Utc::now();
+    }
+
+    pub fn set_directors(&mut self, directors: Vec<DirectorInfo>) {
+        self.directors = directors;
+        self.updated_at = Utc::now();
+    }
+
+    pub fn set_officers(&mut self, officers: Vec<OfficerInfo>) {
+        self.officers = officers;
+        self.updated_at = Utc::now();
+    }
+
+    pub fn set_stock_details(&mut self, details: StockDetails) {
+        self.stock_details = Some(details);
+        self.updated_at = Utc::now();
+    }
+
+    pub fn set_fiscal_year_end(&mut self, fy: FiscalYearEnd) {
+        self.fiscal_year_end = Some(fy);
+        self.updated_at = Utc::now();
+    }
+
+    pub fn set_document_options(&mut self, options: DocumentOptions) {
+        self.document_options = Some(options);
         self.updated_at = Utc::now();
     }
 
@@ -170,6 +332,27 @@ impl GovernanceProfile {
     }
     pub fn principal_title(&self) -> Option<&str> {
         self.principal_title.as_deref()
+    }
+    pub fn company_address(&self) -> Option<&CompanyAddress> {
+        self.company_address.as_ref()
+    }
+    pub fn founders(&self) -> &[FounderInfo] {
+        &self.founders
+    }
+    pub fn directors(&self) -> &[DirectorInfo] {
+        &self.directors
+    }
+    pub fn officers(&self) -> &[OfficerInfo] {
+        &self.officers
+    }
+    pub fn stock_details(&self) -> Option<&StockDetails> {
+        self.stock_details.as_ref()
+    }
+    pub fn fiscal_year_end(&self) -> Option<&FiscalYearEnd> {
+        self.fiscal_year_end.as_ref()
+    }
+    pub fn document_options(&self) -> Option<&DocumentOptions> {
+        self.document_options.as_ref()
     }
     pub fn incomplete_profile(&self) -> bool {
         self.incomplete_profile

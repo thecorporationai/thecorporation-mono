@@ -39,3 +39,15 @@ export async function documentsGenerateCommand(opts: {
     printJson(result);
   } catch (err) { printError(`Failed to generate contract: ${err}`); process.exit(1); }
 }
+
+export async function documentsPreviewPdfCommand(opts: {
+  entityId?: string; documentId: string;
+}): Promise<void> {
+  const cfg = requireConfig("api_url", "api_key", "workspace_id");
+  const eid = resolveEntityId(cfg, opts.entityId);
+  const apiUrl = cfg.api_url.replace(/\/+$/, "");
+  const qs = new URLSearchParams({ entity_id: eid, document_id: opts.documentId }).toString();
+  const url = `${apiUrl}/v1/documents/preview/pdf?${qs}`;
+  printSuccess(`Preview PDF URL: ${url}`);
+  console.log("Use your API key to authenticate the download.");
+}

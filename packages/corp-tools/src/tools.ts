@@ -221,6 +221,18 @@ const TOOL_HANDLERS: Record<string, ToolHandler> = {
     }
   },
 
+  preview_document_pdf: async (args, client) => {
+    const entityId = args.entity_id as string;
+    const documentId = args.document_id as string;
+    const qs = new URLSearchParams({ entity_id: entityId, document_id: documentId }).toString();
+    return {
+      entity_id: entityId,
+      document_id: documentId,
+      download_url: `${client.apiUrl}/v1/documents/preview/pdf?${qs}`,
+      note: "Use your API key to authenticate the download.",
+    };
+  },
+
   get_signing_link: async (args, client) => client.getSigningLink(args.document_id as string),
   convert_entity: async (args, client) => client.convertEntity(args.entity_id as string, args),
   dissolve_entity: async (args, client) => client.dissolveEntity(args.entity_id as string, args),
@@ -323,6 +335,7 @@ const READ_ONLY_TOOLS = new Set([
   "list_safe_notes", "list_agents", "get_checklist",
   "get_signing_link", "list_obligations", "get_billing_status",
   "list_agenda_items", "list_votes",
+  "preview_document_pdf",
 ]);
 
 export function isWriteTool(name: string): boolean {

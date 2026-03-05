@@ -539,6 +539,15 @@ documentsCmd
     const { documentsGenerateCommand } = await import("./commands/documents.js");
     await documentsGenerateCommand({ ...opts, entityId: parent.entityId });
   });
+documentsCmd
+  .command("preview-pdf")
+  .requiredOption("--document-id <id>", "AST document definition ID (e.g. 'bylaws')")
+  .description("Preview a governance document as PDF")
+  .action(async (opts, cmd) => {
+    const parent = cmd.parent!.opts();
+    const { documentsPreviewPdfCommand } = await import("./commands/documents.js");
+    await documentsPreviewPdfCommand({ ...opts, entityId: parent.entityId });
+  });
 
 // --- tax ---
 const taxCmd = program

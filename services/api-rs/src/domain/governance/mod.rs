@@ -20,4 +20,5 @@ pub mod seat;
 pub mod typed_intent;
 pub mod trigger;
 pub mod types;
+pub mod typst_renderer;
 pub mod vote;

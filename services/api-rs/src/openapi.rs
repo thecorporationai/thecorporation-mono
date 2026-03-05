@@ -176,6 +176,16 @@ fn add_formation_paths(paths: &mut Map<String, Value>) {
     );
     add_path(
         paths,
+        "/v1/documents/preview/pdf",
+        "get",
+        op(
+            "formation",
+            "preview_document_pdf",
+            "Preview document as PDF",
+        ),
+    );
+    add_path(
+        paths,
         "/v1/documents/{document_id}",
         "get",
         op("formation", "get_document", "Get a document"),

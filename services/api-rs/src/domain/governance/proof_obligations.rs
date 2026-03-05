@@ -32,14 +32,18 @@ fn known_clause_refs() -> &'static HashSet<String> {
     KNOWN_CLAUSE_REFS.get_or_init(|| {
         let ast = default_governance_ast();
         let mut refs = HashSet::new();
-        for doc in &ast.documents {
-            for section in &doc.sections {
-                refs.insert(section.id.clone());
-                for clause in &section.clauses {
-                    refs.insert(clause.id.clone());
-                }
-            }
-        }
+        // Legacy clause refs from v1 document sections — the policy engine
+        // still emits these as clause_refs in PolicyDecision.
+        refs.insert("delegation.authority_tiers".to_owned());
+        refs.insert("delegation.authority_tiers.tier1".to_owned());
+        refs.insert("delegation.authority_tiers.tier2".to_owned());
+        refs.insert("delegation.authority_tiers.tier3".to_owned());
+        refs.insert("delegation.approvals".to_owned());
+        refs.insert("delegation.approvals.silence_not_approval".to_owned());
+        refs.insert("delegation.approvals.expiry".to_owned());
+        refs.insert("signing.attestation".to_owned());
+        refs.insert("signing.attestation.required".to_owned());
+
         for esc in &ast.rules.escalation {
             refs.insert(format!("rule.escalation.{}", esc.id));
         }

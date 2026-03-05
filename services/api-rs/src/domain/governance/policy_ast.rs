@@ -147,34 +147,23 @@ pub enum GovernanceClauseType {
 #[derive(Debug, Clone, Deserialize)]
 pub struct GovernanceAstV1 {
     pub version: String,
-    pub entity_types: Vec<String>,
-    pub documents: Vec<GovernanceDocument>,
-    pub rules: GovernanceRules,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct GovernanceDocument {
-    pub id: String,
-    pub path: String,
-    pub title: String,
-    pub sections: Vec<GovernanceSection>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct GovernanceSection {
-    pub id: String,
-    pub heading: String,
-    pub clauses: Vec<GovernanceClause>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct GovernanceClause {
-    pub id: String,
-    #[serde(rename = "type")]
-    pub clause_type: GovernanceClauseType,
-    pub text: String,
+    // v0 unified AST has entity_types as a map, not a list — accept either via Value
     #[serde(default)]
-    pub citations: Vec<String>,
+    pub entity_types: serde_json::Value,
+    // v0 has documents in a different format — we only care about rules
+    #[serde(default)]
+    pub documents: serde_json::Value,
+    pub rules: GovernanceRules,
+    #[serde(default)]
+    pub spending_defaults: Option<serde_json::Value>,
+    #[serde(default)]
+    pub compliance: Option<serde_json::Value>,
+    #[serde(default)]
+    pub authority_precedence: Option<serde_json::Value>,
+    #[serde(default)]
+    pub disclaimer: Option<serde_json::Value>,
+    #[serde(default)]
+    pub structured_data: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -421,25 +410,8 @@ impl GovernanceAstV1 {
         // 8. (Removed) Lane field/operator parity is now enforced at the type level
         //    by the typed field enums (BoolField, NumericField, StringListField).
 
-        // 9. Document/section/clause IDs must be unique across the AST.
-        let mut seen_doc_ids = HashSet::new();
-        let mut seen_section_ids = HashSet::new();
-        let mut seen_clause_ids = HashSet::new();
-        for doc in &self.documents {
-            if !seen_doc_ids.insert(&doc.id) {
-                errors.push(format!("duplicate document id: {}", doc.id));
-            }
-            for section in &doc.sections {
-                if !seen_section_ids.insert(&section.id) {
-                    errors.push(format!("duplicate section id: {}", section.id));
-                }
-                for clause in &section.clauses {
-                    if !seen_clause_ids.insert(&clause.id) {
-                        errors.push(format!("duplicate clause id: {}", clause.id));
-                    }
-                }
-            }
-        }
+        // 9. (Removed) Document/section/clause ID uniqueness is now validated by
+        //    doc_ast.rs. The v0 unified AST documents use a different format.
 
         errors
     }
@@ -447,14 +419,14 @@ impl GovernanceAstV1 {
 
 // ── AST loader ────────────────────────────────────────────────────────
 
-const AST_JSON: &str = include_str!("../../../../../governance/ast/v1/governance-ast.json");
+const AST_JSON: &str = include_str!("../../../../../governance/ast/governance-ast.json");
 
 static AST: OnceLock<GovernanceAstV1> = OnceLock::new();
 
 pub fn default_governance_ast() -> &'static GovernanceAstV1 {
     AST.get_or_init(|| {
         let ast: GovernanceAstV1 = serde_json::from_str(AST_JSON)
-            .expect("governance AST JSON is invalid; fix governance/ast/v1/governance-ast.json");
+            .expect("governance AST JSON is invalid; fix governance/ast/governance-ast.json");
         let errors = ast.validate();
         if !errors.is_empty() {
             panic!(
@@ -475,7 +447,7 @@ mod tests {
     #[test]
     fn parses_and_validates_default_ast() {
         let ast = default_governance_ast();
-        assert_eq!(ast.version, "1.0.0");
+        assert_eq!(ast.version, "0.1.0");
         assert!(ast
             .rules
             .tier_defaults

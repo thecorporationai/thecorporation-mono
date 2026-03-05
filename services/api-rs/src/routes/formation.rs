@@ -6,6 +6,8 @@
 use axum::{
     Json, Router,
     extract::{Path, Query, State},
+    http::{StatusCode, header},
+    response::IntoResponse,
     routing::{get, post},
 };
 use serde::{Deserialize, Serialize};
@@ -20,6 +22,11 @@ use crate::domain::formation::{
     filing::Filing,
     service,
     types::*,
+};
+use crate::domain::governance::{
+    doc_ast,
+    profile::{GOVERNANCE_PROFILE_PATH, GovernanceProfile},
+    typst_renderer,
 };
 use crate::domain::ids::{ContractId, DocumentId, EntityId, SignatureId, WorkspaceId};
 use crate::error::AppError;
@@ -1191,13 +1198,6 @@ pub struct SigningLinkResponse {
 }
 
 #[derive(Serialize)]
-pub struct DocumentPdfResponse {
-    pub document_id: DocumentId,
-    pub content_type: String,
-    pub url: String,
-}
-
-#[derive(Serialize)]
 pub struct AmendmentHistoryEntry {
     pub version: u32,
     pub amended_at: String,
@@ -1294,33 +1294,162 @@ async fn get_document_pdf(
     State(state): State<AppState>,
     Path(document_id): Path<DocumentId>,
     Query(query): Query<super::EntityIdQuery>,
-) -> Result<Json<DocumentPdfResponse>, AppError> {
+) -> Result<impl IntoResponse, AppError> {
     let workspace_id = auth.workspace_id();
     let entity_id = query.entity_id;
 
-    // Verify the document exists and return metadata-derived URL
-    let doc = tokio::task::spawn_blocking({
+    let pdf_bytes = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
             let store = open_formation_store(&layout, workspace_id, entity_id)?;
-            store
+            let doc = store
                 .read_document("main", document_id)
-                .map_err(|_| AppError::NotFound(format!("document {} not found", document_id)))
+                .map_err(|_| AppError::NotFound(format!("document {} not found", document_id)))?;
+
+            // Load AST and profile
+            let ast = doc_ast::default_doc_ast();
+            let profile: GovernanceProfile =
+                match store.read_json::<GovernanceProfile>("main", GOVERNANCE_PROFILE_PATH) {
+                    Ok(p) => p,
+                    Err(_) => {
+                        let entity = store
+                            .read_entity("main")
+                            .map_err(|e| AppError::Internal(format!("read entity: {e}")))?;
+                        GovernanceProfile::default_for_entity(&entity)
+                    }
+                };
+
+            // Map entity type
+            let entity = store
+                .read_entity("main")
+                .map_err(|e| AppError::Internal(format!("read entity: {e}")))?;
+            let entity_type = match entity.entity_type() {
+                EntityType::Corporation => doc_ast::EntityTypeKey::Corporation,
+                EntityType::Llc => doc_ast::EntityTypeKey::Llc,
+            };
+
+            // Find matching AST document definition via governance_tag
+            let governance_tag = doc.governance_tag().ok_or_else(|| {
+                AppError::UnprocessableEntity(format!(
+                    "document {} has no governance_tag — cannot render PDF",
+                    document_id
+                ))
+            })?;
+
+            let doc_def = ast
+                .documents
+                .iter()
+                .find(|d| d.id == governance_tag || d.path.contains(governance_tag))
+                .ok_or_else(|| {
+                    AppError::NotFound(format!(
+                        "no AST document definition matches governance_tag '{}'",
+                        governance_tag
+                    ))
+                })?;
+
+            // Render PDF
+            let pdf = typst_renderer::render_pdf(
+                doc_def,
+                ast,
+                entity_type,
+                &profile,
+                doc.signatures(),
+            )
+            .map_err(|e| AppError::Internal(format!("PDF rendering failed: {e}")))?;
+
+            Ok::<_, AppError>(pdf)
         }
     })
     .await
     .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
 
-    Ok(Json(DocumentPdfResponse {
-        document_id: doc.document_id(),
-        content_type: "application/pdf".to_owned(),
-        url: format!(
-            "/v1/documents/{}/pdf/download?entity_id={}&workspace_id={}",
-            doc.document_id(),
-            entity_id,
-            workspace_id
-        ),
-    }))
+    let disposition = format!("inline; filename=\"{document_id}.pdf\"");
+    Ok((
+        StatusCode::OK,
+        [
+            (header::CONTENT_TYPE, "application/pdf".to_owned()),
+            (header::CONTENT_DISPOSITION, disposition),
+        ],
+        pdf_bytes,
+    ))
+}
+
+#[derive(Deserialize)]
+pub struct PreviewDocumentQuery {
+    pub entity_id: EntityId,
+    pub document_id: String,
+}
+
+/// Preview a governance document as PDF without requiring a saved Document record.
+async fn preview_document_pdf(
+    RequireFormationRead(auth): RequireFormationRead,
+    State(state): State<AppState>,
+    Query(query): Query<PreviewDocumentQuery>,
+) -> Result<impl IntoResponse, AppError> {
+    let workspace_id = auth.workspace_id();
+    let entity_id = query.entity_id;
+    let doc_id = query.document_id;
+
+    let pdf_bytes = tokio::task::spawn_blocking({
+        let layout = state.layout.clone();
+        let doc_id = doc_id.clone();
+        move || {
+            let store = open_formation_store(&layout, workspace_id, entity_id)?;
+
+            // Load entity to determine type
+            let entity = store
+                .read_entity("main")
+                .map_err(|e| AppError::Internal(format!("read entity: {e}")))?;
+            let entity_type = match entity.entity_type() {
+                EntityType::Corporation => doc_ast::EntityTypeKey::Corporation,
+                EntityType::Llc => doc_ast::EntityTypeKey::Llc,
+            };
+
+            // Load profile (or default from entity)
+            let profile: GovernanceProfile =
+                match store.read_json::<GovernanceProfile>("main", GOVERNANCE_PROFILE_PATH) {
+                    Ok(p) => p,
+                    Err(_) => GovernanceProfile::default_for_entity(&entity),
+                };
+
+            // Load AST and find the document definition
+            let ast = doc_ast::default_doc_ast();
+            let doc_def = ast
+                .documents
+                .iter()
+                .find(|d| d.id == doc_id)
+                .ok_or_else(|| {
+                    AppError::NotFound(format!(
+                        "no AST document definition matches id '{doc_id}'"
+                    ))
+                })?;
+
+            // Validate scope
+            if !doc_def.entity_scope.matches(entity_type) {
+                return Err(AppError::UnprocessableEntity(format!(
+                    "document '{doc_id}' does not apply to entity type {entity_type:?}"
+                )));
+            }
+
+            // Render PDF with empty signatures (preview)
+            let pdf = typst_renderer::render_pdf(doc_def, ast, entity_type, &profile, &[])
+                .map_err(|e| AppError::Internal(format!("PDF rendering failed: {e}")))?;
+
+            Ok::<_, AppError>(pdf)
+        }
+    })
+    .await
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+
+    let disposition = format!("inline; filename=\"preview-{doc_id}.pdf\"");
+    Ok((
+        StatusCode::OK,
+        [
+            (header::CONTENT_TYPE, "application/pdf".to_owned()),
+            (header::CONTENT_DISPOSITION, disposition),
+        ],
+        pdf_bytes,
+    ))
 }
 
 #[derive(Deserialize)]
@@ -1831,6 +1960,7 @@ pub fn formation_routes() -> Router<AppState> {
             "/v1/formations/{entity_id}/ein-confirmation",
             post(confirm_ein),
         )
+        .route("/v1/documents/preview/pdf", get(preview_document_pdf))
         .route("/v1/documents/{document_id}", get(get_document))
         .route("/v1/documents/{document_id}/sign", post(sign_document))
         .route("/v1/documents/{document_id}/pdf", get(get_document_pdf))
