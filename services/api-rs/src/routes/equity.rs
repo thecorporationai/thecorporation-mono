@@ -48,6 +48,8 @@ use crate::domain::ids::{
     PacketSignatureId, PositionId, ResolutionId, ShareClassId, TransferId, TransferWorkflowId,
     WorkspaceId,
 };
+use crate::domain::contacts::contact::Contact;
+use crate::domain::contacts::types::{ContactCategory, ContactType};
 use crate::domain::treasury::types::Cents;
 use crate::error::AppError;
 use crate::git::commit::FileWrite;
@@ -196,6 +198,71 @@ pub struct AcceptRoundRequest {
     pub intent_id: IntentId,
     #[serde(default)]
     pub accepted_by_contact_id: Option<ContactId>,
+}
+
+// ── Staged equity round types ───────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PendingSecurity {
+    pub holder_id: HolderId,
+    pub instrument_id: InstrumentId,
+    pub quantity: i64,
+    #[serde(default)]
+    pub principal_cents: i64,
+    pub recipient_name: String,
+    #[serde(default)]
+    pub grant_type: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PendingSecuritiesFile {
+    pub round_id: EquityRoundId,
+    pub securities: Vec<PendingSecurity>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct StartStagedRoundRequest {
+    pub entity_id: EntityId,
+    pub name: String,
+    pub issuer_legal_entity_id: LegalEntityId,
+    #[serde(default)]
+    pub pre_money_cents: Option<i64>,
+    #[serde(default)]
+    pub round_price_cents: Option<i64>,
+    #[serde(default)]
+    pub target_raise_cents: Option<i64>,
+    #[serde(default)]
+    pub metadata: serde_json::Value,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AddSecurityRequest {
+    pub entity_id: EntityId,
+    #[serde(default)]
+    pub holder_id: Option<HolderId>,
+    #[serde(default)]
+    pub email: Option<String>,
+    pub instrument_id: InstrumentId,
+    pub quantity: i64,
+    #[serde(default)]
+    pub principal_cents: i64,
+    pub recipient_name: String,
+    #[serde(default)]
+    pub grant_type: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct IssueStagedRoundRequest {
+    pub entity_id: EntityId,
+}
+
+#[derive(Debug, Serialize)]
+pub struct IssueStagedRoundResponse {
+    pub round: RoundResponse,
+    pub positions: Vec<PositionResponse>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -4617,6 +4684,404 @@ async fn get_dilution_preview(
     Ok(Json(response))
 }
 
+// ── Staged equity round handlers ────────────────────────────────────
+
+async fn start_staged_round(
+    RequireEquityWrite(auth): RequireEquityWrite,
+    State(state): State<AppState>,
+    Json(req): Json<StartStagedRoundRequest>,
+) -> Result<Json<RoundResponse>, AppError> {
+    let workspace_id = auth.workspace_id();
+    let entity_id = req.entity_id;
+    if !auth.allows_entity(entity_id) {
+        return Err(AppError::Forbidden("entity access denied".to_owned()));
+    }
+
+    let round = tokio::task::spawn_blocking({
+        let layout = state.layout.clone();
+        move || {
+            let store = open_store(&layout, workspace_id, entity_id)?;
+
+            // Validate issuer legal entity exists
+            let entities = read_all::<LegalEntity>(&store)?;
+            if !entities
+                .iter()
+                .any(|e| e.legal_entity_id() == req.issuer_legal_entity_id)
+            {
+                return Err(AppError::BadRequest(
+                    "issuer_legal_entity_id does not exist".to_owned(),
+                ));
+            }
+
+            let round = EquityRound::new(
+                EquityRoundId::new(),
+                req.issuer_legal_entity_id,
+                req.name,
+                req.pre_money_cents,
+                req.round_price_cents,
+                req.target_raise_cents,
+                None,
+                req.metadata,
+            );
+
+            let pending = PendingSecuritiesFile {
+                round_id: round.equity_round_id(),
+                securities: Vec::new(),
+            };
+
+            let files = vec![
+                FileWrite::json(
+                    format!("cap-table/rounds/{}.json", round.equity_round_id()),
+                    &round,
+                )?,
+                FileWrite::json(
+                    format!(
+                        "cap-table/pending_securities/{}.json",
+                        round.equity_round_id()
+                    ),
+                    &pending,
+                )?,
+            ];
+            store
+                .commit(
+                    "main",
+                    &format!("Start staged equity round {}", round.equity_round_id()),
+                    files,
+                )
+                .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
+
+            Ok::<_, AppError>(round)
+        }
+    })
+    .await
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+
+    Ok(Json(round_to_response(&round)))
+}
+
+async fn add_round_security(
+    RequireEquityWrite(auth): RequireEquityWrite,
+    State(state): State<AppState>,
+    Path(round_id): Path<EquityRoundId>,
+    Json(req): Json<AddSecurityRequest>,
+) -> Result<Json<PendingSecurity>, AppError> {
+    let workspace_id = auth.workspace_id();
+    let entity_id = req.entity_id;
+    if !auth.allows_entity(entity_id) {
+        return Err(AppError::Forbidden("entity access denied".to_owned()));
+    }
+
+    if req.quantity <= 0 {
+        return Err(AppError::BadRequest("quantity must be positive".to_owned()));
+    }
+
+    let security = tokio::task::spawn_blocking({
+        let layout = state.layout.clone();
+        move || {
+            let store = open_store(&layout, workspace_id, entity_id)?;
+
+            // Verify round exists and is Draft
+            let round = store
+                .read::<EquityRound>("main", round_id)
+                .map_err(|e| AppError::NotFound(format!("round {round_id} not found: {e}")))?;
+            if round.status() != EquityRoundStatus::Draft {
+                return Err(AppError::BadRequest(
+                    "round is not in Draft status".to_owned(),
+                ));
+            }
+
+            // Validate instrument exists
+            let instruments = read_all::<Instrument>(&store)?;
+            if !instruments
+                .iter()
+                .any(|i| i.instrument_id() == req.instrument_id)
+            {
+                return Err(AppError::BadRequest(
+                    "instrument_id does not exist".to_owned(),
+                ));
+            }
+
+            // Resolve holder
+            let holders = read_all::<Holder>(&store)?;
+            let holder_id = if let Some(hid) = req.holder_id {
+                // Direct holder_id — validate it exists
+                if !holders.iter().any(|h| h.holder_id() == hid) {
+                    return Err(AppError::BadRequest(
+                        "holder_id does not exist".to_owned(),
+                    ));
+                }
+                hid
+            } else if let Some(ref email) = req.email {
+                // Look up contact by email, then find linked holder
+                let contacts = read_all::<Contact>(&store)?;
+                let contact = contacts
+                    .iter()
+                    .find(|c| c.email().map(|e| e.eq_ignore_ascii_case(email)).unwrap_or(false));
+
+                if let Some(contact) = contact {
+                    // Find holder linked to this contact
+                    let cid = contact.contact_id();
+                    if let Some(h) = holders.iter().find(|h| h.contact_id() == cid) {
+                        h.holder_id()
+                    } else {
+                        // Contact exists but no holder — create one
+                        let new_holder = Holder::new(
+                            HolderId::new(),
+                            cid,
+                            None,
+                            req.recipient_name.clone(),
+                            HolderType::Individual,
+                            None,
+                        );
+                        let hid = new_holder.holder_id();
+                        store
+                            .write_json(
+                                "main",
+                                &format!("cap-table/holders/{}.json", hid),
+                                &new_holder,
+                                &format!("Create holder {} for {}", hid, req.recipient_name),
+                            )
+                            .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
+                        hid
+                    }
+                } else {
+                    // No contact found — create new contact + holder
+                    let contact_id = ContactId::new();
+                    let contact = Contact::new(
+                        contact_id,
+                        entity_id,
+                        workspace_id,
+                        ContactType::Individual,
+                        req.recipient_name.clone(),
+                        Some(email.clone()),
+                        ContactCategory::Investor,
+                    );
+                    let new_holder = Holder::new(
+                        HolderId::new(),
+                        contact_id,
+                        None,
+                        req.recipient_name.clone(),
+                        HolderType::Individual,
+                        None,
+                    );
+                    let hid = new_holder.holder_id();
+                    let files = vec![
+                        FileWrite::json(
+                            format!("contacts/{}.json", contact_id),
+                            &contact,
+                        )?,
+                        FileWrite::json(
+                            format!("cap-table/holders/{}.json", hid),
+                            &new_holder,
+                        )?,
+                    ];
+                    store
+                        .commit(
+                            "main",
+                            &format!("Create contact + holder for {}", req.recipient_name),
+                            files,
+                        )
+                        .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
+                    hid
+                }
+            } else {
+                // Neither holder_id nor email — create new contact + holder from recipient_name
+                let contact_id = ContactId::new();
+                let contact = Contact::new(
+                    contact_id,
+                    entity_id,
+                    workspace_id,
+                    ContactType::Individual,
+                    req.recipient_name.clone(),
+                    None,
+                    ContactCategory::Investor,
+                );
+                let new_holder = Holder::new(
+                    HolderId::new(),
+                    contact_id,
+                    None,
+                    req.recipient_name.clone(),
+                    HolderType::Individual,
+                    None,
+                );
+                let hid = new_holder.holder_id();
+                let files = vec![
+                    FileWrite::json(
+                        format!("contacts/{}.json", contact_id),
+                        &contact,
+                    )?,
+                    FileWrite::json(
+                        format!("cap-table/holders/{}.json", hid),
+                        &new_holder,
+                    )?,
+                ];
+                store
+                    .commit(
+                        "main",
+                        &format!("Create contact + holder for {}", req.recipient_name),
+                        files,
+                    )
+                    .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
+                hid
+            };
+
+            let security = PendingSecurity {
+                holder_id,
+                instrument_id: req.instrument_id,
+                quantity: req.quantity,
+                principal_cents: req.principal_cents,
+                recipient_name: req.recipient_name,
+                grant_type: req.grant_type,
+            };
+
+            // Read pending securities, append, write back
+            let pending_path = format!("cap-table/pending_securities/{}.json", round_id);
+            let mut pending: PendingSecuritiesFile = store
+                .read_json("main", &pending_path)
+                .map_err(|e| {
+                    AppError::NotFound(format!("pending securities file not found: {e}"))
+                })?;
+            pending.securities.push(security.clone());
+
+            store
+                .write_json(
+                    "main",
+                    &pending_path,
+                    &pending,
+                    &format!(
+                        "Add security for {} to round {}",
+                        security.recipient_name, round_id
+                    ),
+                )
+                .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
+
+            Ok::<_, AppError>(security)
+        }
+    })
+    .await
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+
+    Ok(Json(security))
+}
+
+async fn issue_staged_round(
+    RequireEquityWrite(auth): RequireEquityWrite,
+    State(state): State<AppState>,
+    Path(round_id): Path<EquityRoundId>,
+    Json(req): Json<IssueStagedRoundRequest>,
+) -> Result<Json<IssueStagedRoundResponse>, AppError> {
+    let workspace_id = auth.workspace_id();
+    let entity_id = req.entity_id;
+    if !auth.allows_entity(entity_id) {
+        return Err(AppError::Forbidden("entity access denied".to_owned()));
+    }
+
+    let (round, positions) = tokio::task::spawn_blocking({
+        let layout = state.layout.clone();
+        move || {
+            let store = open_store(&layout, workspace_id, entity_id)?;
+
+            // Read and validate round
+            let mut round = store
+                .read::<EquityRound>("main", round_id)
+                .map_err(|e| AppError::NotFound(format!("round {round_id} not found: {e}")))?;
+            if round.status() != EquityRoundStatus::Draft {
+                return Err(AppError::BadRequest(
+                    "round is not in Draft status".to_owned(),
+                ));
+            }
+
+            // Read pending securities
+            let pending_path = format!("cap-table/pending_securities/{}.json", round_id);
+            let pending: PendingSecuritiesFile = store
+                .read_json("main", &pending_path)
+                .map_err(|e| {
+                    AppError::NotFound(format!("pending securities file not found: {e}"))
+                })?;
+            if pending.securities.is_empty() {
+                return Err(AppError::BadRequest(
+                    "no pending securities to issue".to_owned(),
+                ));
+            }
+
+            // Read all existing positions
+            let all_positions = read_all::<Position>(&store)?;
+
+            let mut files: Vec<FileWrite> = Vec::new();
+            let mut result_positions: Vec<Position> = Vec::new();
+
+            for sec in &pending.securities {
+                // Find existing position for this holder+instrument
+                let existing = all_positions.iter().find(|p| {
+                    p.issuer_legal_entity_id() == round.issuer_legal_entity_id()
+                        && p.holder_id() == sec.holder_id
+                        && p.instrument_id() == sec.instrument_id
+                });
+
+                let position = if let Some(existing) = existing {
+                    let mut p = existing.clone();
+                    p.apply_delta(
+                        sec.quantity,
+                        sec.principal_cents,
+                        Some(format!("round:{}", round_id)),
+                        None,
+                        None,
+                    )?;
+                    p
+                } else {
+                    Position::new(
+                        PositionId::new(),
+                        round.issuer_legal_entity_id(),
+                        sec.holder_id,
+                        sec.instrument_id,
+                        sec.quantity,
+                        sec.principal_cents,
+                        Some(format!("round:{}", round_id)),
+                        None,
+                        None,
+                    )?
+                };
+
+                files.push(FileWrite::json(
+                    format!("cap-table/positions/{}.json", position.position_id()),
+                    &position,
+                )?);
+                result_positions.push(position);
+            }
+
+            // Close the round
+            round.close_from_draft().map_err(|e| {
+                AppError::Internal(format!("failed to close round: {e}"))
+            })?;
+            files.push(FileWrite::json(
+                format!("cap-table/rounds/{}.json", round.equity_round_id()),
+                &round,
+            )?);
+
+            store
+                .commit(
+                    "main",
+                    &format!(
+                        "Issue {} securities and close round {}",
+                        pending.securities.len(),
+                        round_id,
+                    ),
+                    files,
+                )
+                .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
+
+            Ok::<_, AppError>((round, result_positions))
+        }
+    })
+    .await
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+
+    Ok(Json(IssueStagedRoundResponse {
+        round: round_to_response(&round),
+        positions: positions.iter().map(position_to_response).collect(),
+    }))
+}
+
 // ── Router ───────────────────────────────────────────────────────────
 
 pub fn equity_routes() -> Router<AppState> {
@@ -4627,6 +5092,15 @@ pub fn equity_routes() -> Router<AppState> {
         .route("/v1/equity/instruments", post(create_instrument))
         .route("/v1/equity/positions/adjust", post(adjust_position))
         .route("/v1/equity/rounds", post(create_round))
+        .route("/v1/equity/rounds/staged", post(start_staged_round))
+        .route(
+            "/v1/equity/rounds/{round_id}/securities",
+            post(add_round_security),
+        )
+        .route(
+            "/v1/equity/rounds/{round_id}/issue",
+            post(issue_staged_round),
+        )
         .route(
             "/v1/equity/rounds/{round_id}/apply-terms",
             post(apply_round_terms),

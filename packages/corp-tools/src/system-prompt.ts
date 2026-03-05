@@ -55,6 +55,15 @@ You can perform the full range of corporate operations:
 - When using \`form_entity\` (legacy), you MUST ask about all founding members and their ownership allocations BEFORE calling it.
 - For LLCs, ownership percentages must total 100%.
 
+## Equity Round Rules
+- **Prefer the staged round flow** for issuing equity to multiple holders:
+  1. \`start_equity_round\` — entity_id + name + issuer_legal_entity_id → returns \`round_id\`
+  2. \`add_security\` — add each holder's shares one at a time (round_id, instrument_id, quantity, recipient_name, plus holder_id or email)
+  3. \`issue_round\` — creates positions for all pending securities and closes the round
+- The entity must already have a cap table with holders and instruments set up.
+- Use \`get_cap_table\` to look up holder IDs, instrument IDs, and the issuer legal entity ID before starting.
+- \`add_security\` can resolve recipients by \`holder_id\`, \`email\`, or auto-create from \`recipient_name\`.
+
 ## Document Signing Rules
 - You CANNOT sign documents on behalf of users. Signing is a human action.
 - Use \`get_signing_link\` to generate a signing URL for a document.

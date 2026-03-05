@@ -176,6 +176,11 @@ export class CorpAPIClient {
     return this.post("/v1/equity/conversions/execute", data) as Promise<ApiRecord>;
   }
 
+  // --- Staged equity rounds ---
+  startEquityRound(data: ApiRecord) { return this.post("/v1/equity/rounds/staged", data) as Promise<ApiRecord>; }
+  addRoundSecurity(roundId: string, data: ApiRecord) { return this.post(`/v1/equity/rounds/${roundId}/securities`, data) as Promise<ApiRecord>; }
+  issueRound(roundId: string, data: ApiRecord) { return this.post(`/v1/equity/rounds/${roundId}/issue`, data) as Promise<ApiRecord>; }
+
   // --- Intent lifecycle helpers ---
   createExecutionIntent(data: CreateExecutionIntentRequest) {
     return this.post("/v1/execution/intents", data) as Promise<IntentResponse>;

@@ -203,6 +203,19 @@ impl EquityRound {
         self.status = EquityRoundStatus::Closed;
         Ok(())
     }
+
+    /// Close a round directly from Draft status, skipping the full governance
+    /// lifecycle. Used by the staged equity round flow.
+    pub fn close_from_draft(&mut self) -> Result<(), EquityError> {
+        if self.status != EquityRoundStatus::Draft {
+            return Err(EquityError::InvalidRoundTransition {
+                from: self.status,
+                to: EquityRoundStatus::Closed,
+            });
+        }
+        self.status = EquityRoundStatus::Closed;
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -250,6 +263,28 @@ mod tests {
             EquityError::InvalidRoundTransition {
                 from: EquityRoundStatus::Open,
                 to: EquityRoundStatus::Accepted
+            }
+        ));
+    }
+
+    #[test]
+    fn round_close_from_draft() {
+        let mut round = make_round();
+        assert_eq!(round.status(), EquityRoundStatus::Draft);
+        round.close_from_draft().unwrap();
+        assert_eq!(round.status(), EquityRoundStatus::Closed);
+    }
+
+    #[test]
+    fn round_close_from_draft_rejects_non_draft() {
+        let mut round = make_round();
+        round.apply_terms(EquityRuleSetId::new()).unwrap();
+        let err = round.close_from_draft().unwrap_err();
+        assert!(matches!(
+            err,
+            EquityError::InvalidRoundTransition {
+                from: EquityRoundStatus::Open,
+                to: EquityRoundStatus::Closed
             }
         ));
     }

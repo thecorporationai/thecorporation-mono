@@ -175,6 +175,79 @@ export async function distributeCommand(opts: {
   }
 }
 
+export async function startRoundCommand(opts: {
+  entityId?: string;
+  name: string;
+  issuerLegalEntityId: string;
+}): Promise<void> {
+  const cfg = requireConfig("api_url", "api_key", "workspace_id");
+  const eid = resolveEntityId(cfg, opts.entityId);
+  const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
+  try {
+    const result = await client.startEquityRound({
+      entity_id: eid,
+      name: opts.name,
+      issuer_legal_entity_id: opts.issuerLegalEntityId,
+    });
+    printSuccess(`Round started: ${result.round_id ?? "OK"}`);
+    printJson(result);
+  } catch (err) {
+    printError(`Failed to start round: ${err}`);
+    process.exit(1);
+  }
+}
+
+export async function addSecurityCommand(opts: {
+  entityId?: string;
+  roundId: string;
+  holderId?: string;
+  email?: string;
+  instrumentId: string;
+  quantity: number;
+  recipientName: string;
+  principalCents?: number;
+  grantType?: string;
+}): Promise<void> {
+  const cfg = requireConfig("api_url", "api_key", "workspace_id");
+  const eid = resolveEntityId(cfg, opts.entityId);
+  const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
+  try {
+    const body: Record<string, unknown> = {
+      entity_id: eid,
+      instrument_id: opts.instrumentId,
+      quantity: opts.quantity,
+      recipient_name: opts.recipientName,
+    };
+    if (opts.holderId) body.holder_id = opts.holderId;
+    if (opts.email) body.email = opts.email;
+    if (opts.principalCents) body.principal_cents = opts.principalCents;
+    if (opts.grantType) body.grant_type = opts.grantType;
+    const result = await client.addRoundSecurity(opts.roundId, body);
+    printSuccess(`Security added for ${opts.recipientName}`);
+    printJson(result);
+  } catch (err) {
+    printError(`Failed to add security: ${err}`);
+    process.exit(1);
+  }
+}
+
+export async function issueRoundCommand(opts: {
+  entityId?: string;
+  roundId: string;
+}): Promise<void> {
+  const cfg = requireConfig("api_url", "api_key", "workspace_id");
+  const eid = resolveEntityId(cfg, opts.entityId);
+  const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
+  try {
+    const result = await client.issueRound(opts.roundId, { entity_id: eid });
+    printSuccess("Round issued and closed");
+    printJson(result);
+  } catch (err) {
+    printError(`Failed to issue round: ${err}`);
+    process.exit(1);
+  }
+}
+
 function print409a(data: Record<string, unknown>): void {
   console.log(chalk.green("─".repeat(40)));
   console.log(chalk.green.bold("  409A Valuation"));

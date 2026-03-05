@@ -100,6 +100,16 @@ const TOOL_HANDLERS: Record<string, ToolHandler> = {
     return result;
   },
 
+  start_equity_round: async (args, client) => client.startEquityRound(args),
+  add_security: async (args, client) => {
+    const roundId = requiredString(args, "round_id");
+    return client.addRoundSecurity(roundId, args);
+  },
+  issue_round: async (args, client) => {
+    const roundId = requiredString(args, "round_id");
+    return client.issueRound(roundId, args);
+  },
+
   issue_equity: async (args, client) => client.issueEquity(args),
   issue_safe: async (args, client) => client.issueSafe(args),
   create_invoice: async (args, client) => {

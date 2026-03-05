@@ -350,8 +350,115 @@ export const GENERATED_TOOL_DEFINITIONS: Record<string, unknown>[] = [
   {
     "type": "function",
     "function": {
+      "name": "start_equity_round",
+      "description": "Start a new staged equity round (step 1). Creates a Draft round with an empty pending securities list. Returns the round_id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "entity_id": {
+            "type": "string",
+            "description": "The entity ID"
+          },
+          "name": {
+            "type": "string",
+            "description": "Name of the round (e.g. 'Seed Round', 'Series A')"
+          },
+          "issuer_legal_entity_id": {
+            "type": "string",
+            "description": "The issuer legal entity ID from the cap table"
+          },
+          "pre_money_cents": {
+            "type": "integer",
+            "description": "Pre-money valuation in cents"
+          },
+          "round_price_cents": {
+            "type": "integer",
+            "description": "Price per share in cents"
+          },
+          "target_raise_cents": {
+            "type": "integer",
+            "description": "Target raise amount in cents"
+          }
+        },
+        "required": ["entity_id", "name", "issuer_legal_entity_id"]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "add_security",
+      "description": "Add a security (holder + instrument + shares) to a staged equity round (step 2). Can be called multiple times. Resolves the recipient by holder_id, email, or creates a new contact+holder from recipient_name.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "entity_id": {
+            "type": "string",
+            "description": "The entity ID"
+          },
+          "round_id": {
+            "type": "string",
+            "description": "The round ID returned from start_equity_round"
+          },
+          "instrument_id": {
+            "type": "string",
+            "description": "The instrument ID from the cap table"
+          },
+          "quantity": {
+            "type": "integer",
+            "description": "Number of shares/units to issue"
+          },
+          "recipient_name": {
+            "type": "string",
+            "description": "Display name of the recipient"
+          },
+          "holder_id": {
+            "type": "string",
+            "description": "Existing holder ID (if known)"
+          },
+          "email": {
+            "type": "string",
+            "description": "Email of the recipient (used to find or create contact+holder)"
+          },
+          "principal_cents": {
+            "type": "integer",
+            "description": "Principal investment amount in cents"
+          },
+          "grant_type": {
+            "type": "string",
+            "description": "Type of grant (e.g. 'common', 'preferred', 'option')"
+          }
+        },
+        "required": ["entity_id", "round_id", "instrument_id", "quantity", "recipient_name"]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "issue_round",
+      "description": "Issue all pending securities and close the staged equity round (step 3). Creates positions for each pending security and marks the round as Closed.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "entity_id": {
+            "type": "string",
+            "description": "The entity ID"
+          },
+          "round_id": {
+            "type": "string",
+            "description": "The round ID to issue"
+          }
+        },
+        "required": ["entity_id", "round_id"]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
       "name": "issue_equity",
-      "description": "Issue an equity grant",
+      "description": "Issue an equity grant. For staged round issuance, prefer start_equity_round + add_security + issue_round.",
       "parameters": {
         "type": "object",
         "properties": {

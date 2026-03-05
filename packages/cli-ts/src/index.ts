@@ -255,6 +255,42 @@ capTableCmd
     await distributeCommand({ ...opts, entityId: parent.entityId });
   });
 
+capTableCmd
+  .command("start-round")
+  .requiredOption("--name <name>", "Round name")
+  .requiredOption("--issuer-legal-entity-id <id>", "Issuer legal entity ID")
+  .description("Start a staged equity round")
+  .action(async (opts, cmd) => {
+    const parent = cmd.parent!.opts();
+    const { startRoundCommand } = await import("./commands/cap-table.js");
+    await startRoundCommand({ ...opts, entityId: parent.entityId });
+  });
+capTableCmd
+  .command("add-security")
+  .requiredOption("--round-id <id>", "Round ID")
+  .requiredOption("--instrument-id <id>", "Instrument ID")
+  .requiredOption("--quantity <n>", "Number of shares/units", parseInt)
+  .requiredOption("--recipient-name <name>", "Recipient display name")
+  .option("--holder-id <id>", "Existing holder ID")
+  .option("--email <email>", "Recipient email (to find or create holder)")
+  .option("--principal-cents <n>", "Principal amount in cents", parseInt)
+  .option("--grant-type <type>", "Grant type")
+  .description("Add a security to a staged equity round")
+  .action(async (opts, cmd) => {
+    const parent = cmd.parent!.opts();
+    const { addSecurityCommand } = await import("./commands/cap-table.js");
+    await addSecurityCommand({ ...opts, entityId: parent.entityId });
+  });
+capTableCmd
+  .command("issue-round")
+  .requiredOption("--round-id <id>", "Round ID")
+  .description("Issue all securities and close a staged round")
+  .action(async (opts, cmd) => {
+    const parent = cmd.parent!.opts();
+    const { issueRoundCommand } = await import("./commands/cap-table.js");
+    await issueRoundCommand({ ...opts, entityId: parent.entityId });
+  });
+
 // --- finance ---
 const financeCmd = program
   .command("finance")
