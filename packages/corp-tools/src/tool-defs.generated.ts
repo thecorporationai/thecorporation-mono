@@ -124,7 +124,7 @@ export const GENERATED_TOOL_DEFINITIONS: Record<string, unknown>[] = [
     "type": "function",
     "function": {
       "name": "form_entity",
-      "description": "Form a new business entity (LLC or corporation)",
+      "description": "Form a new business entity (LLC or corporation) and initialize its cap table with founding members",
       "parameters": {
         "type": "object",
         "properties": {
@@ -140,6 +140,33 @@ export const GENERATED_TOOL_DEFINITIONS: Record<string, unknown>[] = [
           },
           "jurisdiction": {
             "type": "string"
+          },
+          "fiscal_year_end": {
+            "type": "string",
+            "description": "Fiscal year end, e.g. '12-31'. Defaults to '12-31'."
+          },
+          "s_corp_election": {
+            "type": "boolean",
+            "description": "Whether the company will elect S-Corp tax treatment."
+          },
+          "transfer_restrictions": {
+            "type": "boolean",
+            "description": "Include transfer restrictions in bylaws (corp). Default true."
+          },
+          "right_of_first_refusal": {
+            "type": "boolean",
+            "description": "Include right of first refusal in bylaws (corp). Default true."
+          },
+          "company_address": {
+            "type": "object",
+            "properties": {
+              "street": { "type": "string" },
+              "street2": { "type": "string" },
+              "city": { "type": "string" },
+              "state": { "type": "string" },
+              "zip": { "type": "string" }
+            },
+            "required": ["street", "city", "state", "zip"]
           },
           "members": {
             "type": "array",
@@ -179,7 +206,43 @@ export const GENERATED_TOOL_DEFINITIONS: Record<string, unknown>[] = [
                   "type": "string"
                 },
                 "role": {
-                  "type": "string"
+                  "type": "string",
+                  "enum": ["director", "officer", "manager", "member", "chair"]
+                },
+                "officer_title": {
+                  "type": "string",
+                  "enum": ["ceo", "cfo", "secretary", "president", "vp", "other"],
+                  "description": "Officer title (corporations only)"
+                },
+                "shares_purchased": {
+                  "type": "integer",
+                  "description": "Number of shares being purchased at formation"
+                },
+                "address": {
+                  "type": "object",
+                  "properties": {
+                    "street": { "type": "string" },
+                    "street2": { "type": "string" },
+                    "city": { "type": "string" },
+                    "state": { "type": "string" },
+                    "zip": { "type": "string" }
+                  }
+                },
+                "vesting": {
+                  "type": "object",
+                  "properties": {
+                    "total_months": { "type": "integer", "description": "Total vesting period in months (e.g. 48)" },
+                    "cliff_months": { "type": "integer", "description": "Cliff period in months (e.g. 12)" },
+                    "acceleration": { "type": "string", "enum": ["single_trigger", "double_trigger"] }
+                  }
+                },
+                "ip_description": {
+                  "type": "string",
+                  "description": "Description of IP being contributed to the company"
+                },
+                "is_incorporator": {
+                  "type": "boolean",
+                  "description": "Whether this member is the sole incorporator (corporations only)"
                 }
               },
               "required": [

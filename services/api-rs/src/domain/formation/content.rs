@@ -17,14 +17,75 @@ use crate::domain::ids::{AgentId, EntityId};
 pub struct MemberInput {
     pub name: String,
     pub investor_type: InvestorType,
+    #[serde(default)]
     pub email: Option<String>,
+    #[serde(default)]
     pub agent_id: Option<AgentId>,
+    #[serde(default)]
     pub entity_id: Option<EntityId>,
+    #[serde(default)]
     pub ownership_pct: Option<f64>,
+    #[serde(default)]
     pub membership_units: Option<i64>,
+    #[serde(default)]
     pub share_count: Option<i64>,
+    #[serde(default)]
     pub share_class: Option<String>,
+    #[serde(default)]
     pub role: Option<MemberRole>,
+    /// Mailing address of the member.
+    #[serde(default)]
+    pub address: Option<Address>,
+    /// Officer title (CEO, CFO, Secretary, etc.) — corporations only.
+    #[serde(default)]
+    pub officer_title: Option<OfficerTitle>,
+    /// Explicit number of shares being purchased at formation.
+    #[serde(default)]
+    pub shares_purchased: Option<i64>,
+    /// Vesting schedule for the founder's shares.
+    #[serde(default)]
+    pub vesting: Option<VestingSchedule>,
+    /// Description of IP being contributed to the company.
+    #[serde(default)]
+    pub ip_description: Option<String>,
+    /// Whether this member is the sole incorporator (corporations only).
+    #[serde(default)]
+    pub is_incorporator: Option<bool>,
+}
+
+/// A mailing address.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Address {
+    pub street: String,
+    #[serde(default)]
+    pub street2: Option<String>,
+    pub city: String,
+    pub state: String,
+    pub zip: String,
+}
+
+/// Officer title for a corporate officer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OfficerTitle {
+    Ceo,
+    Cfo,
+    Secretary,
+    President,
+    Vp,
+    Other,
+}
+
+/// Vesting schedule for founder shares.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VestingSchedule {
+    /// Total vesting period in months (e.g. 48).
+    pub total_months: i32,
+    /// Cliff period in months (e.g. 12).
+    pub cliff_months: i32,
+    /// Acceleration type: "single_trigger", "double_trigger", or none.
+    #[serde(default)]
+    pub acceleration: Option<String>,
 }
 
 /// Classification of a member/investor.
@@ -495,6 +556,12 @@ mod tests {
             share_count: Some(6_000_000),
             share_class: Some("COMMON".to_string()),
             role: Some(MemberRole::Manager),
+            address: None,
+            officer_title: None,
+            shares_purchased: None,
+            vesting: None,
+            ip_description: None,
+            is_incorporator: None,
         }
     }
 
@@ -510,6 +577,12 @@ mod tests {
             share_count: Some(4_000_000),
             share_class: Some("COMMON".to_string()),
             role: Some(MemberRole::Member),
+            address: None,
+            officer_title: None,
+            shares_purchased: None,
+            vesting: None,
+            ip_description: None,
+            is_incorporator: None,
         }
     }
 
@@ -525,6 +598,12 @@ mod tests {
             share_count: None,
             share_class: None,
             role: Some(MemberRole::Member),
+            address: None,
+            officer_title: None,
+            shares_purchased: None,
+            vesting: None,
+            ip_description: None,
+            is_incorporator: None,
         }
     }
 
@@ -540,6 +619,12 @@ mod tests {
             share_count: None,
             share_class: None,
             role: Some(MemberRole::Member),
+            address: None,
+            officer_title: None,
+            shares_purchased: None,
+            vesting: None,
+            ip_description: None,
+            is_incorporator: None,
         }
     }
 

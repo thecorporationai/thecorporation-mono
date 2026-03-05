@@ -543,11 +543,16 @@ approvalsCmd.command("reject <approval-id>").option("--message <msg>", "Optional
 // --- form ---
 program
   .command("form")
-  .description("Create a new entity (interactive or scripted)")
-  .option("--type <type>", "Entity type (llc, c_corp, etc.)")
-  .option("--name <name>", "Entity name")
-  .option("--jurisdiction <jurisdiction>", "Jurisdiction (e.g. DE, WY)")
-  .option("--member <member>", "Member as 'name,email,role[,pct]' (repeatable)", (v: string, a: string[]) => [...a, v], [] as string[])
+  .description("Form a new entity with founders and cap table (Cooley-style)")
+  .option("--type <type>", "Entity type (llc, c_corp)")
+  .option("--name <name>", "Legal name")
+  .option("--jurisdiction <jurisdiction>", "Jurisdiction (e.g. US-DE, US-WY)")
+  .option("--member <member>", "Member as 'name,email,role[,pct]' — role: director|officer|manager|member|chair (repeatable)", (v: string, a: string[]) => [...a, v], [] as string[])
+  .option("--address <address>", "Company address as 'street,city,state,zip'")
+  .option("--fiscal-year-end <date>", "Fiscal year end (MM-DD)", "12-31")
+  .option("--s-corp", "Elect S-Corp status")
+  .option("--transfer-restrictions", "Enable transfer restrictions")
+  .option("--rofr", "Enable right of first refusal")
   .action(async (opts) => {
     const { formCommand } = await import("./commands/form.js");
     await formCommand(opts);

@@ -36,6 +36,10 @@ pub enum ContactCategory {
     Investor,
     /// Corporate officer (CEO, CFO, etc.).
     Officer,
+    /// Founding member at formation.
+    Founder,
+    /// LLC member or general member.
+    Member,
     /// Other relationship.
     Other,
 }
@@ -128,6 +132,8 @@ mod tests {
             ContactCategory::AccountingFirm,
             ContactCategory::Investor,
             ContactCategory::Officer,
+            ContactCategory::Founder,
+            ContactCategory::Member,
             ContactCategory::Other,
         ];
         for cat in &categories {

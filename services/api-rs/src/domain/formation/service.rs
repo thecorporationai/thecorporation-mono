@@ -1,5 +1,11 @@
 //! Formation service — orchestrates entity creation and formation workflow.
 
+use crate::domain::contacts::contact::Contact;
+use crate::domain::contacts::types::{ContactCategory, ContactType};
+use crate::domain::equity::holder::{Holder, HolderType};
+use crate::domain::equity::instrument::{Instrument, InstrumentKind};
+use crate::domain::equity::legal_entity::{LegalEntity, LegalEntityRole};
+use crate::domain::equity::position::Position;
 use crate::domain::formation::{
     content::*, document::Document, entity::Entity, filing::Filing, tax_profile::TaxProfile,
     types::*,
@@ -16,6 +22,23 @@ pub struct FormationResult {
     pub document_ids: Vec<DocumentId>,
     pub filing: Filing,
     pub tax_profile: TaxProfile,
+}
+
+/// Summary of a holder created during cap table setup.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct HolderSummary {
+    pub holder_id: HolderId,
+    pub name: String,
+    pub shares: i64,
+    pub ownership_pct: f64,
+}
+
+/// Result of cap table setup after formation.
+#[derive(Debug)]
+pub struct CapTableSetupResult {
+    pub legal_entity_id: LegalEntityId,
+    pub instrument_id: InstrumentId,
+    pub holders: Vec<HolderSummary>,
 }
 
 fn member_role_label(role: Option<MemberRole>, entity_type: EntityType) -> String {
@@ -206,6 +229,272 @@ pub fn next_formation_action(status: FormationStatus) -> Option<&'static str> {
     }
 }
 
+/// Map a formation MemberRole to a ContactCategory.
+fn member_role_to_contact_category(role: Option<MemberRole>) -> ContactCategory {
+    match role {
+        Some(MemberRole::Director) | Some(MemberRole::Chair) => ContactCategory::Founder,
+        Some(MemberRole::Officer) => ContactCategory::Officer,
+        Some(MemberRole::Manager) | Some(MemberRole::Member) | None => ContactCategory::Member,
+    }
+}
+
+/// Map an InvestorType to a ContactType.
+fn investor_type_to_contact_type(it: InvestorType) -> ContactType {
+    match it {
+        InvestorType::NaturalPerson => ContactType::Individual,
+        InvestorType::Entity => ContactType::Organization,
+        InvestorType::Agent => ContactType::Individual, // shouldn't reach here
+    }
+}
+
+/// Map an InvestorType to a HolderType.
+fn investor_type_to_holder_type(it: InvestorType) -> HolderType {
+    match it {
+        InvestorType::NaturalPerson => HolderType::Individual,
+        InvestorType::Entity => HolderType::Organization,
+        InvestorType::Agent => HolderType::Individual, // shouldn't reach here
+    }
+}
+
+/// Set up the cap table for a newly formed entity.
+///
+/// Creates contacts, an equity legal entity, an instrument, holders, and
+/// initial positions in one atomic git commit.
+#[allow(clippy::too_many_arguments)]
+pub fn setup_cap_table(
+    layout: &crate::store::RepoLayout,
+    workspace_id: WorkspaceId,
+    entity_id: EntityId,
+    entity_type: EntityType,
+    legal_name: &str,
+    members: &[MemberInput],
+    authorized_shares: Option<i64>,
+    par_value: Option<&str>,
+) -> Result<CapTableSetupResult, FormationError> {
+    let non_agent_members: Vec<&MemberInput> = members
+        .iter()
+        .filter(|m| m.investor_type != InvestorType::Agent)
+        .collect();
+
+    if non_agent_members.is_empty() {
+        return Err(FormationError::Validation(
+            "at least one non-agent member is required for cap table setup".into(),
+        ));
+    }
+
+    // 1. Create contacts for each non-agent member
+    let mut contacts = Vec::new();
+    for m in &non_agent_members {
+        let contact = Contact::new(
+            ContactId::new(),
+            entity_id,
+            workspace_id,
+            investor_type_to_contact_type(m.investor_type),
+            m.name.clone(),
+            m.email.clone(),
+            member_role_to_contact_category(m.role),
+        );
+        contacts.push(contact);
+    }
+
+    // 2. Create equity legal entity linked to the formation entity
+    let legal_entity_id = LegalEntityId::new();
+    let legal_entity = LegalEntity::new(
+        legal_entity_id,
+        workspace_id,
+        Some(entity_id),
+        legal_name.to_owned(),
+        LegalEntityRole::Operating,
+    );
+
+    // 3. Create instrument based on entity type
+    let instrument_id = InstrumentId::new();
+    let (kind, symbol, auth_units, price_cents) = match entity_type {
+        EntityType::Llc => {
+            let total_units: i64 = non_agent_members
+                .iter()
+                .filter_map(|m| m.membership_units)
+                .sum();
+            let auth = if total_units > 0 {
+                Some(total_units)
+            } else {
+                Some(10_000) // default LLC units
+            };
+            (InstrumentKind::MembershipUnit, "UNITS".to_owned(), auth, None)
+        }
+        EntityType::Corporation => {
+            let shares = authorized_shares.unwrap_or(10_000_000);
+            let pv = par_value.unwrap_or("0.0001");
+            let price = (pv.parse::<f64>().unwrap_or(0.0001) * 10_000.0).round() as i64; // cents with 2 decimals
+            (
+                InstrumentKind::CommonEquity,
+                "COMMON".to_owned(),
+                Some(shares),
+                Some(price),
+            )
+        }
+    };
+
+    let instrument = Instrument::new(
+        instrument_id,
+        legal_entity_id,
+        symbol,
+        kind,
+        auth_units,
+        price_cents,
+        serde_json::Value::Null,
+    );
+
+    // 4. Create holders for each non-agent member and compute positions
+    let mut holders = Vec::new();
+    let mut positions = Vec::new();
+    let mut holder_summaries = Vec::new();
+
+    for (i, m) in non_agent_members.iter().enumerate() {
+        let contact_id = contacts[i].contact_id();
+        let holder_id = HolderId::new();
+
+        let holder = Holder::new(
+            holder_id,
+            contact_id,
+            Some(entity_id),
+            m.name.clone(),
+            investor_type_to_holder_type(m.investor_type),
+            None,
+        );
+        holders.push(holder);
+
+        // Determine share count for this member
+        let shares = match entity_type {
+            EntityType::Llc => {
+                m.membership_units.unwrap_or_else(|| {
+                    // Calculate from ownership_pct if available
+                    let pct = m.ownership_pct.unwrap_or(0.0);
+                    let total = auth_units.unwrap_or(10_000);
+                    ((pct / 100.0) * total as f64).round() as i64
+                })
+            }
+            EntityType::Corporation => {
+                m.shares_purchased
+                    .or(m.share_count)
+                    .unwrap_or_else(|| {
+                        let pct = m.ownership_pct.unwrap_or(0.0);
+                        let total = auth_units.unwrap_or(10_000_000);
+                        // Reserve 20% for future issuances (Cooley standard)
+                        ((pct / 100.0) * (total as f64 * 0.8)).round() as i64
+                    })
+            }
+        };
+
+        let principal = match entity_type {
+            EntityType::Corporation => {
+                shares * price_cents.unwrap_or(1) // par_value * shares in cents
+            }
+            EntityType::Llc => 0,
+        };
+
+        let ownership_pct = m.ownership_pct.unwrap_or_else(|| {
+            if let Some(total) = auth_units {
+                if total > 0 {
+                    (shares as f64 / total as f64) * 100.0
+                } else {
+                    0.0
+                }
+            } else {
+                0.0
+            }
+        });
+
+        let position = Position::new(
+            PositionId::new(),
+            legal_entity_id,
+            holder_id,
+            instrument_id,
+            shares,
+            principal,
+            Some("formation".to_owned()),
+            None,
+            None,
+        )
+        .map_err(|e| FormationError::Validation(format!("position error: {e}")))?;
+
+        positions.push(position);
+        holder_summaries.push(HolderSummary {
+            holder_id,
+            name: m.name.clone(),
+            shares,
+            ownership_pct,
+        });
+    }
+
+    // 5. Write all records in a single atomic commit
+    let repo_path = layout.entity_repo_path(workspace_id, entity_id);
+    let repo = crate::git::repo::CorpRepo::open(&repo_path)
+        .map_err(|e| FormationError::Storage(format!("failed to open repo: {e}")))?;
+
+    let mut files = Vec::new();
+
+    // Contacts
+    for contact in &contacts {
+        let path = format!("contacts/{}.json", contact.contact_id());
+        files.push(
+            FileWrite::json(path, contact)
+                .map_err(|e| FormationError::Storage(e.to_string()))?,
+        );
+    }
+
+    // Legal entity
+    files.push(
+        FileWrite::json(
+            format!("cap-table/entities/{}.json", legal_entity_id),
+            &legal_entity,
+        )
+        .map_err(|e| FormationError::Storage(e.to_string()))?,
+    );
+
+    // Instrument
+    files.push(
+        FileWrite::json(
+            format!("cap-table/instruments/{}.json", instrument_id),
+            &instrument,
+        )
+        .map_err(|e| FormationError::Storage(e.to_string()))?,
+    );
+
+    // Holders
+    for holder in &holders {
+        let path = format!("cap-table/holders/{}.json", holder.holder_id());
+        files.push(
+            FileWrite::json(path, holder)
+                .map_err(|e| FormationError::Storage(e.to_string()))?,
+        );
+    }
+
+    // Positions
+    for position in &positions {
+        let path = format!("cap-table/positions/{}.json", position.position_id());
+        files.push(
+            FileWrite::json(path, position)
+                .map_err(|e| FormationError::Storage(e.to_string()))?,
+        );
+    }
+
+    crate::git::commit::commit_files(
+        &repo,
+        "main",
+        "Initialize cap table with founding members",
+        &files,
+        None,
+    )
+    .map_err(|e| FormationError::Storage(format!("failed to commit cap table: {e}")))?;
+
+    Ok(CapTableSetupResult {
+        legal_entity_id,
+        instrument_id,
+        holders: holder_summaries,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -224,6 +513,12 @@ mod tests {
             share_count: Some(6_000_000),
             share_class: Some("COMMON".to_string()),
             role: Some(MemberRole::Manager),
+            address: None,
+            officer_title: None,
+            shares_purchased: None,
+            vesting: None,
+            ip_description: None,
+            is_incorporator: None,
         }
     }
 
@@ -239,6 +534,12 @@ mod tests {
             share_count: Some(4_000_000),
             share_class: Some("COMMON".to_string()),
             role: Some(MemberRole::Member),
+            address: None,
+            officer_title: None,
+            shares_purchased: None,
+            vesting: None,
+            ip_description: None,
+            is_incorporator: None,
         }
     }
 
@@ -254,6 +555,12 @@ mod tests {
             share_count: None,
             share_class: None,
             role: None,
+            address: None,
+            officer_title: None,
+            shares_purchased: None,
+            vesting: None,
+            ip_description: None,
+            is_incorporator: None,
         }
     }
 

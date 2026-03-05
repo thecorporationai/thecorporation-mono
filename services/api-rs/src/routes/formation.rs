@@ -44,6 +44,21 @@ pub struct CreateFormationRequest {
     /// Optional formation date for importing pre-formed entities.
     #[serde(default)]
     pub formation_date: Option<String>,
+    /// Fiscal year end, e.g. "12-31". Defaults to "12-31".
+    #[serde(default)]
+    pub fiscal_year_end: Option<String>,
+    /// Whether the company will elect S-Corp tax treatment.
+    #[serde(default)]
+    pub s_corp_election: Option<bool>,
+    /// Include transfer restrictions in bylaws (corp). Default true.
+    #[serde(default)]
+    pub transfer_restrictions: Option<bool>,
+    /// Include right of first refusal in bylaws (corp). Default true.
+    #[serde(default)]
+    pub right_of_first_refusal: Option<bool>,
+    /// Company address.
+    #[serde(default)]
+    pub company_address: Option<crate::domain::formation::content::Address>,
 }
 
 #[derive(Serialize)]
@@ -53,6 +68,20 @@ pub struct FormationResponse {
     pub formation_status: FormationStatus,
     pub document_ids: Vec<DocumentId>,
     pub next_action: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct FormationWithCapTableResponse {
+    pub formation_id: EntityId,
+    pub entity_id: EntityId,
+    pub formation_status: FormationStatus,
+    pub document_ids: Vec<DocumentId>,
+    pub next_action: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub legal_entity_id: Option<crate::domain::ids::LegalEntityId>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub instrument_id: Option<crate::domain::ids::InstrumentId>,
+    pub holders: Vec<service::HolderSummary>,
 }
 
 #[derive(Serialize)]
@@ -284,6 +313,78 @@ async fn create_formation(
         formation_status,
         document_ids: result.document_ids,
         next_action,
+    }))
+}
+
+async fn create_formation_with_cap_table(
+    RequireFormationCreate(auth): RequireFormationCreate,
+    State(state): State<AppState>,
+    Json(req): Json<CreateFormationRequest>,
+) -> Result<Json<FormationWithCapTableResponse>, AppError> {
+    if req.members.is_empty() {
+        return Err(AppError::BadRequest(
+            "at least one member is required".to_owned(),
+        ));
+    }
+    let workspace_id = auth.workspace_id();
+
+    let result = tokio::task::spawn_blocking({
+        let layout = state.layout.clone();
+        let legal_name = req.legal_name;
+        let jurisdiction = req.jurisdiction;
+        let members = req.members;
+        let entity_type = req.entity_type;
+        let ra_name = req.registered_agent_name;
+        let ra_addr = req.registered_agent_address;
+        let shares = req.authorized_shares;
+        let par_value = req.par_value;
+        move || {
+            // Step 1: Create the entity (formation documents, filing, tax profile)
+            let formation = service::create_entity(
+                &layout,
+                workspace_id,
+                legal_name.clone(),
+                entity_type,
+                jurisdiction,
+                ra_name,
+                ra_addr,
+                &members,
+                shares,
+                par_value.as_deref(),
+            )?;
+
+            // Step 2: Set up the cap table (contacts, legal entity, instrument, holders, positions)
+            let cap_table = service::setup_cap_table(
+                &layout,
+                workspace_id,
+                formation.entity.entity_id(),
+                entity_type,
+                &legal_name,
+                &members,
+                shares,
+                par_value.as_deref(),
+            )?;
+
+            Ok::<_, crate::domain::formation::error::FormationError>((formation, cap_table))
+        }
+    })
+    .await
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+
+    let (formation, cap_table) = result;
+    let formation_status = formation.entity.formation_status();
+    let next_action = service::next_formation_action(formation_status).map(String::from);
+    let entity_id = formation.entity.entity_id();
+
+    Ok(Json(FormationWithCapTableResponse {
+        formation_id: entity_id,
+        entity_id,
+        formation_status,
+        document_ids: formation.document_ids,
+        next_action,
+        legal_entity_id: Some(cap_table.legal_entity_id),
+        instrument_id: Some(cap_table.instrument_id),
+        holders: cap_table.holders,
     }))
 }
 
@@ -1507,6 +1608,10 @@ async fn dissolve_entity(
 pub fn formation_routes() -> Router<AppState> {
     Router::new()
         .route("/v1/formations", post(create_formation))
+        .route(
+            "/v1/formations/with-cap-table",
+            post(create_formation_with_cap_table),
+        )
         .route("/v1/formations/{entity_id}", get(get_formation))
         .route("/v1/formations/{entity_id}/documents", get(list_documents))
         .route(

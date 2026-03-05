@@ -46,9 +46,14 @@ const TOOL_HANDLERS: Record<string, ToolHandler> = {
         m.ownership_pct = (m.ownership_pct as number) / 100;
       }
     }
-    const result = await client.createFormation({
+    const result = await client.createFormationWithCapTable({
       entity_type: entityType, legal_name: args.entity_name, jurisdiction,
       members, workspace_id: client.workspaceId,
+      fiscal_year_end: args.fiscal_year_end,
+      s_corp_election: args.s_corp_election,
+      transfer_restrictions: args.transfer_restrictions,
+      right_of_first_refusal: args.right_of_first_refusal,
+      company_address: args.company_address,
     });
     const entityId = result.entity_id as string;
     if (entityId && ctx.onEntityFormed) {

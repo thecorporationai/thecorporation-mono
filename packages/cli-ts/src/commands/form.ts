@@ -1,69 +1,400 @@
-import { input, select } from "@inquirer/prompts";
+import { input, select, confirm, number } from "@inquirer/prompts";
+import chalk from "chalk";
+import Table from "cli-table3";
 import { requireConfig } from "../config.js";
 import { CorpAPIClient } from "../api-client.js";
 import { printError, printSuccess } from "../output.js";
 import type { ApiRecord } from "../types.js";
 
-export async function formCommand(opts: {
-  type?: string; name?: string; jurisdiction?: string; member?: string[];
-}): Promise<void> {
-  const cfg = requireConfig("api_url", "api_key", "workspace_id");
-  const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
-  try {
-    let serverCfg: ApiRecord = {};
-    try { serverCfg = await client.getConfig(); } catch { /* ignore */ }
+// ── Types ──────────────────────────────────────────────────────
 
-    let entityType = opts.type;
-    if (!entityType) {
-      const types = (serverCfg.entity_types ?? ["llc", "c_corp", "s_corp"]) as string[];
-      entityType = await select({ message: "Entity type", choices: types.map((t) => ({ value: t, name: t })) });
+interface FounderInfo {
+  name: string;
+  email: string;
+  role: string;
+  address?: { street: string; city: string; state: string; zip: string };
+  officer_title?: string;
+  is_incorporator?: boolean;
+  shares_purchased?: number;
+  ownership_pct?: number;
+  vesting?: { total_months: number; cliff_months: number; acceleration?: string };
+  ip_description?: string;
+}
+
+interface FormOptions {
+  type?: string;
+  name?: string;
+  jurisdiction?: string;
+  member?: string[];
+  fiscalYearEnd?: string;
+  sCorp?: boolean;
+  transferRestrictions?: boolean;
+  rofr?: boolean;
+  address?: string;
+}
+
+// ── Helpers ────────────────────────────────────────────────────
+
+function isCorp(entityType: string): boolean {
+  return entityType === "c_corp" || entityType === "s_corp" || entityType === "corporation";
+}
+
+function sectionHeader(title: string): void {
+  console.log();
+  console.log(chalk.blue("─".repeat(50)));
+  console.log(chalk.blue.bold(`  ${title}`));
+  console.log(chalk.blue("─".repeat(50)));
+}
+
+async function promptAddress(): Promise<{ street: string; city: string; state: string; zip: string }> {
+  const street = await input({ message: "    Street address" });
+  const city = await input({ message: "    City" });
+  const state = await input({ message: "    State (2-letter)", default: "DE" });
+  const zip = await input({ message: "    ZIP code" });
+  return { street, city, state, zip };
+}
+
+// ── Phase 1: Entity Details ────────────────────────────────────
+
+async function phaseEntityDetails(opts: FormOptions, serverCfg: ApiRecord, scripted: boolean) {
+  if (!scripted) sectionHeader("Phase 1: Entity Details");
+
+  let entityType = opts.type;
+  if (!entityType) {
+    if (scripted) { entityType = "llc"; }
+    else {
+      const types = (serverCfg.entity_types ?? ["llc", "c_corp"]) as string[];
+      entityType = await select({
+        message: "Entity type",
+        choices: types.map((t) => ({
+          value: t,
+          name: t === "c_corp" ? "C Corporation" : t === "s_corp" ? "S Corporation" : t.toUpperCase(),
+        })),
+      });
     }
+  }
 
-    let name = opts.name;
-    if (!name) {
-      name = await input({ message: "Entity name" });
+  let name = opts.name;
+  if (!name) {
+    if (scripted) { printError("--name is required in scripted mode"); process.exit(1); }
+    name = await input({ message: "Legal name" });
+  }
+
+  let jurisdiction = opts.jurisdiction;
+  if (!jurisdiction) {
+    const defaultJ = entityType === "llc" ? "US-WY" : "US-DE";
+    if (scripted) { jurisdiction = defaultJ; }
+    else { jurisdiction = await input({ message: "Jurisdiction", default: defaultJ }); }
+  }
+
+  let companyAddress: { street: string; city: string; state: string; zip: string } | undefined;
+  if (opts.address) {
+    const parts = opts.address.split(",").map((p) => p.trim());
+    if (parts.length === 4) {
+      companyAddress = { street: parts[0], city: parts[1], state: parts[2], zip: parts[3] };
     }
-
-    let jurisdiction = opts.jurisdiction;
-    if (!jurisdiction) {
-      jurisdiction = entityType === "llc" ? "US-WY" : "US-DE";
+  }
+  if (!companyAddress && !scripted) {
+    const wantAddress = await confirm({ message: "Add company address?", default: false });
+    if (wantAddress) {
+      companyAddress = await promptAddress();
     }
+  }
 
-    const parsedMembers: ApiRecord[] = [];
-    if (opts.member && opts.member.length > 0) {
-      for (const m of opts.member) {
-        const parts = m.split(",").map((p) => p.trim());
-        if (parts.length < 3) {
-          printError(`Invalid member format: ${m}. Expected: name,email,role[,ownership_pct]`);
-          process.exit(1);
-        }
-        const member: ApiRecord = { name: parts[0], email: parts[1], role: parts[2] };
-        if (parts.length >= 4) member.ownership_pct = parseFloat(parts[3]);
-        parsedMembers.push(member);
+  const fiscalYearEnd = opts.fiscalYearEnd ?? "12-31";
+
+  let sCorpElection = opts.sCorp ?? false;
+  if (!scripted && isCorp(entityType) && opts.sCorp === undefined) {
+    sCorpElection = await confirm({ message: "S-Corp election?", default: false });
+  }
+
+  return { entityType, name, jurisdiction, companyAddress, fiscalYearEnd, sCorpElection };
+}
+
+// ── Phase 2: People ────────────────────────────────────────────
+
+async function phasePeople(
+  opts: FormOptions,
+  entityType: string,
+  scripted: boolean,
+): Promise<FounderInfo[]> {
+  if (!scripted) sectionHeader("Phase 2: Founders & Officers");
+
+  const founders: FounderInfo[] = [];
+
+  // CLI-provided members (scripted mode)
+  if (scripted) {
+    for (const m of opts.member!) {
+      const parts = m.split(",").map((p) => p.trim());
+      if (parts.length < 3) {
+        printError(`Invalid member format: ${m}. Expected: name,email,role[,pct]`);
+        process.exit(1);
       }
-    } else {
-      console.log("Add members (leave name blank to finish):");
-      while (true) {
-        const mname = await input({ message: "  Member name (blank to finish)", default: "" });
-        if (!mname) break;
-        const memail = await input({ message: "  Email" });
-        const mrole = await input({ message: "  Role", default: "founder" });
-        const mpctStr = await input({ message: "  Ownership %", default: "0" });
-        parsedMembers.push({
-          name: mname, email: memail, role: mrole, ownership_pct: parseFloat(mpctStr),
+      const f: FounderInfo = { name: parts[0], email: parts[1], role: parts[2] };
+      if (parts.length >= 4) f.ownership_pct = parseFloat(parts[3]);
+      founders.push(f);
+    }
+    return founders;
+  }
+
+  // Interactive mode
+  const founderCount = (await number({ message: "Number of founders (1-6)", default: 1 })) ?? 1;
+
+  for (let i = 0; i < founderCount; i++) {
+    console.log(chalk.dim(`\n  Founder ${i + 1} of ${founderCount}:`));
+    const name = await input({ message: `  Name` });
+    const email = await input({ message: `  Email` });
+
+    let role = "member";
+    if (isCorp(entityType)) {
+      role = await select({
+        message: "  Role",
+        choices: [
+          { value: "director", name: "Director" },
+          { value: "officer", name: "Officer" },
+          { value: "member", name: "Shareholder only" },
+        ],
+      });
+    }
+
+    const wantAddress = await confirm({ message: "  Add address?", default: false });
+    const address = wantAddress ? await promptAddress() : undefined;
+
+    let officerTitle: string | undefined;
+    if (isCorp(entityType)) {
+      const wantOfficer = role === "officer" || await confirm({ message: "  Assign officer title?", default: i === 0 });
+      if (wantOfficer) {
+        officerTitle = await select({
+          message: "  Officer title",
+          choices: [
+            { value: "ceo", name: "CEO" },
+            { value: "cfo", name: "CFO" },
+            { value: "secretary", name: "Secretary" },
+            { value: "president", name: "President" },
+            { value: "vp", name: "VP" },
+          ],
         });
       }
     }
 
-    for (const m of parsedMembers) {
-      if (!m.investor_type) m.investor_type = "natural_person";
+    let isIncorporator = false;
+    if (isCorp(entityType) && i === 0 && founderCount === 1) {
+      isIncorporator = true;
+    } else if (isCorp(entityType)) {
+      isIncorporator = await confirm({ message: "  Designate as sole incorporator?", default: i === 0 });
     }
 
-    const result = await client.createFormation({
-      entity_type: entityType, legal_name: name, jurisdiction, members: parsedMembers,
+    founders.push({ name, email, role, address, officer_title: officerTitle, is_incorporator: isIncorporator });
+  }
+
+  return founders;
+}
+
+// ── Phase 3: Stock & Finalize ──────────────────────────────────
+
+async function phaseStock(
+  opts: FormOptions,
+  entityType: string,
+  founders: FounderInfo[],
+  scripted: boolean,
+): Promise<{ founders: FounderInfo[]; transferRestrictions: boolean; rofr: boolean }> {
+  if (!scripted) sectionHeader("Phase 3: Equity & Finalize");
+
+  const transferRestrictions = opts.transferRestrictions ?? (
+    !scripted && isCorp(entityType)
+      ? await confirm({ message: "Transfer restrictions on shares?", default: true })
+      : isCorp(entityType)
+  );
+
+  const rofr = opts.rofr ?? (
+    !scripted && isCorp(entityType)
+      ? await confirm({ message: "Right of first refusal?", default: true })
+      : isCorp(entityType)
+  );
+
+  if (!scripted) {
+    for (const f of founders) {
+      console.log(chalk.dim(`\n  Equity for ${f.name}:`));
+
+      if (isCorp(entityType)) {
+        const shares = await number({ message: `  Shares to purchase`, default: 0 });
+        f.shares_purchased = shares ?? 0;
+        if (f.shares_purchased === 0) {
+          const pct = await number({ message: `  Ownership % (1-100)`, default: founders.length === 1 ? 100 : 0 });
+          f.ownership_pct = pct ?? 0;
+        }
+      } else {
+        const pct = await number({
+          message: `  Ownership % (1-100)`,
+          default: founders.length === 1 ? 100 : 0,
+        });
+        f.ownership_pct = pct ?? 0;
+      }
+
+      if (isCorp(entityType)) {
+        const wantVesting = await confirm({ message: "  Add vesting schedule?", default: false });
+        if (wantVesting) {
+          const totalMonths = (await number({ message: "  Total vesting months", default: 48 })) ?? 48;
+          const cliffMonths = (await number({ message: "  Cliff months", default: 12 })) ?? 12;
+          const acceleration = await select({
+            message: "  Acceleration",
+            choices: [
+              { value: "none", name: "None" },
+              { value: "single_trigger", name: "Single trigger" },
+              { value: "double_trigger", name: "Double trigger" },
+            ],
+          });
+          f.vesting = {
+            total_months: totalMonths,
+            cliff_months: cliffMonths,
+            acceleration: acceleration === "none" ? undefined : acceleration,
+          };
+        }
+      }
+
+      const wantIp = await confirm({ message: "  Contributing IP?", default: false });
+      if (wantIp) {
+        f.ip_description = await input({ message: "  Describe IP being contributed" });
+      }
+    }
+  }
+
+  return { founders, transferRestrictions, rofr };
+}
+
+// ── Summary Table ──────────────────────────────────────────────
+
+function printSummary(
+  entityType: string,
+  name: string,
+  jurisdiction: string,
+  fiscalYearEnd: string,
+  sCorpElection: boolean,
+  founders: FounderInfo[],
+  transferRestrictions: boolean,
+  rofr: boolean,
+): void {
+  sectionHeader("Formation Summary");
+
+  console.log(`  ${chalk.bold("Entity:")} ${name}`);
+  console.log(`  ${chalk.bold("Type:")} ${entityType}`);
+  console.log(`  ${chalk.bold("Jurisdiction:")} ${jurisdiction}`);
+  console.log(`  ${chalk.bold("Fiscal Year End:")} ${fiscalYearEnd}`);
+  if (isCorp(entityType)) {
+    console.log(`  ${chalk.bold("S-Corp Election:")} ${sCorpElection ? "Yes" : "No"}`);
+    console.log(`  ${chalk.bold("Transfer Restrictions:")} ${transferRestrictions ? "Yes" : "No"}`);
+    console.log(`  ${chalk.bold("Right of First Refusal:")} ${rofr ? "Yes" : "No"}`);
+  }
+
+  const table = new Table({
+    head: [chalk.dim("Name"), chalk.dim("Email"), chalk.dim("Role"), chalk.dim("Equity"), chalk.dim("Officer")],
+  });
+  for (const f of founders) {
+    const equity = f.shares_purchased
+      ? `${f.shares_purchased.toLocaleString()} shares`
+      : f.ownership_pct
+        ? `${f.ownership_pct}%`
+        : "—";
+    table.push([f.name, f.email, f.role, equity, f.officer_title ?? "—"]);
+  }
+  console.log(table.toString());
+}
+
+// ── Main Command ───────────────────────────────────────────────
+
+export async function formCommand(opts: FormOptions): Promise<void> {
+  const cfg = requireConfig("api_url", "api_key", "workspace_id");
+  const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
+
+  try {
+    let serverCfg: ApiRecord = {};
+    try { serverCfg = await client.getConfig(); } catch { /* ignore */ }
+
+    const scripted = !!(opts.member && opts.member.length > 0);
+
+    // Phase 1: Entity Details
+    const { entityType, name, jurisdiction, companyAddress, fiscalYearEnd, sCorpElection } =
+      await phaseEntityDetails(opts, serverCfg, scripted);
+
+    // Phase 2: People
+    const founders = await phasePeople(opts, entityType, scripted);
+
+    // Phase 3: Stock & Finalize
+    const { transferRestrictions, rofr } = await phaseStock(opts, entityType, founders, scripted);
+
+    // Summary & Confirm
+    printSummary(entityType, name, jurisdiction, fiscalYearEnd, sCorpElection, founders, transferRestrictions, rofr);
+
+    const shouldProceed = scripted
+      ? true
+      : await confirm({ message: "Proceed with formation?", default: true });
+
+    if (!shouldProceed) {
+      console.log(chalk.yellow("Formation cancelled."));
+      return;
+    }
+
+    // Build members payload
+    const members: ApiRecord[] = founders.map((f) => {
+      const m: ApiRecord = {
+        name: f.name,
+        email: f.email,
+        role: f.role,
+        investor_type: "natural_person",
+      };
+      if (f.ownership_pct) m.ownership_pct = f.ownership_pct;
+      if (f.shares_purchased) m.shares_purchased = f.shares_purchased;
+      if (f.address) m.address = f.address;
+      if (f.officer_title) m.officer_title = f.officer_title;
+      if (f.is_incorporator) m.is_incorporator = true;
+      if (f.vesting) m.vesting = f.vesting;
+      if (f.ip_description) m.ip_description = f.ip_description;
+      return m;
     });
+
+    const payload: ApiRecord = {
+      entity_type: entityType,
+      legal_name: name,
+      jurisdiction,
+      members,
+      workspace_id: cfg.workspace_id,
+      fiscal_year_end: fiscalYearEnd,
+      s_corp_election: sCorpElection,
+      transfer_restrictions: transferRestrictions,
+      right_of_first_refusal: rofr,
+    };
+    if (companyAddress) payload.company_address = companyAddress;
+
+    const result = await client.createFormationWithCapTable(payload);
+
+    // Output results
     printSuccess(`Formation created: ${result.formation_id ?? result.id ?? "OK"}`);
-    if (result.entity_id) console.log(`Entity ID: ${result.entity_id}`);
+    if (result.entity_id) console.log(`  Entity ID: ${result.entity_id}`);
+    if (result.legal_entity_id) console.log(`  Legal Entity ID: ${result.legal_entity_id}`);
+    if (result.instrument_id) console.log(`  Instrument ID: ${result.instrument_id}`);
+
+    const docIds = (result.document_ids ?? []) as string[];
+    if (docIds.length > 0) {
+      console.log(`  Documents: ${docIds.length} generated`);
+    }
+
+    const holders = (result.holders ?? []) as ApiRecord[];
+    if (holders.length > 0) {
+      console.log();
+      const table = new Table({
+        head: [chalk.dim("Holder"), chalk.dim("Shares"), chalk.dim("Ownership %")],
+      });
+      for (const h of holders) {
+        const pct = typeof h.ownership_pct === "number" ? `${h.ownership_pct.toFixed(1)}%` : "—";
+        table.push([h.name ?? "?", h.shares ?? 0, pct]);
+      }
+      console.log(chalk.bold("  Cap Table:"));
+      console.log(table.toString());
+    }
+
+    if (result.next_action) {
+      console.log(chalk.yellow(`\n  Next: ${result.next_action}`));
+    }
   } catch (err) {
     if (err instanceof Error && err.message.includes("exit")) throw err;
     printError(`Failed to create formation: ${err}`);
