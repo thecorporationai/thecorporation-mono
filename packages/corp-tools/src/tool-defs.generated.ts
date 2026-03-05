@@ -525,7 +525,7 @@ export const GENERATED_TOOL_DEFINITIONS: Record<string, unknown>[] = [
     "type": "function",
     "function": {
       "name": "transfer_shares",
-      "description": "Transfer shares between holders",
+      "description": "Direct share transfer (bypasses governance). Prefer the transfer workflow for governed transfers. Requires skip_governance_review=true to confirm intentional bypass.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -546,13 +546,18 @@ export const GENERATED_TOOL_DEFINITIONS: Record<string, unknown>[] = [
           },
           "shares": {
             "type": "integer"
+          },
+          "skip_governance_review": {
+            "type": "boolean",
+            "description": "Must be true to confirm bypassing governance review. If false or omitted, the transfer is blocked."
           }
         },
         "required": [
           "entity_id",
           "from_holder",
           "to_holder",
-          "shares"
+          "shares",
+          "skip_governance_review"
         ]
       }
     }
@@ -909,7 +914,7 @@ export const GENERATED_TOOL_DEFINITIONS: Record<string, unknown>[] = [
     "type": "function",
     "function": {
       "name": "schedule_meeting",
-      "description": "Schedule a board or member meeting",
+      "description": "Schedule a board or member meeting (step 1 of the meeting lifecycle: schedule → notice → convene → vote → resolve → finalize → adjourn)",
       "parameters": {
         "type": "object",
         "properties": {
@@ -941,6 +946,154 @@ export const GENERATED_TOOL_DEFINITIONS: Record<string, unknown>[] = [
           "meeting_type",
           "title"
         ]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "send_notice",
+      "description": "Send notice for a scheduled meeting (Draft → Noticed)",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "entity_id": { "type": "string" },
+          "meeting_id": { "type": "string" }
+        },
+        "required": ["entity_id", "meeting_id"]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "adjourn_meeting",
+      "description": "Adjourn a convened meeting (Convened → Adjourned)",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "entity_id": { "type": "string" },
+          "meeting_id": { "type": "string" }
+        },
+        "required": ["entity_id", "meeting_id"]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "cancel_meeting",
+      "description": "Cancel a meeting (Draft or Noticed → Cancelled)",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "entity_id": { "type": "string" },
+          "meeting_id": { "type": "string" }
+        },
+        "required": ["entity_id", "meeting_id"]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "finalize_agenda_item",
+      "description": "Finalize an agenda item with a status (Voted, Discussed, Tabled, or Withdrawn)",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "entity_id": { "type": "string" },
+          "meeting_id": { "type": "string" },
+          "agenda_item_id": { "type": "string" },
+          "status": {
+            "type": "string",
+            "description": "Voted, Discussed, Tabled, or Withdrawn"
+          }
+        },
+        "required": ["entity_id", "meeting_id", "agenda_item_id", "status"]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "compute_resolution",
+      "description": "Compute a resolution for an agenda item by tallying votes",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "entity_id": { "type": "string" },
+          "meeting_id": { "type": "string" },
+          "agenda_item_id": { "type": "string" },
+          "resolution_text": { "type": "string" },
+          "effective_date": { "type": "string", "description": "Optional effective date (ISO 8601)" }
+        },
+        "required": ["entity_id", "meeting_id", "agenda_item_id", "resolution_text"]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "attach_resolution_document",
+      "description": "Attach a document to an existing resolution",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "entity_id": { "type": "string" },
+          "meeting_id": { "type": "string" },
+          "resolution_id": { "type": "string" },
+          "document_id": { "type": "string" }
+        },
+        "required": ["entity_id", "meeting_id", "resolution_id", "document_id"]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "written_consent",
+      "description": "Create a written consent action (no physical meeting required — auto-convened)",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "entity_id": { "type": "string" },
+          "body_id": { "type": "string" },
+          "title": { "type": "string" },
+          "description": { "type": "string" }
+        },
+        "required": ["entity_id", "body_id", "title", "description"]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "list_agenda_items",
+      "description": "List agenda items for a meeting",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "entity_id": { "type": "string" },
+          "meeting_id": { "type": "string" }
+        },
+        "required": ["entity_id", "meeting_id"]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "list_votes",
+      "description": "List votes on an agenda item",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "entity_id": { "type": "string" },
+          "meeting_id": { "type": "string" },
+          "agenda_item_id": { "type": "string" }
+        },
+        "required": ["entity_id", "meeting_id", "agenda_item_id"]
       }
     }
   },
@@ -1056,6 +1209,65 @@ export const GENERATED_TOOL_DEFINITIONS: Record<string, unknown>[] = [
           "skill_name",
           "description"
         ]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "create_valuation",
+      "description": "Create a valuation (409A, FMV, profits interest, etc.) in Draft status",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "entity_id": { "type": "string" },
+          "valuation_type": {
+            "type": "string",
+            "enum": ["four_oh_nine_a", "llc_profits_interest", "fair_market_value", "gift", "estate", "other"]
+          },
+          "effective_date": { "type": "string", "description": "Effective date (ISO 8601)" },
+          "methodology": {
+            "type": "string",
+            "enum": ["income", "market", "asset", "backsolve", "hybrid", "other"]
+          },
+          "fmv_per_share_cents": { "type": "integer", "description": "Fair market value per share in cents" },
+          "enterprise_value_cents": { "type": "integer", "description": "Enterprise value in cents" },
+          "hurdle_amount_cents": { "type": "integer", "description": "Hurdle amount in cents" },
+          "provider_contact_id": { "type": "string", "description": "Contact ID of the valuation provider" },
+          "report_document_id": { "type": "string", "description": "Document ID of the valuation report" }
+        },
+        "required": ["entity_id", "valuation_type", "effective_date", "methodology"]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "submit_valuation_for_approval",
+      "description": "Submit a Draft valuation for board approval (Draft → PendingApproval). Auto-creates a board meeting agenda item.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "entity_id": { "type": "string" },
+          "valuation_id": { "type": "string" }
+        },
+        "required": ["entity_id", "valuation_id"]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "approve_valuation",
+      "description": "Approve a PendingApproval valuation (PendingApproval → Approved). Pass resolution_id from the board vote.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "entity_id": { "type": "string" },
+          "valuation_id": { "type": "string" },
+          "resolution_id": { "type": "string", "description": "Resolution ID from the board vote" }
+        },
+        "required": ["entity_id", "valuation_id"]
       }
     }
   },

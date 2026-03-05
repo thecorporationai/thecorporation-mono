@@ -290,6 +290,36 @@ capTableCmd
     const { issueRoundCommand } = await import("./commands/cap-table.js");
     await issueRoundCommand({ ...opts, entityId: parent.entityId });
   });
+capTableCmd
+  .command("create-valuation")
+  .requiredOption("--type <type>", "Valuation type (four_oh_nine_a, fair_market_value, etc.)")
+  .requiredOption("--date <date>", "Effective date (ISO 8601)")
+  .requiredOption("--methodology <method>", "Methodology (income, market, asset, backsolve, hybrid)")
+  .option("--fmv <cents>", "FMV per share in cents", parseInt)
+  .option("--enterprise-value <cents>", "Enterprise value in cents", parseInt)
+  .description("Create a valuation")
+  .action(async (opts, cmd) => {
+    const parent = cmd.parent!.opts();
+    const { createValuationCommand } = await import("./commands/cap-table.js");
+    await createValuationCommand({ ...opts, entityId: parent.entityId });
+  });
+capTableCmd
+  .command("submit-valuation <valuation-id>")
+  .description("Submit a valuation for board approval")
+  .action(async (valuationId: string, _opts, cmd) => {
+    const parent = cmd.parent!.opts();
+    const { submitValuationCommand } = await import("./commands/cap-table.js");
+    await submitValuationCommand({ valuationId, entityId: parent.entityId });
+  });
+capTableCmd
+  .command("approve-valuation <valuation-id>")
+  .option("--resolution-id <id>", "Resolution ID from the board vote")
+  .description("Approve a valuation")
+  .action(async (valuationId: string, opts, cmd) => {
+    const parent = cmd.parent!.opts();
+    const { approveValuationCommand } = await import("./commands/cap-table.js");
+    await approveValuationCommand({ ...opts, valuationId, entityId: parent.entityId });
+  });
 
 // --- finance ---
 const financeCmd = program
@@ -418,6 +448,67 @@ governanceCmd
   .action(async (meetingId: string, itemId: string, opts) => {
     const { governanceVoteCommand } = await import("./commands/governance.js");
     await governanceVoteCommand(meetingId, itemId, opts);
+  });
+governanceCmd
+  .command("notice <meeting-id>")
+  .description("Send meeting notice")
+  .action(async (meetingId: string, _opts, cmd) => {
+    const parent = cmd.parent!.opts();
+    const { sendNoticeCommand } = await import("./commands/governance.js");
+    await sendNoticeCommand(meetingId, { entityId: parent.entityId });
+  });
+governanceCmd
+  .command("adjourn <meeting-id>")
+  .description("Adjourn a meeting")
+  .action(async (meetingId: string, _opts, cmd) => {
+    const parent = cmd.parent!.opts();
+    const { adjournMeetingCommand } = await import("./commands/governance.js");
+    await adjournMeetingCommand(meetingId, { entityId: parent.entityId });
+  });
+governanceCmd
+  .command("cancel <meeting-id>")
+  .description("Cancel a meeting")
+  .action(async (meetingId: string, _opts, cmd) => {
+    const parent = cmd.parent!.opts();
+    const { cancelMeetingCommand } = await import("./commands/governance.js");
+    await cancelMeetingCommand(meetingId, { entityId: parent.entityId });
+  });
+governanceCmd
+  .command("agenda-items <meeting-id>")
+  .description("List agenda items for a meeting")
+  .action(async (meetingId: string, _opts, cmd) => {
+    const parent = cmd.parent!.opts();
+    const { listAgendaItemsCommand } = await import("./commands/governance.js");
+    await listAgendaItemsCommand(meetingId, { entityId: parent.entityId, json: parent.json });
+  });
+governanceCmd
+  .command("finalize-item <meeting-id> <item-id>")
+  .requiredOption("--status <status>", "Status: Voted, Discussed, Tabled, or Withdrawn")
+  .description("Finalize an agenda item")
+  .action(async (meetingId: string, itemId: string, opts, cmd) => {
+    const parent = cmd.parent!.opts();
+    const { finalizeAgendaItemCommand } = await import("./commands/governance.js");
+    await finalizeAgendaItemCommand(meetingId, itemId, { ...opts, entityId: parent.entityId });
+  });
+governanceCmd
+  .command("resolve <meeting-id> <item-id>")
+  .requiredOption("--text <resolution_text>", "Resolution text")
+  .description("Compute a resolution for an agenda item")
+  .action(async (meetingId: string, itemId: string, opts, cmd) => {
+    const parent = cmd.parent!.opts();
+    const { computeResolutionCommand } = await import("./commands/governance.js");
+    await computeResolutionCommand(meetingId, itemId, { ...opts, entityId: parent.entityId });
+  });
+governanceCmd
+  .command("written-consent")
+  .requiredOption("--body <id>", "Governance body ID")
+  .requiredOption("--title <title>", "Title")
+  .requiredOption("--description <desc>", "Description")
+  .description("Create a written consent action")
+  .action(async (opts, cmd) => {
+    const parent = cmd.parent!.opts();
+    const { writtenConsentCommand } = await import("./commands/governance.js");
+    await writtenConsentCommand({ ...opts, entityId: parent.entityId });
   });
 
 // --- documents ---

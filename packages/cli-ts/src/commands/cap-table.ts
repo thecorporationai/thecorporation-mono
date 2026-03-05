@@ -248,6 +248,72 @@ export async function issueRoundCommand(opts: {
   }
 }
 
+export async function createValuationCommand(opts: {
+  entityId?: string;
+  type: string;
+  date: string;
+  methodology: string;
+  fmv?: number;
+  enterpriseValue?: number;
+}): Promise<void> {
+  const cfg = requireConfig("api_url", "api_key", "workspace_id");
+  const eid = resolveEntityId(cfg, opts.entityId);
+  const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
+  try {
+    const body: Record<string, unknown> = {
+      entity_id: eid,
+      valuation_type: opts.type,
+      effective_date: opts.date,
+      methodology: opts.methodology,
+    };
+    if (opts.fmv != null) body.fmv_per_share_cents = opts.fmv;
+    if (opts.enterpriseValue != null) body.enterprise_value_cents = opts.enterpriseValue;
+    const result = await client.createValuation(body);
+    printSuccess(`Valuation created: ${result.valuation_id ?? "OK"}`);
+    printJson(result);
+  } catch (err) {
+    printError(`Failed to create valuation: ${err}`);
+    process.exit(1);
+  }
+}
+
+export async function submitValuationCommand(opts: {
+  entityId?: string;
+  valuationId: string;
+}): Promise<void> {
+  const cfg = requireConfig("api_url", "api_key", "workspace_id");
+  const eid = resolveEntityId(cfg, opts.entityId);
+  const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
+  try {
+    const result = await client.submitValuationForApproval(opts.valuationId, eid);
+    printSuccess(`Valuation submitted for approval: ${result.valuation_id ?? "OK"}`);
+    if (result.meeting_id) console.log(`  Meeting: ${result.meeting_id}`);
+    if (result.agenda_item_id) console.log(`  Agenda Item: ${result.agenda_item_id}`);
+    printJson(result);
+  } catch (err) {
+    printError(`Failed to submit valuation: ${err}`);
+    process.exit(1);
+  }
+}
+
+export async function approveValuationCommand(opts: {
+  entityId?: string;
+  valuationId: string;
+  resolutionId?: string;
+}): Promise<void> {
+  const cfg = requireConfig("api_url", "api_key", "workspace_id");
+  const eid = resolveEntityId(cfg, opts.entityId);
+  const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
+  try {
+    const result = await client.approveValuation(opts.valuationId, eid, opts.resolutionId);
+    printSuccess(`Valuation approved: ${result.valuation_id ?? "OK"}`);
+    printJson(result);
+  } catch (err) {
+    printError(`Failed to approve valuation: ${err}`);
+    process.exit(1);
+  }
+}
+
 function print409a(data: Record<string, unknown>): void {
   console.log(chalk.green("─".repeat(40)));
   console.log(chalk.green.bold("  409A Valuation"));

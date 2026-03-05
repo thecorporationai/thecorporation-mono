@@ -58,6 +58,9 @@ corp form --type llc --name "Acme"  # form a new entity
 | `corp cap-table transfers` | List share transfers |
 | `corp cap-table valuations` | View valuation history |
 | `corp cap-table 409a` | Current 409A valuation |
+| `corp cap-table create-valuation` | Create a valuation (409A, FMV, etc.) |
+| `corp cap-table submit-valuation <id>` | Submit valuation for board approval |
+| `corp cap-table approve-valuation <id>` | Approve a valuation |
 
 Round close gating (v1, February 28, 2026):
 - Conversion execution now requires an authorized execute intent (`equity.round.execute_conversion`) and `intent_id`.
@@ -79,11 +82,57 @@ Round close gating (v1, February 28, 2026):
 | Command | Description |
 |---|---|
 | `corp governance` | List governance bodies |
-| `corp governance convene` | Convene a meeting |
-| `corp governance vote` | Cast a vote |
 | `corp governance seats <body-id>` | List seats |
 | `corp governance meetings <body-id>` | List meetings |
 | `corp governance resolutions <meeting-id>` | List resolutions |
+| `corp governance agenda-items <meeting-id>` | List agenda items |
+| `corp governance convene` | Schedule and convene a meeting |
+| `corp governance notice <meeting-id>` | Send meeting notice |
+| `corp governance vote <meeting-id> <item-id>` | Cast a vote |
+| `corp governance resolve <meeting-id> <item-id>` | Compute a resolution |
+| `corp governance finalize-item <meeting-id> <item-id>` | Finalize an agenda item |
+| `corp governance adjourn <meeting-id>` | Adjourn a meeting |
+| `corp governance cancel <meeting-id>` | Cancel a meeting |
+| `corp governance written-consent` | Create a written consent action |
+
+#### Meeting Lifecycle
+
+```
+schedule → notice → convene → vote → resolve → finalize → adjourn
+```
+
+**Board meeting example:**
+```bash
+# 1. Schedule meeting with agenda items
+corp governance convene --body <body-id> --type BoardMeeting \
+  --title "Q1 Board Meeting" --date 2026-03-15 \
+  --agenda "Approve budget" --agenda "Elect officers"
+
+# 2. Send notice to participants
+corp governance notice <meeting-id>
+
+# 3. Convene with present members (checks quorum)
+# (done via MCP tool: convene_meeting with present_seat_ids)
+
+# 4. Cast votes on agenda items
+corp governance vote <meeting-id> <item-id> --voter <contact-id> --vote for
+
+# 5. Compute resolution (tallies votes)
+corp governance resolve <meeting-id> <item-id> --text "Budget approved for Q1"
+
+# 6. Finalize agenda items
+corp governance finalize-item <meeting-id> <item-id> --status voted
+
+# 7. Adjourn meeting
+corp governance adjourn <meeting-id>
+```
+
+**Written consent (no physical meeting):**
+```bash
+corp governance written-consent --body <body-id> \
+  --title "Approve stock option plan" \
+  --description "Unanimous written consent to approve 2026 stock option plan"
+```
 
 ### Documents & Compliance
 

@@ -151,6 +151,15 @@ export class CorpAPIClient {
   getShareTransfers(entityId: string) { return this.get(`/v1/entities/${entityId}/share-transfers`) as Promise<ApiRecord[]>; }
   getValuations(entityId: string) { return this.get(`/v1/entities/${entityId}/valuations`) as Promise<ApiRecord[]>; }
   getCurrent409a(entityId: string) { return this.get(`/v1/entities/${entityId}/current-409a`) as Promise<ApiRecord>; }
+  createValuation(data: ApiRecord) { return this.post("/v1/valuations", data) as Promise<ApiRecord>; }
+  submitValuationForApproval(valuationId: string, entityId: string) {
+    return this.post(`/v1/valuations/${valuationId}/submit-for-approval`, { entity_id: entityId }) as Promise<ApiRecord>;
+  }
+  approveValuation(valuationId: string, entityId: string, resolutionId?: string) {
+    const body: ApiRecord = { entity_id: entityId };
+    if (resolutionId) body.resolution_id = resolutionId;
+    return this.post(`/v1/valuations/${valuationId}/approve`, body) as Promise<ApiRecord>;
+  }
   issueEquity(data: ApiRecord) { return this.post("/v1/equity/grants", data) as Promise<ApiRecord>; }
   issueSafe(data: ApiRecord) { return this.post("/v1/safe-notes", data) as Promise<ApiRecord>; }
   transferShares(data: ApiRecord) { return this.post("/v1/share-transfers", data) as Promise<ApiRecord>; }
@@ -203,6 +212,33 @@ export class CorpAPIClient {
   }
   castVote(entityId: string, meetingId: string, itemId: string, data: ApiRecord) {
     return this.postWithParams(`/v1/meetings/${meetingId}/agenda-items/${itemId}/vote`, data, { entity_id: entityId }) as Promise<ApiRecord>;
+  }
+  sendNotice(meetingId: string, entityId: string) {
+    return this.postWithParams(`/v1/meetings/${meetingId}/notice`, {}, { entity_id: entityId }) as Promise<ApiRecord>;
+  }
+  adjournMeeting(meetingId: string, entityId: string) {
+    return this.postWithParams(`/v1/meetings/${meetingId}/adjourn`, {}, { entity_id: entityId }) as Promise<ApiRecord>;
+  }
+  cancelMeeting(meetingId: string, entityId: string) {
+    return this.postWithParams(`/v1/meetings/${meetingId}/cancel`, {}, { entity_id: entityId }) as Promise<ApiRecord>;
+  }
+  finalizeAgendaItem(meetingId: string, itemId: string, data: ApiRecord) {
+    return this.post(`/v1/meetings/${meetingId}/agenda-items/${itemId}/finalize`, data) as Promise<ApiRecord>;
+  }
+  computeResolution(meetingId: string, itemId: string, entityId: string, data: ApiRecord) {
+    return this.postWithParams(`/v1/meetings/${meetingId}/agenda-items/${itemId}/resolution`, data, { entity_id: entityId }) as Promise<ApiRecord>;
+  }
+  attachResolutionDocument(meetingId: string, resolutionId: string, data: ApiRecord) {
+    return this.post(`/v1/meetings/${meetingId}/resolutions/${resolutionId}/attach-document`, data) as Promise<ApiRecord>;
+  }
+  writtenConsent(data: ApiRecord) {
+    return this.post("/v1/meetings/written-consent", data) as Promise<ApiRecord>;
+  }
+  listAgendaItems(meetingId: string, entityId: string) {
+    return this.get(`/v1/meetings/${meetingId}/agenda-items`, { entity_id: entityId }) as Promise<ApiRecord[]>;
+  }
+  listVotes(meetingId: string, itemId: string, entityId: string) {
+    return this.get(`/v1/meetings/${meetingId}/agenda-items/${itemId}/votes`, { entity_id: entityId }) as Promise<ApiRecord[]>;
   }
 
   // --- Documents ---

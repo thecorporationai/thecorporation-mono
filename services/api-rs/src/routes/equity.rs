@@ -14,6 +14,7 @@ use std::collections::{HashMap, HashSet};
 
 use super::AppState;
 use crate::auth::{RequireEquityRead, RequireEquityWrite};
+use chrono::NaiveDate;
 use crate::domain::equity::{
     control_link::{ControlLink, ControlType},
     conversion_execution::ConversionExecution,
@@ -29,7 +30,11 @@ use crate::domain::equity::{
     share_class::ShareClass,
     transfer::ShareTransfer,
     transfer_workflow::{TransferWorkflow, WorkflowExecutionStatus as TransferExecutionStatus},
-    types::{GoverningDocType, ShareCount, TransferStatus, TransferType, TransfereeRights},
+    types::{
+        GoverningDocType, ShareCount, TransferStatus, TransferType, TransfereeRights,
+        ValuationMethodology, ValuationStatus, ValuationType,
+    },
+    valuation::Valuation,
 };
 use crate::domain::execution::{
     approval_artifact::ApprovalArtifact,
@@ -40,13 +45,17 @@ use crate::domain::execution::{
 };
 use crate::domain::governance::policy_engine::evaluate_intent as evaluate_governance_intent;
 use crate::domain::governance::{
-    body::GovernanceBody, meeting::Meeting, resolution::Resolution, types::BodyType,
+    agenda_item::AgendaItem,
+    body::GovernanceBody,
+    meeting::Meeting,
+    resolution::Resolution,
+    types::{AgendaItemType, BodyType, MeetingStatus, MeetingType},
 };
 use crate::domain::ids::{
-    ContactId, ControlLinkId, ConversionExecutionId, EntityId, EquityRoundId, EquityRuleSetId,
-    FundraisingWorkflowId, HolderId, InstrumentId, IntentId, LegalEntityId, MeetingId, PacketId,
-    PacketSignatureId, PositionId, ResolutionId, ShareClassId, TransferId, TransferWorkflowId,
-    WorkspaceId,
+    AgendaItemId, ContactId, ControlLinkId, ConversionExecutionId, DocumentId, EntityId,
+    EquityRoundId, EquityRuleSetId, FundraisingWorkflowId, HolderId,
+    InstrumentId, IntentId, LegalEntityId, MeetingId, PacketId, PacketSignatureId, PositionId,
+    ResolutionId, ShareClassId, TransferId, TransferWorkflowId, ValuationId, WorkspaceId,
 };
 use crate::domain::contacts::contact::Contact;
 use crate::domain::contacts::types::{ContactCategory, ContactType};
@@ -263,6 +272,10 @@ pub struct IssueStagedRoundRequest {
 pub struct IssueStagedRoundResponse {
     pub round: RoundResponse,
     pub positions: Vec<PositionResponse>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub meeting_id: Option<MeetingId>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub agenda_item_id: Option<AgendaItemId>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -4976,7 +4989,7 @@ async fn issue_staged_round(
         return Err(AppError::Forbidden("entity access denied".to_owned()));
     }
 
-    let (round, positions) = tokio::task::spawn_blocking({
+    let (round, positions, board_meeting_id, board_agenda_item_id) = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
@@ -5058,6 +5071,78 @@ async fn issue_staged_round(
                 &round,
             )?);
 
+            // Auto-create board meeting agenda item for round approval.
+            let mut board_meeting_id = None;
+            let mut board_agenda_item_id = None;
+            let bodies = read_all::<GovernanceBody>(&store).unwrap_or_default();
+            if let Some(board_body) = bodies
+                .iter()
+                .find(|b| b.body_type() == BodyType::BoardOfDirectors)
+            {
+                let body_id = board_body.body_id();
+                let meetings = read_all::<Meeting>(&store).unwrap_or_default();
+                let existing_meeting = meetings.iter().find(|m| {
+                    m.body_id() == body_id
+                        && (m.status() == MeetingStatus::Draft
+                            || m.status() == MeetingStatus::Noticed)
+                });
+
+                let agenda_item_id = AgendaItemId::new();
+                let agenda_title = format!("Approve Equity Round ({})", round.name());
+
+                let (meeting_id, new_meeting) = if let Some(m) = existing_meeting {
+                    (m.meeting_id(), None)
+                } else {
+                    let mid = MeetingId::new();
+                    let meeting = Meeting::new(
+                        mid,
+                        body_id,
+                        MeetingType::BoardMeeting,
+                        format!("Board Meeting — Equity Round Approval ({})", round.name()),
+                        None,
+                        String::new(),
+                        0,
+                    );
+                    (mid, Some(meeting))
+                };
+
+                let existing_item_ids = store
+                    .list_agenda_item_ids("main", meeting_id)
+                    .unwrap_or_default();
+                let next_seq = (existing_item_ids.len() as u32) + 1;
+
+                let agenda_item = AgendaItem::new(
+                    agenda_item_id,
+                    meeting_id,
+                    next_seq,
+                    agenda_title,
+                    None,
+                    AgendaItemType::Resolution,
+                );
+
+                files.push(
+                    FileWrite::json(
+                        format!(
+                            "governance/meetings/{}/agenda/{}.json",
+                            meeting_id, agenda_item_id
+                        ),
+                        &agenda_item,
+                    )
+                    .map_err(|e| AppError::Internal(format!("serialize agenda item: {e}")))?,
+                );
+                if let Some(ref meeting) = new_meeting {
+                    files.push(
+                        FileWrite::json(Meeting::storage_path(meeting_id), meeting)
+                            .map_err(|e| {
+                                AppError::Internal(format!("serialize meeting: {e}"))
+                            })?,
+                    );
+                }
+
+                board_meeting_id = Some(meeting_id);
+                board_agenda_item_id = Some(agenda_item_id);
+            }
+
             store
                 .commit(
                     "main",
@@ -5070,7 +5155,7 @@ async fn issue_staged_round(
                 )
                 .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
 
-            Ok::<_, AppError>((round, result_positions))
+            Ok::<_, AppError>((round, result_positions, board_meeting_id, board_agenda_item_id))
         }
     })
     .await
@@ -5079,7 +5164,364 @@ async fn issue_staged_round(
     Ok(Json(IssueStagedRoundResponse {
         round: round_to_response(&round),
         positions: positions.iter().map(position_to_response).collect(),
+        meeting_id: board_meeting_id,
+        agenda_item_id: board_agenda_item_id,
     }))
+}
+
+// ── Valuation types ─────────────────────────────────────────────────
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CreateValuationRequest {
+    pub entity_id: EntityId,
+    pub valuation_type: ValuationType,
+    pub effective_date: NaiveDate,
+    #[serde(default)]
+    pub fmv_per_share_cents: Option<i64>,
+    #[serde(default)]
+    pub enterprise_value_cents: Option<i64>,
+    #[serde(default)]
+    pub hurdle_amount_cents: Option<i64>,
+    pub methodology: ValuationMethodology,
+    #[serde(default)]
+    pub provider_contact_id: Option<ContactId>,
+    #[serde(default)]
+    pub report_document_id: Option<DocumentId>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SubmitValuationForApprovalRequest {
+    pub entity_id: EntityId,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ApproveValuationRequest {
+    pub entity_id: EntityId,
+    #[serde(default)]
+    pub resolution_id: Option<ResolutionId>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ValuationResponse {
+    pub valuation_id: ValuationId,
+    pub entity_id: EntityId,
+    pub valuation_type: ValuationType,
+    pub effective_date: NaiveDate,
+    pub expiration_date: Option<NaiveDate>,
+    pub fmv_per_share_cents: Option<i64>,
+    pub enterprise_value_cents: Option<i64>,
+    pub hurdle_amount_cents: Option<i64>,
+    pub methodology: ValuationMethodology,
+    pub provider_contact_id: Option<ContactId>,
+    pub report_document_id: Option<DocumentId>,
+    pub board_approval_resolution_id: Option<ResolutionId>,
+    pub status: ValuationStatus,
+    pub created_at: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub meeting_id: Option<MeetingId>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub agenda_item_id: Option<AgendaItemId>,
+}
+
+fn valuation_to_response(v: &Valuation) -> ValuationResponse {
+    ValuationResponse {
+        valuation_id: v.valuation_id(),
+        entity_id: v.entity_id(),
+        valuation_type: v.valuation_type(),
+        effective_date: v.effective_date(),
+        expiration_date: v.expiration_date(),
+        fmv_per_share_cents: v.fmv_per_share_cents().map(|c| c.raw()),
+        enterprise_value_cents: v.enterprise_value_cents().map(|c| c.raw()),
+        hurdle_amount_cents: v.hurdle_amount_cents().map(|c| c.raw()),
+        methodology: v.methodology(),
+        provider_contact_id: v.provider_contact_id(),
+        report_document_id: v.report_document_id(),
+        board_approval_resolution_id: v.board_approval_resolution_id(),
+        status: v.status(),
+        created_at: v.created_at().to_rfc3339(),
+        meeting_id: None,
+        agenda_item_id: None,
+    }
+}
+
+// ── Valuation handlers ──────────────────────────────────────────────
+
+async fn create_valuation(
+    RequireEquityWrite(auth): RequireEquityWrite,
+    State(state): State<AppState>,
+    Json(req): Json<CreateValuationRequest>,
+) -> Result<Json<ValuationResponse>, AppError> {
+    let workspace_id = auth.workspace_id();
+    let entity_id = req.entity_id;
+    if !auth.allows_entity(entity_id) {
+        return Err(AppError::Forbidden("entity access denied".to_owned()));
+    }
+
+    let valuation = tokio::task::spawn_blocking({
+        let layout = state.layout.clone();
+        move || {
+            let store = open_store(&layout, workspace_id, entity_id)?;
+            let valuation_id = ValuationId::new();
+            let valuation = Valuation::new(
+                valuation_id,
+                entity_id,
+                workspace_id,
+                req.valuation_type,
+                req.effective_date,
+                req.fmv_per_share_cents.map(Cents::new),
+                req.enterprise_value_cents.map(Cents::new),
+                req.hurdle_amount_cents.map(Cents::new),
+                req.methodology,
+                req.provider_contact_id,
+                req.report_document_id,
+            );
+            store
+                .write::<Valuation>("main", valuation_id, &valuation, &format!("Create valuation {valuation_id}"))
+                .map_err(|e| AppError::Internal(format!("commit: {e}")))?;
+            Ok::<_, AppError>(valuation)
+        }
+    })
+    .await
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+
+    Ok(Json(valuation_to_response(&valuation)))
+}
+
+async fn list_valuations(
+    RequireEquityRead(auth): RequireEquityRead,
+    State(state): State<AppState>,
+    Path(entity_id): Path<EntityId>,
+) -> Result<Json<Vec<ValuationResponse>>, AppError> {
+    let workspace_id = auth.workspace_id();
+    if !auth.allows_entity(entity_id) {
+        return Err(AppError::Forbidden("entity access denied".to_owned()));
+    }
+
+    let valuations = tokio::task::spawn_blocking({
+        let layout = state.layout.clone();
+        move || {
+            let store = open_store(&layout, workspace_id, entity_id)?;
+            let all = read_all::<Valuation>(&store)?;
+            Ok::<_, AppError>(all.iter().map(valuation_to_response).collect::<Vec<_>>())
+        }
+    })
+    .await
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+
+    Ok(Json(valuations))
+}
+
+async fn get_current_409a(
+    RequireEquityRead(auth): RequireEquityRead,
+    State(state): State<AppState>,
+    Path(entity_id): Path<EntityId>,
+) -> Result<Json<ValuationResponse>, AppError> {
+    let workspace_id = auth.workspace_id();
+    if !auth.allows_entity(entity_id) {
+        return Err(AppError::Forbidden("entity access denied".to_owned()));
+    }
+
+    let valuation = tokio::task::spawn_blocking({
+        let layout = state.layout.clone();
+        move || {
+            let store = open_store(&layout, workspace_id, entity_id)?;
+            let all = read_all::<Valuation>(&store)?;
+            all.into_iter()
+                .find(|v| v.is_current_409a())
+                .ok_or_else(|| AppError::NotFound("no current 409A valuation found".to_owned()))
+        }
+    })
+    .await
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+
+    Ok(Json(valuation_to_response(&valuation)))
+}
+
+async fn submit_valuation_for_approval(
+    RequireEquityWrite(auth): RequireEquityWrite,
+    State(state): State<AppState>,
+    Path(valuation_id): Path<ValuationId>,
+    Json(req): Json<SubmitValuationForApprovalRequest>,
+) -> Result<Json<ValuationResponse>, AppError> {
+    let workspace_id = auth.workspace_id();
+    let entity_id = req.entity_id;
+    if !auth.allows_entity(entity_id) {
+        return Err(AppError::Forbidden("entity access denied".to_owned()));
+    }
+
+    let result = tokio::task::spawn_blocking({
+        let layout = state.layout.clone();
+        move || {
+            let store = open_store(&layout, workspace_id, entity_id)?;
+
+            // Read and transition the valuation.
+            let mut valuation = store
+                .read::<Valuation>("main", valuation_id)
+                .map_err(|_| AppError::NotFound(format!("valuation {} not found", valuation_id)))?;
+            valuation
+                .submit_for_approval()
+                .map_err(|e| AppError::BadRequest(format!("{e}")))?;
+
+            // Find the board body for this entity.
+            let bodies = read_all::<GovernanceBody>(&store)?;
+            let board_body = bodies
+                .iter()
+                .find(|b| b.body_type() == BodyType::BoardOfDirectors)
+                .ok_or_else(|| {
+                    AppError::NotFound("no board governance body found for entity".to_owned())
+                })?;
+            let body_id = board_body.body_id();
+
+            // Look for an existing Draft or Noticed meeting for this board body.
+            let meetings = read_all::<Meeting>(&store)?;
+            let existing_meeting = meetings.iter().find(|m| {
+                m.body_id() == body_id
+                    && (m.status() == MeetingStatus::Draft || m.status() == MeetingStatus::Noticed)
+            });
+
+            let agenda_item_id = AgendaItemId::new();
+            let effective = valuation.effective_date();
+            let agenda_title = format!("Approve 409A Valuation ({effective})");
+
+            let (meeting_id, new_meeting) = if let Some(m) = existing_meeting {
+                (m.meeting_id(), None)
+            } else {
+                let mid = MeetingId::new();
+                let meeting = Meeting::new(
+                    mid,
+                    body_id,
+                    MeetingType::BoardMeeting,
+                    format!("Board Meeting — 409A Approval ({effective})"),
+                    None,
+                    String::new(),
+                    0,
+                );
+                (mid, Some(meeting))
+            };
+
+            // Determine the next sequence number by counting existing agenda items.
+            let existing_item_ids = store
+                .list_agenda_item_ids("main", meeting_id)
+                .unwrap_or_default();
+            let next_seq = (existing_item_ids.len() as u32) + 1;
+
+            let agenda_item = AgendaItem::new(
+                agenda_item_id,
+                meeting_id,
+                next_seq,
+                agenda_title,
+                None,
+                AgendaItemType::Resolution,
+            );
+
+            // Build atomic commit.
+            let mut files = vec![
+                FileWrite::json(Valuation::storage_path(valuation_id), &valuation)
+                    .map_err(|e| AppError::Internal(format!("serialize valuation: {e}")))?,
+                FileWrite::json(
+                    format!("governance/meetings/{}/agenda/{}.json", meeting_id, agenda_item_id),
+                    &agenda_item,
+                )
+                .map_err(|e| AppError::Internal(format!("serialize agenda item: {e}")))?,
+            ];
+            if let Some(ref meeting) = new_meeting {
+                files.push(
+                    FileWrite::json(Meeting::storage_path(meeting_id), meeting)
+                        .map_err(|e| AppError::Internal(format!("serialize meeting: {e}")))?,
+                );
+            }
+
+            store
+                .commit(
+                    "main",
+                    &format!("Submit valuation {valuation_id} for board approval"),
+                    files,
+                )
+                .map_err(|e| AppError::Internal(format!("commit: {e}")))?;
+
+            let mut resp = valuation_to_response(&valuation);
+            resp.meeting_id = Some(meeting_id);
+            resp.agenda_item_id = Some(agenda_item_id);
+            Ok::<_, AppError>(resp)
+        }
+    })
+    .await
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+
+    Ok(Json(result))
+}
+
+async fn approve_valuation(
+    RequireEquityWrite(auth): RequireEquityWrite,
+    State(state): State<AppState>,
+    Path(valuation_id): Path<ValuationId>,
+    Json(req): Json<ApproveValuationRequest>,
+) -> Result<Json<ValuationResponse>, AppError> {
+    let workspace_id = auth.workspace_id();
+    let entity_id = req.entity_id;
+    if !auth.allows_entity(entity_id) {
+        return Err(AppError::Forbidden("entity access denied".to_owned()));
+    }
+
+    let valuation = tokio::task::spawn_blocking({
+        let layout = state.layout.clone();
+        move || {
+            let store = open_store(&layout, workspace_id, entity_id)?;
+
+            let mut valuation = store
+                .read::<Valuation>("main", valuation_id)
+                .map_err(|_| AppError::NotFound(format!("valuation {} not found", valuation_id)))?;
+            valuation
+                .approve(req.resolution_id)
+                .map_err(|e| AppError::BadRequest(format!("{e}")))?;
+
+            // Auto-supersede previous approved 409A valuations.
+            let mut files = vec![
+                FileWrite::json(Valuation::storage_path(valuation_id), &valuation)
+                    .map_err(|e| AppError::Internal(format!("serialize valuation: {e}")))?,
+            ];
+
+            if valuation.valuation_type() == ValuationType::FourOhNineA {
+                let all = read_all::<Valuation>(&store)?;
+                for prev in all {
+                    if prev.valuation_id() != valuation_id
+                        && prev.valuation_type() == ValuationType::FourOhNineA
+                        && prev.status() == ValuationStatus::Approved
+                    {
+                        let mut prev = prev;
+                        if prev.supersede().is_ok() {
+                            files.push(
+                                FileWrite::json(
+                                    Valuation::storage_path(prev.valuation_id()),
+                                    &prev,
+                                )
+                                .map_err(|e| {
+                                    AppError::Internal(format!("serialize prev valuation: {e}"))
+                                })?,
+                            );
+                        }
+                    }
+                }
+            }
+
+            store
+                .commit(
+                    "main",
+                    &format!("Approve valuation {valuation_id}"),
+                    files,
+                )
+                .map_err(|e| AppError::Internal(format!("commit: {e}")))?;
+
+            Ok::<_, AppError>(valuation)
+        }
+    })
+    .await
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+
+    Ok(Json(valuation_to_response(&valuation)))
 }
 
 // ── Router ───────────────────────────────────────────────────────────
@@ -5223,4 +5665,21 @@ pub fn equity_routes() -> Router<AppState> {
         .route("/v1/entities/{entity_id}/cap-table", get(get_cap_table))
         .route("/v1/equity/control-map", get(get_control_map))
         .route("/v1/equity/dilution/preview", get(get_dilution_preview))
+        .route("/v1/valuations", post(create_valuation))
+        .route(
+            "/v1/entities/{entity_id}/valuations",
+            get(list_valuations),
+        )
+        .route(
+            "/v1/entities/{entity_id}/current-409a",
+            get(get_current_409a),
+        )
+        .route(
+            "/v1/valuations/{valuation_id}/submit-for-approval",
+            post(submit_valuation_for_approval),
+        )
+        .route(
+            "/v1/valuations/{valuation_id}/approve",
+            post(approve_valuation),
+        )
 }

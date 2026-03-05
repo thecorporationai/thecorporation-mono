@@ -110,6 +110,19 @@ const TOOL_HANDLERS: Record<string, ToolHandler> = {
     return client.issueRound(roundId, args);
   },
 
+  create_valuation: async (args, client) => client.createValuation(args),
+  submit_valuation_for_approval: async (args, client) =>
+    client.submitValuationForApproval(
+      requiredString(args, "valuation_id"),
+      requiredString(args, "entity_id"),
+    ),
+  approve_valuation: async (args, client) =>
+    client.approveValuation(
+      requiredString(args, "valuation_id"),
+      requiredString(args, "entity_id"),
+      args.resolution_id as string | undefined,
+    ),
+
   issue_equity: async (args, client) => client.issueEquity(args),
   issue_safe: async (args, client) => client.issueSafe(args),
   create_invoice: async (args, client) => {
@@ -211,7 +224,14 @@ const TOOL_HANDLERS: Record<string, ToolHandler> = {
   get_signing_link: async (args, client) => client.getSigningLink(args.document_id as string),
   convert_entity: async (args, client) => client.convertEntity(args.entity_id as string, args),
   dissolve_entity: async (args, client) => client.dissolveEntity(args.entity_id as string, args),
-  transfer_shares: async (args, client) => client.transferShares(args),
+  transfer_shares: async (args, client) => {
+    if (args.skip_governance_review !== true) {
+      return {
+        error: "Transfer blocked: governance review required. Use the transfer workflow (create_transfer_workflow → submit-review → record-board-approval → execute) for governed transfers. To bypass governance and record a direct transfer, pass skip_governance_review: true.",
+      };
+    }
+    return client.transferShares(args);
+  },
   calculate_distribution: async (args, client) => client.calculateDistribution(args),
   classify_contractor: async (args, client) => client.classifyContractor(args),
   reconcile_ledger: async (args, client) => client.reconcileLedger(args),
@@ -222,6 +242,70 @@ const TOOL_HANDLERS: Record<string, ToolHandler> = {
     {
       present_seat_ids: Array.isArray(args.present_seat_ids) ? args.present_seat_ids : [],
     },
+  ),
+
+  send_notice: async (args, client) => client.sendNotice(
+    requiredString(args, "meeting_id"),
+    requiredString(args, "entity_id"),
+  ),
+
+  adjourn_meeting: async (args, client) => client.adjournMeeting(
+    requiredString(args, "meeting_id"),
+    requiredString(args, "entity_id"),
+  ),
+
+  cancel_meeting: async (args, client) => client.cancelMeeting(
+    requiredString(args, "meeting_id"),
+    requiredString(args, "entity_id"),
+  ),
+
+  finalize_agenda_item: async (args, client) => client.finalizeAgendaItem(
+    requiredString(args, "meeting_id"),
+    requiredString(args, "agenda_item_id"),
+    {
+      entity_id: requiredString(args, "entity_id"),
+      status: requiredString(args, "status"),
+    },
+  ),
+
+  compute_resolution: async (args, client) => {
+    const data: Record<string, unknown> = {
+      resolution_text: requiredString(args, "resolution_text"),
+    };
+    if (typeof args.effective_date === "string") data.effective_date = args.effective_date;
+    return client.computeResolution(
+      requiredString(args, "meeting_id"),
+      requiredString(args, "agenda_item_id"),
+      requiredString(args, "entity_id"),
+      data,
+    );
+  },
+
+  attach_resolution_document: async (args, client) => client.attachResolutionDocument(
+    requiredString(args, "meeting_id"),
+    requiredString(args, "resolution_id"),
+    {
+      entity_id: requiredString(args, "entity_id"),
+      document_id: requiredString(args, "document_id"),
+    },
+  ),
+
+  written_consent: async (args, client) => client.writtenConsent({
+    entity_id: requiredString(args, "entity_id"),
+    body_id: requiredString(args, "body_id"),
+    title: requiredString(args, "title"),
+    description: args.description as string ?? "",
+  }),
+
+  list_agenda_items: async (args, client) => client.listAgendaItems(
+    requiredString(args, "meeting_id"),
+    requiredString(args, "entity_id"),
+  ),
+
+  list_votes: async (args, client) => client.listVotes(
+    requiredString(args, "meeting_id"),
+    requiredString(args, "agenda_item_id"),
+    requiredString(args, "entity_id"),
   ),
 
   create_agent: async (args, client) => client.createAgent(args),
@@ -238,6 +322,7 @@ const READ_ONLY_TOOLS = new Set([
   "get_workspace_status", "list_entities", "get_cap_table", "list_documents",
   "list_safe_notes", "list_agents", "get_checklist",
   "get_signing_link", "list_obligations", "get_billing_status",
+  "list_agenda_items", "list_votes",
 ]);
 
 export function isWriteTool(name: string): boolean {

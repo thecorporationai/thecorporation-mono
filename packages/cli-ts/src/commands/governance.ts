@@ -83,3 +83,93 @@ export async function governanceVoteCommand(
     printJson(result);
   } catch (err) { printError(`Failed to cast vote: ${err}`); process.exit(1); }
 }
+
+export async function sendNoticeCommand(meetingId: string, opts: { entityId?: string }): Promise<void> {
+  const cfg = requireConfig("api_url", "api_key", "workspace_id");
+  const eid = resolveEntityId(cfg, opts.entityId);
+  const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
+  try {
+    const result = await client.sendNotice(meetingId, eid);
+    printSuccess(`Notice sent for meeting ${meetingId}`);
+    printJson(result);
+  } catch (err) { printError(`Failed to send notice: ${err}`); process.exit(1); }
+}
+
+export async function adjournMeetingCommand(meetingId: string, opts: { entityId?: string }): Promise<void> {
+  const cfg = requireConfig("api_url", "api_key", "workspace_id");
+  const eid = resolveEntityId(cfg, opts.entityId);
+  const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
+  try {
+    const result = await client.adjournMeeting(meetingId, eid);
+    printSuccess(`Meeting ${meetingId} adjourned`);
+    printJson(result);
+  } catch (err) { printError(`Failed to adjourn meeting: ${err}`); process.exit(1); }
+}
+
+export async function cancelMeetingCommand(meetingId: string, opts: { entityId?: string }): Promise<void> {
+  const cfg = requireConfig("api_url", "api_key", "workspace_id");
+  const eid = resolveEntityId(cfg, opts.entityId);
+  const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
+  try {
+    const result = await client.cancelMeeting(meetingId, eid);
+    printSuccess(`Meeting ${meetingId} cancelled`);
+    printJson(result);
+  } catch (err) { printError(`Failed to cancel meeting: ${err}`); process.exit(1); }
+}
+
+export async function finalizeAgendaItemCommand(
+  meetingId: string, itemId: string, opts: { status: string; entityId?: string }
+): Promise<void> {
+  const cfg = requireConfig("api_url", "api_key", "workspace_id");
+  const eid = resolveEntityId(cfg, opts.entityId);
+  const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
+  try {
+    const result = await client.finalizeAgendaItem(meetingId, itemId, {
+      entity_id: eid, status: opts.status,
+    });
+    printSuccess(`Agenda item ${itemId} finalized as ${opts.status}`);
+    printJson(result);
+  } catch (err) { printError(`Failed to finalize agenda item: ${err}`); process.exit(1); }
+}
+
+export async function computeResolutionCommand(
+  meetingId: string, itemId: string, opts: { text: string; entityId?: string }
+): Promise<void> {
+  const cfg = requireConfig("api_url", "api_key", "workspace_id");
+  const eid = resolveEntityId(cfg, opts.entityId);
+  const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
+  try {
+    const result = await client.computeResolution(meetingId, itemId, eid, {
+      resolution_text: opts.text,
+    });
+    printSuccess(`Resolution computed for agenda item ${itemId}`);
+    printJson(result);
+  } catch (err) { printError(`Failed to compute resolution: ${err}`); process.exit(1); }
+}
+
+export async function writtenConsentCommand(opts: {
+  body: string; title: string; description: string; entityId?: string;
+}): Promise<void> {
+  const cfg = requireConfig("api_url", "api_key", "workspace_id");
+  const eid = resolveEntityId(cfg, opts.entityId);
+  const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
+  try {
+    const result = await client.writtenConsent({
+      entity_id: eid, body_id: opts.body, title: opts.title, description: opts.description,
+    });
+    printSuccess(`Written consent created: ${result.meeting_id ?? "OK"}`);
+    printJson(result);
+  } catch (err) { printError(`Failed to create written consent: ${err}`); process.exit(1); }
+}
+
+export async function listAgendaItemsCommand(meetingId: string, opts: { entityId?: string; json?: boolean }): Promise<void> {
+  const cfg = requireConfig("api_url", "api_key", "workspace_id");
+  const eid = resolveEntityId(cfg, opts.entityId);
+  const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
+  try {
+    const items = await client.listAgendaItems(meetingId, eid);
+    if (opts.json) printJson(items);
+    else if (items.length === 0) console.log("No agenda items found.");
+    else printJson(items);
+  } catch (err) { printError(`Failed to list agenda items: ${err}`); process.exit(1); }
+}
