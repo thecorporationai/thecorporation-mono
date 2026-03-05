@@ -120,11 +120,21 @@ impl BranchListEntry {
 pub struct MergeBranchRequest {
     #[serde(default = "default_branch")]
     into: BranchName,
+    #[serde(default = "default_squash")]
+    squash: bool,
+}
+
+fn default_squash() -> bool {
+    true
 }
 
 impl MergeBranchRequest {
     pub fn target_branch(&self) -> &str {
         self.into.as_str()
+    }
+
+    pub fn squash(&self) -> bool {
+        self.squash
     }
 }
 
@@ -228,6 +238,7 @@ async fn merge_branch(
 
     let source = BranchName::new(name).map_err(|e| AppError::BadRequest(e.to_string()))?;
 
+    let squash = req.squash;
     let result = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         let target = req.into.clone();
@@ -236,8 +247,13 @@ async fn merge_branch(
                 crate::store::entity_store::EntityStore::open(&layout, workspace_id, entity_id)
                     .map_err(|e| AppError::Internal(e.to_string()))?;
 
-            crate::git::merge::merge_branch(store.repo(), &source, &target, None)
-                .map_err(AppError::from)
+            if squash {
+                crate::git::merge::merge_branch_squash(store.repo(), &source, &target, None)
+                    .map_err(AppError::from)
+            } else {
+                crate::git::merge::merge_branch(store.repo(), &source, &target, None)
+                    .map_err(AppError::from)
+            }
         }
     })
     .await
@@ -257,6 +273,11 @@ async fn merge_branch(
         MergeResult::ThreeWayMerge { new_oid } => MergeBranchResponse {
             merged: true,
             strategy: "three_way".to_owned(),
+            commit: Some(new_oid.to_string()),
+        },
+        MergeResult::Squash { new_oid } => MergeBranchResponse {
+            merged: true,
+            strategy: "squash".to_owned(),
             commit: Some(new_oid.to_string()),
         },
     };

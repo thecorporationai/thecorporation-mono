@@ -22,6 +22,8 @@ pub enum MergeResult {
     AlreadyUpToDate,
     /// A three-way merge commit was created.
     ThreeWayMerge { new_oid: Oid },
+    /// All source commits were squashed into a single commit on target.
+    Squash { new_oid: Oid },
 }
 
 /// Merge `source_branch` into `target_branch`.
@@ -79,27 +81,141 @@ pub fn merge_branch(
     })
 }
 
-/// Perform a three-way merge when branches have diverged.
+/// Squash-merge `source_branch` into `target_branch`.
 ///
-/// Uses `git2::merge_commits` for line-level merge, then resolves remaining
-/// conflicts using JSON field-level last-writer-wins (source wins).
-fn merge_three_way(
+/// Collapses all source branch commits into a single commit on the target.
+/// The resulting commit has only one parent (target HEAD), unlike a regular
+/// merge which has two parents.
+pub fn merge_branch_squash(
     repo: &CorpRepo,
-    source_oid: Oid,
-    target_oid: Oid,
+    source_branch: &str,
     target_branch: &str,
     ctx: Option<&CommitContext<'_>>,
 ) -> Result<MergeResult, GitStorageError> {
+    let source_oid = repo.resolve_ref(source_branch)?;
+    let target_oid = repo.resolve_ref(target_branch)?;
+
+    if source_oid == target_oid {
+        return Ok(MergeResult::AlreadyUpToDate);
+    }
+
     let git = repo.inner();
+
+    // Check ancestry.
+    let target_is_ancestor = git.graph_descendant_of(source_oid, target_oid)?;
+
+    if !target_is_ancestor {
+        let source_is_ancestor = git.graph_descendant_of(target_oid, source_oid)?;
+        if source_is_ancestor {
+            return Ok(MergeResult::AlreadyUpToDate);
+        }
+    }
 
     let source_commit = git.find_commit(source_oid)?;
     let target_commit = git.find_commit(target_oid)?;
 
-    // Perform three-way merge (target = "ours", source = "theirs").
-    let mut index = git.merge_commits(&target_commit, &source_commit, None)?;
+    // Build the merged tree.
+    let tree_oid = if target_is_ancestor {
+        // Fast-forward case: source tree already contains everything.
+        source_commit.tree_id()
+    } else {
+        // Diverged: merge trees with conflict resolution.
+        let mut index = git.merge_commits(&target_commit, &source_commit, None)?;
+        resolve_conflicts_and_write_tree(git, &mut index)?
+    };
+    let merged_tree = git.find_tree(tree_oid)?;
 
+    // Collect commit messages from source commits for the squash message.
+    let merge_base = git.merge_base(source_oid, target_oid)?;
+    let source_messages = collect_source_messages(git, source_oid, merge_base)?;
+
+    let squash_body = source_messages
+        .iter()
+        .map(|m| format!("- {}", m.trim()))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let base_message = format!(
+        "squash merge {source_branch} into {target_branch}\n\nSquashed commits:\n{squash_body}"
+    );
+
+    let final_message = match ctx {
+        Some(c) => build_signed_message(&base_message, c.actor, c.signer),
+        None => base_message,
+    };
+
+    // Create a single-parent commit (this is what makes it a squash).
+    let sig = CorpRepo::signature()?;
+    let target_full = CorpRepo::normalize_ref(target_branch);
+
+    let commit_oid = match ctx.and_then(|c| c.signer) {
+        Some(signer) => {
+            let commit_buf = git.commit_create_buffer(
+                &sig,
+                &sig,
+                &final_message,
+                &merged_tree,
+                &[&target_commit], // single parent
+            )?;
+            let commit_str = std::str::from_utf8(&commit_buf).map_err(|e| {
+                GitStorageError::SigningError(format!("commit buffer not UTF-8: {e}"))
+            })?;
+            let signature = signer.sign_commit(commit_str)?;
+            let signed_oid = git.commit_signed(commit_str, &signature, Some("gpgsig"))?;
+            git.reference(&target_full, signed_oid, true, "signed squash merge commit")?;
+            signed_oid
+        }
+        None => git.commit(
+            Some(&target_full),
+            &sig,
+            &sig,
+            &final_message,
+            &merged_tree,
+            &[&target_commit], // single parent
+        )?,
+    };
+
+    tracing::debug!(
+        source = %source_branch,
+        target = %target_branch,
+        oid = %commit_oid,
+        "squash merge"
+    );
+
+    Ok(MergeResult::Squash {
+        new_oid: commit_oid,
+    })
+}
+
+/// Walk commits from `source_oid` back to (but not including) `stop_oid` and
+/// collect their messages.
+fn collect_source_messages(
+    git: &git2::Repository,
+    source_oid: Oid,
+    stop_oid: Oid,
+) -> Result<Vec<String>, GitStorageError> {
+    let mut revwalk = git.revwalk()?;
+    revwalk.push(source_oid)?;
+    revwalk.hide(stop_oid)?;
+    revwalk.set_sorting(git2::Sort::TOPOLOGICAL | git2::Sort::REVERSE)?;
+
+    let mut messages = Vec::new();
+    for oid in revwalk {
+        let oid = oid?;
+        let commit = git.find_commit(oid)?;
+        if let Some(msg) = commit.message() {
+            messages.push(msg.to_owned());
+        }
+    }
+    Ok(messages)
+}
+
+/// Resolve any conflicts in a merge index using JSON field-level last-writer-wins,
+/// then write and return the resulting tree OID.
+fn resolve_conflicts_and_write_tree(
+    git: &git2::Repository,
+    index: &mut git2::Index,
+) -> Result<Oid, GitStorageError> {
     if index.has_conflicts() {
-        // Collect conflicts and try to resolve them via JSON field-level merge.
         let conflicts: Vec<_> = index.conflicts()?.collect::<Result<_, _>>()?;
         let mut unresolved = Vec::new();
 
@@ -129,7 +245,6 @@ fn merge_three_way(
             ) {
                 Ok(merged_bytes) => {
                     let blob_oid = git.blob(&merged_bytes)?;
-                    // Build an index entry for the resolved file.
                     let mut entry = git2::IndexEntry {
                         ctime: git2::IndexTime::new(0, 0),
                         mtime: git2::IndexTime::new(0, 0),
@@ -145,9 +260,7 @@ fn merge_three_way(
                         path: path.clone().into_bytes(),
                     };
                     index.add(&entry)?;
-                    // Remove the conflict markers (stages 1, 2, 3).
                     index.conflict_remove(std::path::Path::new(&path))?;
-                    // Re-add at stage 0 after conflict removal.
                     entry.flags = 0;
                     index.add(&entry)?;
                 }
@@ -165,8 +278,27 @@ fn merge_three_way(
         }
     }
 
-    // Write the merged tree.
-    let tree_oid = index.write_tree_to(git)?;
+    Ok(index.write_tree_to(git)?)
+}
+
+/// Perform a three-way merge when branches have diverged.
+///
+/// Uses `git2::merge_commits` for line-level merge, then resolves remaining
+/// conflicts using JSON field-level last-writer-wins (source wins).
+fn merge_three_way(
+    repo: &CorpRepo,
+    source_oid: Oid,
+    target_oid: Oid,
+    target_branch: &str,
+    ctx: Option<&CommitContext<'_>>,
+) -> Result<MergeResult, GitStorageError> {
+    let git = repo.inner();
+
+    let source_commit = git.find_commit(source_oid)?;
+    let target_commit = git.find_commit(target_oid)?;
+
+    let mut index = git.merge_commits(&target_commit, &source_commit, None)?;
+    let tree_oid = resolve_conflicts_and_write_tree(git, &mut index)?;
     let merged_tree = git.find_tree(tree_oid)?;
 
     // Create merge commit with two parents.
@@ -777,5 +909,208 @@ mod tests {
         let result = resolve_json_conflict(Some(b"{\"a\": 0}"), Some(ours), None).unwrap();
         let val: Value = serde_json::from_slice(&result).unwrap();
         assert_eq!(val["a"], 1);
+    }
+
+    // ── Squash merge tests ──────────────────────────────────────────────
+
+    #[test]
+    fn test_squash_merge_linear_produces_single_parent() {
+        let (repo, _tmp) = setup_repo();
+
+        crate::git::branch::create_branch(&repo, "feature", "main").unwrap();
+
+        // Two commits on feature.
+        commit_files(
+            &repo,
+            "feature",
+            "first commit",
+            &[FileWrite::raw("a.json", b"{\"a\": 1}".to_vec())],
+            None,
+        )
+        .unwrap();
+        commit_files(
+            &repo,
+            "feature",
+            "second commit",
+            &[FileWrite::raw("b.json", b"{\"b\": 2}".to_vec())],
+            None,
+        )
+        .unwrap();
+
+        let result = merge_branch_squash(&repo, "feature", "main", None).unwrap();
+        let new_oid = match result {
+            MergeResult::Squash { new_oid } => new_oid,
+            other => panic!("expected Squash, got: {other:?}"),
+        };
+
+        // The squash commit should have exactly one parent (target HEAD).
+        let git = repo.inner();
+        let commit = git.find_commit(new_oid).unwrap();
+        assert_eq!(commit.parent_count(), 1, "squash commit must have single parent");
+
+        // Both files should exist on main.
+        assert!(repo.path_exists("main", "a.json").unwrap());
+        assert!(repo.path_exists("main", "b.json").unwrap());
+    }
+
+    #[test]
+    fn test_squash_merge_diverged_resolves_conflicts() {
+        let (repo, _tmp) = setup_repo();
+
+        // Base state.
+        commit_files(
+            &repo,
+            "main",
+            "base",
+            &[FileWrite::raw(
+                "corp.json",
+                serde_json::to_vec_pretty(&serde_json::json!({
+                    "legal_name": "Acme Inc",
+                    "jurisdiction": "Delaware",
+                    "status": "active"
+                }))
+                .unwrap(),
+            )],
+            None,
+        )
+        .unwrap();
+
+        crate::git::branch::create_branch(&repo, "feature", "main").unwrap();
+
+        // Main changes legal_name.
+        commit_files(
+            &repo,
+            "main",
+            "update name",
+            &[FileWrite::raw(
+                "corp.json",
+                serde_json::to_vec_pretty(&serde_json::json!({
+                    "legal_name": "Acme Corp",
+                    "jurisdiction": "Delaware",
+                    "status": "active"
+                }))
+                .unwrap(),
+            )],
+            None,
+        )
+        .unwrap();
+
+        // Feature changes jurisdiction.
+        commit_files(
+            &repo,
+            "feature",
+            "update jurisdiction",
+            &[FileWrite::raw(
+                "corp.json",
+                serde_json::to_vec_pretty(&serde_json::json!({
+                    "legal_name": "Acme Inc",
+                    "jurisdiction": "California",
+                    "status": "active"
+                }))
+                .unwrap(),
+            )],
+            None,
+        )
+        .unwrap();
+
+        let result = merge_branch_squash(&repo, "feature", "main", None).unwrap();
+        let new_oid = match result {
+            MergeResult::Squash { new_oid } => new_oid,
+            other => panic!("expected Squash, got: {other:?}"),
+        };
+
+        // Single parent.
+        let git = repo.inner();
+        let commit = git.find_commit(new_oid).unwrap();
+        assert_eq!(commit.parent_count(), 1);
+
+        // JSON conflict resolved correctly.
+        let merged: Value = repo.read_json("main", "corp.json").unwrap();
+        assert_eq!(merged["legal_name"], "Acme Corp"); // from main (ours)
+        assert_eq!(merged["jurisdiction"], "California"); // from feature (theirs)
+        assert_eq!(merged["status"], "active"); // unchanged
+    }
+
+    #[test]
+    fn test_non_squash_merge_still_produces_two_parents() {
+        let (repo, _tmp) = setup_repo();
+
+        // Create diverged branches.
+        crate::git::branch::create_branch(&repo, "feature", "main").unwrap();
+
+        commit_files(
+            &repo,
+            "main",
+            "main work",
+            &[FileWrite::raw("a.json", b"{\"x\": 1}".to_vec())],
+            None,
+        )
+        .unwrap();
+        commit_files(
+            &repo,
+            "feature",
+            "feature work",
+            &[FileWrite::raw("b.json", b"{\"y\": 2}".to_vec())],
+            None,
+        )
+        .unwrap();
+
+        // Non-squash merge (original behavior).
+        let result = merge_branch(&repo, "feature", "main", None).unwrap();
+        let new_oid = match result {
+            MergeResult::ThreeWayMerge { new_oid } => new_oid,
+            other => panic!("expected ThreeWayMerge, got: {other:?}"),
+        };
+
+        let git = repo.inner();
+        let commit = git.find_commit(new_oid).unwrap();
+        assert_eq!(commit.parent_count(), 2, "regular merge must have two parents");
+    }
+
+    #[test]
+    fn test_squash_merge_already_up_to_date() {
+        let (repo, _tmp) = setup_repo();
+
+        // Same commit on both branches — should be up to date.
+        crate::git::branch::create_branch(&repo, "feature", "main").unwrap();
+        let result = merge_branch_squash(&repo, "feature", "main", None).unwrap();
+        assert!(matches!(result, MergeResult::AlreadyUpToDate));
+    }
+
+    #[test]
+    fn test_squash_merge_message_contains_source_commits() {
+        let (repo, _tmp) = setup_repo();
+
+        crate::git::branch::create_branch(&repo, "feature", "main").unwrap();
+
+        commit_files(
+            &repo,
+            "feature",
+            "add widget",
+            &[FileWrite::raw("w.json", b"{\"w\": 1}".to_vec())],
+            None,
+        )
+        .unwrap();
+        commit_files(
+            &repo,
+            "feature",
+            "fix widget bug",
+            &[FileWrite::raw("w.json", b"{\"w\": 2}".to_vec())],
+            None,
+        )
+        .unwrap();
+
+        let result = merge_branch_squash(&repo, "feature", "main", None).unwrap();
+        let new_oid = match result {
+            MergeResult::Squash { new_oid } => new_oid,
+            other => panic!("expected Squash, got: {other:?}"),
+        };
+
+        let git = repo.inner();
+        let commit = git.find_commit(new_oid).unwrap();
+        let msg = commit.message().unwrap();
+        assert!(msg.contains("squash merge feature into main"));
+        assert!(msg.contains("add widget"));
+        assert!(msg.contains("fix widget bug"));
     }
 }

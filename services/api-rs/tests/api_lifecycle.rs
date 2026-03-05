@@ -4134,7 +4134,7 @@ async fn test_three_way_merge_via_api() {
     let (status, body) = post_json(
         &app,
         &format!("/v1/branches/feature%2Fdiverge/merge?{e_query}"),
-        json!({ "into": "main" }),
+        json!({ "into": "main", "squash": false }),
         &token,
     )
     .await;
