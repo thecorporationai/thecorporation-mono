@@ -202,6 +202,8 @@ thecorporation-mono/
 │   ├── mcp-server/      @thecorporation/mcp-server — MCP server
 │   ├── corp-tools/      @thecorporation/corp-tools — shared API client & tool definitions
 │   └── server/          @thecorporation/server — pre-built server binaries
+├── skills/
+│   └── corp-claw/       ClawHub skill — corporate tools for autonomous agents
 ├── services/
 │   ├── api-rs/          Rust backend — the governance kernel
 │   └── agent-worker/    Rust agent execution worker
