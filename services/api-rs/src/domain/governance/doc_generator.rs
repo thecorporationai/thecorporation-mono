@@ -8,9 +8,9 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use super::doc_ast::{
-    ContentNode, DocumentDefinition, EntityTypeKey, GovernanceDocAstV2,
+    ContentNode, DocumentDefinition, EntityTypeKey, GovernanceDocAst,
 };
-use super::profile::GovernanceProfile;
+use super::profile::{CompanyAddress, FiscalYearEnd, GovernanceProfile};
 use crate::domain::ids::{EntityId, GovernanceDocBundleId};
 
 pub const GOVERNANCE_DOC_BUNDLES_ROOT: &str = "governance/doc-bundles";
@@ -99,41 +99,6 @@ pub struct RenderedGovernanceBundle {
     pub documents: Vec<RenderedGovernanceDocument>,
 }
 
-const COMMON_DOCS: &[&str] = &[
-    "common/agent-delegation-schedule.md",
-    "common/assumptions-and-decisions.md",
-    "common/signing-and-records-standard.md",
-    "common/agent-operator-service-agreement-template.md",
-    "common/agent-operator-service-agreement-checklist.md",
-];
-
-const COMPLIANCE_DOCS: &[&str] = &[
-    "compliance/formation-checklist.md",
-    "compliance/annual-compliance-calendar.md",
-];
-
-const TRANSACTION_DOCS: &[&str] = &[
-    "transactions/board-consent.md",
-    "transactions/equity-issuance-approval.md",
-    "transactions/investor-rights-agreement.md",
-    "transactions/stock-transfer-agreement.md",
-    "transactions/subscription-agreement.md",
-    "transactions/transfer-board-consent.md",
-];
-
-const CORPORATION_DOCS: &[&str] = &[
-    "corporation/articles-of-incorporation.md",
-    "corporation/bylaws.md",
-    "corporation/incorporator-action.md",
-    "corporation/initial-board-consent.md",
-    "corporation/stock-issuance-consent.md",
-];
-
-const LLC_DOCS: &[&str] = &[
-    "llc/articles-of-organization.md",
-    "llc/operating-agreement.md",
-    "llc/initial-written-consent.md",
-];
 
 pub fn bundle_root(bundle_id: GovernanceDocBundleId) -> String {
     format!("{GOVERNANCE_DOC_BUNDLES_ROOT}/{bundle_id}")
@@ -151,16 +116,17 @@ pub fn bundle_history_path(bundle_id: GovernanceDocBundleId) -> String {
     format!("{GOVERNANCE_DOC_BUNDLES_HISTORY_DIR}/{bundle_id}.json")
 }
 
-pub fn relative_document_paths(entity_type: GovernanceDocEntityType) -> Vec<&'static str> {
-    let mut docs = Vec::new();
-    docs.extend_from_slice(COMMON_DOCS);
-    docs.extend_from_slice(COMPLIANCE_DOCS);
-    docs.extend_from_slice(TRANSACTION_DOCS);
-    match entity_type {
-        GovernanceDocEntityType::Corporation => docs.extend_from_slice(CORPORATION_DOCS),
-        GovernanceDocEntityType::Llc => docs.extend_from_slice(LLC_DOCS),
-    }
-    docs
+pub fn relative_document_paths(entity_type: GovernanceDocEntityType) -> Vec<String> {
+    let ast = super::doc_ast::default_doc_ast();
+    let key = match entity_type {
+        GovernanceDocEntityType::Corporation => EntityTypeKey::Corporation,
+        GovernanceDocEntityType::Llc => EntityTypeKey::Llc,
+    };
+    ast.documents
+        .iter()
+        .filter(|d| d.entity_scope.matches(key))
+        .map(|d| d.path.clone())
+        .collect()
 }
 
 /// Legacy copy-style bundle generation to filesystem (CLI fallback).
@@ -190,7 +156,8 @@ pub fn generate_bundle_from_repo_root(
         .with_context(|| format!("create output dir {}", out_dir.to_string_lossy()))?;
 
     let mut generated = Vec::new();
-    for rel in relative_document_paths(entity_type) {
+    let doc_paths = relative_document_paths(entity_type);
+    for rel in &doc_paths {
         let source = docs_root.join(rel);
         if !source.is_file() {
             bail!(
@@ -208,7 +175,7 @@ pub fn generate_bundle_from_repo_root(
         fs::write(&target, &bytes)
             .with_context(|| format!("write target document {}", target.to_string_lossy()))?;
         generated.push(GeneratedGovernanceDocument {
-            path: rel.to_owned(),
+            path: rel.clone(),
             source_path: source
                 .strip_prefix(repo_root)
                 .unwrap_or(&source)
@@ -272,7 +239,8 @@ pub fn render_bundle_from_profile_with_repo_root(
     }
 
     let mut rendered_docs = Vec::new();
-    for rel in relative_document_paths(entity_type) {
+    let doc_paths = relative_document_paths(entity_type);
+    for rel in &doc_paths {
         let source = docs_root.join(rel);
         if !source.is_file() {
             bail!(
@@ -291,7 +259,7 @@ pub fn render_bundle_from_profile_with_repo_root(
         let rendered = apply_profile_replacements(&markdown, entity_type, profile);
         let content = rendered.into_bytes();
         rendered_docs.push(RenderedGovernanceDocument {
-            path: rel.to_owned(),
+            path: rel.clone(),
             source_path,
             sha256: sha256_hex(&content),
             content,
@@ -483,7 +451,7 @@ pub fn format_usd(cents: i64) -> String {
 /// Render a single document definition from the v2 AST to markdown.
 pub fn render_document_from_ast(
     doc: &DocumentDefinition,
-    ast: &GovernanceDocAstV2,
+    ast: &GovernanceDocAst,
     entity_type: EntityTypeKey,
     profile: &GovernanceProfile,
 ) -> String {
@@ -495,7 +463,8 @@ pub fn render_document_from_ast(
     // Preamble (as blockquote)
     if let Some(preamble) = &doc.preamble {
         out.push('\n');
-        out.push_str(&format!("> {preamble}\n"));
+        let rendered_preamble = substitute(preamble, ast, profile);
+        out.push_str(&format!("> {rendered_preamble}\n"));
     }
 
     // Metadata fields
@@ -529,6 +498,15 @@ fn resolve_profile_field(key: &str, profile: &GovernanceProfile) -> Option<Strin
         "last_reviewed" => Some(profile.last_reviewed().to_string()),
         "next_mandatory_review" => Some(profile.next_mandatory_review().to_string()),
         "legal_name" => Some(profile.legal_name().to_owned()),
+        "company_address" => profile.company_address().map(format_company_address),
+        "registered_agent_name" => profile.registered_agent_name().map(ToOwned::to_owned),
+        "registered_agent_address" => profile.registered_agent_address().map(ToOwned::to_owned),
+        "board_size" => profile.board_size().map(|n| n.to_string()),
+        "incorporator_name" => profile.incorporator_name().map(ToOwned::to_owned),
+        "incorporator_address" => profile.incorporator_address().map(ToOwned::to_owned),
+        "principal_name" => profile.principal_name().map(ToOwned::to_owned),
+        "fiscal_year_end" => profile.fiscal_year_end().map(format_fiscal_year_end),
+        "jurisdiction" => Some(profile.jurisdiction().to_owned()),
         _ => None,
     }
 }
@@ -536,7 +514,7 @@ fn resolve_profile_field(key: &str, profile: &GovernanceProfile) -> Option<Strin
 fn render_node(
     out: &mut String,
     node: &ContentNode,
-    ast: &GovernanceDocAstV2,
+    ast: &GovernanceDocAst,
     entity_type: EntityTypeKey,
     profile: &GovernanceProfile,
 ) {
@@ -647,11 +625,103 @@ fn render_node(
     }
 }
 
+fn format_company_address(addr: &CompanyAddress) -> String {
+    let mut parts = vec![addr.street.clone(), addr.city.clone()];
+    if let Some(county) = &addr.county {
+        parts.push(county.clone());
+    }
+    parts.push(addr.state.clone());
+    parts.push(addr.zip.clone());
+    parts.join(", ")
+}
+
+fn format_fiscal_year_end(fy: &FiscalYearEnd) -> String {
+    let month_name = match fy.month {
+        1 => "January",
+        2 => "February",
+        3 => "March",
+        4 => "April",
+        5 => "May",
+        6 => "June",
+        7 => "July",
+        8 => "August",
+        9 => "September",
+        10 => "October",
+        11 => "November",
+        12 => "December",
+        _ => "Unknown",
+    };
+    format!("{} {}", month_name, fy.day)
+}
+
+fn format_par_value(cents: u64) -> String {
+    if cents == 0 {
+        return "0".to_owned();
+    }
+    let dollars = cents / 100;
+    let remainder = cents % 100;
+    if remainder == 0 {
+        format!("{dollars}")
+    } else {
+        // Format as decimal: e.g. 1 cent = 0.01, but par values can be
+        // fractional like 0.0001.  We express cents as dollars with up to
+        // 4 decimal places.
+        let value = cents as f64 / 100.0;
+        let s = format!("{value:.4}");
+        s.trim_end_matches('0').to_owned()
+    }
+}
+
+fn format_number_with_commas(n: u64) -> String {
+    let s = n.to_string();
+    let mut result = String::new();
+    for (i, ch) in s.chars().enumerate() {
+        if i > 0 && (s.len() - i) % 3 == 0 {
+            result.push(',');
+        }
+        result.push(ch);
+    }
+    result
+}
+
+fn format_json_value(v: &serde_json::Value) -> String {
+    match v {
+        serde_json::Value::Null => "N/A".to_owned(),
+        serde_json::Value::String(s) => s.clone(),
+        serde_json::Value::Array(arr) => arr
+            .iter()
+            .filter_map(|item| item.as_str())
+            .collect::<Vec<_>>()
+            .join(", "),
+        serde_json::Value::Object(obj) => {
+            obj.iter()
+                .map(|(k, v)| {
+                    let val = match v {
+                        serde_json::Value::String(s) => s.clone(),
+                        other => other.to_string(),
+                    };
+                    format!("{}: {}", k, val)
+                })
+                .collect::<Vec<_>>()
+                .join(", ")
+        }
+        other => other.to_string(),
+    }
+}
+
+fn capitalize(s: &str) -> String {
+    let mut chars = s.chars();
+    match chars.next() {
+        None => String::new(),
+        Some(c) => c.to_uppercase().to_string() + chars.as_str(),
+    }
+}
+
 fn render_data_table(
     out: &mut String,
     source: &str,
     columns: &[super::doc_ast::DataTableColumn],
-    ast: &GovernanceDocAstV2,
+    ast: &GovernanceDocAst,
     _entity_type: EntityTypeKey,
 ) {
     out.push('\n');
@@ -716,6 +786,241 @@ fn render_data_table(
                 out.push('\n');
             }
         }
+        "structured_data.autonomy_lanes" => {
+            if let Some(sd) = &ast.structured_data {
+                for lane in &sd.autonomy_lanes {
+                    out.push('|');
+                    for col in columns {
+                        let val = match col.key.as_str() {
+                            "label" => lane.label.clone(),
+                            "conditions_text" => {
+                                if lane.conditions.is_empty() {
+                                    "None".to_owned()
+                                } else {
+                                    lane.conditions
+                                        .iter()
+                                        .filter_map(|c| c.get("label").and_then(|l| l.as_str()))
+                                        .collect::<Vec<_>>()
+                                        .join("; ")
+                                }
+                            }
+                            "authority_text" => lane.authority_action.clone(),
+                            _ => String::new(),
+                        };
+                        out.push_str(&format!(" {} |", val));
+                    }
+                    out.push('\n');
+                }
+            }
+        }
+        "structured_data.approval_validity" => {
+            if let Some(sd) = &ast.structured_data {
+                if let Some(av) = &sd.approval_validity {
+                    for req in &av.required_elements {
+                        out.push('|');
+                        for col in columns {
+                            let val = match col.key.as_str() {
+                                "label" => req.label.clone(),
+                                "description" => req.rule.clone(),
+                                _ => String::new(),
+                            };
+                            out.push_str(&format!(" {} |", val));
+                        }
+                        out.push('\n');
+                    }
+                }
+            }
+        }
+        "structured_data.credential_custody" => {
+            if let Some(sd) = &ast.structured_data {
+                for cred in &sd.credential_custody {
+                    out.push('|');
+                    for col in columns {
+                        let val = match col.key.as_str() {
+                            "label" => cred.label.clone(),
+                            "custodian" => cred.custodian.clone(),
+                            "agent_access" => cred.agent_access.clone(),
+                            _ => String::new(),
+                        };
+                        out.push_str(&format!(" {} |", val));
+                    }
+                    out.push('\n');
+                }
+            }
+        }
+        "structured_data.emergency_modes" => {
+            if let Some(sd) = &ast.structured_data {
+                for mode in &sd.emergency_modes {
+                    out.push('|');
+                    for col in columns {
+                        let val = match col.key.as_str() {
+                            "label" => mode.label.clone(),
+                            "description" => {
+                                let mut parts = Vec::new();
+                                if mode.tier1_allowed {
+                                    parts.push("Tier 1 allowed");
+                                }
+                                if mode.tier2_allowed {
+                                    parts.push("Tier 2 allowed");
+                                }
+                                if mode.reversible_only {
+                                    parts.push("Reversible only");
+                                }
+                                if parts.is_empty() {
+                                    "All actions suspended".to_owned()
+                                } else {
+                                    parts.join(", ")
+                                }
+                            }
+                            "activated_by_text" => format_json_value(&mode.activated_by),
+                            "deactivated_by_text" => format_json_value(&mode.deactivated_by),
+                            _ => String::new(),
+                        };
+                        out.push_str(&format!(" {} |", val));
+                    }
+                    out.push('\n');
+                }
+            }
+        }
+        "structured_data.auto_suspension_triggers" => {
+            if let Some(sd) = &ast.structured_data {
+                for trigger in &sd.auto_suspension_triggers {
+                    out.push('|');
+                    for col in columns {
+                        let val = match col.key.as_str() {
+                            "label" => trigger.label.clone(),
+                            "description" => trigger.description.clone(),
+                            _ => String::new(),
+                        };
+                        out.push_str(&format!(" {} |", val));
+                    }
+                    out.push('\n');
+                }
+            }
+        }
+        "structured_data.report_schedule" => {
+            if let Some(sd) = &ast.structured_data {
+                for report in &sd.report_schedule {
+                    out.push('|');
+                    for col in columns {
+                        let val = match col.key.as_str() {
+                            "label" => report.label.clone(),
+                            "frequency" => report.frequency.clone(),
+                            "content_summary" => report.content_keys.join(", "),
+                            _ => String::new(),
+                        };
+                        out.push_str(&format!(" {} |", val));
+                    }
+                    out.push('\n');
+                }
+            }
+        }
+        "structured_data.adjustment_rules" => {
+            if let Some(sd) = &ast.structured_data {
+                for rule in &sd.adjustment_rules {
+                    out.push('|');
+                    for col in columns {
+                        let val = match col.key.as_str() {
+                            "description" => {
+                                format!("{} {}", capitalize(&rule.action), rule.target.replace('_', " "))
+                            }
+                            "permitted_text" => {
+                                if rule.requires_board_resolution {
+                                    "No, requires Board/Member resolution".to_owned()
+                                } else {
+                                    "Yes".to_owned()
+                                }
+                            }
+                            _ => String::new(),
+                        };
+                        out.push_str(&format!(" {} |", val));
+                    }
+                    out.push('\n');
+                }
+            }
+        }
+        "structured_data.change_control_rules" => {
+            if let Some(sd) = &ast.structured_data {
+                for rule in &sd.change_control_rules {
+                    out.push('|');
+                    for col in columns {
+                        let val = match col.key.as_str() {
+                            "label" => rule.label.clone(),
+                            "tier" => format!("Tier {}", rule.tier),
+                            "notes" => {
+                                let mut notes = Vec::new();
+                                if rule.requires_impact_assessment {
+                                    notes.push("Requires impact assessment");
+                                }
+                                if rule.requires_governance_amendment {
+                                    notes.push("Requires governance amendment");
+                                }
+                                notes.join("; ")
+                            }
+                            _ => String::new(),
+                        };
+                        out.push_str(&format!(" {} |", val));
+                    }
+                    out.push('\n');
+                }
+            }
+        }
+        "structured_data.retention_schedule" => {
+            if let Some(sd) = &ast.structured_data {
+                for record in &sd.retention_schedule {
+                    out.push('|');
+                    for col in columns {
+                        let val = match col.key.as_str() {
+                            "label" => record.label.clone(),
+                            "retention_text" => {
+                                if record.permanent {
+                                    "Permanent".to_owned()
+                                } else if let Some(years) = record.retention_years {
+                                    format!("{years} years")
+                                } else {
+                                    "N/A".to_owned()
+                                }
+                            }
+                            "governing_requirement" => {
+                                record.governing_requirement.clone().unwrap_or_default()
+                            }
+                            _ => String::new(),
+                        };
+                        out.push_str(&format!(" {} |", val));
+                    }
+                    out.push('\n');
+                }
+            }
+        }
+        "structured_data.severity_classification" => {
+            if let Some(sd) = &ast.structured_data {
+                for level in &sd.severity_classification {
+                    out.push('|');
+                    for col in columns {
+                        let val = match col.key.as_str() {
+                            "label" => level.label.clone(),
+                            "response_sla_text" => {
+                                if let Some(hours) = level.response_sla_hours {
+                                    if hours == 0 {
+                                        "Immediate".to_owned()
+                                    } else {
+                                        format!("{hours} hours")
+                                    }
+                                } else {
+                                    "N/A".to_owned()
+                                }
+                            }
+                            "auto_lockdown_text" => {
+                                if level.auto_lockdown { "Yes" } else { "No" }.to_owned()
+                            }
+                            _ => String::new(),
+                        };
+                        out.push_str(&format!(" {} |", val));
+                    }
+                    out.push('\n');
+                }
+            }
+        }
         _ => {
             out.push_str(&format!("<!-- unknown data source: {} -->\n", source));
         }
@@ -723,7 +1028,7 @@ fn render_data_table(
 }
 
 /// Substitute `{{key}}` placeholders in text with values from the AST or profile.
-fn substitute(text: &str, ast: &GovernanceDocAstV2, profile: &GovernanceProfile) -> String {
+fn substitute(text: &str, ast: &GovernanceDocAst, profile: &GovernanceProfile) -> String {
     let mut result = text.to_owned();
 
     // AST-derived substitutions
@@ -746,6 +1051,229 @@ fn substitute(text: &str, ast: &GovernanceDocAstV2, profile: &GovernanceProfile)
     }
     if result.contains("{{adopted_by}}") {
         result = result.replace("{{adopted_by}}", profile.adopted_by());
+    }
+
+    // Company address
+    if result.contains("{{company_address}}") {
+        let val = profile
+            .company_address()
+            .map(format_company_address)
+            .unwrap_or_else(|| "TBD".to_owned());
+        result = result.replace("{{company_address}}", &val);
+    }
+
+    // Registered agent
+    if result.contains("{{registered_agent_name}}") {
+        result = result.replace(
+            "{{registered_agent_name}}",
+            profile.registered_agent_name().unwrap_or("TBD"),
+        );
+    }
+    if result.contains("{{registered_agent_address}}") {
+        result = result.replace(
+            "{{registered_agent_address}}",
+            profile.registered_agent_address().unwrap_or("TBD"),
+        );
+    }
+
+    // Founders
+    if result.contains("{{founders_list}}") {
+        let val = if profile.founders().is_empty() {
+            "TBD".to_owned()
+        } else {
+            profile
+                .founders()
+                .iter()
+                .map(|f| f.name.as_str())
+                .collect::<Vec<_>>()
+                .join(", ")
+        };
+        result = result.replace("{{founders_list}}", &val);
+    }
+
+    // Fiscal year end
+    if result.contains("{{fiscal_year_end}}") {
+        let val = profile
+            .fiscal_year_end()
+            .map(format_fiscal_year_end)
+            .unwrap_or_else(|| "TBD".to_owned());
+        result = result.replace("{{fiscal_year_end}}", &val);
+    }
+
+    // Board
+    if result.contains("{{board_size}}") {
+        let val = profile
+            .board_size()
+            .map(|n| n.to_string())
+            .unwrap_or_else(|| "TBD".to_owned());
+        result = result.replace("{{board_size}}", &val);
+    }
+    if result.contains("{{directors_list}}") {
+        let val = if profile.directors().is_empty() {
+            "TBD".to_owned()
+        } else {
+            profile
+                .directors()
+                .iter()
+                .map(|d| d.name.as_str())
+                .collect::<Vec<_>>()
+                .join("\n")
+        };
+        result = result.replace("{{directors_list}}", &val);
+    }
+    if result.contains("{{officers_list}}") {
+        let val = if profile.officers().is_empty() {
+            "TBD".to_owned()
+        } else {
+            profile
+                .officers()
+                .iter()
+                .map(|o| format!("{}: {}", o.title, o.name))
+                .collect::<Vec<_>>()
+                .join("\n")
+        };
+        result = result.replace("{{officers_list}}", &val);
+    }
+
+    // Stock details
+    if result.contains("{{authorized_shares}}") {
+        let val = profile
+            .stock_details()
+            .map(|s| format_number_with_commas(s.authorized_shares))
+            .unwrap_or_else(|| "TBD".to_owned());
+        result = result.replace("{{authorized_shares}}", &val);
+    }
+    if result.contains("{{par_value}}") {
+        let val = profile
+            .stock_details()
+            .map(|s| format_par_value(s.par_value_cents))
+            .unwrap_or_else(|| "TBD".to_owned());
+        result = result.replace("{{par_value}}", &val);
+    }
+
+    // Incorporator
+    if result.contains("{{incorporator_name}}") {
+        result = result.replace(
+            "{{incorporator_name}}",
+            profile.incorporator_name().unwrap_or("TBD"),
+        );
+    }
+    if result.contains("{{incorporator_address}}") {
+        result = result.replace(
+            "{{incorporator_address}}",
+            profile.incorporator_address().unwrap_or("TBD"),
+        );
+    }
+
+    // Principal
+    if result.contains("{{principal_name}}") {
+        result = result.replace(
+            "{{principal_name}}",
+            profile.principal_name().unwrap_or("TBD"),
+        );
+    }
+
+    // Provider legal name (hardcoded for now)
+    if result.contains("{{provider_legal_name}}") {
+        result = result.replace("{{provider_legal_name}}", "The Corporation, Inc.");
+    }
+
+    // Jurisdiction
+    if result.contains("{{jurisdiction}}") {
+        result = result.replace("{{jurisdiction}}", profile.jurisdiction());
+    }
+
+    // Founders stock table
+    if result.contains("{{founders_stock_table}}") {
+        let val = if profile.founders().is_empty() {
+            "TBD".to_owned()
+        } else {
+            let mut table = String::from("| Name | Shares |\n|---|---|\n");
+            for f in profile.founders() {
+                let shares = f
+                    .shares
+                    .map(|s| format_number_with_commas(s))
+                    .unwrap_or_else(|| "TBD".to_owned());
+                table.push_str(&format!("| {} | {} |\n", f.name, shares));
+            }
+            table
+        };
+        result = result.replace("{{founders_stock_table}}", &val);
+    }
+
+    // Founders table (membership %)
+    if result.contains("{{founders_table}}") {
+        let val = if profile.founders().is_empty() {
+            "TBD".to_owned()
+        } else {
+            let total: u64 = profile.founders().iter().filter_map(|f| f.shares).sum();
+            let mut table = String::from("| Name | Membership % |\n|---|---|\n");
+            for f in profile.founders() {
+                let pct = if total > 0 {
+                    f.shares
+                        .map(|s| format!("{:.1}%", (s as f64 / total as f64) * 100.0))
+                        .unwrap_or_else(|| "TBD".to_owned())
+                } else {
+                    "TBD".to_owned()
+                };
+                table.push_str(&format!("| {} | {} |\n", f.name, pct));
+            }
+            table
+        };
+        result = result.replace("{{founders_table}}", &val);
+    }
+
+    // RSPA / CIIA context — first founder
+    let first_founder = profile.founders().first();
+    if result.contains("{{purchaser_name}}") {
+        let val = first_founder
+            .map(|f| f.name.as_str())
+            .unwrap_or("TBD");
+        result = result.replace("{{purchaser_name}}", val);
+    }
+    if result.contains("{{purchase_shares}}") {
+        let val = first_founder
+            .and_then(|f| f.shares)
+            .map(|s| format_number_with_commas(s))
+            .unwrap_or_else(|| "TBD".to_owned());
+        result = result.replace("{{purchase_shares}}", &val);
+    }
+    if result.contains("{{total_purchase_price}}") {
+        let val = first_founder
+            .and_then(|f| f.shares)
+            .and_then(|shares| {
+                profile
+                    .stock_details()
+                    .map(|sd| format_usd((shares * sd.par_value_cents) as i64))
+            })
+            .unwrap_or_else(|| "TBD".to_owned());
+        result = result.replace("{{total_purchase_price}}", &val);
+    }
+    if result.contains("{{vesting_months}}") {
+        let val = first_founder
+            .and_then(|f| f.vesting.as_ref())
+            .map(|v| v.total_months.to_string())
+            .unwrap_or_else(|| "48".to_owned());
+        result = result.replace("{{vesting_months}}", &val);
+    }
+    if result.contains("{{cliff_months}}") {
+        let val = first_founder
+            .and_then(|f| f.vesting.as_ref())
+            .map(|v| v.cliff_months.to_string())
+            .unwrap_or_else(|| "12".to_owned());
+        result = result.replace("{{cliff_months}}", &val);
+    }
+    if result.contains("{{ip_description}}") {
+        let val = first_founder
+            .and_then(|f| f.ip_contribution.as_deref())
+            .unwrap_or("TBD");
+        result = result.replace("{{ip_description}}", val);
+    }
+    if result.contains("{{assignor_name}}") {
+        let val = first_founder
+            .map(|f| f.name.as_str())
+            .unwrap_or("TBD");
+        result = result.replace("{{assignor_name}}", val);
     }
 
     result
@@ -789,12 +1317,14 @@ mod tests {
     }
 
     #[test]
-    fn path_set_contains_transactions_for_corp() {
+    fn path_set_contains_expected_docs_for_corp() {
         let docs = relative_document_paths(GovernanceDocEntityType::Corporation);
-        assert!(docs.contains(&"transactions/board-consent.md"));
-        assert!(docs.contains(&"transactions/stock-transfer-agreement.md"));
-        assert!(docs.contains(&"corporation/bylaws.md"));
-        assert!(!docs.contains(&"llc/operating-agreement.md"));
+        let has = |s: &str| docs.iter().any(|d| d == s);
+        assert!(has("common/agent-delegation-schedule.md"));
+        assert!(has("corporation/bylaws.md"));
+        assert!(has("corporation/certificate-of-incorporation.md"));
+        assert!(!has("llc/operating-agreement.md"));
+        assert!(!has("llc/articles-of-organization.md"));
     }
 
     #[test]
@@ -920,5 +1450,117 @@ mod tests {
         assert!(text.contains("Acme Holdings"));
         assert!(bundle.summary.document_count > 0);
         assert_eq!(bundle.manifest.template_version, "v2");
+    }
+
+    fn make_complete_profile() -> GovernanceProfile {
+        let entity = make_entity(EntityType::Corporation);
+        let mut profile = GovernanceProfile::default_for_entity(&entity);
+        profile.update(
+            "Acme Holdings, Inc.".to_owned(),
+            "Delaware".to_owned(),
+            profile.effective_date(),
+            "Board of Directors".to_owned(),
+            profile.last_reviewed(),
+            profile.next_mandatory_review(),
+            Some("Delaware Registered Agent Co.".to_owned()),
+            Some("1209 Orange St, Wilmington, DE 19801".to_owned()),
+            Some(1),
+            Some("Alice Founder".to_owned()),
+            Some("123 Main St, San Francisco, CA 94105".to_owned()),
+            Some("Alice Founder".to_owned()),
+            Some("CEO".to_owned()),
+            Some(false),
+        );
+        profile.set_company_address(super::super::profile::CompanyAddress {
+            street: "123 Main St".to_owned(),
+            city: "San Francisco".to_owned(),
+            county: None,
+            state: "CA".to_owned(),
+            zip: "94105".to_owned(),
+        });
+        profile.set_founders(vec![super::super::profile::FounderInfo {
+            name: "Alice Founder".to_owned(),
+            shares: Some(8_000_000),
+            vesting: Some(super::super::profile::VestingSchedule {
+                total_months: 48,
+                cliff_months: 12,
+                acceleration_on_termination: false,
+            }),
+            ip_contribution: Some("Initial software platform".to_owned()),
+            email: Some("alice@acme.com".to_owned()),
+            address: None,
+        }]);
+        profile.set_directors(vec![super::super::profile::DirectorInfo {
+            name: "Alice Founder".to_owned(),
+            address: None,
+        }]);
+        profile.set_officers(vec![super::super::profile::OfficerInfo {
+            name: "Alice Founder".to_owned(),
+            title: "CEO".to_owned(),
+        }]);
+        profile.set_stock_details(super::super::profile::StockDetails {
+            authorized_shares: 10_000_000,
+            par_value_cents: 1,
+            share_class: "Common Stock".to_owned(),
+        });
+        profile.set_fiscal_year_end(super::super::profile::FiscalYearEnd {
+            month: 12,
+            day: 31,
+        });
+        profile
+    }
+
+    #[test]
+    fn delegation_schedule_no_unknown_sources_or_placeholders() {
+        let ast = super::super::doc_ast::default_doc_ast();
+        let profile = make_complete_profile();
+        let doc = ast
+            .documents
+            .iter()
+            .find(|d| d.id == "agent_delegation_schedule")
+            .expect("delegation schedule");
+        let rendered = render_document_from_ast(
+            doc,
+            ast,
+            super::super::doc_ast::EntityTypeKey::Corporation,
+            &profile,
+        );
+        assert!(
+            !rendered.contains("<!-- unknown data source"),
+            "found unknown data source marker in delegation schedule:\n{}",
+            rendered
+        );
+        assert!(
+            !rendered.contains("{{"),
+            "found unresolved placeholder in delegation schedule:\n{}",
+            rendered
+        );
+    }
+
+    #[test]
+    fn formation_docs_no_unknown_placeholders() {
+        let ast = super::super::doc_ast::default_doc_ast();
+        let profile = make_complete_profile();
+        let formation_ids = [
+            "certificate_of_incorporation",
+            "bylaws",
+            "incorporator_action",
+            "initial_board_consent",
+        ];
+        for doc_id in &formation_ids {
+            let doc = ast.documents.iter().find(|d| d.id == *doc_id);
+            if let Some(doc) = doc {
+                let rendered = render_document_from_ast(
+                    doc,
+                    ast,
+                    super::super::doc_ast::EntityTypeKey::Corporation,
+                    &profile,
+                );
+                assert!(
+                    !rendered.contains("{{"),
+                    "found unresolved placeholder in {doc_id}:\n{rendered}"
+                );
+            }
+        }
     }
 }
