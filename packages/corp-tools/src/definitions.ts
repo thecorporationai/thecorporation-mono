@@ -27,8 +27,10 @@ for (const td of GENERATED_TOOL_DEFINITIONS as unknown as ToolDef[]) {
   TOOL_REGISTRY[td.function.name] = td.function;
 }
 
+/**
+ * Read-only tool:action pairs that don't require user confirmation.
+ * @deprecated Use isWriteTool(name, args) instead for action-aware checking.
+ */
 export const READ_ONLY_TOOLS = new Set([
-  "get_workspace_status", "list_entities", "get_cap_table", "list_documents",
-  "list_safe_notes", "list_agents", "get_checklist",
-  "get_signing_link", "list_obligations", "get_billing_status",
+  "workspace", "checklist",
 ]);

@@ -5,158 +5,44 @@ export const GENERATED_TOOL_DEFINITIONS: Record<string, unknown>[] = [
   {
     "type": "function",
     "function": {
-      "name": "get_workspace_status",
-      "description": "Get workspace status summary",
-      "parameters": {
-        "type": "object",
-        "properties": {},
-        "required": []
-      }
-    }
-  },
-  {
-    "type": "function",
-    "function": {
-      "name": "list_entities",
-      "description": "List all entities in the workspace",
-      "parameters": {
-        "type": "object",
-        "properties": {},
-        "required": []
-      }
-    }
-  },
-  {
-    "type": "function",
-    "function": {
-      "name": "get_cap_table",
-      "description": "Get cap table for an entity",
+      "name": "workspace",
+      "description": "Workspace-level queries. Actions: status (get workspace summary), list_entities (list all entities), obligations (list obligations, optional tier filter), billing (get billing status and plans).",
       "parameters": {
         "type": "object",
         "properties": {
-          "entity_id": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "entity_id"
-        ]
-      }
-    }
-  },
-  {
-    "type": "function",
-    "function": {
-      "name": "list_documents",
-      "description": "List documents for an entity",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "entity_id": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "entity_id"
-        ]
-      }
-    }
-  },
-  {
-    "type": "function",
-    "function": {
-      "name": "list_safe_notes",
-      "description": "List SAFE notes for an entity",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "entity_id": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "entity_id"
-        ]
-      }
-    }
-  },
-  {
-    "type": "function",
-    "function": {
-      "name": "list_agents",
-      "description": "List all agents in the workspace",
-      "parameters": {
-        "type": "object",
-        "properties": {},
-        "required": []
-      }
-    }
-  },
-  {
-    "type": "function",
-    "function": {
-      "name": "list_obligations",
-      "description": "List obligations with urgency tiers",
-      "parameters": {
-        "type": "object",
-        "properties": {
+          "action": {
+            "type": "string",
+            "enum": ["status", "list_entities", "obligations", "billing"]
+          },
           "tier": {
-            "type": "string"
+            "type": "string",
+            "description": "obligations: filter by urgency tier"
           }
         },
-        "required": []
+        "required": ["action"]
       }
     }
   },
   {
     "type": "function",
     "function": {
-      "name": "get_billing_status",
-      "description": "Get billing status and plans",
-      "parameters": {
-        "type": "object",
-        "properties": {},
-        "required": []
-      }
-    }
-  },
-  {
-    "type": "function",
-    "function": {
-      "name": "form_entity",
-      "description": "Form a new business entity (LLC or corporation) and initialize its cap table with founding members. Prefer the staged flow: create_entity + add_founder + finalize_formation.",
+      "name": "entity",
+      "description": "Entity reads and lifecycle. Actions: get_cap_table (entity_id), list_documents (entity_id), list_safe_notes (entity_id), form (entity_type + entity_name + jurisdiction + members — legacy one-shot formation), create (entity_type + entity_name — step 1 of staged formation), add_founder (entity_id + name + email + role + ownership_pct — step 2), finalize (entity_id — step 3, generates docs + cap table), convert (entity_id + new_entity_type), dissolve (entity_id + reason).",
       "parameters": {
         "type": "object",
         "properties": {
-          "entity_type": {
+          "action": {
             "type": "string",
-            "enum": [
-              "llc",
-              "corporation"
-            ]
+            "enum": ["get_cap_table", "list_documents", "list_safe_notes", "form", "create", "add_founder", "finalize", "convert", "dissolve"]
           },
-          "entity_name": {
-            "type": "string"
-          },
-          "jurisdiction": {
-            "type": "string"
-          },
-          "fiscal_year_end": {
-            "type": "string",
-            "description": "Fiscal year end, e.g. '12-31'. Defaults to '12-31'."
-          },
-          "s_corp_election": {
-            "type": "boolean",
-            "description": "Whether the company will elect S-Corp tax treatment."
-          },
-          "transfer_restrictions": {
-            "type": "boolean",
-            "description": "Include transfer restrictions in bylaws (corp). Default true."
-          },
-          "right_of_first_refusal": {
-            "type": "boolean",
-            "description": "Include right of first refusal in bylaws (corp). Default true."
-          },
+          "entity_id": { "type": "string" },
+          "entity_type": { "type": "string", "enum": ["llc", "corporation"] },
+          "entity_name": { "type": "string" },
+          "jurisdiction": { "type": "string", "description": "e.g. US-DE, US-WY. Defaults to US-WY for LLC, US-DE for corporation." },
+          "fiscal_year_end": { "type": "string", "description": "form: fiscal year end e.g. '12-31'" },
+          "s_corp_election": { "type": "boolean", "description": "form: elect S-Corp tax treatment" },
+          "transfer_restrictions": { "type": "boolean", "description": "form: include transfer restrictions in bylaws (corp)" },
+          "right_of_first_refusal": { "type": "boolean", "description": "form: include ROFR in bylaws (corp)" },
           "company_address": {
             "type": "object",
             "properties": {
@@ -170,54 +56,22 @@ export const GENERATED_TOOL_DEFINITIONS: Record<string, unknown>[] = [
           },
           "members": {
             "type": "array",
+            "description": "form: founding members array",
             "items": {
               "type": "object",
               "properties": {
-                "name": {
-                  "type": "string"
-                },
-                "investor_type": {
-                  "type": "string",
-                  "enum": [
-                    "natural_person",
-                    "agent",
-                    "entity"
-                  ]
-                },
-                "email": {
-                  "type": "string"
-                },
-                "agent_id": {
-                  "type": "string"
-                },
-                "entity_id": {
-                  "type": "string"
-                },
-                "ownership_pct": {
-                  "type": "number"
-                },
-                "membership_units": {
-                  "type": "integer"
-                },
-                "share_count": {
-                  "type": "integer"
-                },
-                "share_class": {
-                  "type": "string"
-                },
-                "role": {
-                  "type": "string",
-                  "enum": ["director", "officer", "manager", "member", "chair"]
-                },
-                "officer_title": {
-                  "type": "string",
-                  "enum": ["ceo", "cfo", "secretary", "president", "vp", "other"],
-                  "description": "Officer title (corporations only)"
-                },
-                "shares_purchased": {
-                  "type": "integer",
-                  "description": "Number of shares being purchased at formation"
-                },
+                "name": { "type": "string" },
+                "investor_type": { "type": "string", "enum": ["natural_person", "agent", "entity"] },
+                "email": { "type": "string" },
+                "agent_id": { "type": "string" },
+                "entity_id": { "type": "string" },
+                "ownership_pct": { "type": "number" },
+                "membership_units": { "type": "integer" },
+                "share_count": { "type": "integer" },
+                "share_class": { "type": "string" },
+                "role": { "type": "string", "enum": ["director", "officer", "manager", "member", "chair"] },
+                "officer_title": { "type": "string", "enum": ["ceo", "cfo", "secretary", "president", "vp", "other"] },
+                "shares_purchased": { "type": "integer" },
                 "address": {
                   "type": "object",
                   "properties": {
@@ -231,1183 +85,267 @@ export const GENERATED_TOOL_DEFINITIONS: Record<string, unknown>[] = [
                 "vesting": {
                   "type": "object",
                   "properties": {
-                    "total_months": { "type": "integer", "description": "Total vesting period in months (e.g. 48)" },
-                    "cliff_months": { "type": "integer", "description": "Cliff period in months (e.g. 12)" },
+                    "total_months": { "type": "integer" },
+                    "cliff_months": { "type": "integer" },
                     "acceleration": { "type": "string", "enum": ["single_trigger", "double_trigger"] }
                   }
                 },
-                "ip_description": {
-                  "type": "string",
-                  "description": "Description of IP being contributed to the company"
-                },
-                "is_incorporator": {
-                  "type": "boolean",
-                  "description": "Whether this member is the sole incorporator (corporations only)"
-                }
+                "ip_description": { "type": "string" },
+                "is_incorporator": { "type": "boolean" }
               },
-              "required": [
-                "name",
-                "investor_type"
-              ]
+              "required": ["name", "investor_type"]
             }
-          }
+          },
+          "name": { "type": "string", "description": "add_founder: full legal name" },
+          "email": { "type": "string", "description": "add_founder: email address" },
+          "role": { "type": "string", "enum": ["director", "officer", "manager", "member", "chair"], "description": "add_founder: role" },
+          "ownership_pct": { "type": "number", "description": "add_founder: ownership percentage (e.g. 50 for 50%)" },
+          "officer_title": { "type": "string", "enum": ["ceo", "cfo", "secretary", "president", "vp", "other"], "description": "add_founder: officer title (corp only)" },
+          "is_incorporator": { "type": "boolean", "description": "add_founder: is sole incorporator (corp only)" },
+          "new_entity_type": { "type": "string", "description": "convert: target entity type" },
+          "new_jurisdiction": { "type": "string", "description": "convert: target jurisdiction" },
+          "reason": { "type": "string", "description": "dissolve: dissolution reason" },
+          "effective_date": { "type": "string", "description": "dissolve: effective date" }
         },
-        "required": [
-          "entity_type",
-          "entity_name",
-          "jurisdiction",
-          "members"
-        ]
+        "required": ["action"]
       }
     }
   },
   {
     "type": "function",
     "function": {
-      "name": "create_entity",
-      "description": "Create a new pending entity (step 1 of staged formation). Returns an entity_id to use with add_founder and finalize_formation.",
+      "name": "equity",
+      "description": "Equity and cap table operations. Actions: start_round (entity_id + name + issuer_legal_entity_id — step 1), add_security (round_id + instrument_id + quantity + recipient_name — step 2), issue_round (round_id — step 3, closes round + creates board agenda item), issue (entity_id + grant_type + shares + recipient_name — legacy single grant), issue_safe (entity_id + investor_name + principal_amount_cents + safe_type + valuation_cap_cents), transfer (entity_id + from_holder + to_holder + shares + skip_governance_review=true — bypasses governance), distribution (entity_id + total_amount_cents).",
       "parameters": {
         "type": "object",
         "properties": {
-          "entity_type": {
+          "action": {
             "type": "string",
-            "enum": ["llc", "corporation"],
-            "description": "Type of entity to form"
+            "enum": ["start_round", "add_security", "issue_round", "issue", "issue_safe", "transfer", "distribution"]
           },
-          "entity_name": {
-            "type": "string",
-            "description": "Legal name of the entity"
-          },
-          "jurisdiction": {
-            "type": "string",
-            "description": "Jurisdiction (e.g. US-DE, US-WY). Defaults to US-WY for LLC, US-DE for corporation."
-          }
-        },
-        "required": ["entity_type", "entity_name"]
-      }
-    }
-  },
-  {
-    "type": "function",
-    "function": {
-      "name": "add_founder",
-      "description": "Add a founder to a pending entity (step 2 of staged formation). Can be called multiple times.",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "entity_id": {
-            "type": "string",
-            "description": "The entity ID returned from create_entity"
-          },
-          "name": {
-            "type": "string",
-            "description": "Full legal name of the founder"
-          },
-          "email": {
-            "type": "string",
-            "description": "Email address of the founder"
-          },
-          "role": {
-            "type": "string",
-            "enum": ["director", "officer", "manager", "member", "chair"],
-            "description": "Role in the entity"
-          },
-          "ownership_pct": {
-            "type": "number",
-            "description": "Ownership percentage (e.g. 50 for 50%)"
-          },
-          "officer_title": {
-            "type": "string",
-            "enum": ["ceo", "cfo", "secretary", "president", "vp", "other"],
-            "description": "Officer title (corporations only)"
-          },
-          "is_incorporator": {
-            "type": "boolean",
-            "description": "Whether this founder is the incorporator (corporations only)"
-          }
-        },
-        "required": ["entity_id", "name", "email", "role", "ownership_pct"]
-      }
-    }
-  },
-  {
-    "type": "function",
-    "function": {
-      "name": "finalize_formation",
-      "description": "Finalize entity formation (step 3 of staged formation). Generates formation documents and initializes the cap table.",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "entity_id": {
-            "type": "string",
-            "description": "The entity ID to finalize"
-          }
-        },
-        "required": ["entity_id"]
-      }
-    }
-  },
-  {
-    "type": "function",
-    "function": {
-      "name": "start_equity_round",
-      "description": "Start a new staged equity round (step 1). Creates a Draft round with an empty pending securities list. Returns the round_id.",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "entity_id": {
-            "type": "string",
-            "description": "The entity ID"
-          },
-          "name": {
-            "type": "string",
-            "description": "Name of the round (e.g. 'Seed Round', 'Series A')"
-          },
-          "issuer_legal_entity_id": {
-            "type": "string",
-            "description": "The issuer legal entity ID from the cap table"
-          },
-          "pre_money_cents": {
-            "type": "integer",
-            "description": "Pre-money valuation in cents"
-          },
-          "round_price_cents": {
-            "type": "integer",
-            "description": "Price per share in cents"
-          },
-          "target_raise_cents": {
-            "type": "integer",
-            "description": "Target raise amount in cents"
-          }
-        },
-        "required": ["entity_id", "name", "issuer_legal_entity_id"]
-      }
-    }
-  },
-  {
-    "type": "function",
-    "function": {
-      "name": "add_security",
-      "description": "Add a security (holder + instrument + shares) to a staged equity round (step 2). Can be called multiple times. Resolves the recipient by holder_id, email, or creates a new contact+holder from recipient_name.",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "entity_id": {
-            "type": "string",
-            "description": "The entity ID"
-          },
-          "round_id": {
-            "type": "string",
-            "description": "The round ID returned from start_equity_round"
-          },
-          "instrument_id": {
-            "type": "string",
-            "description": "The instrument ID from the cap table"
-          },
-          "quantity": {
-            "type": "integer",
-            "description": "Number of shares/units to issue"
-          },
-          "recipient_name": {
-            "type": "string",
-            "description": "Display name of the recipient"
-          },
-          "holder_id": {
-            "type": "string",
-            "description": "Existing holder ID (if known)"
-          },
-          "email": {
-            "type": "string",
-            "description": "Email of the recipient (used to find or create contact+holder)"
-          },
-          "principal_cents": {
-            "type": "integer",
-            "description": "Principal investment amount in cents"
-          },
-          "grant_type": {
-            "type": "string",
-            "description": "Type of grant (e.g. 'common', 'preferred', 'option')"
-          }
-        },
-        "required": ["entity_id", "round_id", "instrument_id", "quantity", "recipient_name"]
-      }
-    }
-  },
-  {
-    "type": "function",
-    "function": {
-      "name": "issue_round",
-      "description": "Issue all pending securities and close the staged equity round (step 3). Creates positions for each pending security and marks the round as Closed.",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "entity_id": {
-            "type": "string",
-            "description": "The entity ID"
-          },
-          "round_id": {
-            "type": "string",
-            "description": "The round ID to issue"
-          }
-        },
-        "required": ["entity_id", "round_id"]
-      }
-    }
-  },
-  {
-    "type": "function",
-    "function": {
-      "name": "issue_equity",
-      "description": "Issue an equity grant. For staged round issuance, prefer start_equity_round + add_security + issue_round.",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "entity_id": {
-            "type": "string"
-          },
-          "grant_type": {
-            "type": "string"
-          },
-          "shares": {
-            "type": "integer"
-          },
-          "recipient_name": {
-            "type": "string"
-          },
-          "vesting_schedule": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "entity_id",
-          "grant_type",
-          "shares",
-          "recipient_name"
-        ]
-      }
-    }
-  },
-  {
-    "type": "function",
-    "function": {
-      "name": "issue_safe",
-      "description": "Issue a SAFE note",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "entity_id": {
-            "type": "string"
-          },
-          "investor_name": {
-            "type": "string"
-          },
-          "principal_amount_cents": {
-            "type": "integer"
-          },
-          "safe_type": {
-            "type": "string"
-          },
-          "valuation_cap_cents": {
-            "type": "integer"
-          }
-        },
-        "required": [
-          "entity_id",
-          "investor_name",
-          "principal_amount_cents",
-          "safe_type",
-          "valuation_cap_cents"
-        ]
-      }
-    }
-  },
-  {
-    "type": "function",
-    "function": {
-      "name": "transfer_shares",
-      "description": "Direct share transfer (bypasses governance). Prefer the transfer workflow for governed transfers. Requires skip_governance_review=true to confirm intentional bypass.",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "entity_id": {
-            "type": "string"
-          },
-          "share_class_id": {
-            "type": "string"
-          },
-          "from_holder": {
-            "type": "string"
-          },
-          "to_holder": {
-            "type": "string"
-          },
-          "transfer_type": {
-            "type": "string"
-          },
-          "shares": {
-            "type": "integer"
-          },
-          "skip_governance_review": {
-            "type": "boolean",
-            "description": "Must be true to confirm bypassing governance review. If false or omitted, the transfer is blocked."
-          }
-        },
-        "required": [
-          "entity_id",
-          "from_holder",
-          "to_holder",
-          "shares",
-          "skip_governance_review"
-        ]
-      }
-    }
-  },
-  {
-    "type": "function",
-    "function": {
-      "name": "calculate_distribution",
-      "description": "Calculate a distribution",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "entity_id": {
-            "type": "string"
-          },
-          "total_amount_cents": {
-            "type": "integer"
-          },
-          "distribution_type": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "entity_id",
-          "total_amount_cents"
-        ]
-      }
-    }
-  },
-  {
-    "type": "function",
-    "function": {
-      "name": "create_invoice",
-      "description": "Create an invoice",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "entity_id": {
-            "type": "string"
-          },
-          "customer_name": {
-            "type": "string"
-          },
-          "amount_cents": {
-            "type": "integer"
-          },
-          "description": {
-            "type": "string"
-          },
-          "due_date": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "entity_id",
-          "customer_name",
-          "amount_cents",
-          "description",
-          "due_date"
-        ]
-      }
-    }
-  },
-  {
-    "type": "function",
-    "function": {
-      "name": "run_payroll",
-      "description": "Run payroll",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "entity_id": {
-            "type": "string"
-          },
-          "pay_period_start": {
-            "type": "string"
-          },
-          "pay_period_end": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "entity_id",
-          "pay_period_start",
-          "pay_period_end"
-        ]
-      }
-    }
-  },
-  {
-    "type": "function",
-    "function": {
-      "name": "submit_payment",
-      "description": "Submit a payment",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "entity_id": {
-            "type": "string"
-          },
-          "amount_cents": {
-            "type": "integer"
-          },
-          "recipient": {
-            "type": "string"
-          },
-          "description": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "entity_id",
-          "amount_cents",
-          "recipient"
-        ]
-      }
-    }
-  },
-  {
-    "type": "function",
-    "function": {
-      "name": "open_bank_account",
-      "description": "Open a business bank account",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "entity_id": {
-            "type": "string"
-          },
-          "institution_name": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "entity_id"
-        ]
-      }
-    }
-  },
-  {
-    "type": "function",
-    "function": {
-      "name": "generate_contract",
-      "description": "Generate a contract from a template",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "entity_id": {
-            "type": "string"
-          },
-          "template_type": {
-            "type": "string"
-          },
-          "parameters": {
-            "type": "object"
-          }
-        },
-        "required": [
-          "entity_id",
-          "template_type"
-        ]
-      }
-    }
-  },
-  {
-    "type": "function",
-    "function": {
-      "name": "file_tax_document",
-      "description": "File a tax document",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "entity_id": {
-            "type": "string"
-          },
-          "document_type": {
-            "type": "string"
-          },
-          "tax_year": {
-            "type": "integer"
-          }
-        },
-        "required": [
-          "entity_id",
-          "document_type",
-          "tax_year"
-        ]
-      }
-    }
-  },
-  {
-    "type": "function",
-    "function": {
-      "name": "track_deadline",
-      "description": "Track a compliance deadline",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "entity_id": {
-            "type": "string"
-          },
-          "deadline_type": {
-            "type": "string"
-          },
-          "due_date": {
-            "type": "string"
-          },
-          "description": {
-            "type": "string"
-          },
-          "recurrence": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "entity_id",
-          "deadline_type",
-          "due_date",
-          "description"
-        ]
-      }
-    }
-  },
-  {
-    "type": "function",
-    "function": {
-      "name": "classify_contractor",
-      "description": "Classify contractor risk",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "entity_id": {
-            "type": "string"
-          },
-          "contractor_name": {
-            "type": "string"
-          },
-          "state": {
-            "type": "string"
-          },
-          "hours_per_week": {
-            "type": "integer"
-          },
-          "exclusive_client": {
-            "type": "boolean"
-          },
-          "duration_months": {
-            "type": "integer"
-          },
-          "provides_tools": {
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "entity_id",
-          "contractor_name",
-          "state",
-          "hours_per_week"
-        ]
-      }
-    }
-  },
-  {
-    "type": "function",
-    "function": {
-      "name": "reconcile_ledger",
-      "description": "Reconcile an entity's ledger",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "entity_id": {
-            "type": "string"
-          },
-          "start_date": {
-            "type": "string"
-          },
-          "end_date": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "entity_id",
-          "start_date",
-          "end_date"
-        ]
-      }
-    }
-  },
-  {
-    "type": "function",
-    "function": {
-      "name": "convene_meeting",
-      "description": "Convene a governance meeting",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "entity_id": {
-            "type": "string"
-          },
-          "meeting_id": {
-            "type": "string"
-          },
-          "present_seat_ids": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          }
-        },
-        "required": [
-          "entity_id",
-          "meeting_id",
-          "present_seat_ids"
-        ]
-      }
-    }
-  },
-  {
-    "type": "function",
-    "function": {
-      "name": "cast_vote",
-      "description": "Cast a vote on an agenda item",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "entity_id": {
-            "type": "string"
-          },
-          "meeting_id": {
-            "type": "string"
-          },
-          "agenda_item_id": {
-            "type": "string"
-          },
-          "voter_id": {
-            "type": "string"
-          },
-          "vote_value": {
-            "type": "string",
-            "description": "for, against, abstain, or recusal"
-          }
-        },
-        "required": [
-          "entity_id",
-          "meeting_id",
-          "agenda_item_id",
-          "voter_id",
-          "vote_value"
-        ]
-      }
-    }
-  },
-  {
-    "type": "function",
-    "function": {
-      "name": "schedule_meeting",
-      "description": "Schedule a board or member meeting (step 1 of the meeting lifecycle: schedule → notice → convene → vote → resolve → finalize → adjourn)",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "entity_id": {
-            "type": "string"
-          },
-          "body_id": {
-            "type": "string"
-          },
-          "meeting_type": {
-            "type": "string"
-          },
-          "title": {
-            "type": "string"
-          },
-          "scheduled_date": {
-            "type": "string"
-          },
-          "agenda_item_titles": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          }
-        },
-        "required": [
-          "entity_id",
-          "body_id",
-          "meeting_type",
-          "title"
-        ]
-      }
-    }
-  },
-  {
-    "type": "function",
-    "function": {
-      "name": "send_notice",
-      "description": "Send notice for a scheduled meeting (Draft → Noticed)",
-      "parameters": {
-        "type": "object",
-        "properties": {
           "entity_id": { "type": "string" },
-          "meeting_id": { "type": "string" }
+          "name": { "type": "string", "description": "start_round: round name (e.g. 'Seed Round')" },
+          "issuer_legal_entity_id": { "type": "string", "description": "start_round: from cap table" },
+          "pre_money_cents": { "type": "integer", "description": "start_round: pre-money valuation in cents" },
+          "round_price_cents": { "type": "integer", "description": "start_round: price per share in cents" },
+          "target_raise_cents": { "type": "integer", "description": "start_round: target raise in cents" },
+          "round_id": { "type": "string", "description": "add_security/issue_round: round ID" },
+          "instrument_id": { "type": "string", "description": "add_security: instrument ID from cap table" },
+          "quantity": { "type": "integer", "description": "add_security: number of shares/units" },
+          "recipient_name": { "type": "string", "description": "add_security/issue: recipient name" },
+          "holder_id": { "type": "string", "description": "add_security: existing holder ID" },
+          "email": { "type": "string", "description": "add_security: recipient email" },
+          "principal_cents": { "type": "integer", "description": "add_security: investment amount in cents" },
+          "grant_type": { "type": "string", "description": "issue/add_security: e.g. common, preferred, option" },
+          "shares": { "type": "integer", "description": "issue/transfer: number of shares" },
+          "vesting_schedule": { "type": "string", "description": "issue: vesting schedule" },
+          "investor_name": { "type": "string", "description": "issue_safe: investor name" },
+          "principal_amount_cents": { "type": "integer", "description": "issue_safe: principal in cents" },
+          "safe_type": { "type": "string", "description": "issue_safe: SAFE type" },
+          "valuation_cap_cents": { "type": "integer", "description": "issue_safe: valuation cap in cents" },
+          "from_holder": { "type": "string", "description": "transfer: source holder" },
+          "to_holder": { "type": "string", "description": "transfer: destination holder" },
+          "share_class_id": { "type": "string", "description": "transfer: share class" },
+          "transfer_type": { "type": "string", "description": "transfer: transfer type" },
+          "skip_governance_review": { "type": "boolean", "description": "transfer: must be true to confirm bypassing governance" },
+          "total_amount_cents": { "type": "integer", "description": "distribution: total amount in cents" },
+          "distribution_type": { "type": "string", "description": "distribution: type" }
         },
-        "required": ["entity_id", "meeting_id"]
+        "required": ["action"]
       }
     }
   },
   {
     "type": "function",
     "function": {
-      "name": "adjourn_meeting",
-      "description": "Adjourn a convened meeting (Convened → Adjourned)",
+      "name": "valuation",
+      "description": "Valuation lifecycle. Actions: create (entity_id + valuation_type + effective_date + methodology → Draft), submit (entity_id + valuation_id → PendingApproval, auto-creates board agenda item), approve (entity_id + valuation_id + optional resolution_id → Approved, auto-supersedes previous 409A).",
       "parameters": {
         "type": "object",
         "properties": {
-          "entity_id": { "type": "string" },
-          "meeting_id": { "type": "string" }
-        },
-        "required": ["entity_id", "meeting_id"]
-      }
-    }
-  },
-  {
-    "type": "function",
-    "function": {
-      "name": "cancel_meeting",
-      "description": "Cancel a meeting (Draft or Noticed → Cancelled)",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "entity_id": { "type": "string" },
-          "meeting_id": { "type": "string" }
-        },
-        "required": ["entity_id", "meeting_id"]
-      }
-    }
-  },
-  {
-    "type": "function",
-    "function": {
-      "name": "finalize_agenda_item",
-      "description": "Finalize an agenda item with a status (Voted, Discussed, Tabled, or Withdrawn)",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "entity_id": { "type": "string" },
-          "meeting_id": { "type": "string" },
-          "agenda_item_id": { "type": "string" },
-          "status": {
+          "action": {
             "type": "string",
-            "description": "Voted, Discussed, Tabled, or Withdrawn"
-          }
-        },
-        "required": ["entity_id", "meeting_id", "agenda_item_id", "status"]
-      }
-    }
-  },
-  {
-    "type": "function",
-    "function": {
-      "name": "compute_resolution",
-      "description": "Compute a resolution for an agenda item by tallying votes",
-      "parameters": {
-        "type": "object",
-        "properties": {
+            "enum": ["create", "submit", "approve"]
+          },
           "entity_id": { "type": "string" },
-          "meeting_id": { "type": "string" },
-          "agenda_item_id": { "type": "string" },
-          "resolution_text": { "type": "string" },
-          "effective_date": { "type": "string", "description": "Optional effective date (ISO 8601)" }
-        },
-        "required": ["entity_id", "meeting_id", "agenda_item_id", "resolution_text"]
-      }
-    }
-  },
-  {
-    "type": "function",
-    "function": {
-      "name": "attach_resolution_document",
-      "description": "Attach a document to an existing resolution",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "entity_id": { "type": "string" },
-          "meeting_id": { "type": "string" },
-          "resolution_id": { "type": "string" },
-          "document_id": { "type": "string" }
-        },
-        "required": ["entity_id", "meeting_id", "resolution_id", "document_id"]
-      }
-    }
-  },
-  {
-    "type": "function",
-    "function": {
-      "name": "written_consent",
-      "description": "Create a written consent action (no physical meeting required — auto-convened)",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "entity_id": { "type": "string" },
-          "body_id": { "type": "string" },
-          "title": { "type": "string" },
-          "description": { "type": "string" }
-        },
-        "required": ["entity_id", "body_id", "title", "description"]
-      }
-    }
-  },
-  {
-    "type": "function",
-    "function": {
-      "name": "list_agenda_items",
-      "description": "List agenda items for a meeting",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "entity_id": { "type": "string" },
-          "meeting_id": { "type": "string" }
-        },
-        "required": ["entity_id", "meeting_id"]
-      }
-    }
-  },
-  {
-    "type": "function",
-    "function": {
-      "name": "list_votes",
-      "description": "List votes on an agenda item",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "entity_id": { "type": "string" },
-          "meeting_id": { "type": "string" },
-          "agenda_item_id": { "type": "string" }
-        },
-        "required": ["entity_id", "meeting_id", "agenda_item_id"]
-      }
-    }
-  },
-  {
-    "type": "function",
-    "function": {
-      "name": "get_signer_link",
-      "description": "Generate a signing link for a human obligation",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "obligation_id": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "obligation_id"
-        ]
-      }
-    }
-  },
-  {
-    "type": "function",
-    "function": {
-      "name": "get_document_link",
-      "description": "Get a download link for a document",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "document_id": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "document_id"
-        ]
-      }
-    }
-  },
-  {
-    "type": "function",
-    "function": {
-      "name": "preview_document_pdf",
-      "description": "Preview a governance document as PDF without requiring a saved document. Useful for reviewing templates before formation.",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "entity_id": {
-            "type": "string",
-            "description": "Entity whose profile to use for rendering"
-          },
-          "document_id": {
-            "type": "string",
-            "description": "AST document definition ID (e.g. 'bylaws', 'agent_delegation_schedule')"
-          }
-        },
-        "required": [
-          "entity_id",
-          "document_id"
-        ]
-      }
-    }
-  },
-  {
-    "type": "function",
-    "function": {
-      "name": "convert_entity",
-      "description": "Convert entity type",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "entity_id": {
-            "type": "string"
-          },
-          "new_entity_type": {
-            "type": "string"
-          },
-          "new_jurisdiction": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "entity_id",
-          "new_entity_type"
-        ]
-      }
-    }
-  },
-  {
-    "type": "function",
-    "function": {
-      "name": "dissolve_entity",
-      "description": "Dissolve an entity",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "entity_id": {
-            "type": "string"
-          },
-          "reason": {
-            "type": "string"
-          },
-          "effective_date": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "entity_id",
-          "reason"
-        ]
-      }
-    }
-  },
-  {
-    "type": "function",
-    "function": {
-      "name": "add_agent_skill",
-      "description": "Add a skill to an agent",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "agent_id": {
-            "type": "string"
-          },
-          "skill_name": {
-            "type": "string"
-          },
-          "description": {
-            "type": "string"
-          },
-          "instructions": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "agent_id",
-          "skill_name",
-          "description"
-        ]
-      }
-    }
-  },
-  {
-    "type": "function",
-    "function": {
-      "name": "create_valuation",
-      "description": "Create a valuation (409A, FMV, profits interest, etc.) in Draft status",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "entity_id": { "type": "string" },
+          "valuation_id": { "type": "string", "description": "submit/approve: valuation ID" },
           "valuation_type": {
             "type": "string",
-            "enum": ["four_oh_nine_a", "llc_profits_interest", "fair_market_value", "gift", "estate", "other"]
+            "enum": ["four_oh_nine_a", "llc_profits_interest", "fair_market_value", "gift", "estate", "other"],
+            "description": "create: valuation type"
           },
-          "effective_date": { "type": "string", "description": "Effective date (ISO 8601)" },
+          "effective_date": { "type": "string", "description": "create: effective date (ISO 8601)" },
           "methodology": {
             "type": "string",
-            "enum": ["income", "market", "asset", "backsolve", "hybrid", "other"]
+            "enum": ["income", "market", "asset", "backsolve", "hybrid", "other"],
+            "description": "create: valuation methodology"
           },
-          "fmv_per_share_cents": { "type": "integer", "description": "Fair market value per share in cents" },
-          "enterprise_value_cents": { "type": "integer", "description": "Enterprise value in cents" },
-          "hurdle_amount_cents": { "type": "integer", "description": "Hurdle amount in cents" },
-          "provider_contact_id": { "type": "string", "description": "Contact ID of the valuation provider" },
-          "report_document_id": { "type": "string", "description": "Document ID of the valuation report" }
+          "fmv_per_share_cents": { "type": "integer", "description": "create: FMV per share in cents" },
+          "enterprise_value_cents": { "type": "integer", "description": "create: enterprise value in cents" },
+          "hurdle_amount_cents": { "type": "integer", "description": "create: hurdle amount in cents" },
+          "provider_contact_id": { "type": "string", "description": "create: valuation provider contact ID" },
+          "report_document_id": { "type": "string", "description": "create: valuation report document ID" },
+          "resolution_id": { "type": "string", "description": "approve: resolution ID from board vote" }
         },
-        "required": ["entity_id", "valuation_type", "effective_date", "methodology"]
+        "required": ["action"]
       }
     }
   },
   {
     "type": "function",
     "function": {
-      "name": "submit_valuation_for_approval",
-      "description": "Submit a Draft valuation for board approval (Draft → PendingApproval). Auto-creates a board meeting agenda item.",
+      "name": "meeting",
+      "description": "Governance meeting lifecycle. Actions: schedule (entity_id + body_id + meeting_type + title), notice (entity_id + meeting_id — Draft→Noticed), convene (entity_id + meeting_id + present_seat_ids — quorum check), vote (entity_id + meeting_id + agenda_item_id + voter_id + vote_value), resolve (entity_id + meeting_id + agenda_item_id + resolution_text — tally votes), finalize_item (entity_id + meeting_id + agenda_item_id + status), adjourn (entity_id + meeting_id), cancel (entity_id + meeting_id), consent (entity_id + body_id + title + description — written consent, no meeting), attach_document (entity_id + meeting_id + resolution_id + document_id), list_items (entity_id + meeting_id), list_votes (entity_id + meeting_id + agenda_item_id).",
       "parameters": {
         "type": "object",
         "properties": {
+          "action": {
+            "type": "string",
+            "enum": ["schedule", "notice", "convene", "vote", "resolve", "finalize_item", "adjourn", "cancel", "consent", "attach_document", "list_items", "list_votes"]
+          },
           "entity_id": { "type": "string" },
-          "valuation_id": { "type": "string" }
+          "meeting_id": { "type": "string" },
+          "body_id": { "type": "string", "description": "schedule/consent: governance body ID" },
+          "meeting_type": { "type": "string", "description": "schedule: meeting type" },
+          "title": { "type": "string", "description": "schedule/consent: meeting title" },
+          "description": { "type": "string", "description": "consent: description" },
+          "scheduled_date": { "type": "string", "description": "schedule: date (ISO 8601)" },
+          "agenda_item_titles": { "type": "array", "items": { "type": "string" }, "description": "schedule: agenda items" },
+          "present_seat_ids": { "type": "array", "items": { "type": "string" }, "description": "convene: seat IDs present" },
+          "agenda_item_id": { "type": "string", "description": "vote/resolve/finalize_item/list_votes: agenda item ID" },
+          "voter_id": { "type": "string", "description": "vote: voter seat ID" },
+          "vote_value": { "type": "string", "enum": ["for", "against", "abstain", "recusal"], "description": "vote: for, against, abstain, or recusal" },
+          "resolution_text": { "type": "string", "description": "resolve: resolution text" },
+          "effective_date": { "type": "string", "description": "resolve: optional effective date" },
+          "status": { "type": "string", "enum": ["Voted", "Discussed", "Tabled", "Withdrawn"], "description": "finalize_item: Voted, Discussed, Tabled, or Withdrawn" },
+          "resolution_id": { "type": "string", "description": "attach_document: resolution ID" },
+          "document_id": { "type": "string", "description": "attach_document: document ID" }
         },
-        "required": ["entity_id", "valuation_id"]
+        "required": ["action"]
       }
     }
   },
   {
     "type": "function",
     "function": {
-      "name": "approve_valuation",
-      "description": "Approve a PendingApproval valuation (PendingApproval → Approved). Pass resolution_id from the board vote.",
+      "name": "finance",
+      "description": "Financial operations. Actions: create_invoice (entity_id + customer_name + amount_cents + description + due_date), run_payroll (entity_id + pay_period_start + pay_period_end), submit_payment (entity_id + amount_cents + recipient), open_bank_account (entity_id, optional institution_name), reconcile (entity_id + start_date + end_date).",
       "parameters": {
         "type": "object",
         "properties": {
+          "action": {
+            "type": "string",
+            "enum": ["create_invoice", "run_payroll", "submit_payment", "open_bank_account", "reconcile"]
+          },
           "entity_id": { "type": "string" },
-          "valuation_id": { "type": "string" },
-          "resolution_id": { "type": "string", "description": "Resolution ID from the board vote" }
+          "customer_name": { "type": "string", "description": "create_invoice: customer name" },
+          "amount_cents": { "type": "integer", "description": "create_invoice/submit_payment: amount in cents" },
+          "description": { "type": "string", "description": "create_invoice/submit_payment: description" },
+          "due_date": { "type": "string", "description": "create_invoice: due date" },
+          "pay_period_start": { "type": "string", "description": "run_payroll: start date" },
+          "pay_period_end": { "type": "string", "description": "run_payroll: end date" },
+          "recipient": { "type": "string", "description": "submit_payment: recipient" },
+          "institution_name": { "type": "string", "description": "open_bank_account: bank name" },
+          "start_date": { "type": "string", "description": "reconcile: start date" },
+          "end_date": { "type": "string", "description": "reconcile: end date" }
         },
-        "required": ["entity_id", "valuation_id"]
+        "required": ["action"]
       }
     }
   },
   {
     "type": "function",
     "function": {
-      "name": "get_checklist",
-      "description": "Get the user's onboarding checklist",
-      "parameters": {
-        "type": "object",
-        "properties": {},
-        "required": []
-      }
-    }
-  },
-  {
-    "type": "function",
-    "function": {
-      "name": "update_checklist",
-      "description": "Update the user's onboarding checklist",
+      "name": "compliance",
+      "description": "Compliance and legal operations. Actions: file_tax (entity_id + document_type + tax_year), track_deadline (entity_id + deadline_type + due_date + description), classify_contractor (entity_id + contractor_name + state + hours_per_week), generate_contract (entity_id + template_type).",
       "parameters": {
         "type": "object",
         "properties": {
-          "checklist": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "checklist"
-        ]
-      }
-    }
-  },
-  {
-    "type": "function",
-    "function": {
-      "name": "get_signing_link",
-      "description": "Get a signing link for a document",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "document_id": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "document_id"
-        ]
-      }
-    }
-  },
-  {
-    "type": "function",
-    "function": {
-      "name": "create_agent",
-      "description": "Create a new agent",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "name": {
-            "type": "string"
+          "action": {
+            "type": "string",
+            "enum": ["file_tax", "track_deadline", "classify_contractor", "generate_contract"]
           },
-          "system_prompt": {
-            "type": "string"
-          },
-          "model": {
-            "type": "string"
-          }
+          "entity_id": { "type": "string" },
+          "document_type": { "type": "string", "description": "file_tax: tax document type" },
+          "tax_year": { "type": "integer", "description": "file_tax: tax year" },
+          "deadline_type": { "type": "string", "description": "track_deadline: deadline type" },
+          "due_date": { "type": "string", "description": "track_deadline: due date" },
+          "description": { "type": "string", "description": "track_deadline: description" },
+          "recurrence": { "type": "string", "description": "track_deadline: recurrence" },
+          "contractor_name": { "type": "string", "description": "classify_contractor: contractor name" },
+          "state": { "type": "string", "description": "classify_contractor: state" },
+          "hours_per_week": { "type": "integer", "description": "classify_contractor: hours/week" },
+          "exclusive_client": { "type": "boolean", "description": "classify_contractor: exclusive?" },
+          "duration_months": { "type": "integer", "description": "classify_contractor: duration" },
+          "provides_tools": { "type": "boolean", "description": "classify_contractor: provides own tools?" },
+          "template_type": { "type": "string", "description": "generate_contract: template type" },
+          "parameters": { "type": "object", "description": "generate_contract: template parameters" }
         },
-        "required": [
-          "name",
-          "system_prompt"
-        ]
+        "required": ["action"]
       }
     }
   },
   {
     "type": "function",
     "function": {
-      "name": "send_agent_message",
-      "description": "Send a message to an agent",
+      "name": "document",
+      "description": "Document access, signing, and preview. Actions: signing_link (document_id — get signing link for a document), signer_link (obligation_id — generate signing link for a human obligation), download_link (document_id — get download link), preview_pdf (entity_id + document_id — preview a governance document as PDF without requiring a saved document).",
       "parameters": {
         "type": "object",
         "properties": {
-          "agent_id": {
-            "type": "string"
+          "action": {
+            "type": "string",
+            "enum": ["signing_link", "signer_link", "download_link", "preview_pdf"]
           },
-          "body": {
-            "type": "string"
-          }
+          "document_id": { "type": "string", "description": "signing_link/download_link/preview_pdf: document ID (or AST definition ID for preview_pdf)" },
+          "obligation_id": { "type": "string", "description": "signer_link: obligation ID" },
+          "entity_id": { "type": "string", "description": "preview_pdf: entity whose profile to use for rendering" }
         },
-        "required": [
-          "agent_id",
-          "body"
-        ]
+        "required": ["action"]
       }
     }
   },
   {
     "type": "function",
     "function": {
-      "name": "update_agent",
-      "description": "Update an agent",
+      "name": "checklist",
+      "description": "Workspace progress checklist. Actions: get (retrieve current checklist), update (checklist — set checklist content in markdown checkbox format).",
       "parameters": {
         "type": "object",
         "properties": {
-          "agent_id": {
-            "type": "string"
+          "action": {
+            "type": "string",
+            "enum": ["get", "update"]
           },
-          "status": {
-            "type": "string"
-          }
+          "checklist": { "type": "string", "description": "update: markdown checklist content" }
         },
-        "required": [
-          "agent_id"
-        ]
+        "required": ["action"]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "agent",
+      "description": "Agent management. Agents are for delegating recurring tasks — NOT for research or one-off questions. Requires a paid plan. Actions: list (list all agents), create (name + system_prompt), message (agent_id + body), update (agent_id + optional status), add_skill (agent_id + skill_name + description).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": ["list", "create", "message", "update", "add_skill"]
+          },
+          "agent_id": { "type": "string", "description": "message/update/add_skill: agent ID" },
+          "name": { "type": "string", "description": "create: agent name" },
+          "system_prompt": { "type": "string", "description": "create: agent system prompt" },
+          "model": { "type": "string", "description": "create: model name" },
+          "body": { "type": "string", "description": "message: message body" },
+          "status": { "type": "string", "description": "update: new status" },
+          "skill_name": { "type": "string", "description": "add_skill: skill name" },
+          "description": { "type": "string", "description": "add_skill: skill description" },
+          "instructions": { "type": "string", "description": "add_skill: skill instructions" }
+        },
+        "required": ["action"]
       }
     }
   }

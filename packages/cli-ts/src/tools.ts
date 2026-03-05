@@ -9,7 +9,7 @@ import { join } from "node:path";
 import { homedir } from "node:os";
 
 export const TOOL_DEFINITIONS = _TOOL_DEFINITIONS;
-export const isWriteTool = _isWriteTool;
+export const isWriteTool: (name: string, args?: Record<string, unknown>) => boolean = _isWriteTool;
 
 export async function executeTool(
   name: string,

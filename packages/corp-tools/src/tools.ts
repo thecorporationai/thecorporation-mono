@@ -18,20 +18,26 @@ function requiredString(args: Record<string, unknown>, key: string): string {
   return value;
 }
 
-const TOOL_HANDLERS: Record<string, ToolHandler> = {
-  get_workspace_status: async (_args, client) => client.getStatus(),
-  list_obligations: async (args, client) => client.getObligations(args.tier as string | undefined),
+// ---------------------------------------------------------------------------
+// Sub-handlers grouped by consolidated tool
+// ---------------------------------------------------------------------------
+
+const workspaceActions: Record<string, ToolHandler> = {
+  status: async (_args, client) => client.getStatus(),
   list_entities: async (_args, client) => client.listEntities(),
-  get_cap_table: async (args, client) => client.getCapTable(args.entity_id as string),
-  list_documents: async (args, client) => client.getEntityDocuments(args.entity_id as string),
-  list_safe_notes: async (args, client) => client.getSafeNotes(args.entity_id as string),
-  list_agents: async (_args, client) => client.listAgents(),
-  get_billing_status: async (_args, client) => {
+  obligations: async (args, client) => client.getObligations(args.tier as string | undefined),
+  billing: async (_args, client) => {
     const [status, plans] = await Promise.all([client.getBillingStatus(), client.getBillingPlans()]);
     return { status, plans };
   },
+};
 
-  create_entity: async (args, client) => {
+const entityActions: Record<string, ToolHandler> = {
+  get_cap_table: async (args, client) => client.getCapTable(requiredString(args, "entity_id")),
+  list_documents: async (args, client) => client.getEntityDocuments(requiredString(args, "entity_id")),
+  list_safe_notes: async (args, client) => client.getSafeNotes(requiredString(args, "entity_id")),
+
+  create: async (args, client) => {
     const entityType = args.entity_type as string;
     let jurisdiction = (args.jurisdiction as string) || "";
     if (!jurisdiction || jurisdiction.length === 2) {
@@ -60,7 +66,7 @@ const TOOL_HANDLERS: Record<string, ToolHandler> = {
     });
   },
 
-  finalize_formation: async (args, client, ctx) => {
+  finalize: async (args, client, ctx) => {
     const entityId = requiredString(args, "entity_id");
     const result = await client.finalizeFormation(entityId);
     if (entityId && ctx.onEntityFormed) {
@@ -69,7 +75,7 @@ const TOOL_HANDLERS: Record<string, ToolHandler> = {
     return result;
   },
 
-  form_entity: async (args, client, ctx) => {
+  form: async (args, client, ctx) => {
     const entityType = args.entity_type as string;
     let jurisdiction = (args.jurisdiction as string) || "";
     if (!jurisdiction || jurisdiction.length === 2) {
@@ -77,7 +83,6 @@ const TOOL_HANDLERS: Record<string, ToolHandler> = {
     }
     const members = (args.members ?? []) as Record<string, unknown>[];
     if (!members.length) return { error: "Members are required." };
-    // Normalize: ensure investor_type defaults, convert ownership_pct > 1 to 0-1 scale
     for (const m of members) {
       if (!m.investor_type) m.investor_type = "natural_person";
       if (typeof m.ownership_pct === "number" && (m.ownership_pct as number) > 1) {
@@ -100,66 +105,57 @@ const TOOL_HANDLERS: Record<string, ToolHandler> = {
     return result;
   },
 
-  start_equity_round: async (args, client) => client.startEquityRound(args),
+  convert: async (args, client) => client.convertEntity(requiredString(args, "entity_id"), args),
+  dissolve: async (args, client) => client.dissolveEntity(requiredString(args, "entity_id"), args),
+};
+
+const equityActions: Record<string, ToolHandler> = {
+  start_round: async (args, client) => client.startEquityRound(args),
+
   add_security: async (args, client) => {
     const roundId = requiredString(args, "round_id");
     return client.addRoundSecurity(roundId, args);
   },
+
   issue_round: async (args, client) => {
     const roundId = requiredString(args, "round_id");
     return client.issueRound(roundId, args);
   },
 
-  create_valuation: async (args, client) => client.createValuation(args),
-  submit_valuation_for_approval: async (args, client) =>
+  issue: async (args, client) => client.issueEquity(args),
+  issue_safe: async (args, client) => client.issueSafe(args),
+
+  transfer: async (args, client) => {
+    if (args.skip_governance_review !== true) {
+      return {
+        error: "Transfer blocked: governance review required. Use the transfer workflow (create_transfer_workflow → submit-review → record-board-approval → execute) for governed transfers. To bypass governance and record a direct transfer, pass skip_governance_review: true.",
+      };
+    }
+    return client.transferShares(args);
+  },
+
+  distribution: async (args, client) => client.calculateDistribution(args),
+};
+
+const valuationActions: Record<string, ToolHandler> = {
+  create: async (args, client) => client.createValuation(args),
+
+  submit: async (args, client) =>
     client.submitValuationForApproval(
       requiredString(args, "valuation_id"),
       requiredString(args, "entity_id"),
     ),
-  approve_valuation: async (args, client) =>
+
+  approve: async (args, client) =>
     client.approveValuation(
       requiredString(args, "valuation_id"),
       requiredString(args, "entity_id"),
       args.resolution_id as string | undefined,
     ),
+};
 
-  issue_equity: async (args, client) => client.issueEquity(args),
-  issue_safe: async (args, client) => client.issueSafe(args),
-  create_invoice: async (args, client) => {
-    if (!("amount_cents" in args) && Array.isArray(args.line_items)) {
-      args.amount_cents = (args.line_items as Record<string, number>[])
-        .reduce((sum, item) => sum + (item.amount_cents ?? 0), 0);
-    }
-    if (!("amount_cents" in args)) args.amount_cents = 0;
-    if (!("description" in args) || typeof args.description !== "string" || args.description.trim().length === 0) {
-      args.description = "Invoice";
-    }
-    return client.createInvoice(args);
-  },
-  run_payroll: async (args, client) => client.runPayroll(args),
-  submit_payment: async (args, client) => client.submitPayment(args),
-  open_bank_account: async (args, client) => {
-    const body: Record<string, unknown> = { entity_id: args.entity_id };
-    if (args.institution_name) body.institution_name = args.institution_name;
-    return client.openBankAccount(body);
-  },
-  generate_contract: async (args, client) => client.generateContract(args),
-  file_tax_document: async (args, client) => client.fileTaxDocument(args),
-
-  get_signer_link: async (args, client) => {
-    const result = await client.getSignerToken(args.obligation_id as string);
-    const token = result.token as string ?? "";
-    const obligationId = args.obligation_id as string;
-    const humansBase = client.apiUrl.replace("://api.", "://humans.");
-    return {
-      signer_url: `${humansBase}/human/${obligationId}?token=${token}`,
-      obligation_id: obligationId,
-      expires_in_seconds: result.expires_in ?? 900,
-      message: "Share this link with the signer. Link expires in 15 minutes.",
-    };
-  },
-
-  schedule_meeting: async (args, client) => {
+const meetingActions: Record<string, ToolHandler> = {
+  schedule: async (args, client) => {
     const body: Record<string, unknown> = {
       entity_id: requiredString(args, "entity_id"),
       body_id: requiredString(args, "body_id"),
@@ -175,7 +171,20 @@ const TOOL_HANDLERS: Record<string, ToolHandler> = {
     return client.scheduleMeeting(body);
   },
 
-  cast_vote: async (args, client) =>
+  notice: async (args, client) => client.sendNotice(
+    requiredString(args, "meeting_id"),
+    requiredString(args, "entity_id"),
+  ),
+
+  convene: async (args, client) => client.conveneMeeting(
+    requiredString(args, "meeting_id"),
+    requiredString(args, "entity_id"),
+    {
+      present_seat_ids: Array.isArray(args.present_seat_ids) ? args.present_seat_ids : [],
+    },
+  ),
+
+  vote: async (args, client) =>
     client.castVote(
       requiredString(args, "entity_id"),
       requiredString(args, "meeting_id"),
@@ -186,20 +195,115 @@ const TOOL_HANDLERS: Record<string, ToolHandler> = {
       },
     ),
 
-  update_checklist: async (args, _client, ctx) => {
-    const path = join(ctx.dataDir, "checklist.md");
-    mkdirSync(ctx.dataDir, { recursive: true });
-    writeFileSync(path, args.checklist as string);
-    return { status: "updated", checklist: args.checklist };
+  resolve: async (args, client) => {
+    const data: Record<string, unknown> = {
+      resolution_text: requiredString(args, "resolution_text"),
+    };
+    if (typeof args.effective_date === "string") data.effective_date = args.effective_date;
+    return client.computeResolution(
+      requiredString(args, "meeting_id"),
+      requiredString(args, "agenda_item_id"),
+      requiredString(args, "entity_id"),
+      data,
+    );
   },
 
-  get_checklist: async (_args, _client, ctx) => {
-    const path = join(ctx.dataDir, "checklist.md");
-    if (existsSync(path)) return { checklist: readFileSync(path, "utf-8") };
-    return { checklist: null, message: "No checklist yet." };
+  finalize_item: async (args, client) => client.finalizeAgendaItem(
+    requiredString(args, "meeting_id"),
+    requiredString(args, "agenda_item_id"),
+    {
+      entity_id: requiredString(args, "entity_id"),
+      status: requiredString(args, "status"),
+    },
+  ),
+
+  adjourn: async (args, client) => client.adjournMeeting(
+    requiredString(args, "meeting_id"),
+    requiredString(args, "entity_id"),
+  ),
+
+  cancel: async (args, client) => client.cancelMeeting(
+    requiredString(args, "meeting_id"),
+    requiredString(args, "entity_id"),
+  ),
+
+  consent: async (args, client) => client.writtenConsent({
+    entity_id: requiredString(args, "entity_id"),
+    body_id: requiredString(args, "body_id"),
+    title: requiredString(args, "title"),
+    description: args.description as string ?? "",
+  }),
+
+  attach_document: async (args, client) => client.attachResolutionDocument(
+    requiredString(args, "meeting_id"),
+    requiredString(args, "resolution_id"),
+    {
+      entity_id: requiredString(args, "entity_id"),
+      document_id: requiredString(args, "document_id"),
+    },
+  ),
+
+  list_items: async (args, client) => client.listAgendaItems(
+    requiredString(args, "meeting_id"),
+    requiredString(args, "entity_id"),
+  ),
+
+  list_votes: async (args, client) => client.listVotes(
+    requiredString(args, "meeting_id"),
+    requiredString(args, "agenda_item_id"),
+    requiredString(args, "entity_id"),
+  ),
+};
+
+const financeActions: Record<string, ToolHandler> = {
+  create_invoice: async (args, client) => {
+    if (!("amount_cents" in args) && Array.isArray(args.line_items)) {
+      args.amount_cents = (args.line_items as Record<string, number>[])
+        .reduce((sum, item) => sum + (item.amount_cents ?? 0), 0);
+    }
+    if (!("amount_cents" in args)) args.amount_cents = 0;
+    if (!("description" in args) || typeof args.description !== "string" || args.description.trim().length === 0) {
+      args.description = "Invoice";
+    }
+    return client.createInvoice(args);
   },
 
-  get_document_link: async (args, client) => {
+  run_payroll: async (args, client) => client.runPayroll(args),
+  submit_payment: async (args, client) => client.submitPayment(args),
+
+  open_bank_account: async (args, client) => {
+    const body: Record<string, unknown> = { entity_id: args.entity_id };
+    if (args.institution_name) body.institution_name = args.institution_name;
+    return client.openBankAccount(body);
+  },
+
+  reconcile: async (args, client) => client.reconcileLedger(args),
+};
+
+const complianceActions: Record<string, ToolHandler> = {
+  file_tax: async (args, client) => client.fileTaxDocument(args),
+  track_deadline: async (args, client) => client.trackDeadline(args),
+  classify_contractor: async (args, client) => client.classifyContractor(args),
+  generate_contract: async (args, client) => client.generateContract(args),
+};
+
+const documentActions: Record<string, ToolHandler> = {
+  signing_link: async (args, client) => client.getSigningLink(args.document_id as string),
+
+  signer_link: async (args, client) => {
+    const result = await client.getSignerToken(args.obligation_id as string);
+    const token = result.token as string ?? "";
+    const obligationId = args.obligation_id as string;
+    const humansBase = client.apiUrl.replace("://api.", "://humans.");
+    return {
+      signer_url: `${humansBase}/human/${obligationId}?token=${token}`,
+      obligation_id: obligationId,
+      expires_in_seconds: result.expires_in ?? 900,
+      message: "Share this link with the signer. Link expires in 15 minutes.",
+    };
+  },
+
+  download_link: async (args, client) => {
     const docId = args.document_id as string;
     try {
       const resp = await fetch(`${client.apiUrl}/v1/documents/${docId}/request-copy`, {
@@ -221,7 +325,7 @@ const TOOL_HANDLERS: Record<string, ToolHandler> = {
     }
   },
 
-  preview_document_pdf: async (args, client) => {
+  preview_pdf: async (args, client) => {
     const entityId = args.entity_id as string;
     const documentId = args.document_id as string;
     const qs = new URLSearchParams({ entity_id: entityId, document_id: documentId }).toString();
@@ -232,114 +336,77 @@ const TOOL_HANDLERS: Record<string, ToolHandler> = {
       note: "Use your API key to authenticate the download.",
     };
   },
+};
 
-  get_signing_link: async (args, client) => client.getSigningLink(args.document_id as string),
-  convert_entity: async (args, client) => client.convertEntity(args.entity_id as string, args),
-  dissolve_entity: async (args, client) => client.dissolveEntity(args.entity_id as string, args),
-  transfer_shares: async (args, client) => {
-    if (args.skip_governance_review !== true) {
-      return {
-        error: "Transfer blocked: governance review required. Use the transfer workflow (create_transfer_workflow → submit-review → record-board-approval → execute) for governed transfers. To bypass governance and record a direct transfer, pass skip_governance_review: true.",
-      };
-    }
-    return client.transferShares(args);
-  },
-  calculate_distribution: async (args, client) => client.calculateDistribution(args),
-  classify_contractor: async (args, client) => client.classifyContractor(args),
-  reconcile_ledger: async (args, client) => client.reconcileLedger(args),
-  track_deadline: async (args, client) => client.trackDeadline(args),
-  convene_meeting: async (args, client) => client.conveneMeeting(
-    requiredString(args, "meeting_id"),
-    requiredString(args, "entity_id"),
-    {
-      present_seat_ids: Array.isArray(args.present_seat_ids) ? args.present_seat_ids : [],
-    },
-  ),
-
-  send_notice: async (args, client) => client.sendNotice(
-    requiredString(args, "meeting_id"),
-    requiredString(args, "entity_id"),
-  ),
-
-  adjourn_meeting: async (args, client) => client.adjournMeeting(
-    requiredString(args, "meeting_id"),
-    requiredString(args, "entity_id"),
-  ),
-
-  cancel_meeting: async (args, client) => client.cancelMeeting(
-    requiredString(args, "meeting_id"),
-    requiredString(args, "entity_id"),
-  ),
-
-  finalize_agenda_item: async (args, client) => client.finalizeAgendaItem(
-    requiredString(args, "meeting_id"),
-    requiredString(args, "agenda_item_id"),
-    {
-      entity_id: requiredString(args, "entity_id"),
-      status: requiredString(args, "status"),
-    },
-  ),
-
-  compute_resolution: async (args, client) => {
-    const data: Record<string, unknown> = {
-      resolution_text: requiredString(args, "resolution_text"),
-    };
-    if (typeof args.effective_date === "string") data.effective_date = args.effective_date;
-    return client.computeResolution(
-      requiredString(args, "meeting_id"),
-      requiredString(args, "agenda_item_id"),
-      requiredString(args, "entity_id"),
-      data,
-    );
+const checklistActions: Record<string, ToolHandler> = {
+  get: async (_args, _client, ctx) => {
+    const path = join(ctx.dataDir, "checklist.md");
+    if (existsSync(path)) return { checklist: readFileSync(path, "utf-8") };
+    return { checklist: null, message: "No checklist yet." };
   },
 
-  attach_resolution_document: async (args, client) => client.attachResolutionDocument(
-    requiredString(args, "meeting_id"),
-    requiredString(args, "resolution_id"),
-    {
-      entity_id: requiredString(args, "entity_id"),
-      document_id: requiredString(args, "document_id"),
-    },
-  ),
+  update: async (args, _client, ctx) => {
+    const path = join(ctx.dataDir, "checklist.md");
+    mkdirSync(ctx.dataDir, { recursive: true });
+    writeFileSync(path, args.checklist as string);
+    return { status: "updated", checklist: args.checklist };
+  },
+};
 
-  written_consent: async (args, client) => client.writtenConsent({
-    entity_id: requiredString(args, "entity_id"),
-    body_id: requiredString(args, "body_id"),
-    title: requiredString(args, "title"),
-    description: args.description as string ?? "",
-  }),
+const agentActions: Record<string, ToolHandler> = {
+  list: async (_args, client) => client.listAgents(),
+  create: async (args, client) => client.createAgent(args),
+  message: async (args, client) => client.sendAgentMessage(args.agent_id as string, args.body as string),
+  update: async (args, client) => client.updateAgent(args.agent_id as string, args),
+  add_skill: async (args, client) => client.addAgentSkill(args.agent_id as string, args),
+};
 
-  list_agenda_items: async (args, client) => client.listAgendaItems(
-    requiredString(args, "meeting_id"),
-    requiredString(args, "entity_id"),
-  ),
+// ---------------------------------------------------------------------------
+// Dispatch table: consolidated tool name → action sub-handlers
+// ---------------------------------------------------------------------------
 
-  list_votes: async (args, client) => client.listVotes(
-    requiredString(args, "meeting_id"),
-    requiredString(args, "agenda_item_id"),
-    requiredString(args, "entity_id"),
-  ),
-
-  create_agent: async (args, client) => client.createAgent(args),
-  send_agent_message: async (args, client) => client.sendAgentMessage(args.agent_id as string, args.body as string),
-  update_agent: async (args, client) => client.updateAgent(args.agent_id as string, args),
-  add_agent_skill: async (args, client) => client.addAgentSkill(args.agent_id as string, args),
+const TOOL_DISPATCH: Record<string, Record<string, ToolHandler>> = {
+  workspace: workspaceActions,
+  entity: entityActions,
+  equity: equityActions,
+  valuation: valuationActions,
+  meeting: meetingActions,
+  finance: financeActions,
+  compliance: complianceActions,
+  document: documentActions,
+  checklist: checklistActions,
+  agent: agentActions,
 };
 
 // Tool definitions are generated from the backend OpenAPI spec.
 // Regenerate: make generate-tools
 export const TOOL_DEFINITIONS: Record<string, unknown>[] = GENERATED_TOOL_DEFINITIONS;
 
-const READ_ONLY_TOOLS = new Set([
-  "get_workspace_status", "list_entities", "get_cap_table", "list_documents",
-  "list_safe_notes", "list_agents", "get_checklist",
-  "get_signing_link", "list_obligations", "get_billing_status",
-  "list_agenda_items", "list_votes",
-  "preview_document_pdf",
+// Actions that are read-only (no user confirmation needed)
+const READ_ONLY_ACTIONS = new Set([
+  "workspace:status",
+  "workspace:list_entities",
+  "workspace:obligations",
+  "workspace:billing",
+  "entity:get_cap_table",
+  "entity:list_documents",
+  "entity:list_safe_notes",
+  "document:signing_link",
+  "document:signer_link",
+  "document:download_link",
+  "document:preview_pdf",
+  "checklist:get",
+  "meeting:list_items",
+  "meeting:list_votes",
+  "agent:list",
 ]);
 
-export function isWriteTool(name: string): boolean {
-  return !READ_ONLY_TOOLS.has(name);
+export function isWriteTool(name: string, args?: Record<string, unknown>): boolean {
+  if (args && typeof args.action === "string") {
+    return !READ_ONLY_ACTIONS.has(`${name}:${args.action}`);
+  }
+  // Fallback: if no action provided, assume write
+  return true;
 }
 
 export async function executeTool(
@@ -348,8 +415,15 @@ export async function executeTool(
   client: CorpAPIClient,
   ctx: ToolContext,
 ): Promise<string> {
-  const handler = TOOL_HANDLERS[name];
-  if (!handler) return JSON.stringify({ error: `Unknown tool: ${name}` });
+  const dispatch = TOOL_DISPATCH[name];
+  if (!dispatch) return JSON.stringify({ error: `Unknown tool: ${name}` });
+
+  const action = args.action as string;
+  if (!action) return JSON.stringify({ error: `Missing required field: action` });
+
+  const handler = dispatch[action];
+  if (!handler) return JSON.stringify({ error: `Unknown action "${action}" for tool "${name}"` });
+
   try {
     const result = await handler(args, client, ctx);
     return JSON.stringify(result, null, 0);

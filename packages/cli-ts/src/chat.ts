@@ -133,7 +133,7 @@ ${chalk.bold("Chat Slash Commands")}
         }
 
         for (const tc of response.tool_calls) {
-          console.log(chalk.dim(`  ${isWriteTool(tc.name) ? "\u2699" : "\u2139"} ${tc.name}(${JSON.stringify(tc.arguments).slice(0, 80)})`));
+          console.log(chalk.dim(`  ${isWriteTool(tc.name, tc.arguments) ? "\u2699" : "\u2139"} ${tc.name}(${JSON.stringify(tc.arguments).slice(0, 80)})`));
           const result = await executeTool(tc.name, tc.arguments, client);
           const short = result.length > 200 ? result.slice(0, 197) + "..." : result;
           console.log(chalk.dim(`    => ${short}`));

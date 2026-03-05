@@ -1,6 +1,6 @@
 # @thecorporation/corp-tools
 
-The shared foundation for TheCorporation's client ecosystem. Typed API client, 36 tool definitions, and the execution engine that powers the CLI, MCP server, and chat service. Every tool call — whether initiated by a human or an agent — flows through the same pipeline: validate, execute, commit, receipt.
+The shared foundation for TheCorporation's client ecosystem. Typed API client, 10 consolidated tool definitions, and the execution engine that powers the CLI, MCP server, and chat service. Every tool call — whether initiated by a human or an agent — flows through the same pipeline: validate, execute, commit, receipt.
 
 Used by [`@thecorporation/cli`](https://www.npmjs.com/package/@thecorporation/cli), [`@thecorporation/mcp-server`](https://www.npmjs.com/package/@thecorporation/mcp-server), and the chat service.
 
@@ -107,12 +107,12 @@ import {
 // OpenAI-compatible function definitions for LLM tool calling
 console.log(TOOL_DEFINITIONS);
 
-// Execute a tool call
-const result = await executeTool("form_entity", args, client, { dataDir: "." });
+// Execute a tool call (consolidated: tool name + action)
+const result = await executeTool("entity", { action: "form", ...args }, client, { dataDir: "." });
 
-// Check if a tool mutates state (useful for confirmation gating)
-isWriteTool("form_entity");    // true
-isWriteTool("list_entities");  // false
+// Check if a tool+action mutates state (useful for confirmation gating)
+isWriteTool("entity", { action: "form" });          // true
+isWriteTool("workspace", { action: "list_entities" }); // false
 ```
 
 ### System Prompt
@@ -123,27 +123,27 @@ import { SYSTEM_PROMPT_BASE, formatConfigSection } from "@thecorporation/corp-to
 
 ## Tools
 
-36 tools across corporate governance domains:
+10 consolidated tools with action-based dispatch:
 
-| Category | Tools |
+| Tool | Actions |
 |---|---|
-| **Entities** | `form_entity`, `convert_entity`, `dissolve_entity`, `list_entities` |
-| **Equity** | `issue_equity`, `issue_safe`, `transfer_shares`, `calculate_distribution`, `get_cap_table`, `list_safe_notes` |
-| **Finance** | `create_invoice`, `run_payroll`, `submit_payment`, `open_bank_account`, `reconcile_ledger`, `classify_contractor` |
-| **Documents** | `generate_contract`, `list_documents`, `get_document_link`, `get_signing_link` |
-| **Governance** | `convene_meeting`, `schedule_meeting`, `cast_vote` |
-| **Tax** | `file_tax_document`, `track_deadline` |
-| **Agents** | `create_agent`, `send_agent_message`, `update_agent`, `add_agent_skill`, `list_agents` |
-| **Workspace** | `get_workspace_status`, `list_obligations`, `get_billing_status`, `get_checklist`, `update_checklist`, `get_signer_link` |
+| **workspace** | status, list_entities, obligations, billing |
+| **entity** | get_cap_table, list_documents, list_safe_notes, form, create, add_founder, finalize, convert, dissolve |
+| **equity** | start_round, add_security, issue_round, issue, issue_safe, transfer, distribution |
+| **valuation** | create, submit, approve |
+| **meeting** | schedule, notice, convene, vote, resolve, finalize_item, adjourn, cancel, consent, attach_document, list_items, list_votes |
+| **finance** | create_invoice, run_payroll, submit_payment, open_bank_account, reconcile |
+| **compliance** | file_tax, track_deadline, classify_contractor, generate_contract |
+| **document** | signing_link, signer_link, download_link |
+| **checklist** | get, update |
+| **agent** | list, create, message, update, add_skill |
 
 ## Exports
 
 - `CorpAPIClient` — typed API client with methods for every endpoint
 - `TOOL_DEFINITIONS` / `GENERATED_TOOL_DEFINITIONS` — OpenAI-compatible function schemas
-- `TOOL_REGISTRY` — name-to-definition lookup
-- `READ_ONLY_TOOLS` — set of tool names that don't mutate state
-- `executeTool()` — dispatches a tool call and returns the result
-- `isWriteTool()` — checks whether a tool mutates state
+- `executeTool()` — dispatches a tool call by name + action and returns the result
+- `isWriteTool()` — checks whether a tool+action mutates state
 - `describeToolCall()` — human-readable description of a tool call
 - `SYSTEM_PROMPT_BASE` / `formatConfigSection()` — system prompt utilities
 - `provisionWorkspace()` — provisions a new workspace
