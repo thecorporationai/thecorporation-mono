@@ -495,6 +495,270 @@ pub fn setup_cap_table(
     })
 }
 
+/// Create a pending entity — initializes a git repo with an empty pending members list.
+///
+/// Unlike `create_entity`, this does NOT require members upfront and does NOT generate
+/// formation documents. The entity stays in `Pending` status until `finalize_formation`
+/// is called after founders have been added via `add_pending_member`.
+pub fn create_pending_entity(
+    layout: &crate::store::RepoLayout,
+    workspace_id: WorkspaceId,
+    legal_name: String,
+    entity_type: EntityType,
+    jurisdiction: Jurisdiction,
+) -> Result<Entity, FormationError> {
+    let entity_id = EntityId::new();
+
+    let entity = Entity::new(
+        entity_id,
+        workspace_id,
+        legal_name,
+        entity_type,
+        jurisdiction,
+        None,
+        None,
+    )?;
+
+    // Build files: corp.json + empty pending members list
+    let mut files = Vec::new();
+    files.push(
+        FileWrite::json("corp.json", &entity)
+            .map_err(|e| FormationError::Storage(e.to_string()))?,
+    );
+    let empty_members: Vec<MemberInput> = Vec::new();
+    files.push(
+        FileWrite::json("formation/pending_members.json", &empty_members)
+            .map_err(|e| FormationError::Storage(e.to_string()))?,
+    );
+
+    let repo_path = layout.entity_repo_path(workspace_id, entity_id);
+    let repo = crate::git::repo::CorpRepo::init(&repo_path, None)
+        .map_err(|e| FormationError::Storage(format!("failed to init repo: {e}")))?;
+    crate::git::commit::commit_files(
+        &repo,
+        "main",
+        &format!("Create pending entity: {}", entity.legal_name()),
+        &files,
+        None,
+    )
+    .map_err(|e| FormationError::Storage(format!("failed to commit: {e}")))?;
+
+    Ok(entity)
+}
+
+/// Add a member to a pending entity's formation member list.
+///
+/// The entity must be in `Pending` status. Returns the full list of pending members
+/// after the new member is appended.
+pub fn add_pending_member(
+    layout: &crate::store::RepoLayout,
+    workspace_id: WorkspaceId,
+    entity_id: EntityId,
+    member: MemberInput,
+) -> Result<Vec<MemberInput>, FormationError> {
+    let repo_path = layout.entity_repo_path(workspace_id, entity_id);
+    let repo = crate::git::repo::CorpRepo::open(&repo_path)
+        .map_err(|e| FormationError::Storage(format!("failed to open repo: {e}")))?;
+
+    // Verify entity is still Pending
+    let entity: Entity = repo
+        .read_json("main", "corp.json")
+        .map_err(|e| FormationError::Storage(format!("failed to read entity: {e}")))?;
+    if entity.formation_status() != FormationStatus::Pending {
+        return Err(FormationError::Validation(format!(
+            "entity must be in Pending status to add members, currently {}",
+            entity.formation_status()
+        )));
+    }
+
+    // Read existing pending members
+    let mut members: Vec<MemberInput> = repo
+        .read_json("main", "formation/pending_members.json")
+        .map_err(|e| FormationError::Storage(format!("failed to read pending members: {e}")))?;
+
+    members.push(member);
+
+    // Commit updated list
+    let file = FileWrite::json("formation/pending_members.json", &members)
+        .map_err(|e| FormationError::Storage(e.to_string()))?;
+    crate::git::commit::commit_files(
+        &repo,
+        "main",
+        &format!("Add pending member: {}", members.last().unwrap().name),
+        &[file],
+        None,
+    )
+    .map_err(|e| FormationError::Storage(format!("failed to commit: {e}")))?;
+
+    Ok(members)
+}
+
+/// Finalize a pending entity's formation — generates documents, cap table, and advances status.
+///
+/// Reads pending members from the repo, validates at least one exists, then reuses
+/// `generate_formation_documents` and `setup_cap_table` to complete the formation.
+#[allow(clippy::too_many_arguments)]
+pub fn finalize_formation(
+    layout: &crate::store::RepoLayout,
+    workspace_id: WorkspaceId,
+    entity_id: EntityId,
+    authorized_shares: Option<i64>,
+    par_value: Option<&str>,
+) -> Result<(FormationResult, CapTableSetupResult), FormationError> {
+    let repo_path = layout.entity_repo_path(workspace_id, entity_id);
+    let repo = crate::git::repo::CorpRepo::open(&repo_path)
+        .map_err(|e| FormationError::Storage(format!("failed to open repo: {e}")))?;
+
+    // Read entity and verify Pending status
+    let mut entity: Entity = repo
+        .read_json("main", "corp.json")
+        .map_err(|e| FormationError::Storage(format!("failed to read entity: {e}")))?;
+    if entity.formation_status() != FormationStatus::Pending {
+        return Err(FormationError::Validation(format!(
+            "entity must be in Pending status to finalize, currently {}",
+            entity.formation_status()
+        )));
+    }
+
+    // Read pending members
+    let members: Vec<MemberInput> = repo
+        .read_json("main", "formation/pending_members.json")
+        .map_err(|e| FormationError::Storage(format!("failed to read pending members: {e}")))?;
+    if members.is_empty() {
+        return Err(FormationError::Validation(
+            "at least one member is required to finalize formation".into(),
+        ));
+    }
+
+    // Generate formation documents
+    let doc_specs = generate_formation_documents(
+        entity.entity_type(),
+        entity.legal_name(),
+        entity.jurisdiction(),
+        "", // no registered agent for staged flow
+        "",
+        &members,
+        authorized_shares,
+        par_value,
+    );
+
+    // Create filing record
+    let filing_type = match entity.entity_type() {
+        EntityType::Llc => FilingType::CertificateOfFormation,
+        EntityType::Corporation => FilingType::CertificateOfIncorporation,
+    };
+    let designated_attestor = members
+        .iter()
+        .find(|m| m.investor_type == InvestorType::NaturalPerson)
+        .ok_or_else(|| {
+            FormationError::Validation(
+                "at least one natural_person member is required for filing attestation".to_owned(),
+            )
+        })?;
+    let designated_attestor_name = designated_attestor.name.trim().to_owned();
+    if designated_attestor_name.is_empty() {
+        return Err(FormationError::Validation(
+            "designated natural-person attestor name must not be empty".to_owned(),
+        ));
+    }
+    let designated_attestor_email = designated_attestor
+        .email
+        .as_ref()
+        .map(|email| email.trim().to_owned())
+        .filter(|email| !email.is_empty());
+    let designated_attestor_role =
+        member_role_label(designated_attestor.role, entity.entity_type());
+
+    let filing = Filing::new(
+        FilingId::new(),
+        entity_id,
+        filing_type,
+        entity.jurisdiction().clone(),
+        designated_attestor_name,
+        designated_attestor_email,
+        designated_attestor_role,
+    );
+
+    // Create tax profile
+    let classification = TaxProfile::classify(entity.entity_type(), members.len());
+    let tax_profile = TaxProfile::new(TaxProfileId::new(), entity_id, classification);
+
+    // Create Document records
+    let mut documents = Vec::new();
+    for (doc_type, title, governance_tag, content) in doc_specs {
+        let doc = Document::new(
+            DocumentId::new(),
+            entity_id,
+            workspace_id,
+            doc_type,
+            title,
+            content,
+            governance_tag,
+            None,
+        );
+        documents.push(doc);
+    }
+    let document_ids: Vec<DocumentId> = documents.iter().map(|d| d.document_id()).collect();
+
+    // Build files for the formation commit
+    let mut files = Vec::new();
+    files.push(
+        FileWrite::json("formation/filing.json", &filing)
+            .map_err(|e| FormationError::Storage(e.to_string()))?,
+    );
+    files.push(
+        FileWrite::json("tax/profile.json", &tax_profile)
+            .map_err(|e| FormationError::Storage(e.to_string()))?,
+    );
+    for doc in &documents {
+        let path = format!("formation/{}.json", doc.document_id());
+        files.push(FileWrite::json(path, doc).map_err(|e| FormationError::Storage(e.to_string()))?);
+    }
+
+    crate::git::commit::commit_files(
+        &repo,
+        "main",
+        &format!("Generate formation documents for: {}", entity.legal_name()),
+        &files,
+        None,
+    )
+    .map_err(|e| FormationError::Storage(format!("failed to commit: {e}")))?;
+
+    // Advance status to DocumentsGenerated
+    entity.advance_status(FormationStatus::DocumentsGenerated)?;
+    let entity_file = FileWrite::json("corp.json", &entity)
+        .map_err(|e| FormationError::Storage(e.to_string()))?;
+    crate::git::commit::commit_files(
+        &repo,
+        "main",
+        "Advance to documents_generated",
+        &[entity_file],
+        None,
+    )
+    .map_err(|e| FormationError::Storage(format!("failed to commit status: {e}")))?;
+
+    let formation_result = FormationResult {
+        entity,
+        document_ids,
+        filing,
+        tax_profile,
+    };
+
+    // Set up cap table
+    let cap_table_result = setup_cap_table(
+        layout,
+        workspace_id,
+        entity_id,
+        formation_result.entity.entity_type(),
+        formation_result.entity.legal_name(),
+        &members,
+        authorized_shares,
+        par_value,
+    )?;
+
+    Ok((formation_result, cap_table_result))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -807,5 +1071,114 @@ mod tests {
         );
         assert_eq!(next_formation_action(FormationStatus::Active), None);
         assert_eq!(next_formation_action(FormationStatus::Rejected), None);
+    }
+
+    #[test]
+    fn staged_flow_create_add_finalize() {
+        let tmp = TempDir::new().unwrap();
+        let layout = RepoLayout::new(tmp.path().to_path_buf());
+        let workspace_id = WorkspaceId::new();
+
+        // Step 1: Create pending entity
+        let entity = create_pending_entity(
+            &layout,
+            workspace_id,
+            "Staged LLC".to_string(),
+            EntityType::Llc,
+            Jurisdiction::new("Wyoming").unwrap(),
+        )
+        .expect("create_pending_entity should succeed");
+
+        assert_eq!(entity.legal_name(), "Staged LLC");
+        assert_eq!(entity.formation_status(), FormationStatus::Pending);
+        let entity_id = entity.entity_id();
+
+        // Step 2: Add founders
+        let members = add_pending_member(
+            &layout,
+            workspace_id,
+            entity_id,
+            alice(),
+        )
+        .expect("add first member should succeed");
+        assert_eq!(members.len(), 1);
+
+        let members = add_pending_member(
+            &layout,
+            workspace_id,
+            entity_id,
+            bob(),
+        )
+        .expect("add second member should succeed");
+        assert_eq!(members.len(), 2);
+
+        // Step 3: Finalize
+        let (formation, cap_table) = finalize_formation(
+            &layout,
+            workspace_id,
+            entity_id,
+            None,
+            None,
+        )
+        .expect("finalize_formation should succeed");
+
+        assert_eq!(
+            formation.entity.formation_status(),
+            FormationStatus::DocumentsGenerated
+        );
+        assert_eq!(formation.document_ids.len(), 2); // LLC: articles + operating agreement
+        assert_eq!(cap_table.holders.len(), 2);
+    }
+
+    #[test]
+    fn staged_flow_finalize_rejects_no_members() {
+        let tmp = TempDir::new().unwrap();
+        let layout = RepoLayout::new(tmp.path().to_path_buf());
+        let workspace_id = WorkspaceId::new();
+
+        let entity = create_pending_entity(
+            &layout,
+            workspace_id,
+            "Empty Staged LLC".to_string(),
+            EntityType::Llc,
+            Jurisdiction::new("Delaware").unwrap(),
+        )
+        .unwrap();
+
+        let result = finalize_formation(
+            &layout,
+            workspace_id,
+            entity.entity_id(),
+            None,
+            None,
+        );
+
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("at least one member"));
+    }
+
+    #[test]
+    fn staged_flow_add_member_rejects_after_finalize() {
+        let tmp = TempDir::new().unwrap();
+        let layout = RepoLayout::new(tmp.path().to_path_buf());
+        let workspace_id = WorkspaceId::new();
+
+        let entity = create_pending_entity(
+            &layout,
+            workspace_id,
+            "Finalized LLC".to_string(),
+            EntityType::Llc,
+            Jurisdiction::new("Wyoming").unwrap(),
+        )
+        .unwrap();
+        let entity_id = entity.entity_id();
+
+        add_pending_member(&layout, workspace_id, entity_id, alice()).unwrap();
+        finalize_formation(&layout, workspace_id, entity_id, None, None).unwrap();
+
+        // Should reject adding members after finalization
+        let result = add_pending_member(&layout, workspace_id, entity_id, bob());
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Pending"));
     }
 }

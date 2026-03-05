@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 use super::AppState;
 use crate::auth::{RequireFormationCreate, RequireFormationRead, RequireFormationSign};
 use crate::domain::formation::{
-    content::MemberInput,
+    content::{InvestorType, MemberInput, MemberRole, OfficerTitle},
     contract::{Contract, ContractStatus, ContractTemplateType},
     document::SignatureRequest,
     entity::Entity,
@@ -214,6 +214,59 @@ pub struct FormationGatesResponse {
     pub service_agreement_contract_id: Option<ContractId>,
     pub service_agreement_document_id: Option<DocumentId>,
     pub service_agreement_notes: Option<String>,
+}
+
+// ── Staged formation request / response types ──────────────────────────
+
+#[derive(Deserialize)]
+pub struct CreatePendingFormationRequest {
+    pub entity_type: EntityType,
+    pub legal_name: String,
+    #[serde(default = "default_staged_jurisdiction")]
+    pub jurisdiction: Option<Jurisdiction>,
+}
+
+fn default_staged_jurisdiction() -> Option<Jurisdiction> {
+    None
+}
+
+#[derive(Serialize)]
+pub struct PendingFormationResponse {
+    pub entity_id: EntityId,
+    pub legal_name: String,
+    pub entity_type: EntityType,
+    pub jurisdiction: Jurisdiction,
+    pub formation_status: FormationStatus,
+}
+
+#[derive(Deserialize)]
+pub struct AddFounderRequest {
+    pub name: String,
+    #[serde(default)]
+    pub email: Option<String>,
+    #[serde(default)]
+    pub role: Option<MemberRole>,
+    #[serde(default)]
+    pub ownership_pct: Option<f64>,
+    #[serde(default)]
+    pub officer_title: Option<OfficerTitle>,
+    #[serde(default)]
+    pub is_incorporator: Option<bool>,
+}
+
+#[derive(Serialize)]
+pub struct AddFounderResponse {
+    pub entity_id: EntityId,
+    pub member_count: usize,
+    pub members: Vec<FounderSummary>,
+}
+
+#[derive(Serialize)]
+pub struct FounderSummary {
+    pub name: String,
+    pub email: Option<String>,
+    pub role: Option<MemberRole>,
+    pub ownership_pct: Option<f64>,
 }
 
 fn build_formation_gates_response(entity: &Entity, filing: &Filing) -> FormationGatesResponse {
@@ -1603,6 +1656,130 @@ async fn dissolve_entity(
     })))
 }
 
+// ── Staged formation handlers ────────────────────────────────────────
+
+async fn create_pending_formation(
+    RequireFormationCreate(auth): RequireFormationCreate,
+    State(state): State<AppState>,
+    Json(req): Json<CreatePendingFormationRequest>,
+) -> Result<Json<PendingFormationResponse>, AppError> {
+    let workspace_id = auth.workspace_id();
+    let entity_type = req.entity_type;
+    let jurisdiction = req.jurisdiction.unwrap_or_else(|| {
+        let j = match entity_type {
+            EntityType::Llc => "US-WY",
+            EntityType::Corporation => "US-DE",
+        };
+        Jurisdiction::new(j).unwrap()
+    });
+
+    let entity = tokio::task::spawn_blocking({
+        let layout = state.layout.clone();
+        let legal_name = req.legal_name;
+        let jurisdiction = jurisdiction.clone();
+        move || {
+            service::create_pending_entity(
+                &layout,
+                workspace_id,
+                legal_name,
+                entity_type,
+                jurisdiction,
+            )
+        }
+    })
+    .await
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+
+    Ok(Json(PendingFormationResponse {
+        entity_id: entity.entity_id(),
+        legal_name: entity.legal_name().to_owned(),
+        entity_type: entity.entity_type(),
+        jurisdiction: entity.jurisdiction().clone(),
+        formation_status: entity.formation_status(),
+    }))
+}
+
+async fn add_founder(
+    RequireFormationCreate(auth): RequireFormationCreate,
+    State(state): State<AppState>,
+    Path(entity_id): Path<EntityId>,
+    Json(req): Json<AddFounderRequest>,
+) -> Result<Json<AddFounderResponse>, AppError> {
+    let workspace_id = auth.workspace_id();
+
+    let member = MemberInput {
+        name: req.name,
+        investor_type: InvestorType::NaturalPerson,
+        email: req.email,
+        agent_id: None,
+        entity_id: None,
+        ownership_pct: req.ownership_pct,
+        membership_units: None,
+        share_count: None,
+        share_class: None,
+        role: req.role,
+        address: None,
+        officer_title: req.officer_title,
+        shares_purchased: None,
+        vesting: None,
+        ip_description: None,
+        is_incorporator: req.is_incorporator,
+    };
+
+    let members = tokio::task::spawn_blocking({
+        let layout = state.layout.clone();
+        move || service::add_pending_member(&layout, workspace_id, entity_id, member)
+    })
+    .await
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+
+    let summaries: Vec<FounderSummary> = members
+        .iter()
+        .map(|m| FounderSummary {
+            name: m.name.clone(),
+            email: m.email.clone(),
+            role: m.role,
+            ownership_pct: m.ownership_pct,
+        })
+        .collect();
+
+    Ok(Json(AddFounderResponse {
+        entity_id,
+        member_count: summaries.len(),
+        members: summaries,
+    }))
+}
+
+async fn finalize_pending_formation(
+    RequireFormationCreate(auth): RequireFormationCreate,
+    State(state): State<AppState>,
+    Path(entity_id): Path<EntityId>,
+) -> Result<Json<FormationWithCapTableResponse>, AppError> {
+    let workspace_id = auth.workspace_id();
+
+    let result = tokio::task::spawn_blocking({
+        let layout = state.layout.clone();
+        move || service::finalize_formation(&layout, workspace_id, entity_id, None, None)
+    })
+    .await
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+
+    let (formation, cap_table) = result;
+    let formation_status = formation.entity.formation_status();
+    let next_action = service::next_formation_action(formation_status).map(String::from);
+
+    Ok(Json(FormationWithCapTableResponse {
+        formation_id: entity_id,
+        entity_id,
+        formation_status,
+        document_ids: formation.document_ids,
+        next_action,
+        legal_entity_id: Some(cap_table.legal_entity_id),
+        instrument_id: Some(cap_table.instrument_id),
+        holders: cap_table.holders,
+    }))
+}
+
 // ── Router ──────────────────────────────────────────────────────────────
 
 pub fn formation_routes() -> Router<AppState> {
@@ -1611,6 +1788,16 @@ pub fn formation_routes() -> Router<AppState> {
         .route(
             "/v1/formations/with-cap-table",
             post(create_formation_with_cap_table),
+        )
+        // Staged formation flow
+        .route("/v1/formations/pending", post(create_pending_formation))
+        .route(
+            "/v1/formations/{entity_id}/founders",
+            post(add_founder),
+        )
+        .route(
+            "/v1/formations/{entity_id}/finalize",
+            post(finalize_pending_formation),
         )
         .route("/v1/formations/{entity_id}", get(get_formation))
         .route("/v1/formations/{entity_id}/documents", get(list_documents))

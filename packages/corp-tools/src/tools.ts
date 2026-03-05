@@ -31,6 +31,44 @@ const TOOL_HANDLERS: Record<string, ToolHandler> = {
     return { status, plans };
   },
 
+  create_entity: async (args, client) => {
+    const entityType = args.entity_type as string;
+    let jurisdiction = (args.jurisdiction as string) || "";
+    if (!jurisdiction || jurisdiction.length === 2) {
+      jurisdiction = entityType === "llc" ? "US-WY" : "US-DE";
+    }
+    return client.createPendingEntity({
+      entity_type: entityType,
+      legal_name: args.entity_name,
+      jurisdiction,
+    });
+  },
+
+  add_founder: async (args, client) => {
+    const entityId = requiredString(args, "entity_id");
+    let ownershipPct = args.ownership_pct as number | undefined;
+    if (typeof ownershipPct === "number" && ownershipPct > 1) {
+      ownershipPct = ownershipPct / 100;
+    }
+    return client.addFounder(entityId, {
+      name: args.name,
+      email: args.email,
+      role: args.role,
+      ownership_pct: ownershipPct,
+      officer_title: args.officer_title,
+      is_incorporator: args.is_incorporator,
+    });
+  },
+
+  finalize_formation: async (args, client, ctx) => {
+    const entityId = requiredString(args, "entity_id");
+    const result = await client.finalizeFormation(entityId);
+    if (entityId && ctx.onEntityFormed) {
+      ctx.onEntityFormed(entityId);
+    }
+    return result;
+  },
+
   form_entity: async (args, client, ctx) => {
     const entityType = args.entity_type as string;
     let jurisdiction = (args.jurisdiction as string) || "";

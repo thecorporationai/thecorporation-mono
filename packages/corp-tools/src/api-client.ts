@@ -244,6 +244,9 @@ export class CorpAPIClient {
   getFormationDocuments(id: string) { return this.get(`/v1/formations/${id}/documents`) as Promise<ApiRecord[]>; }
   createFormation(data: ApiRecord) { return this.post("/v1/formations", data) as Promise<ApiRecord>; }
   createFormationWithCapTable(data: ApiRecord) { return this.post("/v1/formations/with-cap-table", data) as Promise<ApiRecord>; }
+  createPendingEntity(data: ApiRecord) { return this.post("/v1/formations/pending", data) as Promise<ApiRecord>; }
+  addFounder(entityId: string, data: ApiRecord) { return this.post(`/v1/formations/${entityId}/founders`, data) as Promise<ApiRecord>; }
+  finalizeFormation(entityId: string) { return this.post(`/v1/formations/${entityId}/finalize`, {}) as Promise<ApiRecord>; }
 
   // --- Human obligations ---
   getHumanObligations() { return this.get(`/v1/workspaces/${this.workspaceId}/human-obligations`) as Promise<ApiRecord[]>; }

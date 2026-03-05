@@ -541,7 +541,7 @@ approvalsCmd.command("reject <approval-id>").option("--message <msg>", "Optional
   });
 
 // --- form ---
-program
+const formCmd = program
   .command("form")
   .description("Form a new entity with founders and cap table (Cooley-style)")
   .option("--type <type>", "Entity type (llc, c_corp)")
@@ -556,6 +556,33 @@ program
   .action(async (opts) => {
     const { formCommand } = await import("./commands/form.js");
     await formCommand(opts);
+  });
+formCmd.command("create")
+  .description("Create a pending entity (staged flow step 1)")
+  .requiredOption("--type <type>", "Entity type (llc, c_corp)")
+  .requiredOption("--name <name>", "Legal name")
+  .option("--jurisdiction <jurisdiction>", "Jurisdiction (e.g. US-DE, US-WY)")
+  .action(async (opts) => {
+    const { formCreateCommand } = await import("./commands/form.js");
+    await formCreateCommand(opts);
+  });
+formCmd.command("add-founder <entity-id>")
+  .description("Add a founder to a pending entity (staged flow step 2)")
+  .requiredOption("--name <name>", "Founder name")
+  .requiredOption("--email <email>", "Founder email")
+  .requiredOption("--role <role>", "Role: director|officer|manager|member|chair")
+  .requiredOption("--pct <pct>", "Ownership percentage")
+  .option("--officer-title <title>", "Officer title (corporations only)")
+  .option("--incorporator", "Mark as sole incorporator (corporations only)")
+  .action(async (entityId: string, opts) => {
+    const { formAddFounderCommand } = await import("./commands/form.js");
+    await formAddFounderCommand(entityId, opts);
+  });
+formCmd.command("finalize <entity-id>")
+  .description("Finalize formation and generate documents + cap table (staged flow step 3)")
+  .action(async (entityId: string) => {
+    const { formFinalizeCommand } = await import("./commands/form.js");
+    await formFinalizeCommand(entityId);
   });
 
 // --- api-keys ---

@@ -124,7 +124,7 @@ export const GENERATED_TOOL_DEFINITIONS: Record<string, unknown>[] = [
     "type": "function",
     "function": {
       "name": "form_entity",
-      "description": "Form a new business entity (LLC or corporation) and initialize its cap table with founding members",
+      "description": "Form a new business entity (LLC or corporation) and initialize its cap table with founding members. Prefer the staged flow: create_entity + add_founder + finalize_formation.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -258,6 +258,92 @@ export const GENERATED_TOOL_DEFINITIONS: Record<string, unknown>[] = [
           "jurisdiction",
           "members"
         ]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "create_entity",
+      "description": "Create a new pending entity (step 1 of staged formation). Returns an entity_id to use with add_founder and finalize_formation.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "entity_type": {
+            "type": "string",
+            "enum": ["llc", "corporation"],
+            "description": "Type of entity to form"
+          },
+          "entity_name": {
+            "type": "string",
+            "description": "Legal name of the entity"
+          },
+          "jurisdiction": {
+            "type": "string",
+            "description": "Jurisdiction (e.g. US-DE, US-WY). Defaults to US-WY for LLC, US-DE for corporation."
+          }
+        },
+        "required": ["entity_type", "entity_name"]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "add_founder",
+      "description": "Add a founder to a pending entity (step 2 of staged formation). Can be called multiple times.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "entity_id": {
+            "type": "string",
+            "description": "The entity ID returned from create_entity"
+          },
+          "name": {
+            "type": "string",
+            "description": "Full legal name of the founder"
+          },
+          "email": {
+            "type": "string",
+            "description": "Email address of the founder"
+          },
+          "role": {
+            "type": "string",
+            "enum": ["director", "officer", "manager", "member", "chair"],
+            "description": "Role in the entity"
+          },
+          "ownership_pct": {
+            "type": "number",
+            "description": "Ownership percentage (e.g. 50 for 50%)"
+          },
+          "officer_title": {
+            "type": "string",
+            "enum": ["ceo", "cfo", "secretary", "president", "vp", "other"],
+            "description": "Officer title (corporations only)"
+          },
+          "is_incorporator": {
+            "type": "boolean",
+            "description": "Whether this founder is the incorporator (corporations only)"
+          }
+        },
+        "required": ["entity_id", "name", "email", "role", "ownership_pct"]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "finalize_formation",
+      "description": "Finalize entity formation (step 3 of staged formation). Generates formation documents and initializes the cap table.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "entity_id": {
+            "type": "string",
+            "description": "The entity ID to finalize"
+          }
+        },
+        "required": ["entity_id"]
       }
     }
   },

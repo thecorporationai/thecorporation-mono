@@ -386,7 +386,7 @@ export async function formCommand(opts: FormOptions): Promise<void> {
       });
       for (const h of holders) {
         const pct = typeof h.ownership_pct === "number" ? `${h.ownership_pct.toFixed(1)}%` : "—";
-        table.push([h.name ?? "?", h.shares ?? 0, pct]);
+        table.push([String(h.name ?? "?"), String(h.shares ?? 0), pct]);
       }
       console.log(chalk.bold("  Cap Table:"));
       console.log(table.toString());
@@ -398,6 +398,114 @@ export async function formCommand(opts: FormOptions): Promise<void> {
   } catch (err) {
     if (err instanceof Error && err.message.includes("exit")) throw err;
     printError(`Failed to create formation: ${err}`);
+    process.exit(1);
+  }
+}
+
+// ── Staged Formation Subcommands ─────────────────────────────
+
+interface FormCreateOptions {
+  type: string;
+  name: string;
+  jurisdiction?: string;
+}
+
+export async function formCreateCommand(opts: FormCreateOptions): Promise<void> {
+  const cfg = requireConfig("api_url", "api_key", "workspace_id");
+  const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
+
+  try {
+    const entityType = opts.type === "c_corp" || opts.type === "corporation" ? "corporation" : "llc";
+    const payload: ApiRecord = {
+      entity_type: entityType,
+      legal_name: opts.name,
+    };
+    if (opts.jurisdiction) payload.jurisdiction = opts.jurisdiction;
+
+    const result = await client.createPendingEntity(payload);
+    printSuccess(`Pending entity created: ${result.entity_id}`);
+    console.log(`  Name: ${result.legal_name}`);
+    console.log(`  Type: ${result.entity_type}`);
+    console.log(`  Jurisdiction: ${result.jurisdiction}`);
+    console.log(`  Status: ${result.formation_status}`);
+    console.log(chalk.yellow(`\n  Next: corp form add-founder ${result.entity_id} --name "..." --email "..." --role member --pct 50`));
+  } catch (err) {
+    printError(`Failed to create pending entity: ${err}`);
+    process.exit(1);
+  }
+}
+
+interface FormAddFounderOptions {
+  name: string;
+  email: string;
+  role: string;
+  pct: string;
+  officerTitle?: string;
+  incorporator?: boolean;
+}
+
+export async function formAddFounderCommand(entityId: string, opts: FormAddFounderOptions): Promise<void> {
+  const cfg = requireConfig("api_url", "api_key", "workspace_id");
+  const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
+
+  try {
+    const payload: ApiRecord = {
+      name: opts.name,
+      email: opts.email,
+      role: opts.role,
+      ownership_pct: parseFloat(opts.pct),
+    };
+    if (opts.officerTitle) payload.officer_title = opts.officerTitle;
+    if (opts.incorporator) payload.is_incorporator = true;
+
+    const result = await client.addFounder(entityId, payload);
+    printSuccess(`Founder added (${result.member_count} total)`);
+    const members = (result.members ?? []) as ApiRecord[];
+    for (const m of members) {
+      const pct = typeof m.ownership_pct === "number" ? ` (${m.ownership_pct}%)` : "";
+      console.log(`  - ${m.name} <${m.email ?? "no email"}> [${m.role ?? "member"}]${pct}`);
+    }
+    console.log(chalk.yellow(`\n  Next: add more founders or run: corp form finalize ${entityId}`));
+  } catch (err) {
+    printError(`Failed to add founder: ${err}`);
+    process.exit(1);
+  }
+}
+
+export async function formFinalizeCommand(entityId: string): Promise<void> {
+  const cfg = requireConfig("api_url", "api_key", "workspace_id");
+  const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
+
+  try {
+    const result = await client.finalizeFormation(entityId);
+    printSuccess(`Formation finalized: ${result.entity_id}`);
+    if (result.legal_entity_id) console.log(`  Legal Entity ID: ${result.legal_entity_id}`);
+    if (result.instrument_id) console.log(`  Instrument ID: ${result.instrument_id}`);
+
+    const docIds = (result.document_ids ?? []) as string[];
+    if (docIds.length > 0) {
+      console.log(`  Documents: ${docIds.length} generated`);
+    }
+
+    const holders = (result.holders ?? []) as ApiRecord[];
+    if (holders.length > 0) {
+      console.log();
+      const table = new Table({
+        head: [chalk.dim("Holder"), chalk.dim("Shares"), chalk.dim("Ownership %")],
+      });
+      for (const h of holders) {
+        const pct = typeof h.ownership_pct === "number" ? `${h.ownership_pct.toFixed(1)}%` : "—";
+        table.push([String(h.name ?? "?"), String(h.shares ?? 0), pct]);
+      }
+      console.log(chalk.bold("  Cap Table:"));
+      console.log(table.toString());
+    }
+
+    if (result.next_action) {
+      console.log(chalk.yellow(`\n  Next: ${result.next_action}`));
+    }
+  } catch (err) {
+    printError(`Failed to finalize formation: ${err}`);
     process.exit(1);
   }
 }

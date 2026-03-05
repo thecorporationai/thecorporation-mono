@@ -14,6 +14,9 @@ export function describeToolCall(name: string, args: Record<string, unknown>): s
   a.payment_method ??= "ach";
 
   const fmts: Record<string, string> = {
+    create_entity: 'Create pending {entity_type} named "{entity_name}"',
+    add_founder: 'Add founder "{name}" ({role}, {ownership_pct}%)',
+    finalize_formation: "Finalize formation and generate documents + cap table",
     form_entity: 'Form a new {entity_type} named "{entity_name}" in {jurisdiction}',
     convert_entity: "Convert entity to {new_entity_type}",
     dissolve_entity: "Dissolve entity — {dissolution_reason}",
