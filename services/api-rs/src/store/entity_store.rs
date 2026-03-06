@@ -290,6 +290,10 @@ impl<'a> EntityStore<'a> {
         let mut ids = Vec::new();
         for (name, is_dir) in entries {
             if is_dir {
+                // Support subdirectory-based storage (e.g. meetings/{id}/meeting.json)
+                if let Ok(id) = name.parse() {
+                    ids.push(id);
+                }
                 continue;
             }
             if let Some(uuid_str) = name.strip_suffix(".json") {

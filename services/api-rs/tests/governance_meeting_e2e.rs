@@ -58,6 +58,7 @@ fn build_app(tmp: &TempDir) -> Router {
         .merge(api_rs::routes::formation::formation_routes())
         .merge(api_rs::routes::execution::execution_routes())
         .merge(api_rs::routes::governance::governance_routes())
+        .merge(api_rs::routes::contacts::contacts_routes())
         .with_state(state)
 }
 
@@ -129,10 +130,85 @@ async fn create_entity(app: &Router) -> (String, String) {
     )
     .await;
     assert_eq!(status, StatusCode::OK, "create entity failed: {body}");
-    (
-        body["entity_id"].as_str().expect("entity_id").to_owned(),
-        token,
+    let entity_id = body["entity_id"].as_str().expect("entity_id").to_owned();
+
+    // Create contacts for board members
+    let (status, c1) = post_json(
+        app,
+        "/v1/contacts",
+        json!({
+            "entity_id": entity_id,
+            "contact_type": "individual",
+            "name": "Alice Director",
+            "category": "board_member",
+        }),
+        &token,
     )
+    .await;
+    assert_eq!(status, StatusCode::OK, "create contact 1 failed: {c1}");
+    let contact_id_1 = c1["contact_id"].as_str().expect("contact_id").to_owned();
+
+    let (status, c2) = post_json(
+        app,
+        "/v1/contacts",
+        json!({
+            "entity_id": entity_id,
+            "contact_type": "individual",
+            "name": "Bob Director",
+            "category": "board_member",
+        }),
+        &token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "create contact 2 failed: {c2}");
+    let contact_id_2 = c2["contact_id"].as_str().expect("contact_id").to_owned();
+
+    // Create governance body (board of directors)
+    let (status, gb) = post_json(
+        app,
+        "/v1/governance-bodies",
+        json!({
+            "entity_id": entity_id,
+            "body_type": "board_of_directors",
+            "name": "Board of Directors",
+            "quorum_rule": "majority",
+            "voting_method": "per_capita",
+        }),
+        &token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "create governance body failed: {gb}");
+    let body_id = gb["body_id"].as_str().expect("body_id").to_owned();
+
+    // Create seats
+    let e_query = format!("entity_id={entity_id}");
+    let (status, _s1) = post_json(
+        app,
+        &format!("/v1/governance-bodies/{body_id}/seats?{e_query}"),
+        json!({
+            "holder_id": contact_id_1,
+            "role": "chair",
+            "voting_power": 1,
+        }),
+        &token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "create seat 1 failed: {_s1}");
+
+    let (status, _s2) = post_json(
+        app,
+        &format!("/v1/governance-bodies/{body_id}/seats?{e_query}"),
+        json!({
+            "holder_id": contact_id_2,
+            "role": "member",
+            "voting_power": 1,
+        }),
+        &token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "create seat 2 failed: {_s2}");
+
+    (entity_id, token)
 }
 
 /// Helper: get governance bodies and seats for an entity
@@ -159,7 +235,7 @@ async fn get_governance_info(
     // Get seats
     let (status, seats) = get_json(
         app,
-        &format!("/v1/governance-bodies/{body_id}/seats"),
+        &format!("/v1/governance-bodies/{body_id}/seats?entity_id={entity_id}"),
         token,
     )
     .await;
@@ -191,7 +267,7 @@ async fn board_meeting_full_lifecycle() {
         json!({
             "entity_id": entity_id,
             "body_id": body_id,
-            "meeting_type": "BoardMeeting",
+            "meeting_type": "board_meeting",
             "title": "Q1 Board Meeting",
             "agenda_item_titles": ["Approve budget", "Elect officers"]
         }),
@@ -199,7 +275,7 @@ async fn board_meeting_full_lifecycle() {
     )
     .await;
     assert_eq!(status, StatusCode::OK, "schedule meeting failed: {meeting}");
-    assert_eq!(meeting["status"], "Draft");
+    assert_eq!(meeting["status"], "draft");
     let meeting_id = meeting["meeting_id"].as_str().expect("meeting_id");
     let agenda_item_ids: Vec<String> = meeting["agenda_item_ids"]
         .as_array()
@@ -218,7 +294,7 @@ async fn board_meeting_full_lifecycle() {
     )
     .await;
     assert_eq!(status, StatusCode::OK, "send notice failed: {noticed}");
-    assert_eq!(noticed["status"], "Noticed");
+    assert_eq!(noticed["status"], "noticed");
 
     // 3. Convene with all seats present
     let (status, convened) = post_json(
@@ -229,8 +305,8 @@ async fn board_meeting_full_lifecycle() {
     )
     .await;
     assert_eq!(status, StatusCode::OK, "convene failed: {convened}");
-    assert_eq!(convened["status"], "Convened");
-    assert_eq!(convened["quorum_met"], "Met");
+    assert_eq!(convened["status"], "convened");
+    assert_eq!(convened["quorum_met"], "met");
 
     // 4. List agenda items
     let (status, items) = get_json(
@@ -253,7 +329,7 @@ async fn board_meeting_full_lifecycle() {
             ),
             json!({
                 "voter_id": holder_id,
-                "vote_value": "For"
+                "vote_value": "for"
             }),
             &token,
         )
@@ -282,12 +358,12 @@ async fn board_meeting_full_lifecycle() {
             "/v1/meetings/{meeting_id}/agenda-items/{}/finalize?entity_id={entity_id}",
             agenda_item_ids[0]
         ),
-        json!({ "entity_id": entity_id, "status": "Voted" }),
+        json!({ "entity_id": entity_id, "status": "voted" }),
         &token,
     )
     .await;
     assert_eq!(status, StatusCode::OK, "finalize item 1 failed: {finalized}");
-    assert_eq!(finalized["status"], "Voted");
+    assert_eq!(finalized["status"], "voted");
 
     // 8. Finalize item 2 as Tabled
     let (status, tabled) = post_json(
@@ -296,12 +372,12 @@ async fn board_meeting_full_lifecycle() {
             "/v1/meetings/{meeting_id}/agenda-items/{}/finalize?entity_id={entity_id}",
             agenda_item_ids[1]
         ),
-        json!({ "entity_id": entity_id, "status": "Tabled" }),
+        json!({ "entity_id": entity_id, "status": "tabled" }),
         &token,
     )
     .await;
     assert_eq!(status, StatusCode::OK, "finalize item 2 failed: {tabled}");
-    assert_eq!(tabled["status"], "Tabled");
+    assert_eq!(tabled["status"], "tabled");
 
     // 9. Adjourn meeting
     let (status, adjourned) = post_json(
@@ -312,7 +388,7 @@ async fn board_meeting_full_lifecycle() {
     )
     .await;
     assert_eq!(status, StatusCode::OK, "adjourn failed: {adjourned}");
-    assert_eq!(adjourned["status"], "Adjourned");
+    assert_eq!(adjourned["status"], "adjourned");
 
     // 10. Verify resolutions
     let (status, resolutions) = get_json(
@@ -332,7 +408,7 @@ async fn written_consent_lifecycle() {
     let tmp = TempDir::new().expect("temp dir");
     let app = build_app(&tmp);
     let (entity_id, token) = create_entity(&app).await;
-    let (body_id, _seat_ids, holder_ids) = get_governance_info(&app, &entity_id, &token).await;
+    let (body_id, _seat_ids, _holder_ids) = get_governance_info(&app, &entity_id, &token).await;
 
     // 1. Create written consent
     let (status, consent) = post_json(
@@ -349,42 +425,10 @@ async fn written_consent_lifecycle() {
     .await;
     assert_eq!(status, StatusCode::OK, "written consent failed: {consent}");
     let meeting_id = consent["meeting_id"].as_str().expect("meeting_id");
-    // Written consent creates meeting in Draft status
-    assert_eq!(consent["status"], "Draft");
+    // Written consent starts in Convened status (no physical meeting required)
+    assert_eq!(consent["status"], "convened");
 
-    // 2. Send notice and convene (written consent still needs notice+convene steps)
-    let (status, noticed) = post_json(
-        &app,
-        &format!("/v1/meetings/{meeting_id}/notice?entity_id={entity_id}"),
-        json!({}),
-        &token,
-    )
-    .await;
-    assert_eq!(status, StatusCode::OK, "notice failed: {noticed}");
-
-    // Need to get seats to convene
-    let (_, seat_ids, _) = get_governance_info(&app, &entity_id, &token).await;
-    let (status, convened) = post_json(
-        &app,
-        &format!("/v1/meetings/{meeting_id}/convene?entity_id={entity_id}"),
-        json!({ "present_seat_ids": seat_ids }),
-        &token,
-    )
-    .await;
-    assert_eq!(status, StatusCode::OK, "convene failed: {convened}");
-
-    // 3. Schedule an agenda item (schedule a new meeting with agenda to get item ids)
-    // Actually, written_consent doesn't create agenda items, so we need to list them
-    let (status, items) = get_json(
-        &app,
-        &format!("/v1/meetings/{meeting_id}/agenda-items?entity_id={entity_id}"),
-        &token,
-    )
-    .await;
-    assert_eq!(status, StatusCode::OK, "list items: {items}");
-    // Written consent may have 0 agenda items; that's fine — the lifecycle still works
-
-    // 4. Adjourn
+    // 2. Adjourn (written consent skips notice/convene steps)
     let (status, adjourned) = post_json(
         &app,
         &format!("/v1/meetings/{meeting_id}/adjourn?entity_id={entity_id}"),
@@ -393,7 +437,7 @@ async fn written_consent_lifecycle() {
     )
     .await;
     assert_eq!(status, StatusCode::OK, "adjourn failed: {adjourned}");
-    assert_eq!(adjourned["status"], "Adjourned");
+    assert_eq!(adjourned["status"], "adjourned");
 }
 
 #[tokio::test]
@@ -410,7 +454,7 @@ async fn cancel_meeting_test() {
         json!({
             "entity_id": entity_id,
             "body_id": body_id,
-            "meeting_type": "BoardMeeting",
+            "meeting_type": "board_meeting",
             "title": "Meeting to cancel",
             "agenda_item_titles": ["Item 1"]
         }),
@@ -419,7 +463,7 @@ async fn cancel_meeting_test() {
     .await;
     assert_eq!(status, StatusCode::OK, "schedule failed: {meeting}");
     let meeting_id = meeting["meeting_id"].as_str().expect("meeting_id");
-    assert_eq!(meeting["status"], "Draft");
+    assert_eq!(meeting["status"], "draft");
 
     // 2. Cancel meeting
     let (status, cancelled) = post_json(
@@ -430,7 +474,7 @@ async fn cancel_meeting_test() {
     )
     .await;
     assert_eq!(status, StatusCode::OK, "cancel failed: {cancelled}");
-    assert_eq!(cancelled["status"], "Cancelled");
+    assert_eq!(cancelled["status"], "cancelled");
 
     // 3. Try to convene — should fail
     let (status, err) = post_json(
@@ -461,7 +505,7 @@ async fn voting_requires_quorum() {
         json!({
             "entity_id": entity_id,
             "body_id": body_id,
-            "meeting_type": "BoardMeeting",
+            "meeting_type": "board_meeting",
             "title": "No quorum meeting",
             "agenda_item_titles": ["Test item"]
         }),
@@ -496,7 +540,7 @@ async fn voting_requires_quorum() {
     )
     .await;
     assert_eq!(status, StatusCode::OK, "convene failed: {convened}");
-    assert_eq!(convened["quorum_met"], "NotMet");
+    assert_eq!(convened["quorum_met"], "not_met");
 
     // Try to cast a vote — should fail because quorum not met
     let (status, err) = post_json(
@@ -507,7 +551,7 @@ async fn voting_requires_quorum() {
         ),
         json!({
             "voter_id": holder_ids[0],
-            "vote_value": "For"
+            "vote_value": "for"
         }),
         &token,
     )

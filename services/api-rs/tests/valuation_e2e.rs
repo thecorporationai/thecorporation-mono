@@ -58,6 +58,7 @@ fn build_app(tmp: &TempDir) -> Router {
         .merge(api_rs::routes::formation::formation_routes())
         .merge(api_rs::routes::execution::execution_routes())
         .merge(api_rs::routes::governance::governance_routes())
+        .merge(api_rs::routes::contacts::contacts_routes())
         .merge(api_rs::routes::equity::equity_routes())
         .with_state(state)
 }
@@ -130,10 +131,85 @@ async fn create_entity(app: &Router) -> (String, String) {
     )
     .await;
     assert_eq!(status, StatusCode::OK, "create entity failed: {body}");
-    (
-        body["entity_id"].as_str().expect("entity_id").to_owned(),
-        token,
+    let entity_id = body["entity_id"].as_str().expect("entity_id").to_owned();
+
+    // Create contacts for board members
+    let (status, c1) = post_json(
+        app,
+        "/v1/contacts",
+        json!({
+            "entity_id": entity_id,
+            "contact_type": "individual",
+            "name": "Alice Director",
+            "category": "board_member",
+        }),
+        &token,
     )
+    .await;
+    assert_eq!(status, StatusCode::OK, "create contact 1 failed: {c1}");
+    let contact_id_1 = c1["contact_id"].as_str().expect("contact_id").to_owned();
+
+    let (status, c2) = post_json(
+        app,
+        "/v1/contacts",
+        json!({
+            "entity_id": entity_id,
+            "contact_type": "individual",
+            "name": "Bob Director",
+            "category": "board_member",
+        }),
+        &token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "create contact 2 failed: {c2}");
+    let contact_id_2 = c2["contact_id"].as_str().expect("contact_id").to_owned();
+
+    // Create governance body (board of directors)
+    let (status, gb) = post_json(
+        app,
+        "/v1/governance-bodies",
+        json!({
+            "entity_id": entity_id,
+            "body_type": "board_of_directors",
+            "name": "Board of Directors",
+            "quorum_rule": "majority",
+            "voting_method": "per_capita",
+        }),
+        &token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "create governance body failed: {gb}");
+    let body_id = gb["body_id"].as_str().expect("body_id").to_owned();
+
+    // Create seats
+    let e_query = format!("entity_id={entity_id}");
+    let (status, _s1) = post_json(
+        app,
+        &format!("/v1/governance-bodies/{body_id}/seats?{e_query}"),
+        json!({
+            "holder_id": contact_id_1,
+            "role": "chair",
+            "voting_power": 1,
+        }),
+        &token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "create seat 1 failed: {_s1}");
+
+    let (status, _s2) = post_json(
+        app,
+        &format!("/v1/governance-bodies/{body_id}/seats?{e_query}"),
+        json!({
+            "holder_id": contact_id_2,
+            "role": "member",
+            "voting_power": 1,
+        }),
+        &token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "create seat 2 failed: {_s2}");
+
+    (entity_id, token)
 }
 
 /// Helper: get governance bodies and seats for an entity
@@ -158,7 +234,7 @@ async fn get_governance_info(
 
     let (status, seats) = get_json(
         app,
-        &format!("/v1/governance-bodies/{body_id}/seats"),
+        &format!("/v1/governance-bodies/{body_id}/seats?entity_id={entity_id}"),
         token,
     )
     .await;
@@ -213,7 +289,7 @@ async fn run_board_approval(
             &format!(
                 "/v1/meetings/{meeting_id}/agenda-items/{agenda_item_id}/vote?entity_id={entity_id}"
             ),
-            json!({ "voter_id": holder_id, "vote_value": "For" }),
+            json!({ "voter_id": holder_id, "vote_value": "for" }),
             token,
         )
         .await;
@@ -243,7 +319,7 @@ async fn run_board_approval(
         &format!(
             "/v1/meetings/{meeting_id}/agenda-items/{agenda_item_id}/finalize?entity_id={entity_id}"
         ),
-        json!({ "entity_id": entity_id, "status": "Voted" }),
+        json!({ "entity_id": entity_id, "status": "voted" }),
         token,
     )
     .await;
@@ -351,7 +427,7 @@ async fn submit_adds_to_existing_meeting() {
         json!({
             "entity_id": entity_id,
             "body_id": body_id,
-            "meeting_type": "BoardMeeting",
+            "meeting_type": "board_meeting",
             "title": "Q1 Board Meeting",
             "agenda_item_titles": ["Approve budget"]
         }),
