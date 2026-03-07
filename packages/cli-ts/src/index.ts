@@ -163,7 +163,7 @@ contactsCmd
   .requiredOption("--name <name>", "Contact name")
   .requiredOption("--email <email>", "Contact email")
   .option("--type <type>", "Contact type (individual, organization)", "individual")
-  .option("--category <category>", "Category (employee, contractor, board_member, investor, law_firm, valuation_firm, accounting_firm, officer, advisor)")
+  .option("--category <category>", "Category (employee, contractor, board_member, investor, law_firm, valuation_firm, accounting_firm, officer, founder, member, other)")
   .option("--phone <phone>", "Phone number")
   .option("--notes <notes>", "Notes")
   .description("Add a new contact")
@@ -218,7 +218,7 @@ capTableCmd.command("409a").description("Current 409A valuation").action(async (
 });
 capTableCmd
   .command("issue-equity")
-  .requiredOption("--grant-type <type>", "Grant type (e.g. founder, advisor, employee, investor)")
+  .requiredOption("--grant-type <type>", "Grant type (common, preferred, membership_unit, stock_option, iso, nso, rsa)")
   .requiredOption("--shares <n>", "Number of shares", parseInt)
   .requiredOption("--recipient <name>", "Recipient name")
   .option("--email <email>", "Recipient email (auto-creates contact if needed)")
@@ -434,7 +434,7 @@ governanceCmd
 governanceCmd
   .command("add-seat <body-id>")
   .requiredOption("--holder <contact-id>", "Contact ID for the seat holder")
-  .option("--title <title>", "Seat title (e.g. 'Director', 'Member')")
+  .option("--role <role>", "Seat role (chair, member, officer, observer)", "member")
   .description("Add a seat to a governance body")
   .action(async (bodyId: string, opts) => {
     const { governanceAddSeatCommand } = await import("./commands/governance.js");

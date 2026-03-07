@@ -25,13 +25,12 @@ export async function governanceCreateBodyCommand(opts: {
 }
 
 export async function governanceAddSeatCommand(bodyId: string, opts: {
-  holder: string; title?: string;
+  holder: string; role?: string;
 }): Promise<void> {
   const cfg = requireConfig("api_url", "api_key", "workspace_id");
   const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
   try {
-    const data: Record<string, unknown> = { holder_id: opts.holder };
-    if (opts.title) data.title = opts.title;
+    const data: Record<string, unknown> = { holder_id: opts.holder, role: opts.role ?? "member" };
     const result = await client.createGovernanceSeat(bodyId, data);
     printSuccess(`Seat added: ${result.seat_id ?? "OK"}`);
     printJson(result);
