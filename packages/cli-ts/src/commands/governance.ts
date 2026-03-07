@@ -50,33 +50,36 @@ export async function governanceListCommand(opts: { entityId?: string; json?: bo
   } catch (err) { printError(`Failed to fetch governance bodies: ${err}`); process.exit(1); }
 }
 
-export async function governanceSeatsCommand(bodyId: string, opts: { json?: boolean }): Promise<void> {
+export async function governanceSeatsCommand(bodyId: string, opts: { entityId?: string; json?: boolean }): Promise<void> {
   const cfg = requireConfig("api_url", "api_key", "workspace_id");
+  const eid = resolveEntityId(cfg, opts.entityId);
   const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
   try {
-    const seats = await client.getGovernanceSeats(bodyId);
+    const seats = await client.getGovernanceSeats(bodyId, eid);
     if (opts.json) printJson(seats);
     else if (seats.length === 0) console.log("No seats found.");
     else printSeatsTable(seats);
   } catch (err) { printError(`Failed to fetch seats: ${err}`); process.exit(1); }
 }
 
-export async function governanceMeetingsCommand(bodyId: string, opts: { json?: boolean }): Promise<void> {
+export async function governanceMeetingsCommand(bodyId: string, opts: { entityId?: string; json?: boolean }): Promise<void> {
   const cfg = requireConfig("api_url", "api_key", "workspace_id");
+  const eid = resolveEntityId(cfg, opts.entityId);
   const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
   try {
-    const meetings = await client.listMeetings(bodyId);
+    const meetings = await client.listMeetings(bodyId, eid);
     if (opts.json) printJson(meetings);
     else if (meetings.length === 0) console.log("No meetings found.");
     else printMeetingsTable(meetings);
   } catch (err) { printError(`Failed to fetch meetings: ${err}`); process.exit(1); }
 }
 
-export async function governanceResolutionsCommand(meetingId: string, opts: { json?: boolean }): Promise<void> {
+export async function governanceResolutionsCommand(meetingId: string, opts: { entityId?: string; json?: boolean }): Promise<void> {
   const cfg = requireConfig("api_url", "api_key", "workspace_id");
+  const eid = resolveEntityId(cfg, opts.entityId);
   const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
   try {
-    const resolutions = await client.getMeetingResolutions(meetingId);
+    const resolutions = await client.getMeetingResolutions(meetingId, eid);
     if (opts.json) printJson(resolutions);
     else if (resolutions.length === 0) console.log("No resolutions found.");
     else printResolutionsTable(resolutions);

@@ -479,8 +479,8 @@ governanceCmd
   });
 governanceCmd
   .command("vote <meeting-id> <item-id>")
-  .requiredOption("--voter <name>", "Voter name/ID")
-  .requiredOption("--vote <value>", "Vote (yea, nay, abstain)")
+  .requiredOption("--voter <id>", "Voter contact UUID")
+  .requiredOption("--vote <value>", "Vote (for, against, abstain, recusal)")
   .description("Cast a vote on an agenda item")
   .action(async (meetingId: string, itemId: string, opts) => {
     const { governanceVoteCommand } = await import("./commands/governance.js");
@@ -520,7 +520,7 @@ governanceCmd
   });
 governanceCmd
   .command("finalize-item <meeting-id> <item-id>")
-  .requiredOption("--status <status>", "Status: Voted, Discussed, Tabled, or Withdrawn")
+  .requiredOption("--status <status>", "Status: voted, discussed, tabled, or withdrawn")
   .description("Finalize an agenda item")
   .action(async (meetingId: string, itemId: string, opts, cmd) => {
     const parent = cmd.parent!.opts();

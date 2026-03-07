@@ -443,7 +443,7 @@ describe("governance", () => {
 
   it.skipIf(!canRun)("getMeetingResolutions", async () => {
     try {
-      await client.getMeetingResolutions("fake-meeting");
+      await client.getMeetingResolutions("fake-meeting", "fake-entity");
     } catch (e: any) {
       expect(e.message).not.toMatch(/422/);
       expect(e.message).not.toMatch(/500/);

@@ -17,7 +17,7 @@ use crate::auth::{RequireFormationCreate, RequireFormationRead, RequireFormation
 use crate::domain::formation::{
     content::{InvestorType, MemberInput, MemberRole, OfficerTitle},
     contract::{Contract, ContractStatus, ContractTemplateType},
-    document::SignatureRequest,
+    document::{Document, SignatureRequest},
     entity::Entity,
     filing::Filing,
     service,
@@ -1486,6 +1486,30 @@ async fn generate_contract(
                     ))
                 })?;
 
+            // Persist a Document so the contract appears in the documents list.
+            let title = format!(
+                "{:?} — {}",
+                contract.template_type(),
+                contract.counterparty_name()
+            );
+            let doc = Document::new(
+                document_id,
+                entity_id,
+                workspace_id,
+                DocumentType::Contract,
+                title,
+                serde_json::json!({ "contract_id": contract_id.to_string() }),
+                None,
+                None,
+            );
+            store
+                .write_document("main", &doc, &format!("Add document for contract {contract_id}"))
+                .map_err(|e| {
+                    crate::domain::formation::error::FormationError::Validation(format!(
+                        "commit error: {e}"
+                    ))
+                })?;
+
             Ok::<_, crate::domain::formation::error::FormationError>(contract)
         }
     })
@@ -1721,12 +1745,19 @@ async fn preview_document_pdf(
                     Err(_) => GovernanceProfile::default_for_entity(&entity),
                 };
 
+            // Alias: articles_of_incorporation → certificate_of_incorporation
+            let lookup_id = if doc_id == "articles_of_incorporation" {
+                "certificate_of_incorporation".to_string()
+            } else {
+                doc_id.clone()
+            };
+
             // Load AST and find the document definition
             let ast = doc_ast::default_doc_ast();
             let doc_def = ast
                 .documents
                 .iter()
-                .find(|d| d.id == doc_id)
+                .find(|d| d.id == lookup_id)
                 .ok_or_else(|| {
                     AppError::NotFound(format!(
                         "no AST document definition matches id '{doc_id}'"

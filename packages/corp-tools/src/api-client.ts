@@ -213,9 +213,9 @@ export class CorpAPIClient {
 
   // --- Governance ---
   listGovernanceBodies(entityId: string) { return this.get(`/v1/entities/${entityId}/governance-bodies`) as Promise<ApiRecord[]>; }
-  getGovernanceSeats(bodyId: string) { return this.get(`/v1/governance-bodies/${bodyId}/seats`) as Promise<ApiRecord[]>; }
-  listMeetings(bodyId: string) { return this.get(`/v1/governance-bodies/${bodyId}/meetings`) as Promise<ApiRecord[]>; }
-  getMeetingResolutions(meetingId: string) { return this.get(`/v1/meetings/${meetingId}/resolutions`) as Promise<ApiRecord[]>; }
+  getGovernanceSeats(bodyId: string, entityId: string) { return this.get(`/v1/governance-bodies/${bodyId}/seats`, { entity_id: entityId }) as Promise<ApiRecord[]>; }
+  listMeetings(bodyId: string, entityId: string) { return this.get(`/v1/governance-bodies/${bodyId}/meetings`, { entity_id: entityId }) as Promise<ApiRecord[]>; }
+  getMeetingResolutions(meetingId: string, entityId: string) { return this.get(`/v1/meetings/${meetingId}/resolutions`, { entity_id: entityId }) as Promise<ApiRecord[]>; }
   scheduleMeeting(data: ApiRecord) { return this.post("/v1/meetings", data) as Promise<ApiRecord>; }
   conveneMeeting(meetingId: string, entityId: string, data: ApiRecord) {
     return this.postWithParams(`/v1/meetings/${meetingId}/convene`, data, { entity_id: entityId }) as Promise<ApiRecord>;

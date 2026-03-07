@@ -218,7 +218,7 @@ export const GENERATED_TOOL_DEFINITIONS: Record<string, unknown>[] = [
           "vote_value": { "type": "string", "enum": ["for", "against", "abstain", "recusal"], "description": "vote: for, against, abstain, or recusal" },
           "resolution_text": { "type": "string", "description": "resolve: resolution text" },
           "effective_date": { "type": "string", "description": "resolve: optional effective date" },
-          "status": { "type": "string", "enum": ["Voted", "Discussed", "Tabled", "Withdrawn"], "description": "finalize_item: Voted, Discussed, Tabled, or Withdrawn" },
+          "status": { "type": "string", "enum": ["voted", "discussed", "tabled", "withdrawn"], "description": "finalize_item: voted, discussed, tabled, or withdrawn" },
           "resolution_id": { "type": "string", "description": "attach_document: resolution ID" },
           "document_id": { "type": "string", "description": "attach_document: document ID" }
         },

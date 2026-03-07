@@ -136,6 +136,8 @@ pub enum DocumentType {
     Resolution,
     /// SAFE agreement.
     SafeAgreement,
+    /// Generated contract.
+    Contract,
 }
 
 /// Status of a document in the signing workflow.
