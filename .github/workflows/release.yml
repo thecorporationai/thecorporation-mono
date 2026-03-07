@@ -2,7 +2,7 @@ name: Release
 
 on:
   push:
-    tags: ["v*"]
+    tags: ["[0-9][0-9].[0-9]*"]
 
 permissions:
   contents: write
@@ -132,25 +132,18 @@ jobs:
         run: |
           set -euo pipefail
 
-          RAW_VERSION="${GITHUB_REF_NAME#v}"
-          VERSION="$RAW_VERSION"
-
-          # Normalize tags like v1.2.3b -> 1.2.3-b for npm semver compatibility.
-          if [[ "$VERSION" =~ ^([0-9]+\.[0-9]+\.[0-9]+)([A-Za-z][0-9A-Za-z.-]*)$ ]]; then
-            VERSION="${BASH_REMATCH[1]}-${BASH_REMATCH[2]}"
-          fi
+          # CalVer tags (YY.M.MICRO) are already valid npm semver (e.g. 26.3.1).
+          VERSION="${GITHUB_REF_NAME}"
 
           if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$ ]]; then
-            echo "::error::Tag '$GITHUB_REF_NAME' resolves to invalid npm semver '$VERSION'. Use tags like v1.2.3 or v1.2.3-rc.1."
+            echo "::error::Tag '$GITHUB_REF_NAME' is not valid CalVer semver. Use tags like 26.3.1 or 26.3.1-rc.1."
             exit 1
           fi
 
           # Detect prerelease and set NPM_TAG accordingly.
           if [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+- ]]; then
-            # Extract the prerelease identifier (e.g. "rc" from "1.2.3-rc.1", "beta" from "1.2.3-beta.2")
             PRE="${VERSION#*-}"
             NPM_TAG="${PRE%%[.0-9]*}"
-            # Fallback if tag is empty (e.g. "1.2.3-0")
             NPM_TAG="${NPM_TAG:-next}"
           else
             NPM_TAG="latest"
