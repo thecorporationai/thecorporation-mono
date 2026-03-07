@@ -36,7 +36,7 @@ export const GENERATED_TOOL_DEFINITIONS: Record<string, unknown>[] = [
             "enum": ["get_cap_table", "list_documents", "list_safe_notes", "form", "create", "add_founder", "finalize", "convert", "dissolve"]
           },
           "entity_id": { "type": "string" },
-          "entity_type": { "type": "string", "enum": ["llc", "corporation"] },
+          "entity_type": { "type": "string", "enum": ["llc", "c_corp"] },
           "entity_name": { "type": "string" },
           "jurisdiction": { "type": "string", "description": "e.g. US-DE, US-WY. Defaults to US-WY for LLC, US-DE for corporation." },
           "fiscal_year_end": { "type": "string", "description": "form: fiscal year end e.g. '12-31'" },
@@ -257,7 +257,7 @@ export const GENERATED_TOOL_DEFINITIONS: Record<string, unknown>[] = [
     "type": "function",
     "function": {
       "name": "compliance",
-      "description": "Compliance and legal operations. Actions: file_tax (entity_id + document_type + tax_year), track_deadline (entity_id + deadline_type + due_date + description), classify_contractor (entity_id + contractor_name + state + hours_per_week), generate_contract (entity_id + template_type).",
+      "description": "Compliance and legal operations. Actions: file_tax (entity_id + document_type + tax_year), track_deadline (entity_id + deadline_type + due_date + description), classify_contractor (entity_id + contractor_name + state + hours_per_week), generate_contract (entity_id + template_type + counterparty_name, optional effective_date).",
       "parameters": {
         "type": "object",
         "properties": {
@@ -278,8 +278,10 @@ export const GENERATED_TOOL_DEFINITIONS: Record<string, unknown>[] = [
           "exclusive_client": { "type": "boolean", "description": "classify_contractor: exclusive?" },
           "duration_months": { "type": "integer", "description": "classify_contractor: duration" },
           "provides_tools": { "type": "boolean", "description": "classify_contractor: provides own tools?" },
-          "template_type": { "type": "string", "description": "generate_contract: template type" },
-          "parameters": { "type": "object", "description": "generate_contract: template parameters" }
+          "template_type": { "type": "string", "enum": ["consulting_agreement", "employment_offer", "contractor_agreement", "nda", "custom"], "description": "generate_contract: template type" },
+          "counterparty_name": { "type": "string", "description": "generate_contract: counterparty name" },
+          "effective_date": { "type": "string", "description": "generate_contract: effective date (ISO 8601, defaults to today)" },
+          "parameters": { "type": "object", "description": "generate_contract: additional template parameters" }
         },
         "required": ["action"]
       }

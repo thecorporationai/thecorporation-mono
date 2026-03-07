@@ -48,7 +48,7 @@ impl TaxProfile {
     /// - LLC with 2+ members -> Partnership
     pub fn classify(entity_type: EntityType, member_count: usize) -> IrsTaxClassification {
         match entity_type {
-            EntityType::Corporation => IrsTaxClassification::CCorporation,
+            EntityType::CCorp => IrsTaxClassification::CCorporation,
             EntityType::Llc => {
                 if member_count <= 1 {
                     IrsTaxClassification::DisregardedEntity
@@ -116,7 +116,7 @@ mod tests {
     #[test]
     fn classify_corporation() {
         assert_eq!(
-            TaxProfile::classify(EntityType::Corporation, 5),
+            TaxProfile::classify(EntityType::CCorp, 5),
             IrsTaxClassification::CCorporation,
         );
     }

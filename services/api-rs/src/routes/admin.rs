@@ -318,7 +318,7 @@ async fn demo_seed(
             let entity_id = EntityId::new();
             let (entity_type, legal_name) = match scenario.as_str() {
                 "startup" => (
-                    crate::domain::formation::types::EntityType::Corporation,
+                    crate::domain::formation::types::EntityType::CCorp,
                     "Demo Startup Inc.",
                 ),
                 "llc" => (crate::domain::formation::types::EntityType::Llc, "Demo LLC"),
@@ -327,7 +327,7 @@ async fn demo_seed(
                     "Demo Restaurant LLC",
                 ),
                 _ => (
-                    crate::domain::formation::types::EntityType::Corporation,
+                    crate::domain::formation::types::EntityType::CCorp,
                     "Demo Entity",
                 ),
             };

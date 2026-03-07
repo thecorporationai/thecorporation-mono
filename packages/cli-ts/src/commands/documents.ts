@@ -32,8 +32,10 @@ export async function documentsGenerateCommand(opts: {
   const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
   try {
     const result = await client.generateContract({
-      entity_id: eid, template_type: opts.template,
-      parameters: { counterparty_name: opts.counterparty, effective_date: opts.effectiveDate ?? "" },
+      entity_id: eid,
+      template_type: opts.template,
+      counterparty_name: opts.counterparty,
+      effective_date: opts.effectiveDate ?? new Date().toISOString().slice(0, 10),
     });
     printSuccess(`Contract generated: ${result.contract_id ?? "OK"}`);
     printJson(result);

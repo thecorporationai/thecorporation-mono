@@ -122,8 +122,76 @@ const equityActions: Record<string, ToolHandler> = {
     return client.issueRound(roundId, args);
   },
 
-  issue: async (args, client) => client.issueEquity(args),
-  issue_safe: async (args, client) => client.issueSafe(args),
+  issue: async (args, client) => {
+    const entityId = requiredString(args, "entity_id");
+    // Fetch cap table to auto-resolve issuer and instrument
+    const capTable = await client.getCapTable(entityId);
+    const issuerLegalEntityId = capTable.issuer_legal_entity_id as string;
+    if (!issuerLegalEntityId) return { error: "No issuer legal entity found. Has this entity been formed with a cap table?" };
+
+    const instruments = capTable.instruments as Array<{ instrument_id: string; kind: string; symbol: string }>;
+    if (!instruments?.length) return { error: "No instruments found on cap table." };
+
+    let instrumentId = args.instrument_id as string | undefined;
+    if (!instrumentId) {
+      const grantType = (args.grant_type as string ?? "").toLowerCase();
+      const match = instruments.find(
+        (i) => i.kind.toLowerCase().includes(grantType) || i.symbol.toLowerCase().includes(grantType),
+      ) ?? instruments.find((i) => i.kind.toLowerCase().includes("common"));
+      instrumentId = (match ?? instruments[0]).instrument_id;
+    }
+
+    const round = await client.startEquityRound({
+      entity_id: entityId,
+      name: `${args.grant_type ?? "equity"} grant — ${args.recipient_name ?? "unknown"}`,
+      issuer_legal_entity_id: issuerLegalEntityId,
+    });
+    const roundId = (round.round_id ?? round.equity_round_id) as string;
+
+    const securityData: Record<string, unknown> = {
+      entity_id: entityId,
+      instrument_id: instrumentId,
+      quantity: args.shares ?? args.quantity,
+      recipient_name: args.recipient_name,
+      grant_type: args.grant_type,
+    };
+    if (args.email) securityData.email = args.email;
+    await client.addRoundSecurity(roundId, securityData);
+
+    return client.issueRound(roundId, { entity_id: entityId });
+  },
+  issue_safe: async (args, client) => {
+    const entityId = requiredString(args, "entity_id");
+    const capTable = await client.getCapTable(entityId);
+    const issuerLegalEntityId = capTable.issuer_legal_entity_id as string;
+    if (!issuerLegalEntityId) return { error: "No issuer legal entity found." };
+
+    const instruments = capTable.instruments as Array<{ instrument_id: string; kind: string; symbol: string }>;
+    const safeInstrument = instruments?.find((i) => i.kind.toLowerCase() === "safe");
+    if (!safeInstrument) return { error: "No SAFE instrument found on cap table." };
+
+    const principalCents = (args.principal_amount_cents ?? args.amount_cents ?? 0) as number;
+    const round = await client.startEquityRound({
+      entity_id: entityId,
+      name: `SAFE — ${args.investor_name ?? "investor"}`,
+      issuer_legal_entity_id: issuerLegalEntityId,
+    });
+    const roundId = (round.round_id ?? round.equity_round_id) as string;
+
+    const securityData: Record<string, unknown> = {
+      entity_id: entityId,
+      instrument_id: safeInstrument.instrument_id,
+      quantity: principalCents || 1,
+      recipient_name: args.investor_name,
+      principal_cents: principalCents,
+      grant_type: args.safe_type ?? "post_money",
+    };
+    if (args.email) securityData.email = args.email;
+    if (args.valuation_cap_cents) securityData.valuation_cap_cents = args.valuation_cap_cents;
+    await client.addRoundSecurity(roundId, securityData);
+
+    return client.issueRound(roundId, { entity_id: entityId });
+  },
 
   transfer: async (args, client) => {
     if (args.skip_governance_review !== true) {
@@ -284,7 +352,16 @@ const complianceActions: Record<string, ToolHandler> = {
   file_tax: async (args, client) => client.fileTaxDocument(args),
   track_deadline: async (args, client) => client.trackDeadline(args),
   classify_contractor: async (args, client) => client.classifyContractor(args),
-  generate_contract: async (args, client) => client.generateContract(args),
+  generate_contract: async (args, client) => {
+    const data: Record<string, unknown> = {
+      entity_id: requiredString(args, "entity_id"),
+      template_type: requiredString(args, "template_type"),
+      counterparty_name: args.counterparty_name ?? args.counterparty ?? "",
+      effective_date: args.effective_date ?? new Date().toISOString().slice(0, 10),
+    };
+    if (args.parameters) data.parameters = args.parameters;
+    return client.generateContract(data);
+  },
 };
 
 const documentActions: Record<string, ToolHandler> = {

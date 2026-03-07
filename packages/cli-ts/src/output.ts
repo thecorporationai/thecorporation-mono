@@ -285,37 +285,32 @@ export function printApprovalsTable(approvals: ApiRecord[]): void {
 }
 
 export function printBillingPanel(status: ApiRecord, plans: ApiRecord[]): void {
-  const tier = s(status.tier ?? status.plan) || "free";
-  const subs = (status.subscriptions ?? []) as ApiRecord[];
-  const usageCount = status.usage_count ?? 0;
+  const plan = s(status.plan ?? status.tier) || "free";
+  const subStatus = s(status.status) || "active";
+  const periodEnd = s(status.current_period_end);
 
   console.log(chalk.green("─".repeat(50)));
   console.log(chalk.green.bold("  Billing Status"));
   console.log(chalk.green("─".repeat(50)));
-  console.log(`  ${chalk.bold("Current Tier:")} ${tier}`);
-  console.log(`  ${chalk.bold("Active Subscriptions:")} ${subs.length}`);
-  for (const sub of subs) {
-    console.log(`    - ${sub.tier ?? "N/A"} (${sub.status ?? "N/A"})`);
-  }
-  console.log(`  ${chalk.bold("Tool Calls:")} ${usageCount}`);
+  console.log(`  ${chalk.bold("Plan:")} ${plan}`);
+  console.log(`  ${chalk.bold("Status:")} ${subStatus}`);
+  if (periodEnd) console.log(`  ${chalk.bold("Current Period End:")} ${periodEnd}`);
   console.log(chalk.dim("  Manage:  corp billing portal"));
-  console.log(chalk.dim("  Upgrade: corp billing upgrade"));
+  console.log(chalk.dim("  Upgrade: corp billing upgrade --plan <plan>"));
   console.log(chalk.green("─".repeat(50)));
 
   if (plans.length > 0) {
-    const table = makeTable("Available Plans", ["Tier", "Price", "Type", "Description"]);
+    const table = makeTable("Available Plans", ["Plan", "Price", "Features"]);
     for (const p of plans) {
-      const amount = (p.amount ?? 0) as number;
+      const amount = (p.price_cents ?? p.amount ?? 0) as number;
       const interval = s(p.interval);
       let priceStr = "Free";
       if (amount > 0) {
-        priceStr = interval ? `$${Math.round(amount / 100)}/${interval[0]}` : `$${Math.round(amount / 100)}`;
+        priceStr = interval ? `$${Math.round(amount / 100)}/${interval}` : `$${Math.round(amount / 100)}`;
       }
-      let name = s(p.name ?? p.tier);
-      if (p.addon) name += chalk.dim(" (add-on)");
-      let desc = s(p.description);
-      if (desc.length > 60) desc = desc.slice(0, 57) + "...";
-      table.push([name, priceStr, s(p.type), desc]);
+      const name = s(p.name ?? p.plan_id ?? p.tier);
+      const features = Array.isArray(p.features) ? (p.features as string[]).join(", ") : s(p.description);
+      table.push([name, priceStr, features]);
     }
     console.log(table.toString());
   }

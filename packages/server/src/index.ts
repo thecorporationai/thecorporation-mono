@@ -3,8 +3,10 @@ import { existsSync } from "node:fs";
 import { resolve, join } from "node:path";
 import { platform, arch } from "node:os";
 import { fileURLToPath } from "node:url";
+import { createRequire } from "node:module";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
+const require = createRequire(import.meta.url);
 
 /** Platform-to-package mapping */
 const PLATFORM_PACKAGES: Record<string, string> = {

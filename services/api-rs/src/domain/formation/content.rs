@@ -160,7 +160,7 @@ fn filing_office(jurisdiction: &str) -> String {
 fn irs_entity_type(entity_type: EntityType) -> &'static str {
     match entity_type {
         EntityType::Llc => "LLC",
-        EntityType::Corporation => "Corporation",
+        EntityType::CCorp => "Corporation",
     }
 }
 
@@ -503,7 +503,7 @@ pub fn generate_formation_documents(
                 oa,
             ));
         }
-        EntityType::Corporation => {
+        EntityType::CCorp => {
             let shares = authorized_shares.unwrap_or(10_000_000);
             let pv = par_value.unwrap_or("0.0001");
 
@@ -792,7 +792,7 @@ mod tests {
     #[test]
     fn ss4_application_corp() {
         let content =
-            generate_ss4_application("Test Corp", EntityType::Corporation, "Delaware", &alice());
+            generate_ss4_application("Test Corp", EntityType::CCorp, "Delaware", &alice());
         assert_eq!(content["fields"]["entity_type_irs"], "Corporation");
     }
 
@@ -824,7 +824,7 @@ mod tests {
         let mut alice = alice();
         alice.role = Some(MemberRole::Director);
         let docs = generate_formation_documents(
-            EntityType::Corporation,
+            EntityType::CCorp,
             "Test Corp",
             "Delaware",
             "RA Inc.",
@@ -844,7 +844,7 @@ mod tests {
         let mut alice = alice();
         alice.role = Some(MemberRole::Director);
         let docs = generate_formation_documents(
-            EntityType::Corporation,
+            EntityType::CCorp,
             "Test Corp",
             "Delaware",
             "RA Inc.",

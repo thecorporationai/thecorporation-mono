@@ -49,7 +49,7 @@ fn member_role_label(role: Option<MemberRole>, entity_type: EntityType) -> Strin
         Some(MemberRole::Member) => "member".to_owned(),
         Some(MemberRole::Chair) => "chair".to_owned(),
         None => match entity_type {
-            EntityType::Corporation => "incorporator".to_owned(),
+            EntityType::CCorp => "incorporator".to_owned(),
             EntityType::Llc => "organizer".to_owned(),
         },
     }
@@ -94,7 +94,7 @@ pub fn create_entity(
     // Create filing record (borrows jurisdiction).
     let filing_type = match entity_type {
         EntityType::Llc => FilingType::CertificateOfFormation,
-        EntityType::Corporation => FilingType::CertificateOfIncorporation,
+        EntityType::CCorp => FilingType::CertificateOfIncorporation,
     };
 
     let designated_attestor = members
@@ -322,7 +322,7 @@ pub fn setup_cap_table(
             };
             (InstrumentKind::MembershipUnit, "UNITS".to_owned(), auth, None)
         }
-        EntityType::Corporation => {
+        EntityType::CCorp => {
             let shares = authorized_shares.unwrap_or(10_000_000);
             let pv = par_value.unwrap_or("0.0001");
             let price = (pv.parse::<f64>().unwrap_or(0.0001) * 10_000.0).round() as i64; // cents with 2 decimals
@@ -374,7 +374,7 @@ pub fn setup_cap_table(
                     ((pct / 100.0) * total as f64).round() as i64
                 })
             }
-            EntityType::Corporation => {
+            EntityType::CCorp => {
                 m.shares_purchased
                     .or(m.share_count)
                     .unwrap_or_else(|| {
@@ -387,7 +387,7 @@ pub fn setup_cap_table(
         };
 
         let principal = match entity_type {
-            EntityType::Corporation => {
+            EntityType::CCorp => {
                 shares * price_cents.unwrap_or(1) // par_value * shares in cents
             }
             EntityType::Llc => 0,
@@ -645,7 +645,7 @@ pub fn finalize_formation(
     // Create filing record
     let filing_type = match entity.entity_type() {
         EntityType::Llc => FilingType::CertificateOfFormation,
-        EntityType::Corporation => FilingType::CertificateOfIncorporation,
+        EntityType::CCorp => FilingType::CertificateOfIncorporation,
     };
     let designated_attestor = members
         .iter()
@@ -908,7 +908,7 @@ mod tests {
             &layout,
             workspace_id,
             "Acme Corp".to_string(),
-            EntityType::Corporation,
+            EntityType::CCorp,
             Jurisdiction::new("Delaware").unwrap(),
             Some("RA Inc.".to_string()),
             Some("123 Main St".to_string()),
@@ -918,7 +918,7 @@ mod tests {
         )
         .expect("create_entity should succeed for corporation");
 
-        assert_eq!(result.entity.entity_type(), EntityType::Corporation);
+        assert_eq!(result.entity.entity_type(), EntityType::CCorp);
         // Corporation: articles of incorporation + bylaws
         assert_eq!(result.document_ids.len(), 2);
         assert_eq!(
@@ -959,7 +959,7 @@ mod tests {
             &layout,
             workspace_id,
             "Agent Only Corp".to_string(),
-            EntityType::Corporation,
+            EntityType::CCorp,
             Jurisdiction::new("Delaware").unwrap(),
             None,
             None,

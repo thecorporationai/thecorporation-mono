@@ -1350,7 +1350,7 @@ mod tests {
     #[test]
     fn delegation_schedule_renders_from_ast() {
         let ast = super::super::doc_ast::default_doc_ast();
-        let entity = make_entity(EntityType::Corporation);
+        let entity = make_entity(EntityType::CCorp);
         let profile = GovernanceProfile::default_for_entity(&entity);
         let doc = ast
             .documents
@@ -1377,7 +1377,7 @@ mod tests {
     #[test]
     fn signing_standard_renders_from_ast() {
         let ast = super::super::doc_ast::default_doc_ast();
-        let entity = make_entity(EntityType::Corporation);
+        let entity = make_entity(EntityType::CCorp);
         let profile = GovernanceProfile::default_for_entity(&entity);
         let doc = ast
             .documents
@@ -1413,7 +1413,7 @@ mod tests {
             eprintln!("skipping: documents/governance not present");
             return;
         }
-        let entity = make_entity(EntityType::Corporation);
+        let entity = make_entity(EntityType::CCorp);
         let mut profile = GovernanceProfile::default_for_entity(&entity);
         profile.update(
             "Acme Holdings".to_owned(),
@@ -1453,7 +1453,7 @@ mod tests {
     }
 
     fn make_complete_profile() -> GovernanceProfile {
-        let entity = make_entity(EntityType::Corporation);
+        let entity = make_entity(EntityType::CCorp);
         let mut profile = GovernanceProfile::default_for_entity(&entity);
         profile.update(
             "Acme Holdings, Inc.".to_owned(),

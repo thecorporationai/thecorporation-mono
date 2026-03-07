@@ -6,11 +6,11 @@ use std::fmt;
 // ── Enums ──────────────────────────────────────────────────────────────
 
 /// The legal structure of a business entity.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum EntityType {
-    /// C-Corporation (or S-Corporation).
-    Corporation,
+    /// C-Corporation (default corporate structure).
+    CCorp,
     /// Limited Liability Company.
     Llc,
 }
@@ -18,8 +18,26 @@ pub enum EntityType {
 impl fmt::Display for EntityType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Corporation => write!(f, "corporation"),
+            Self::CCorp => write!(f, "c_corp"),
             Self::Llc => write!(f, "llc"),
+        }
+    }
+}
+
+// Accept "c_corp", "corporation", "ccorp" on deserialization
+impl<'de> Deserialize<'de> for EntityType {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        match s.as_str() {
+            "c_corp" | "corporation" | "ccorp" => Ok(EntityType::CCorp),
+            "llc" => Ok(EntityType::Llc),
+            other => Err(serde::de::Error::unknown_variant(
+                other,
+                &["c_corp", "llc"],
+            )),
         }
     }
 }
@@ -317,7 +335,7 @@ mod tests {
 
     #[test]
     fn entity_type_display() {
-        assert_eq!(EntityType::Corporation.to_string(), "corporation");
+        assert_eq!(EntityType::CCorp.to_string(), "c_corp");
         assert_eq!(EntityType::Llc.to_string(), "llc");
     }
 
@@ -328,6 +346,18 @@ mod tests {
         assert_eq!(json, "\"llc\"");
         let parsed: EntityType = serde_json::from_str(&json).expect("deserialize EntityType");
         assert_eq!(et, parsed);
+
+        // c_corp serializes and deserializes
+        let corp = EntityType::CCorp;
+        let json = serde_json::to_string(&corp).expect("serialize CCorp");
+        assert_eq!(json, "\"c_corp\"");
+        let parsed: EntityType = serde_json::from_str(&json).expect("deserialize c_corp");
+        assert_eq!(corp, parsed);
+
+        // "corporation" accepted as alias
+        let parsed: EntityType =
+            serde_json::from_str("\"corporation\"").expect("deserialize corporation alias");
+        assert_eq!(parsed, EntityType::CCorp);
     }
 
     #[test]

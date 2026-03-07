@@ -13,10 +13,12 @@
     }
   },
   "files": [
-    "dist/"
+    "dist/",
+    "install.js"
   ],
   "scripts": {
-    "build": "tsup"
+    "build": "tsup",
+    "postinstall": "node install.js"
   },
   "publishConfig": {
     "access": "public"

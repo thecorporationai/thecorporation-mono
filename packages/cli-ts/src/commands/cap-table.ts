@@ -93,15 +93,65 @@ export async function issueEquityCommand(opts: {
   grantType: string;
   shares: number;
   recipient: string;
+  email?: string;
+  instrumentId?: string;
 }): Promise<void> {
   const cfg = requireConfig("api_url", "api_key", "workspace_id");
   const eid = resolveEntityId(cfg, opts.entityId);
   const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
   try {
-    const result = await client.issueEquity({
-      entity_id: eid, grant_type: opts.grantType, shares: opts.shares, recipient_name: opts.recipient,
+    // Fetch cap table to get issuer and instrument info
+    const capTable = await client.getCapTable(eid);
+    const issuerLegalEntityId = capTable.issuer_legal_entity_id as string;
+    if (!issuerLegalEntityId) {
+      printError("No issuer legal entity found. Has this entity been formed with a cap table?");
+      process.exit(1);
+    }
+
+    // Resolve instrument ID — use provided, or match by grant type, or use first common stock
+    let instrumentId = opts.instrumentId;
+    if (!instrumentId) {
+      const instruments = capTable.instruments as Array<{ instrument_id: string; kind: string; symbol: string }>;
+      if (!instruments?.length) {
+        printError("No instruments found on cap table. Create an instrument first.");
+        process.exit(1);
+      }
+      const grantLower = opts.grantType.toLowerCase();
+      const match = instruments.find(
+        (i) => i.kind.toLowerCase().includes(grantLower) || i.symbol.toLowerCase().includes(grantLower),
+      ) ?? instruments.find((i) => i.kind.toLowerCase().includes("common"));
+      if (match) {
+        instrumentId = match.instrument_id;
+        console.log(`Using instrument: ${match.symbol} (${match.kind})`);
+      } else {
+        instrumentId = instruments[0].instrument_id;
+        console.log(`Using first instrument: ${instruments[0].symbol} (${instruments[0].kind})`);
+      }
+    }
+
+    // 1. Start a staged round
+    const round = await client.startEquityRound({
+      entity_id: eid,
+      name: `${opts.grantType} grant — ${opts.recipient}`,
+      issuer_legal_entity_id: issuerLegalEntityId,
     });
-    printSuccess(`Equity issued: ${result.grant_id ?? "OK"}`);
+    const roundId = (round.round_id ?? round.equity_round_id) as string;
+
+    // 2. Add the security
+    const securityData: Record<string, unknown> = {
+      entity_id: eid,
+      instrument_id: instrumentId,
+      quantity: opts.shares,
+      recipient_name: opts.recipient,
+      grant_type: opts.grantType,
+    };
+    if (opts.email) securityData.email = opts.email;
+    await client.addRoundSecurity(roundId, securityData);
+
+    // 3. Issue the round
+    const result = await client.issueRound(roundId, { entity_id: eid });
+
+    printSuccess(`Equity issued: ${opts.shares} shares (${opts.grantType}) to ${opts.recipient}`);
     printJson(result);
   } catch (err) {
     printError(`Failed to issue equity: ${err}`);
@@ -115,16 +165,50 @@ export async function issueSafeCommand(opts: {
   amount: number;
   safeType: string;
   valuationCap: number;
+  email?: string;
 }): Promise<void> {
   const cfg = requireConfig("api_url", "api_key", "workspace_id");
   const eid = resolveEntityId(cfg, opts.entityId);
   const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
   try {
-    const result = await client.issueSafe({
-      entity_id: eid, investor_name: opts.investor, principal_amount_cents: opts.amount,
-      safe_type: opts.safeType, valuation_cap_cents: opts.valuationCap,
+    // Fetch cap table for issuer and SAFE instrument
+    const capTable = await client.getCapTable(eid);
+    const issuerLegalEntityId = capTable.issuer_legal_entity_id as string;
+    if (!issuerLegalEntityId) {
+      printError("No issuer legal entity found. Has this entity been formed with a cap table?");
+      process.exit(1);
+    }
+
+    const instruments = capTable.instruments as Array<{ instrument_id: string; kind: string; symbol: string }>;
+    const safeInstrument = instruments?.find((i) => i.kind.toLowerCase() === "safe");
+    if (!safeInstrument) {
+      printError("No SAFE instrument found on cap table. Create a SAFE instrument first.");
+      process.exit(1);
+    }
+
+    // Start a staged round for the SAFE
+    const round = await client.startEquityRound({
+      entity_id: eid,
+      name: `SAFE — ${opts.investor}`,
+      issuer_legal_entity_id: issuerLegalEntityId,
     });
-    printSuccess(`SAFE issued: ${result.safe_note_id ?? result.safe_id ?? "OK"}`);
+    const roundId = (round.round_id ?? round.equity_round_id) as string;
+
+    // Add the SAFE security — use principal_cents as quantity since quantity must be > 0
+    const securityData: Record<string, unknown> = {
+      entity_id: eid,
+      instrument_id: safeInstrument.instrument_id,
+      quantity: opts.amount,
+      recipient_name: opts.investor,
+      principal_cents: opts.amount,
+      grant_type: opts.safeType,
+    };
+    if (opts.email) securityData.email = opts.email;
+    await client.addRoundSecurity(roundId, securityData);
+
+    // Issue the round
+    const result = await client.issueRound(roundId, { entity_id: eid });
+    printSuccess(`SAFE issued: $${(opts.amount / 100).toLocaleString()} to ${opts.investor}`);
     printJson(result);
   } catch (err) {
     printError(`Failed to issue SAFE: ${err}`);

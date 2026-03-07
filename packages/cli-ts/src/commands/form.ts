@@ -63,13 +63,12 @@ async function phaseEntityDetails(opts: FormOptions, serverCfg: ApiRecord, scrip
   if (!entityType) {
     if (scripted) { entityType = "llc"; }
     else {
-      const types = (serverCfg.entity_types ?? ["llc", "c_corp"]) as string[];
       entityType = await select({
         message: "Entity type",
-        choices: types.map((t) => ({
-          value: t,
-          name: t === "c_corp" ? "C Corporation" : t === "s_corp" ? "S Corporation" : t.toUpperCase(),
-        })),
+        choices: [
+          { value: "llc", name: "LLC" },
+          { value: "c_corp", name: "C-Corp" },
+        ],
       });
     }
   }
@@ -415,7 +414,7 @@ export async function formCreateCommand(opts: FormCreateOptions): Promise<void> 
   const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
 
   try {
-    const entityType = opts.type === "c_corp" || opts.type === "corporation" ? "corporation" : "llc";
+    const entityType = opts.type === "corporation" ? "c_corp" : opts.type;
     const payload: ApiRecord = {
       entity_type: entityType,
       legal_name: opts.name,

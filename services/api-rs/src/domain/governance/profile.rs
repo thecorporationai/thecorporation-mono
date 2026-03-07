@@ -379,7 +379,7 @@ mod tests {
             EntityId::new(),
             WorkspaceId::new(),
             "Acme, Inc.".to_owned(),
-            EntityType::Corporation,
+            EntityType::CCorp,
             Jurisdiction::new("Delaware").expect("jurisdiction"),
             Some("Delaware RA".to_owned()),
             Some("123 Main St, Wilmington, DE".to_owned()),

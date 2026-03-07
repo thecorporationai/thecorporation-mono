@@ -1554,7 +1554,7 @@ async fn get_document_pdf(
                 .read_entity("main")
                 .map_err(|e| AppError::Internal(format!("read entity: {e}")))?;
             let entity_type = match entity.entity_type() {
-                EntityType::Corporation => doc_ast::EntityTypeKey::Corporation,
+                EntityType::CCorp => doc_ast::EntityTypeKey::Corporation,
                 EntityType::Llc => doc_ast::EntityTypeKey::Llc,
             };
 
@@ -1642,7 +1642,7 @@ async fn preview_document_pdf(
                 .read_entity("main")
                 .map_err(|e| AppError::Internal(format!("read entity: {e}")))?;
             let entity_type = match entity.entity_type() {
-                EntityType::Corporation => doc_ast::EntityTypeKey::Corporation,
+                EntityType::CCorp => doc_ast::EntityTypeKey::Corporation,
                 EntityType::Llc => doc_ast::EntityTypeKey::Llc,
             };
 
@@ -2132,7 +2132,7 @@ async fn create_pending_formation(
     let jurisdiction = req.jurisdiction.unwrap_or_else(|| {
         let j = match entity_type {
             EntityType::Llc => "US-WY",
-            EntityType::Corporation => "US-DE",
+            EntityType::CCorp => "US-DE",
         };
         Jurisdiction::new(j).unwrap()
     });

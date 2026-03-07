@@ -120,7 +120,7 @@ entitiesCmd
   });
 entitiesCmd
   .command("convert <entity-id>")
-  .requiredOption("--to <type>", "Target entity type (llc, corporation)")
+  .requiredOption("--to <type>", "Target entity type (llc, c_corp)")
   .option("--jurisdiction <jurisdiction>", "New jurisdiction")
   .description("Convert entity to a different type")
   .action(async (entityId: string, opts) => {
@@ -182,7 +182,7 @@ contactsCmd
 // --- cap-table ---
 const capTableCmd = program
   .command("cap-table")
-  .description("Cap table, SAFEs, transfers, valuations")
+  .description("Cap table, equity grants, SAFEs, transfers, and valuations")
   .option("--entity-id <id>", "Entity ID (overrides active entity)")
   .option("--json", "Output as JSON")
   .action(async (opts) => {
@@ -211,10 +211,12 @@ capTableCmd.command("409a").description("Current 409A valuation").action(async (
 });
 capTableCmd
   .command("issue-equity")
-  .requiredOption("--grant-type <type>", "Grant type")
+  .requiredOption("--grant-type <type>", "Grant type (e.g. founder, advisor, employee, investor)")
   .requiredOption("--shares <n>", "Number of shares", parseInt)
   .requiredOption("--recipient <name>", "Recipient name")
-  .description("Issue an equity grant")
+  .option("--email <email>", "Recipient email (auto-creates contact if needed)")
+  .option("--instrument-id <id>", "Instrument ID (auto-detected from cap table if omitted)")
+  .description("Issue an equity grant (creates a round, adds security, and issues it)")
   .action(async (opts, cmd) => {
     const parent = cmd.parent!.opts();
     const { issueEquityCommand } = await import("./commands/cap-table.js");
@@ -530,9 +532,9 @@ documentsCmd
   });
 documentsCmd
   .command("generate")
-  .requiredOption("--template <type>", "Template type")
+  .requiredOption("--template <type>", "Template type (consulting_agreement, employment_offer, contractor_agreement, nda, custom)")
   .requiredOption("--counterparty <name>", "Counterparty name")
-  .option("--effective-date <date>", "Effective date (ISO 8601)")
+  .option("--effective-date <date>", "Effective date (ISO 8601, defaults to today)")
   .description("Generate a contract from a template")
   .action(async (opts, cmd) => {
     const parent = cmd.parent!.opts();
@@ -647,7 +649,7 @@ billingCmd.command("portal").description("Open Stripe Customer Portal")
     const { billingPortalCommand } = await import("./commands/billing.js");
     await billingPortalCommand();
   });
-billingCmd.command("upgrade").option("--tier <tier>", "Plan to upgrade to", "cloud")
+billingCmd.command("upgrade").option("--plan <plan>", "Plan ID to upgrade to (free, pro, enterprise)", "pro")
   .description("Open Stripe Checkout to upgrade your plan")
   .action(async (opts) => {
     const { billingUpgradeCommand } = await import("./commands/billing.js");

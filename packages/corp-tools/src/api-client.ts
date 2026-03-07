@@ -274,8 +274,8 @@ export class CorpAPIClient {
     });
   }
   createBillingPortal() { return this.post("/v1/billing/portal", { workspace_id: this.workspaceId }) as Promise<ApiRecord>; }
-  createBillingCheckout(tier: string, entityId?: string) {
-    const body: ApiRecord = { tier };
+  createBillingCheckout(planId: string, entityId?: string) {
+    const body: ApiRecord = { plan_id: planId };
     if (entityId) body.entity_id = entityId;
     return this.post("/v1/billing/checkout", body) as Promise<ApiRecord>;
   }

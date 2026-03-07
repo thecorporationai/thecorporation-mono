@@ -751,7 +751,7 @@ mod tests {
             EntityId::new(),
             WorkspaceId::new(),
             "Acme Test Corp".to_owned(),
-            EntityType::Corporation,
+            EntityType::CCorp,
             Jurisdiction::new("Delaware").expect("jurisdiction"),
             Some("Acme Registered Agent".to_owned()),
             Some("123 Main St".to_owned()),

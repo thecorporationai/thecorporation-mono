@@ -532,7 +532,7 @@ fn read_schedule_or_default(store: &EntityStore<'_>, entity_id: EntityId) -> Del
 
 fn governance_doc_entity_type_for(entity_type: EntityType) -> GovernanceDocEntityType {
     match entity_type {
-        EntityType::Corporation => GovernanceDocEntityType::Corporation,
+        EntityType::CCorp => GovernanceDocEntityType::Corporation,
         EntityType::Llc => GovernanceDocEntityType::Llc,
     }
 }

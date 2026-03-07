@@ -270,7 +270,7 @@ mod tests {
             EntityId::new(),
             WorkspaceId::new(),
             "Acme Corp".into(),
-            EntityType::Corporation,
+            EntityType::CCorp,
             Jurisdiction::new("US-DE").unwrap(),
             None,
             None,

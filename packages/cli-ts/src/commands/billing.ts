@@ -36,13 +36,13 @@ export async function billingPortalCommand(): Promise<void> {
   } catch (err) { printError(`Failed to create portal session: ${err}`); process.exit(1); }
 }
 
-export async function billingUpgradeCommand(opts: { tier: string }): Promise<void> {
+export async function billingUpgradeCommand(opts: { plan: string }): Promise<void> {
   const client = makeClient();
   try {
-    const result = await client.createBillingCheckout(opts.tier);
+    const result = await client.createBillingCheckout(opts.plan);
     const url = result.checkout_url as string;
     if (!url) { printError("No checkout URL returned."); process.exit(1); }
-    console.log(`Opening Stripe Checkout for ${opts.tier}...\n${url}`);
+    console.log(`Opening Stripe Checkout for ${opts.plan}...\n${url}`);
     openUrl(url);
     printSuccess("Checkout opened in your browser.");
   } catch (err) { printError(`Failed to create checkout session: ${err}`); process.exit(1); }

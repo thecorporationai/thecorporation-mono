@@ -841,7 +841,7 @@ async fn test_formation_lifecycle() {
     let (status, body) = get_json(&app, &format!("/v1/formations/{entity_id}"), &token).await;
     assert_eq!(status, StatusCode::OK, "get formation: {body}");
     assert_eq!(body["legal_name"], "FormCo Inc.");
-    assert_eq!(body["entity_type"], "corporation");
+    assert_eq!(body["entity_type"], "c_corp");
     assert_eq!(body["jurisdiction"], "Delaware");
 
     // 3. List documents
@@ -4376,7 +4376,7 @@ async fn test_governance_profile_and_doc_bundle_generation() {
     .await;
     assert_eq!(status, StatusCode::OK, "get governance profile: {profile}");
     assert_eq!(profile["entity_id"], entity_id);
-    assert_eq!(profile["entity_type"], "corporation");
+    assert_eq!(profile["entity_type"], "c_corp");
     assert_eq!(profile["incomplete_profile"], true);
 
     let (status, updated_profile) = put_json(
