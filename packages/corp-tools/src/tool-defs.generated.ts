@@ -27,7 +27,7 @@ export const GENERATED_TOOL_DEFINITIONS: Record<string, unknown>[] = [
     "type": "function",
     "function": {
       "name": "entity",
-      "description": "Entity reads and lifecycle. Actions: get_cap_table (entity_id), list_documents (entity_id), list_safe_notes (entity_id), form (entity_type + entity_name + jurisdiction + members — legacy one-shot formation), create (entity_type + entity_name — step 1 of staged formation), add_founder (entity_id + name + email + role + ownership_pct — step 2), finalize (entity_id — step 3, generates docs + cap table), convert (entity_id + new_entity_type), dissolve (entity_id + reason).",
+      "description": "Entity reads and lifecycle. Actions: get_cap_table (entity_id), list_documents (entity_id), list_safe_notes (entity_id), form (entity_type + entity_name + jurisdiction + members — legacy one-shot formation), create (entity_type + entity_name — step 1 of staged formation), add_founder (entity_id + name + email + role + ownership_pct — step 2), finalize (entity_id — step 3, generates docs + cap table), convert (entity_id + target_type), dissolve (entity_id + reason).",
       "parameters": {
         "type": "object",
         "properties": {
@@ -102,7 +102,7 @@ export const GENERATED_TOOL_DEFINITIONS: Record<string, unknown>[] = [
           "ownership_pct": { "type": "number", "description": "add_founder: ownership percentage (e.g. 50 for 50%)" },
           "officer_title": { "type": "string", "enum": ["ceo", "cfo", "secretary", "president", "vp", "other"], "description": "add_founder: officer title (corp only)" },
           "is_incorporator": { "type": "boolean", "description": "add_founder: is sole incorporator (corp only)" },
-          "new_entity_type": { "type": "string", "description": "convert: target entity type" },
+          "target_type": { "type": "string", "enum": ["llc", "c_corp"], "description": "convert: target entity type" },
           "new_jurisdiction": { "type": "string", "description": "convert: target jurisdiction" },
           "reason": { "type": "string", "description": "dissolve: dissolution reason" },
           "effective_date": { "type": "string", "description": "dissolve: effective date" }
@@ -149,7 +149,8 @@ export const GENERATED_TOOL_DEFINITIONS: Record<string, unknown>[] = [
           "transfer_type": { "type": "string", "description": "transfer: transfer type" },
           "skip_governance_review": { "type": "boolean", "description": "transfer: must be true to confirm bypassing governance" },
           "total_amount_cents": { "type": "integer", "description": "distribution: total amount in cents" },
-          "distribution_type": { "type": "string", "description": "distribution: type" }
+          "distribution_type": { "type": "string", "enum": ["dividend", "return", "liquidation"], "description": "distribution: type" },
+          "description": { "type": "string", "description": "distribution: description (required)" }
         },
         "required": ["action"]
       }
@@ -229,7 +230,7 @@ export const GENERATED_TOOL_DEFINITIONS: Record<string, unknown>[] = [
     "type": "function",
     "function": {
       "name": "finance",
-      "description": "Financial operations. Actions: create_invoice (entity_id + customer_name + amount_cents + description + due_date), run_payroll (entity_id + pay_period_start + pay_period_end), submit_payment (entity_id + amount_cents + recipient), open_bank_account (entity_id, optional institution_name), reconcile (entity_id + start_date + end_date).",
+      "description": "Financial operations. Actions: create_invoice (entity_id + customer_name + amount_cents + description + due_date), run_payroll (entity_id + pay_period_start + pay_period_end), submit_payment (entity_id + amount_cents + recipient), open_bank_account (entity_id + bank_name), reconcile (entity_id + start_date + end_date).",
       "parameters": {
         "type": "object",
         "properties": {
@@ -245,7 +246,7 @@ export const GENERATED_TOOL_DEFINITIONS: Record<string, unknown>[] = [
           "pay_period_start": { "type": "string", "description": "run_payroll: start date" },
           "pay_period_end": { "type": "string", "description": "run_payroll: end date" },
           "recipient": { "type": "string", "description": "submit_payment: recipient" },
-          "institution_name": { "type": "string", "description": "open_bank_account: bank name" },
+          "bank_name": { "type": "string", "description": "open_bank_account: bank name (e.g. Mercury, SVB)" },
           "start_date": { "type": "string", "description": "reconcile: start date" },
           "end_date": { "type": "string", "description": "reconcile: end date" }
         },
@@ -329,7 +330,7 @@ export const GENERATED_TOOL_DEFINITIONS: Record<string, unknown>[] = [
     "type": "function",
     "function": {
       "name": "agent",
-      "description": "Agent management. Agents are for delegating recurring tasks — NOT for research or one-off questions. Requires a paid plan. Actions: list (list all agents), create (name + system_prompt), message (agent_id + body), update (agent_id + optional status), add_skill (agent_id + skill_name + description).",
+      "description": "Agent management. Agents are for delegating recurring tasks — NOT for research or one-off questions. Requires a paid plan. Actions: list (list all agents), create (name + system_prompt), message (agent_id + message), update (agent_id + optional status), add_skill (agent_id + name + description).",
       "parameters": {
         "type": "object",
         "properties": {
@@ -338,14 +339,13 @@ export const GENERATED_TOOL_DEFINITIONS: Record<string, unknown>[] = [
             "enum": ["list", "create", "message", "update", "add_skill"]
           },
           "agent_id": { "type": "string", "description": "message/update/add_skill: agent ID" },
-          "name": { "type": "string", "description": "create: agent name" },
+          "name": { "type": "string", "description": "create: agent name; add_skill: skill name" },
           "system_prompt": { "type": "string", "description": "create: agent system prompt" },
           "model": { "type": "string", "description": "create: model name" },
-          "body": { "type": "string", "description": "message: message body" },
-          "status": { "type": "string", "description": "update: new status" },
-          "skill_name": { "type": "string", "description": "add_skill: skill name" },
+          "message": { "type": "string", "description": "message: message text" },
+          "status": { "type": "string", "enum": ["active", "paused", "disabled"], "description": "update: new status" },
           "description": { "type": "string", "description": "add_skill: skill description" },
-          "instructions": { "type": "string", "description": "add_skill: skill instructions" }
+          "parameters": { "type": "object", "description": "add_skill: skill parameters schema" }
         },
         "required": ["action"]
       }

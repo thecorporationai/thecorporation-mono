@@ -56,7 +56,7 @@ export async function financeOpenAccountCommand(opts: {
   const eid = resolveEntityId(cfg, opts.entityId);
   const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
   try {
-    const result = await client.openBankAccount({ entity_id: eid, institution_name: opts.institution });
+    const result = await client.openBankAccount({ entity_id: eid, bank_name: opts.institution });
     printSuccess(`Bank account opened: ${result.account_id ?? "OK"}`);
     printJson(result);
   } catch (err) { printError(`Failed to open bank account: ${err}`); process.exit(1); }

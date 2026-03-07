@@ -1,14 +1,15 @@
-import { requireConfig } from "../config.js";
+import { requireConfig, resolveEntityId } from "../config.js";
 import { CorpAPIClient } from "../api-client.js";
 import { printContactsTable, printError, printSuccess, printJson } from "../output.js";
 import chalk from "chalk";
 import type { ApiRecord } from "../types.js";
 
-export async function contactsListCommand(opts: { json?: boolean }): Promise<void> {
+export async function contactsListCommand(opts: { entityId?: string; json?: boolean }): Promise<void> {
   const cfg = requireConfig("api_url", "api_key", "workspace_id");
+  const eid = resolveEntityId(cfg, opts.entityId);
   const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
   try {
-    const contacts = await client.listContacts();
+    const contacts = await client.listContacts(eid);
     if (opts.json) printJson(contacts);
     else if (contacts.length === 0) console.log("No contacts found.");
     else printContactsTable(contacts);
@@ -51,17 +52,25 @@ export async function contactsShowCommand(contactId: string, opts: { json?: bool
 }
 
 export async function contactsAddCommand(opts: {
+  entityId?: string;
   name: string;
   email: string;
+  type?: string;
   category?: string;
   phone?: string;
   notes?: string;
 }): Promise<void> {
   const cfg = requireConfig("api_url", "api_key", "workspace_id");
+  const eid = resolveEntityId(cfg, opts.entityId);
   const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
   try {
-    const data: ApiRecord = { name: opts.name, email: opts.email };
-    if (opts.category) data.category = opts.category;
+    const data: ApiRecord = {
+      entity_id: eid,
+      contact_type: opts.type ?? "individual",
+      name: opts.name,
+      email: opts.email,
+      category: opts.category ?? "employee",
+    };
     if (opts.phone) data.phone = opts.phone;
     if (opts.notes) data.notes = opts.notes;
     const result = await client.createContact(data);

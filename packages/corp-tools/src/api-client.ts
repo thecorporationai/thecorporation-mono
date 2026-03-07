@@ -137,18 +137,30 @@ export class CorpAPIClient {
   listEntities() { return this.get(`/v1/workspaces/${this.workspaceId}/entities`) as Promise<ApiRecord[]>; }
 
   // --- Contacts ---
-  listContacts() { return this.get(`/v1/workspaces/${this.workspaceId}/contacts`) as Promise<ApiRecord[]>; }
+  listContacts(entityId: string) { return this.get(`/v1/entities/${entityId}/contacts`) as Promise<ApiRecord[]>; }
   getContact(id: string) { return this.get(`/v1/contacts/${id}`) as Promise<ApiRecord>; }
   getContactProfile(id: string) { return this.get(`/v1/contacts/${id}/profile`) as Promise<ApiRecord>; }
-  createContact(data: ApiRecord) { return this.post(`/v1/workspaces/${this.workspaceId}/contacts`, data) as Promise<ApiRecord>; }
+  createContact(data: ApiRecord) { return this.post("/v1/contacts", data) as Promise<ApiRecord>; }
   updateContact(id: string, data: ApiRecord) { return this.patch(`/v1/contacts/${id}`, data) as Promise<ApiRecord>; }
   getNotificationPrefs(contactId: string) { return this.get(`/v1/contacts/${contactId}/notification-prefs`) as Promise<ApiRecord>; }
   updateNotificationPrefs(contactId: string, prefs: ApiRecord) { return this.patch(`/v1/contacts/${contactId}/notification-prefs`, prefs) as Promise<ApiRecord>; }
 
   // --- Cap Table ---
   getCapTable(entityId: string) { return this.get(`/v1/entities/${entityId}/cap-table`) as Promise<ApiRecord>; }
-  getSafeNotes(entityId: string) { return this.get(`/v1/entities/${entityId}/safe-notes`) as Promise<ApiRecord[]>; }
-  getShareTransfers(entityId: string) { return this.get(`/v1/entities/${entityId}/share-transfers`) as Promise<ApiRecord[]>; }
+  /** Extract SAFE instruments from the cap table (no dedicated list endpoint). */
+  async getSafeNotes(entityId: string): Promise<ApiRecord[]> {
+    const ct = await this.getCapTable(entityId);
+    const instruments = (ct.instruments ?? []) as ApiRecord[];
+    const positions = (ct.positions ?? []) as ApiRecord[];
+    const safeIds = new Set(instruments.filter((i) => String(i.kind).toLowerCase() === "safe").map((i) => i.instrument_id));
+    if (safeIds.size === 0) return [];
+    return positions.filter((p) => safeIds.has(p.instrument_id));
+  }
+  /** Extract transfer-workflow info (no dedicated list endpoint for share transfers). */
+  async getShareTransfers(entityId: string): Promise<ApiRecord[]> {
+    // No list endpoint exists; return empty with a hint.
+    return [{ _note: "Use transfer workflows: POST /v1/equity/transfer-workflows to initiate transfers.", entity_id: entityId }];
+  }
   getValuations(entityId: string) { return this.get(`/v1/entities/${entityId}/valuations`) as Promise<ApiRecord[]>; }
   getCurrent409a(entityId: string) { return this.get(`/v1/entities/${entityId}/current-409a`) as Promise<ApiRecord>; }
   createValuation(data: ApiRecord) { return this.post("/v1/valuations", data) as Promise<ApiRecord>; }
@@ -160,9 +172,7 @@ export class CorpAPIClient {
     if (resolutionId) body.resolution_id = resolutionId;
     return this.post(`/v1/valuations/${valuationId}/approve`, body) as Promise<ApiRecord>;
   }
-  issueEquity(data: ApiRecord) { return this.post("/v1/equity/grants", data) as Promise<ApiRecord>; }
-  issueSafe(data: ApiRecord) { return this.post("/v1/safe-notes", data) as Promise<ApiRecord>; }
-  transferShares(data: ApiRecord) { return this.post("/v1/share-transfers", data) as Promise<ApiRecord>; }
+  transferShares(data: ApiRecord) { return this.post("/v1/equity/transfer-workflows", data) as Promise<ApiRecord>; }
   calculateDistribution(data: ApiRecord) { return this.post("/v1/distributions", data) as Promise<ApiRecord>; }
 
   // --- Equity rounds (v1) ---
@@ -255,7 +265,7 @@ export class CorpAPIClient {
   createInvoice(data: ApiRecord) { return this.post("/v1/treasury/invoices", data) as Promise<ApiRecord>; }
   runPayroll(data: ApiRecord) { return this.post("/v1/payroll/runs", data) as Promise<ApiRecord>; }
   submitPayment(data: ApiRecord) { return this.post("/v1/payments", data) as Promise<ApiRecord>; }
-  openBankAccount(data: ApiRecord) { return this.post("/v1/bank-accounts", data) as Promise<ApiRecord>; }
+  openBankAccount(data: ApiRecord) { return this.post("/v1/treasury/bank-accounts", data) as Promise<ApiRecord>; }
   classifyContractor(data: ApiRecord) { return this.post("/v1/contractors/classify", data) as Promise<ApiRecord>; }
   reconcileLedger(data: ApiRecord) { return this.post("/v1/ledger/reconcile", data) as Promise<ApiRecord>; }
 
@@ -302,19 +312,17 @@ export class CorpAPIClient {
 
   // --- Agents ---
   listAgents() { return this.get("/v1/agents") as Promise<ApiRecord[]>; }
-  getAgent(id: string) { return this.get(`/v1/agents/${id}`) as Promise<ApiRecord>; }
+  getAgent(id: string) { return this.get(`/v1/agents/${id}/resolved`) as Promise<ApiRecord>; }
   createAgent(data: ApiRecord) { return this.post("/v1/agents", data) as Promise<ApiRecord>; }
   updateAgent(id: string, data: ApiRecord) { return this.patch(`/v1/agents/${id}`, data) as Promise<ApiRecord>; }
-  deleteAgent(id: string) { return this.del(`/v1/agents/${id}`); }
-  sendAgentMessage(id: string, body: string) { return this.post(`/v1/agents/${id}/messages`, { body }) as Promise<ApiRecord>; }
-  listAgentExecutions(id: string) { return this.get(`/v1/agents/${id}/executions`) as Promise<ApiRecord[]>; }
-  getAgentUsage(id: string) { return this.get(`/v1/agents/${id}/usage`) as Promise<ApiRecord>; }
+  deleteAgent(id: string) { return this.patch(`/v1/agents/${id}`, { status: "disabled" }) as Promise<ApiRecord>; }
+  sendAgentMessage(id: string, message: string) { return this.post(`/v1/agents/${id}/messages`, { message }) as Promise<ApiRecord>; }
   addAgentSkill(id: string, data: ApiRecord) { return this.post(`/v1/agents/${id}/skills`, data) as Promise<ApiRecord>; }
   listSupportedModels() { return this.get("/v1/models") as Promise<ApiRecord[]>; }
 
-  // --- Approvals ---
-  listPendingApprovals() { return this.get("/v1/approvals/pending") as Promise<ApiRecord[]>; }
-  respondApproval(id: string, decision: string, message = "") { return this.patch(`/v1/approvals/${id}`, { decision, message }) as Promise<ApiRecord>; }
+  // --- Governance bodies ---
+  createGovernanceBody(data: ApiRecord) { return this.post("/v1/governance-bodies", data) as Promise<ApiRecord>; }
+  createGovernanceSeat(bodyId: string, data: ApiRecord) { return this.post(`/v1/governance-bodies/${bodyId}/seats`, data) as Promise<ApiRecord>; }
 
   // --- API Keys ---
   listApiKeys() { return this.get("/v1/api-keys", { workspace_id: this.workspaceId }) as Promise<ApiRecord[]>; }

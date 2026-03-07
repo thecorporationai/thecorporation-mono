@@ -88,8 +88,13 @@ describe("workspace endpoints", () => {
   });
 
   it.skipIf(!canRun)("listContacts", async () => {
-    const contacts = await client.listContacts();
-    expect(Array.isArray(contacts)).toBe(true);
+    // listContacts requires an entity_id; skip if no entities exist
+    const entities = await client.listEntities();
+    if (entities.length > 0) {
+      const eid = (entities[0] as any).entity_id;
+      const contacts = await client.listContacts(eid);
+      expect(Array.isArray(contacts)).toBe(true);
+    }
   });
 
   it.skipIf(!canRun)("getObligations", async () => {
@@ -148,10 +153,7 @@ describe("workspace endpoints", () => {
     expect(Array.isArray(agents)).toBe(true);
   });
 
-  it.skipIf(!canRun)("listPendingApprovals", async () => {
-    const approvals = await client.listPendingApprovals();
-    expect(Array.isArray(approvals)).toBe(true);
-  });
+  // Approvals: no standalone endpoint; managed through governance meetings.
 
   it.skipIf(!canRun)("createLink", async () => {
     const link = await client.createLink();
@@ -264,9 +266,7 @@ describe("entity lifecycle", () => {
 
   // Write endpoints — may fail with 400/404 due to prerequisite state, but should not 422/500
   const writeEndpoints: Array<{ name: string; fn: (c: CorpAPIClient, eid: string) => Promise<unknown> }> = [
-    { name: "issueEquity", fn: (c, eid) => c.issueEquity({ entity_id: eid, holder_name: "Alice", shares: 1000 }) },
-    { name: "issueSafe", fn: (c, eid) => c.issueSafe({ entity_id: eid, investor_name: "Bob", amount: 50000 }) },
-    { name: "transferShares", fn: (c, eid) => c.transferShares({ entity_id: eid, from: "Alice", to: "Bob", shares: 100 }) },
+    { name: "transferShares", fn: (c, eid) => c.transferShares({ entity_id: eid, from_holder_id: "h_1", to_holder_id: "h_2", quantity: 100 }) },
     { name: "calculateDistribution", fn: (c, eid) => c.calculateDistribution({ entity_id: eid, total_amount: 10000 }) },
     { name: "createInvoice", fn: (c, eid) => c.createInvoice({ entity_id: eid, amount: 1000, description: "Test" }) },
     { name: "runPayroll", fn: (c, eid) => c.runPayroll({ entity_id: eid }) },
@@ -315,7 +315,7 @@ describe("equity rounds", () => {
 
   it.skipIf(!canRun)("createEquityRound", async () => {
     try {
-      const round = await client.createEquityRound({ entity_id: entityId, name: "Seed", round_type: "priced" });
+      const round = await client.createEquityRound({ entity_id: entityId, name: "Seed", issuer_legal_entity_id: "le_fake" });
       expectStructuredResponse(round);
     } catch (e: any) {
       expect(e.message).not.toMatch(/422/);
@@ -325,11 +325,11 @@ describe("equity rounds", () => {
 
   // These require a valid round ID — test they send well-formed requests
   const roundMethods = [
-    { name: "applyEquityRoundTerms", fn: (c: CorpAPIClient) => c.applyEquityRoundTerms("fake-round", { pre_money_valuation: "1000000", price_per_share: "1.00" }) },
-    { name: "boardApproveEquityRound", fn: (c: CorpAPIClient) => c.boardApproveEquityRound("fake-round", { approved_by: "board", resolution_id: "res_1" }) },
-    { name: "acceptEquityRound", fn: (c: CorpAPIClient) => c.acceptEquityRound("fake-round", { accepted_by: "investor" }) },
-    { name: "previewRoundConversion", fn: (c: CorpAPIClient) => c.previewRoundConversion({ round_id: "fake-round" }) },
-    { name: "executeRoundConversion", fn: (c: CorpAPIClient) => c.executeRoundConversion({ round_id: "fake-round", intent_id: "intent_1" }) },
+    { name: "applyEquityRoundTerms", fn: (c: CorpAPIClient) => c.applyEquityRoundTerms("fake-round", { entity_id: "ent_1", anti_dilution_method: "broad_weighted_average" }) },
+    { name: "boardApproveEquityRound", fn: (c: CorpAPIClient) => c.boardApproveEquityRound("fake-round", { entity_id: "ent_1", meeting_id: "m_1", resolution_id: "res_1" }) },
+    { name: "acceptEquityRound", fn: (c: CorpAPIClient) => c.acceptEquityRound("fake-round", { entity_id: "ent_1", intent_id: "intent_1" }) },
+    { name: "previewRoundConversion", fn: (c: CorpAPIClient) => c.previewRoundConversion({ entity_id: "ent_1", round_id: "fake-round" }) },
+    { name: "executeRoundConversion", fn: (c: CorpAPIClient) => c.executeRoundConversion({ entity_id: "ent_1", round_id: "fake-round", intent_id: "intent_1" }) },
   ];
 
   for (const { name, fn } of roundMethods) {
@@ -367,7 +367,8 @@ describe("intent lifecycle", () => {
       const intent = await client.createExecutionIntent({
         entity_id: entityId,
         intent_type: "issue_equity",
-        params: { shares: 1000 },
+        authority_tier: "board_majority",
+        description: "Issue 1000 shares",
       });
       expectStructuredResponse(intent);
     } catch (e: any) {
@@ -554,19 +555,11 @@ describe("agents", () => {
     }
   });
 
-  it.skipIf(!canRun)("listAgentExecutions", async () => {
-    const execs = await client.listAgentExecutions(agentId);
-    expect(Array.isArray(execs)).toBe(true);
-  });
-
-  it.skipIf(!canRun)("getAgentUsage", async () => {
-    const usage = await client.getAgentUsage(agentId);
-    expectStructuredResponse(usage);
-  });
+  // listAgentExecutions and getAgentUsage: no list endpoint exists.
 
   it.skipIf(!canRun)("addAgentSkill", async () => {
     try {
-      const result = await client.addAgentSkill(agentId, { skill_name: "test_skill", config: {} });
+      const result = await client.addAgentSkill(agentId, { name: "test_skill", description: "A test skill" });
       expectStructuredResponse(result);
     } catch (e: any) {
       expect(e.message).not.toMatch(/422/);

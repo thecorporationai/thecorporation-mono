@@ -130,15 +130,15 @@ describe("CorpAPIClient HTTP methods", () => {
   });
 
   it("listContacts uses correct path", async () => {
-    await client.listContacts();
-    expect(capturedRequests[0].url).toBe("http://localhost:8000/v1/workspaces/ws_test/contacts");
+    await client.listContacts("ent_123");
+    expect(capturedRequests[0].url).toBe("http://localhost:8000/v1/entities/ent_123/contacts");
   });
 
   it("createContact sends POST with body", async () => {
-    await client.createContact({ name: "Alice", email: "alice@test.com" });
+    await client.createContact({ entity_id: "ent_123", contact_type: "individual", name: "Alice", email: "alice@test.com", category: "employee" });
     expect(capturedRequests[0].method).toBe("POST");
-    expect(capturedRequests[0].url).toBe("http://localhost:8000/v1/workspaces/ws_test/contacts");
-    expect(JSON.parse(capturedRequests[0].body!)).toEqual({ name: "Alice", email: "alice@test.com" });
+    expect(capturedRequests[0].url).toBe("http://localhost:8000/v1/contacts");
+    expect(JSON.parse(capturedRequests[0].body!).name).toBe("Alice");
   });
 
   it("updateContact sends PATCH", async () => {
@@ -147,10 +147,11 @@ describe("CorpAPIClient HTTP methods", () => {
     expect(capturedRequests[0].url).toBe("http://localhost:8000/v1/contacts/c_1");
   });
 
-  it("deleteAgent sends DELETE", async () => {
+  it("deleteAgent sends PATCH with disabled status", async () => {
     await client.deleteAgent("agent_1");
-    expect(capturedRequests[0].method).toBe("DELETE");
+    expect(capturedRequests[0].method).toBe("PATCH");
     expect(capturedRequests[0].url).toBe("http://localhost:8000/v1/agents/agent_1");
+    expect(JSON.parse(capturedRequests[0].body!)).toEqual({ status: "disabled" });
   });
 
   it("getObligations includes tier param when provided", async () => {

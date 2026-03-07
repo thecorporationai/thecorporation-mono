@@ -21,9 +21,7 @@ export async function agentsShowCommand(agentId: string, opts: { json?: boolean 
   const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
   try {
     const agent = await client.getAgent(agentId);
-    let usage: ApiRecord = {};
-    try { usage = await client.getAgentUsage(agentId); } catch { /* ignore */ }
-    if (opts.json) { printJson({ agent, usage }); return; }
+    if (opts.json) { printJson(agent); return; }
     console.log(chalk.magenta("─".repeat(40)));
     console.log(chalk.magenta.bold("  Agent Detail"));
     console.log(chalk.magenta("─".repeat(40)));
@@ -36,11 +34,8 @@ export async function agentsShowCommand(agentId: string, opts: { json?: boolean 
       if (prompt.length > 100) prompt = prompt.slice(0, 97) + "...";
       console.log(`  ${chalk.bold("Prompt:")} ${prompt}`);
     }
-    if (Object.keys(usage).length > 0) {
-      console.log(`\n  ${chalk.bold("Usage:")}`);
-      for (const [k, v] of Object.entries(usage)) {
-        if (k !== "agent_id") console.log(`    ${k}: ${v}`);
-      }
+    if (agent.skills && Array.isArray(agent.skills) && agent.skills.length > 0) {
+      console.log(`  ${chalk.bold("Skills:")} ${(agent.skills as Array<{name?: string}>).map((s) => s.name ?? "?").join(", ")}`);
     }
     console.log(chalk.magenta("─".repeat(40)));
   } catch (err) { printError(`Failed to fetch agent: ${err}`); process.exit(1); }
@@ -93,25 +88,15 @@ export async function agentsMessageCommand(agentId: string, opts: { body: string
   } catch (err) { printError(`Failed to send message: ${err}`); process.exit(1); }
 }
 
-export async function agentsExecutionsCommand(agentId: string, opts: { json?: boolean }): Promise<void> {
-  const cfg = requireConfig("api_url", "api_key", "workspace_id");
-  const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
-  try {
-    const executions = await client.listAgentExecutions(agentId);
-    if (opts.json) { printJson(executions); return; }
-    if (executions.length === 0) { console.log("No executions found."); return; }
-    console.log(`\n${chalk.bold("Agent Executions")}`);
-    const table = new Table({ head: [chalk.dim("ID"), chalk.dim("Status"), chalk.dim("Started"), chalk.dim("Duration")] });
-    for (const ex of executions) {
-      table.push([
-        String(ex.execution_id ?? "").slice(0, 12),
-        String(ex.status ?? ""),
-        String(ex.started_at ?? ""),
-        String(ex.duration ?? ""),
-      ]);
-    }
-    console.log(table.toString());
-  } catch (err) { printError(`Failed to fetch executions: ${err}`); process.exit(1); }
+export async function agentsExecutionsCommand(agentId: string, _opts: { json?: boolean }): Promise<void> {
+  // No list-executions endpoint exists yet; individual executions can be
+  // queried via GET /v1/agents/{agent_id}/executions/{execution_id}.
+  printError(
+    `Listing executions is not yet supported.\n` +
+    `  To inspect a specific run, use the execution ID returned by "agents message":\n` +
+    `  GET /v1/agents/${agentId}/executions/<execution-id>`,
+  );
+  process.exit(1);
 }
 
 export async function agentsSkillCommand(agentId: string, opts: {
@@ -121,7 +106,7 @@ export async function agentsSkillCommand(agentId: string, opts: {
   const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
   try {
     const result = await client.addAgentSkill(agentId, {
-      skill_name: opts.name, description: opts.description, instructions: opts.instructions ?? "",
+      name: opts.name, description: opts.description, parameters: opts.instructions ? { instructions: opts.instructions } : {},
     });
     printSuccess(`Skill '${opts.name}' added to agent ${agentId}.`);
     printJson(result);

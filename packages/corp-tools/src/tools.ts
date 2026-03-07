@@ -105,7 +105,11 @@ const entityActions: Record<string, ToolHandler> = {
     return result;
   },
 
-  convert: async (args, client) => client.convertEntity(requiredString(args, "entity_id"), args),
+  convert: async (args, client) => {
+    const body: Record<string, unknown> = { target_type: args.target_type ?? args.to_type ?? args.new_entity_type };
+    if (args.new_jurisdiction) body.new_jurisdiction = args.new_jurisdiction;
+    return client.convertEntity(requiredString(args, "entity_id"), body);
+  },
   dissolve: async (args, client) => client.dissolveEntity(requiredString(args, "entity_id"), args),
 };
 
@@ -341,7 +345,7 @@ const financeActions: Record<string, ToolHandler> = {
 
   open_bank_account: async (args, client) => {
     const body: Record<string, unknown> = { entity_id: args.entity_id };
-    if (args.institution_name) body.institution_name = args.institution_name;
+    body.bank_name = args.bank_name ?? args.institution_name ?? "Mercury";
     return client.openBankAccount(body);
   },
 
@@ -433,7 +437,7 @@ const checklistActions: Record<string, ToolHandler> = {
 const agentActions: Record<string, ToolHandler> = {
   list: async (_args, client) => client.listAgents(),
   create: async (args, client) => client.createAgent(args),
-  message: async (args, client) => client.sendAgentMessage(args.agent_id as string, args.body as string),
+  message: async (args, client) => client.sendAgentMessage(args.agent_id as string, (args.message ?? args.body) as string),
   update: async (args, client) => client.updateAgent(args.agent_id as string, args),
   add_skill: async (args, client) => client.addAgentSkill(args.agent_id as string, args),
 };

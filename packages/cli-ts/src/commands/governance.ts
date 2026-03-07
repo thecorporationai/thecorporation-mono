@@ -5,6 +5,39 @@ import {
   printResolutionsTable, printError, printSuccess, printJson,
 } from "../output.js";
 
+export async function governanceCreateBodyCommand(opts: {
+  entityId?: string; name: string; bodyType: string; quorum: string; voting: string;
+}): Promise<void> {
+  const cfg = requireConfig("api_url", "api_key", "workspace_id");
+  const eid = resolveEntityId(cfg, opts.entityId);
+  const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
+  try {
+    const result = await client.createGovernanceBody({
+      entity_id: eid,
+      body_type: opts.bodyType,
+      name: opts.name,
+      quorum_rule: opts.quorum,
+      voting_method: opts.voting,
+    });
+    printSuccess(`Governance body created: ${result.body_id ?? "OK"}`);
+    printJson(result);
+  } catch (err) { printError(`Failed to create governance body: ${err}`); process.exit(1); }
+}
+
+export async function governanceAddSeatCommand(bodyId: string, opts: {
+  holder: string; title?: string;
+}): Promise<void> {
+  const cfg = requireConfig("api_url", "api_key", "workspace_id");
+  const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
+  try {
+    const data: Record<string, unknown> = { holder_id: opts.holder };
+    if (opts.title) data.title = opts.title;
+    const result = await client.createGovernanceSeat(bodyId, data);
+    printSuccess(`Seat added: ${result.seat_id ?? "OK"}`);
+    printJson(result);
+  } catch (err) { printError(`Failed to add seat: ${err}`); process.exit(1); }
+}
+
 export async function governanceListCommand(opts: { entityId?: string; json?: boolean }): Promise<void> {
   const cfg = requireConfig("api_url", "api_key", "workspace_id");
   const eid = resolveEntityId(cfg, opts.entityId);

@@ -228,13 +228,13 @@ export async function transferSharesCommand(opts: {
   const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
   try {
     const result = await client.transferShares({
-      entity_id: eid, from_holder: opts.fromGrant, to_holder: opts.to,
-      shares: opts.shares, transfer_type: opts.type,
+      entity_id: eid, from_holder_id: opts.fromGrant, to_holder_id: opts.to,
+      quantity: opts.shares, transfer_type: opts.type,
     });
-    printSuccess(`Transfer complete: ${result.transfer_id ?? "OK"}`);
+    printSuccess(`Transfer workflow created: ${result.workflow_id ?? "OK"}`);
     printJson(result);
   } catch (err) {
-    printError(`Failed to transfer shares: ${err}`);
+    printError(`Failed to create transfer workflow: ${err}`);
     process.exit(1);
   }
 }
@@ -243,6 +243,7 @@ export async function distributeCommand(opts: {
   entityId?: string;
   amount: number;
   type: string;
+  description: string;
 }): Promise<void> {
   const cfg = requireConfig("api_url", "api_key", "workspace_id");
   const eid = resolveEntityId(cfg, opts.entityId);
@@ -250,6 +251,7 @@ export async function distributeCommand(opts: {
   try {
     const result = await client.calculateDistribution({
       entity_id: eid, total_amount_cents: opts.amount, distribution_type: opts.type,
+      description: opts.description,
     });
     printSuccess(`Distribution calculated: ${result.distribution_id ?? "OK"}`);
     printJson(result);

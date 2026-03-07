@@ -60,7 +60,7 @@ export async function entitiesConvertCommand(
   const cfg = requireConfig("api_url", "api_key", "workspace_id");
   const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
   try {
-    const data: Record<string, string> = { new_entity_type: opts.to };
+    const data: Record<string, string> = { target_type: opts.to };
     if (opts.jurisdiction) data.new_jurisdiction = opts.jurisdiction;
     const result = await client.convertEntity(entityId, data);
     printSuccess(`Entity conversion initiated: ${result.conversion_id ?? "OK"}`);

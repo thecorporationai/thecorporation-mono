@@ -141,6 +141,7 @@ entitiesCmd
 const contactsCmd = program
   .command("contacts")
   .description("Contact management")
+  .option("--entity-id <id>", "Entity ID (overrides active entity)")
   .option("--json", "Output as JSON")
   .action(async (opts) => {
     const { contactsListCommand } = await import("./commands/contacts.js");
@@ -158,13 +159,15 @@ contactsCmd
   .command("add")
   .requiredOption("--name <name>", "Contact name")
   .requiredOption("--email <email>", "Contact email")
-  .option("--category <category>", "Contact category")
+  .option("--type <type>", "Contact type (individual, organization)", "individual")
+  .option("--category <category>", "Category (employee, contractor, board_member, investor, law_firm, valuation_firm, accounting_firm, officer, advisor)")
   .option("--phone <phone>", "Phone number")
   .option("--notes <notes>", "Notes")
   .description("Add a new contact")
-  .action(async (opts) => {
+  .action(async (opts, cmd) => {
+    const parent = cmd.parent!.opts();
     const { contactsAddCommand } = await import("./commands/contacts.js");
-    await contactsAddCommand(opts);
+    await contactsAddCommand({ ...opts, entityId: parent.entityId });
   });
 contactsCmd
   .command("edit <contact-id>")
@@ -249,7 +252,8 @@ capTableCmd
 capTableCmd
   .command("distribute")
   .requiredOption("--amount <n>", "Total distribution amount in cents", parseInt)
-  .option("--type <type>", "Distribution type", "pro_rata")
+  .option("--type <type>", "Distribution type (dividend, return, liquidation)", "dividend")
+  .requiredOption("--description <desc>", "Distribution description")
   .description("Calculate a distribution")
   .action(async (opts, cmd) => {
     const parent = cmd.parent!.opts();
@@ -404,6 +408,27 @@ const governanceCmd = program
   .action(async (opts) => {
     const { governanceListCommand } = await import("./commands/governance.js");
     await governanceListCommand(opts);
+  });
+governanceCmd
+  .command("create-body")
+  .requiredOption("--name <name>", "Body name (e.g. 'Board of Directors')")
+  .requiredOption("--body-type <type>", "Body type (board_of_directors, llc_member_vote)")
+  .option("--quorum <rule>", "Quorum rule (majority, supermajority, unanimous)", "majority")
+  .option("--voting <method>", "Voting method (per_capita, per_unit)", "per_capita")
+  .description("Create a governance body")
+  .action(async (opts, cmd) => {
+    const parent = cmd.parent!.opts();
+    const { governanceCreateBodyCommand } = await import("./commands/governance.js");
+    await governanceCreateBodyCommand({ ...opts, entityId: parent.entityId });
+  });
+governanceCmd
+  .command("add-seat <body-id>")
+  .requiredOption("--holder <contact-id>", "Contact ID for the seat holder")
+  .option("--title <title>", "Seat title (e.g. 'Director', 'Member')")
+  .description("Add a seat to a governance body")
+  .action(async (bodyId: string, opts) => {
+    const { governanceAddSeatCommand } = await import("./commands/governance.js");
+    await governanceAddSeatCommand(bodyId, opts);
   });
 governanceCmd
   .command("seats <body-id>")
@@ -657,32 +682,25 @@ billingCmd.command("upgrade").option("--plan <plan>", "Plan ID to upgrade to (fr
   });
 
 // --- approvals ---
-const approvalsCmd = program
+// The approval system is integrated into governance meetings (vote on agenda items)
+// and execution intents. There is no standalone /v1/approvals endpoint.
+program
   .command("approvals")
-  .description("Pending approvals and responses")
-  .option("--json", "Output as JSON")
-  .action(async (opts) => {
-    const { approvalsListCommand } = await import("./commands/approvals.js");
-    await approvalsListCommand(opts);
-  });
-approvalsCmd.command("approve <approval-id>").option("--message <msg>", "Optional message")
-  .description("Approve a pending approval")
-  .action(async (approvalId: string, opts) => {
-    const { approvalsRespondCommand } = await import("./commands/approvals.js");
-    await approvalsRespondCommand(approvalId, "approve", opts);
-  });
-approvalsCmd.command("reject <approval-id>").option("--message <msg>", "Optional message")
-  .description("Reject a pending approval")
-  .action(async (approvalId: string, opts) => {
-    const { approvalsRespondCommand } = await import("./commands/approvals.js");
-    await approvalsRespondCommand(approvalId, "reject", opts);
+  .description("Approvals are managed through governance meetings and execution intents")
+  .action(async () => {
+    const { printError } = await import("./output.js");
+    printError(
+      "Approvals are managed through governance meetings.\n" +
+      "  Use: corp governance convene ... to schedule a board meeting\n" +
+      "  Use: corp governance vote <meeting-id> <item-id> ... to cast votes"
+    );
   });
 
 // --- form ---
 const formCmd = program
   .command("form")
   .description("Form a new entity with founders and cap table (Cooley-style)")
-  .option("--type <type>", "Entity type (llc, c_corp)")
+  .option("--entity-type <type>", "Entity type (llc, c_corp)")
   .option("--name <name>", "Legal name")
   .option("--jurisdiction <jurisdiction>", "Jurisdiction (e.g. US-DE, US-WY)")
   .option("--member <member>", "Member as 'name,email,role[,pct]' — role: director|officer|manager|member|chair (repeatable)", (v: string, a: string[]) => [...a, v], [] as string[])
@@ -692,6 +710,8 @@ const formCmd = program
   .option("--transfer-restrictions", "Enable transfer restrictions")
   .option("--rofr", "Enable right of first refusal")
   .action(async (opts) => {
+    // Map --entity-type to the internal --type key expected by formCommand
+    if (opts.entityType && !opts.type) opts.type = opts.entityType;
     const { formCommand } = await import("./commands/form.js");
     await formCommand(opts);
   });
