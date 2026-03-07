@@ -292,7 +292,7 @@ export const GENERATED_TOOL_DEFINITIONS: Record<string, unknown>[] = [
     "type": "function",
     "function": {
       "name": "document",
-      "description": "Document access, signing, and preview. Actions: signing_link (document_id — get signing link for a document), signer_link (obligation_id — generate signing link for a human obligation), download_link (document_id — get download link), preview_pdf (entity_id + document_id — preview a governance document as PDF without requiring a saved document).",
+      "description": "Document access, signing, and preview. Actions: signing_link (entity_id + document_id — get signing link with token for a document), signer_link (obligation_id — generate signing link for a human obligation), download_link (document_id — get download link), preview_pdf (entity_id + document_id — preview a governance document as PDF without requiring a saved document).",
       "parameters": {
         "type": "object",
         "properties": {
@@ -302,7 +302,7 @@ export const GENERATED_TOOL_DEFINITIONS: Record<string, unknown>[] = [
           },
           "document_id": { "type": "string", "description": "signing_link/download_link/preview_pdf: document ID (or AST definition ID for preview_pdf)" },
           "obligation_id": { "type": "string", "description": "signer_link: obligation ID" },
-          "entity_id": { "type": "string", "description": "preview_pdf: entity whose profile to use for rendering" }
+          "entity_id": { "type": "string", "description": "signing_link/preview_pdf: entity ID (required)" }
         },
         "required": ["action"]
       }

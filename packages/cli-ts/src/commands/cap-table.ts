@@ -83,7 +83,12 @@ export async function fourOhNineACommand(opts: { entityId?: string; json?: boole
     else if (!data || Object.keys(data).length === 0) console.log("No 409A valuation found.");
     else print409a(data);
   } catch (err) {
-    printError(`Failed to fetch 409A valuation: ${err}`);
+    const msg = String(err);
+    if (msg.includes("404")) {
+      console.log("No 409A valuation found for this entity. Create one with:\n  corp cap-table create-valuation --type four_oh_nine_a --date YYYY-MM-DD --methodology <method>");
+    } else {
+      printError(`Failed to fetch 409A valuation: ${err}`);
+    }
     process.exit(1);
   }
 }
@@ -218,19 +223,35 @@ export async function issueSafeCommand(opts: {
 
 export async function transferSharesCommand(opts: {
   entityId?: string;
-  fromGrant: string;
+  from: string;
   to: string;
   shares: number;
   type: string;
+  shareClassId: string;
+  governingDocType: string;
+  transfereeRights: string;
+  prepareIntentId: string;
+  pricePerShareCents?: number;
+  relationship?: string;
 }): Promise<void> {
   const cfg = requireConfig("api_url", "api_key", "workspace_id");
   const eid = resolveEntityId(cfg, opts.entityId);
   const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
   try {
-    const result = await client.transferShares({
-      entity_id: eid, from_holder_id: opts.fromGrant, to_holder_id: opts.to,
-      quantity: opts.shares, transfer_type: opts.type,
-    });
+    const body: Record<string, unknown> = {
+      entity_id: eid,
+      share_class_id: opts.shareClassId,
+      from_contact_id: opts.from,
+      to_contact_id: opts.to,
+      transfer_type: opts.type,
+      share_count: opts.shares,
+      governing_doc_type: opts.governingDocType,
+      transferee_rights: opts.transfereeRights,
+      prepare_intent_id: opts.prepareIntentId,
+    };
+    if (opts.pricePerShareCents != null) body.price_per_share_cents = opts.pricePerShareCents;
+    if (opts.relationship) body.relationship_to_holder = opts.relationship;
+    const result = await client.transferShares(body);
     printSuccess(`Transfer workflow created: ${result.workflow_id ?? "OK"}`);
     printJson(result);
   } catch (err) {
@@ -377,7 +398,12 @@ export async function submitValuationCommand(opts: {
     if (result.agenda_item_id) console.log(`  Agenda Item: ${result.agenda_item_id}`);
     printJson(result);
   } catch (err) {
-    printError(`Failed to submit valuation: ${err}`);
+    const msg = String(err);
+    if (msg.includes("404")) {
+      printError(`Valuation not found. List valuations with: corp cap-table valuations`);
+    } else {
+      printError(`Failed to submit valuation: ${err}`);
+    }
     process.exit(1);
   }
 }
@@ -395,7 +421,12 @@ export async function approveValuationCommand(opts: {
     printSuccess(`Valuation approved: ${result.valuation_id ?? "OK"}`);
     printJson(result);
   } catch (err) {
-    printError(`Failed to approve valuation: ${err}`);
+    const msg = String(err);
+    if (msg.includes("400")) {
+      printError(`Bad request — a --resolution-id from a board vote may be required. Submit for approval first: corp cap-table submit-valuation <id>`);
+    } else {
+      printError(`Failed to approve valuation: ${err}`);
+    }
     process.exit(1);
   }
 }

@@ -375,14 +375,22 @@ const getDocumentLink = {
 const getSigningLink = {
   name: "get_signing_link",
   label: "Get Signing Link",
-  description: "Generate a signing link for a document. Returns a URL the user must open to sign. Documents can ONLY be signed through this link.",
+  description: "Generate a signing link for a document. Returns a URL with a signing token the user must open to sign. Documents can ONLY be signed through this link.",
   parameters: Type.Object({
     document_id: Type.String({ description: "The document ID to generate a signing link for" }),
+    entity_id: Type.String({ description: "The entity ID the document belongs to" }),
   }),
   async execute(toolCallId: string, params: any, signal: any) {
+    const qs = new URLSearchParams({ entity_id: params.entity_id }).toString();
+    const data = await apiCall("GET", `/v1/sign/${params.document_id}?${qs}`);
+    const signingUrl = data.token
+      ? `https://humans.thecorporation.ai/sign/${params.document_id}?token=${data.token}`
+      : data.signing_url ?? `https://humans.thecorporation.ai/sign/${params.document_id}`;
     const result = {
-      document_id: params.document_id,
-      signing_url: `https://humans.thecorporation.ai/sign/${params.document_id}`,
+      document_id: data.document_id ?? params.document_id,
+      signing_url: signingUrl,
+      token: data.token,
+      message: "Open this link to sign the document. Only the authorized signer can complete the signature.",
     };
     return { content: [{ type: "text" as const, text: JSON.stringify(result) }], details: result };
   },

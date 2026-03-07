@@ -84,7 +84,12 @@ export async function entitiesDissolveCommand(
     printSuccess(`Dissolution initiated: ${result.dissolution_id ?? "OK"}`);
     printJson(result);
   } catch (err) {
-    printError(`Failed to dissolve entity: ${err}`);
+    const msg = String(err);
+    if (msg.includes("InvalidTransition") || msg.includes("422")) {
+      printError(`Cannot dissolve entity: only entities with 'active' status can be dissolved. Check the entity's current status with: corp entities show ${entityId}`);
+    } else {
+      printError(`Failed to dissolve entity: ${err}`);
+    }
     process.exit(1);
   }
 }

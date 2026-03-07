@@ -156,7 +156,7 @@ describe("workspace endpoints", () => {
   // Approvals: no standalone endpoint; managed through governance meetings.
 
   it.skipIf(!canRun)("createLink", async () => {
-    const link = await client.createLink();
+    const link = await client.createLink("test-ext-id", "test-provider");
     expectStructuredResponse(link);
   });
 });
@@ -456,14 +456,23 @@ describe("governance", () => {
 describe("contacts", () => {
   let client: CorpAPIClient;
   let contactId: string;
+  let entityId: string;
 
   beforeAll(async () => {
     if (skipIfNoServer()) return;
     ({ client } = await freshClient("Contacts Test"));
+    const formation = await client.createFormation({
+      entity_type: "llc",
+      legal_name: "Contacts Test LLC",
+      jurisdiction: "US-WY",
+      members: [{ name: "Owner", investor_type: "natural_person", email: "o@test.com", ownership_pct: 100 }],
+    });
+    entityId = (formation.entity_id ?? formation.id) as string;
   });
 
   it.skipIf(!canRun)("createContact", async () => {
     const contact = await client.createContact({
+      entity_id: entityId,
       name: "Integration Contact",
       email: "contact@integration.test",
     });
@@ -473,18 +482,18 @@ describe("contacts", () => {
   });
 
   it.skipIf(!canRun)("getContact", async () => {
-    const contact = await client.getContact(contactId);
+    const contact = await client.getContact(contactId, entityId);
     expectStructuredResponse(contact);
   });
 
   it.skipIf(!canRun)("updateContact", async () => {
-    const updated = await client.updateContact(contactId, { name: "Updated Contact" });
+    const updated = await client.updateContact(contactId, { entity_id: entityId, name: "Updated Contact" });
     expectStructuredResponse(updated);
   });
 
   it.skipIf(!canRun)("getContactProfile", async () => {
     try {
-      const profile = await client.getContactProfile(contactId);
+      const profile = await client.getContactProfile(contactId, entityId);
       expectStructuredResponse(profile);
     } catch (e: any) {
       expect(e.message).not.toMatch(/422/);

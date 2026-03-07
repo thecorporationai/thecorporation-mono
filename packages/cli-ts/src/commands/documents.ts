@@ -14,13 +14,18 @@ export async function documentsListCommand(opts: { entityId?: string; json?: boo
   } catch (err) { printError(`Failed to fetch documents: ${err}`); process.exit(1); }
 }
 
-export async function documentsSigningLinkCommand(docId: string): Promise<void> {
+export async function documentsSigningLinkCommand(docId: string, opts: { entityId?: string }): Promise<void> {
   const cfg = requireConfig("api_url", "api_key", "workspace_id");
+  const eid = resolveEntityId(cfg, opts.entityId);
   const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
   try {
-    const result = client.getSigningLink(docId);
+    const result = await client.getSigningLink(docId, eid);
     printSuccess(`Signing link: ${result.signing_url}`);
-    console.log("Open this link in your browser to sign the document.");
+    if (result.token) {
+      console.log(`  Token: ${result.token}`);
+      console.log(`  Share this URL with the signer:`);
+      console.log(`  https://humans.thecorporation.ai/sign/${docId}?token=${result.token}`);
+    }
   } catch (err) { printError(`Failed to get signing link: ${err}`); process.exit(1); }
 }
 

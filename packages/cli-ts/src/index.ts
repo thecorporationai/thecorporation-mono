@@ -77,10 +77,12 @@ program
 // --- link ---
 program
   .command("link")
-  .description("Generate a claim code to pair another device")
-  .action(async () => {
+  .description("Link workspace to an external provider")
+  .requiredOption("--external-id <id>", "External ID to link")
+  .requiredOption("--provider <provider>", "Provider name (e.g. stripe, github)")
+  .action(async (opts) => {
     const { linkCommand } = await import("./commands/link.js");
-    await linkCommand();
+    await linkCommand(opts);
   });
 
 // --- claim ---
@@ -151,9 +153,10 @@ contactsCmd
   .command("show <contact-id>")
   .option("--json", "Output as JSON")
   .description("Show contact detail/profile")
-  .action(async (contactId: string, opts) => {
+  .action(async (contactId: string, opts, cmd) => {
+    const parent = cmd.parent!.opts();
     const { contactsShowCommand } = await import("./commands/contacts.js");
-    await contactsShowCommand(contactId, opts);
+    await contactsShowCommand(contactId, { ...opts, entityId: parent.entityId });
   });
 contactsCmd
   .command("add")
@@ -177,9 +180,10 @@ contactsCmd
   .option("--phone <phone>", "Phone number")
   .option("--notes <notes>", "Notes")
   .description("Edit an existing contact")
-  .action(async (contactId: string, opts) => {
+  .action(async (contactId: string, opts, cmd) => {
+    const parent = cmd.parent!.opts();
     const { contactsEditCommand } = await import("./commands/contacts.js");
-    await contactsEditCommand(contactId, opts);
+    await contactsEditCommand(contactId, { ...opts, entityId: parent.entityId });
   });
 
 // --- cap-table ---
@@ -239,11 +243,17 @@ capTableCmd
   });
 capTableCmd
   .command("transfer")
-  .requiredOption("--from-grant <id>", "Source grant ID")
-  .requiredOption("--to <name>", "Recipient name")
-  .requiredOption("--shares <n>", "Number of shares", parseInt)
+  .requiredOption("--from <id>", "Source contact ID (from_contact_id)")
+  .requiredOption("--to <id>", "Destination contact ID (to_contact_id)")
+  .requiredOption("--shares <n>", "Number of shares to transfer", parseInt)
+  .requiredOption("--share-class-id <id>", "Share class ID")
+  .requiredOption("--governing-doc-type <type>", "Governing document type")
+  .requiredOption("--transferee-rights <rights>", "Transferee rights")
+  .requiredOption("--prepare-intent-id <id>", "Prepare intent ID")
   .option("--type <type>", "Transfer type", "sale")
-  .description("Transfer shares")
+  .option("--price-per-share-cents <n>", "Price per share in cents", parseInt)
+  .option("--relationship <rel>", "Relationship to holder")
+  .description("Create a share transfer workflow")
   .action(async (opts, cmd) => {
     const parent = cmd.parent!.opts();
     const { transferSharesCommand } = await import("./commands/cap-table.js");
@@ -551,9 +561,10 @@ const documentsCmd = program
 documentsCmd
   .command("signing-link <doc-id>")
   .description("Get a signing link for a document")
-  .action(async (docId: string) => {
+  .action(async (docId: string, _opts, cmd) => {
+    const parent = cmd.parent!.opts();
     const { documentsSigningLinkCommand } = await import("./commands/documents.js");
-    await documentsSigningLinkCommand(docId);
+    await documentsSigningLinkCommand(docId, { entityId: parent.entityId });
   });
 documentsCmd
   .command("generate")
@@ -701,7 +712,7 @@ const formCmd = program
   .command("form")
   .description("Form a new entity with founders and cap table (Cooley-style)")
   .option("--entity-type <type>", "Entity type (llc, c_corp)")
-  .option("--name <name>", "Legal name")
+  .option("--legal-name <name>", "Legal name")
   .option("--jurisdiction <jurisdiction>", "Jurisdiction (e.g. US-DE, US-WY)")
   .option("--member <member>", "Member as 'name,email,role[,pct]' — role: director|officer|manager|member|chair (repeatable)", (v: string, a: string[]) => [...a, v], [] as string[])
   .option("--address <address>", "Company address as 'street,city,state,zip'")
@@ -710,8 +721,9 @@ const formCmd = program
   .option("--transfer-restrictions", "Enable transfer restrictions")
   .option("--rofr", "Enable right of first refusal")
   .action(async (opts) => {
-    // Map --entity-type to the internal --type key expected by formCommand
+    // Map --entity-type and --legal-name to the internal keys expected by formCommand
     if (opts.entityType && !opts.type) opts.type = opts.entityType;
+    if (opts.legalName && !opts.name) opts.name = opts.legalName;
     const { formCommand } = await import("./commands/form.js");
     await formCommand(opts);
   });

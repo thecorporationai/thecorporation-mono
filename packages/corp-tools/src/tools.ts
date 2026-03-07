@@ -369,7 +369,7 @@ const complianceActions: Record<string, ToolHandler> = {
 };
 
 const documentActions: Record<string, ToolHandler> = {
-  signing_link: async (args, client) => client.getSigningLink(args.document_id as string),
+  signing_link: async (args, client) => client.getSigningLink(args.document_id as string, requiredString(args, "entity_id")),
 
   signer_link: async (args, client) => {
     const result = await client.getSignerToken(args.obligation_id as string);

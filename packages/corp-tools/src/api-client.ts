@@ -138,8 +138,8 @@ export class CorpAPIClient {
 
   // --- Contacts ---
   listContacts(entityId: string) { return this.get(`/v1/entities/${entityId}/contacts`) as Promise<ApiRecord[]>; }
-  getContact(id: string) { return this.get(`/v1/contacts/${id}`) as Promise<ApiRecord>; }
-  getContactProfile(id: string) { return this.get(`/v1/contacts/${id}/profile`) as Promise<ApiRecord>; }
+  getContact(id: string, entityId: string) { return this.get(`/v1/contacts/${id}`, { entity_id: entityId }) as Promise<ApiRecord>; }
+  getContactProfile(id: string, entityId: string) { return this.get(`/v1/contacts/${id}/profile`, { entity_id: entityId }) as Promise<ApiRecord>; }
   createContact(data: ApiRecord) { return this.post("/v1/contacts", data) as Promise<ApiRecord>; }
   updateContact(id: string, data: ApiRecord) { return this.patch(`/v1/contacts/${id}`, data) as Promise<ApiRecord>; }
   getNotificationPrefs(contactId: string) { return this.get(`/v1/contacts/${contactId}/notification-prefs`) as Promise<ApiRecord>; }
@@ -254,11 +254,8 @@ export class CorpAPIClient {
   // --- Documents ---
   getEntityDocuments(entityId: string) { return this.get(`/v1/formations/${entityId}/documents`) as Promise<ApiRecord[]>; }
   generateContract(data: ApiRecord) { return this.post("/v1/contracts", data) as Promise<ApiRecord>; }
-  getSigningLink(documentId: string): ApiRecord {
-    return {
-      document_id: documentId,
-      signing_url: `https://humans.thecorporation.ai/sign/${documentId}`,
-    };
+  getSigningLink(documentId: string, entityId: string) {
+    return this.get(`/v1/sign/${documentId}`, { entity_id: entityId }) as Promise<ApiRecord>;
   }
 
   // --- Finance ---
@@ -336,9 +333,12 @@ export class CorpAPIClient {
   getConfig() { return this.get("/v1/config") as Promise<ApiRecord>; }
 
   // --- Link/Claim ---
-  async createLink(): Promise<ApiRecord> {
-    const resp = await this.request("POST", "/v1/workspaces/link");
-    if (!resp.ok) throw new Error(`${resp.status} ${resp.statusText}`);
+  async createLink(externalId: string, provider: string): Promise<ApiRecord> {
+    const resp = await this.request("POST", "/v1/workspaces/link", { external_id: externalId, provider });
+    if (!resp.ok) {
+      const detail = await extractErrorMessage(resp);
+      throw new Error(`${resp.status} ${resp.statusText} — ${detail}`);
+    }
     return resp.json() as Promise<ApiRecord>;
   }
 }

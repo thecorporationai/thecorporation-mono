@@ -19,11 +19,12 @@ export async function contactsListCommand(opts: { entityId?: string; json?: bool
   }
 }
 
-export async function contactsShowCommand(contactId: string, opts: { json?: boolean }): Promise<void> {
+export async function contactsShowCommand(contactId: string, opts: { entityId?: string; json?: boolean }): Promise<void> {
   const cfg = requireConfig("api_url", "api_key", "workspace_id");
+  const eid = resolveEntityId(cfg, opts.entityId);
   const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
   try {
-    const profile = await client.getContactProfile(contactId);
+    const profile = await client.getContactProfile(contactId, eid);
     if (opts.json) {
       printJson(profile);
     } else {
@@ -83,12 +84,13 @@ export async function contactsAddCommand(opts: {
 
 export async function contactsEditCommand(
   contactId: string,
-  opts: { name?: string; email?: string; category?: string; phone?: string; notes?: string }
+  opts: { entityId?: string; name?: string; email?: string; category?: string; phone?: string; notes?: string }
 ): Promise<void> {
   const cfg = requireConfig("api_url", "api_key", "workspace_id");
+  const eid = resolveEntityId(cfg, opts.entityId);
   const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
   try {
-    const data: ApiRecord = {};
+    const data: ApiRecord = { entity_id: eid };
     if (opts.name != null) data.name = opts.name;
     if (opts.email != null) data.email = opts.email;
     if (opts.category != null) data.category = opts.category;

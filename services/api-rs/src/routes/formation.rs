@@ -1388,6 +1388,46 @@ pub struct ContractResponse {
 pub struct SigningLinkResponse {
     pub document_id: DocumentId,
     pub signing_url: String,
+    pub token: String,
+}
+
+/// Persisted signing token that maps a hashed token to a document.
+/// The raw token is never stored — only its SHA-256 hash is persisted
+/// (similar to Django CSRF verification). The raw token is returned
+/// to the user once and used as a bearer credential for the signing UI.
+#[derive(Serialize, Deserialize)]
+struct SigningToken {
+    /// SHA-256 hash of the raw token (hex-encoded). The raw token is
+    /// never stored at rest.
+    token_hash: String,
+    workspace_id: WorkspaceId,
+    entity_id: EntityId,
+    document_id: DocumentId,
+    expires_at: String,
+}
+
+/// Hash a raw signing token to its storage key using SHA-256.
+fn hash_signing_token(raw_token: &str) -> String {
+    use sha2::{Digest, Sha256};
+    let mut hasher = Sha256::new();
+    hasher.update(raw_token.as_bytes());
+    format!("{:x}", hasher.finalize())
+}
+
+/// Response for the public resolve endpoint.
+#[derive(Serialize, utoipa::ToSchema)]
+pub struct SigningResolveResponse {
+    pub document_id: DocumentId,
+    pub entity_id: EntityId,
+    pub document_title: String,
+    pub document_status: String,
+    pub signatures: Vec<SignatureSummary>,
+}
+
+/// Query param for signing token.
+#[derive(Deserialize, utoipa::IntoParams)]
+pub struct SigningTokenQuery {
+    pub token: String,
 }
 
 #[derive(Serialize, utoipa::ToSchema)]
@@ -1486,14 +1526,41 @@ async fn get_signing_link(
     let workspace_id = auth.workspace_id();
     let entity_id = query.entity_id;
 
-    // Verify the document exists in storage
+    // Generate a signing token — only the hash is stored at rest
+    let raw_token = format!("sig_{}", uuid::Uuid::new_v4().simple());
+    let token_hash = hash_signing_token(&raw_token);
+    let expires_at = (chrono::Utc::now() + chrono::Duration::hours(72)).to_rfc3339();
+
+    let signing_token = SigningToken {
+        token_hash: token_hash.clone(),
+        workspace_id,
+        entity_id,
+        document_id,
+        expires_at,
+    };
+
+    // Verify document exists and persist the signing token (hashed)
     tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let signing_token = signing_token;
+        let token_hash = token_hash.clone();
         move || {
             let store = open_formation_store(&layout, workspace_id, entity_id)?;
             store
                 .read_document("main", document_id)
-                .map_err(|_| AppError::NotFound(format!("document {} not found", document_id)))
+                .map_err(|_| AppError::NotFound(format!("document {} not found", document_id)))?;
+
+            // Persist signing token keyed by hash (raw token never stored)
+            let path = format!("signing-tokens/{}.json", token_hash);
+            store
+                .write_json("main", &path, &signing_token, &format!("Create signing token for document {document_id}"))
+                .map_err(|e| {
+                    crate::domain::formation::error::FormationError::Validation(format!(
+                        "commit error: {e}"
+                    ))
+                })?;
+
+            Ok::<_, AppError>(())
         }
     })
     .await
@@ -1502,6 +1569,7 @@ async fn get_signing_link(
     Ok(Json(SigningLinkResponse {
         document_id,
         signing_url: format!("/human/sign/{}", document_id),
+        token: raw_token,
     }))
 }
 
@@ -2271,6 +2339,193 @@ async fn finalize_pending_formation(
 
 // ── Router ──────────────────────────────────────────────────────────────
 
+// ── Public signing endpoints (token-authenticated, no API key needed) ──
+
+/// Helper: look up a signing token by hashing the raw token and scanning
+/// workspaces/entities for the matching hash file.
+fn resolve_signing_token(
+    layout: &crate::store::RepoLayout,
+    raw_token: &str,
+) -> Result<SigningToken, AppError> {
+    let token_hash = hash_signing_token(raw_token);
+    for workspace_id in layout.list_workspace_ids() {
+        for entity_id in layout.list_entity_ids(workspace_id) {
+            let store = match EntityStore::open(layout, workspace_id, entity_id) {
+                Ok(s) => s,
+                Err(_) => continue,
+            };
+            let path = format!("signing-tokens/{}.json", token_hash);
+            if let Ok(st) = store.read_json::<SigningToken>("main", &path) {
+                // Verify the stored hash matches (constant-time not critical here
+                // since the hash is already derived from the token)
+                if st.token_hash != token_hash {
+                    continue;
+                }
+                // Check expiration
+                if let Ok(expires) = chrono::DateTime::parse_from_rfc3339(&st.expires_at) {
+                    if expires < chrono::Utc::now() {
+                        return Err(AppError::BadRequest("signing token has expired".to_owned()));
+                    }
+                }
+                return Ok(st);
+            }
+        }
+    }
+    Err(AppError::NotFound("invalid signing token".to_owned()))
+}
+
+#[utoipa::path(
+    get,
+    path = "/v1/human/sign/{document_id}/resolve",
+    tag = "signing",
+    params(
+        ("document_id" = DocumentId, Path, description = "Document ID"),
+        ("token" = String, Query, description = "Signing token"),
+    ),
+    responses(
+        (status = 200, description = "Document metadata for signing UI", body = SigningResolveResponse),
+        (status = 404, description = "Invalid token or document not found"),
+    ),
+)]
+async fn resolve_signing_link(
+    State(state): State<AppState>,
+    Path(document_id): Path<DocumentId>,
+    Query(query): Query<SigningTokenQuery>,
+) -> Result<Json<SigningResolveResponse>, AppError> {
+    let token = query.token;
+
+    let result = tokio::task::spawn_blocking({
+        let layout = state.layout.clone();
+        move || {
+            let st = resolve_signing_token(&layout, &token)?;
+            if st.document_id != document_id {
+                return Err(AppError::BadRequest("token does not match document".to_owned()));
+            }
+
+            let store = open_formation_store(&layout, st.workspace_id, st.entity_id)?;
+            let doc = store
+                .read_document("main", document_id)
+                .map_err(|_| AppError::NotFound(format!("document {} not found", document_id)))?;
+
+            let signatures = doc
+                .signatures()
+                .iter()
+                .map(|s| SignatureSummary {
+                    signature_id: s.signature_id(),
+                    signer_name: s.signer_name().to_owned(),
+                    signer_role: s.signer_role().to_owned(),
+                    signed_at: s.signed_at().to_rfc3339(),
+                })
+                .collect();
+
+            Ok(SigningResolveResponse {
+                document_id: doc.document_id(),
+                entity_id: st.entity_id,
+                document_title: doc.title().to_owned(),
+                document_status: format!("{:?}", doc.status()),
+                signatures,
+            })
+        }
+    })
+    .await
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+
+    Ok(Json(result))
+}
+
+#[utoipa::path(
+    post,
+    path = "/v1/human/sign/{document_id}/submit",
+    tag = "signing",
+    params(
+        ("document_id" = DocumentId, Path, description = "Document ID"),
+        ("token" = String, Query, description = "Signing token"),
+    ),
+    request_body = SignDocumentRequest,
+    responses(
+        (status = 200, description = "Document signed", body = SignDocumentResponse),
+        (status = 400, description = "Invalid request"),
+        (status = 404, description = "Invalid token or document not found"),
+    ),
+)]
+async fn submit_signing(
+    State(state): State<AppState>,
+    Path(document_id): Path<DocumentId>,
+    Query(query): Query<SigningTokenQuery>,
+    Json(req): Json<SignDocumentRequest>,
+) -> Result<Json<SignDocumentResponse>, AppError> {
+    if req.signer_name.is_empty() || req.signer_name.len() > 256 {
+        return Err(AppError::BadRequest(
+            "signer_name must be between 1 and 256 characters".to_owned(),
+        ));
+    }
+    if req.signer_email.is_empty() || !req.signer_email.contains('@') {
+        return Err(AppError::BadRequest(
+            "signer_email must be a valid email address".to_owned(),
+        ));
+    }
+    if req.signature_text.is_empty() {
+        return Err(AppError::BadRequest(
+            "signature_text is required".to_owned(),
+        ));
+    }
+
+    let token = query.token;
+
+    let doc = tokio::task::spawn_blocking({
+        let layout = state.layout.clone();
+        move || {
+            let st = resolve_signing_token(&layout, &token)?;
+            if st.document_id != document_id {
+                return Err(AppError::BadRequest("token does not match document".to_owned()));
+            }
+
+            let store = open_formation_store(&layout, st.workspace_id, st.entity_id)?;
+            let mut doc = store
+                .read_document("main", document_id)
+                .map_err(|_| AppError::NotFound(format!("document {} not found", document_id)))?;
+
+            let sig_request = SignatureRequest {
+                signer_name: req.signer_name,
+                signer_role: req.signer_role,
+                signer_email: req.signer_email,
+                signature_text: req.signature_text,
+                consent_text: req.consent_text,
+                signature_svg: req.signature_svg,
+                ip_address: None,
+            };
+
+            doc.sign(sig_request).map_err(|e| {
+                AppError::BadRequest(format!("signing failed: {e}"))
+            })?;
+
+            store
+                .write_document("main", &doc, &format!("Sign document {document_id} (human UI)"))
+                .map_err(|e| {
+                    crate::domain::formation::error::FormationError::Validation(format!(
+                        "commit error: {e}"
+                    ))
+                })?;
+
+            Ok::<_, AppError>(doc)
+        }
+    })
+    .await
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+
+    let last_sig = doc
+        .signatures()
+        .last()
+        .ok_or_else(|| AppError::Internal("signature was added but not found".to_string()))?;
+
+    Ok(Json(SignDocumentResponse {
+        signature_id: last_sig.signature_id(),
+        document_id: doc.document_id(),
+        document_status: doc.status(),
+        signed_at: last_sig.signed_at().to_rfc3339(),
+    }))
+}
+
 pub fn formation_routes() -> Router<AppState> {
     Router::new()
         .route("/v1/formations", post(create_formation))
@@ -2336,6 +2591,9 @@ pub fn formation_routes() -> Router<AppState> {
         .route("/v1/contracts", post(generate_contract))
         // Signing links
         .route("/v1/sign/{document_id}", get(get_signing_link))
+        // Public signing endpoints (token-authenticated, no API key)
+        .route("/v1/human/sign/{document_id}/resolve", get(resolve_signing_link))
+        .route("/v1/human/sign/{document_id}/submit", post(submit_signing))
         // Entity lifecycle
         .route("/v1/entities", get(list_entities))
         .route("/v1/entities/{entity_id}/convert", post(convert_entity))
@@ -2371,6 +2629,8 @@ pub fn formation_routes() -> Router<AppState> {
         confirm_ein,
         generate_contract,
         get_signing_link,
+        resolve_signing_link,
+        submit_signing,
         get_document_pdf,
         preview_document_pdf,
         request_document_copy,
@@ -2408,6 +2668,7 @@ pub fn formation_routes() -> Router<AppState> {
         GenerateContractRequest,
         ContractResponse,
         SigningLinkResponse,
+        SigningResolveResponse,
         AmendmentHistoryEntry,
         PreviewDocumentQuery,
         DocumentCopyRequest,
