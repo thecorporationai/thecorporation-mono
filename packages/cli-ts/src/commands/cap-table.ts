@@ -230,7 +230,7 @@ export async function transferSharesCommand(opts: {
   shareClassId: string;
   governingDocType: string;
   transfereeRights: string;
-  prepareIntentId: string;
+  prepareIntentId?: string;
   pricePerShareCents?: number;
   relationship?: string;
 }): Promise<void> {
@@ -238,6 +238,15 @@ export async function transferSharesCommand(opts: {
   const eid = resolveEntityId(cfg, opts.entityId);
   const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
   try {
+    let intentId = opts.prepareIntentId;
+    if (!intentId) {
+      const intent = await client.createExecutionIntent({
+        entity_id: eid,
+        intent_type: "share_transfer",
+        description: `Transfer ${opts.shares} shares from ${opts.from} to ${opts.to}`,
+      });
+      intentId = (intent.intent_id ?? intent.id) as string;
+    }
     const body: Record<string, unknown> = {
       entity_id: eid,
       share_class_id: opts.shareClassId,
@@ -247,7 +256,7 @@ export async function transferSharesCommand(opts: {
       share_count: opts.shares,
       governing_doc_type: opts.governingDocType,
       transferee_rights: opts.transfereeRights,
-      prepare_intent_id: opts.prepareIntentId,
+      prepare_intent_id: intentId,
     };
     if (opts.pricePerShareCents != null) body.price_per_share_cents = opts.pricePerShareCents;
     if (opts.relationship) body.relationship_to_holder = opts.relationship;

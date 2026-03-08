@@ -249,7 +249,7 @@ capTableCmd
   .requiredOption("--share-class-id <id>", "Share class ID")
   .requiredOption("--governing-doc-type <type>", "Governing document type")
   .requiredOption("--transferee-rights <rights>", "Transferee rights")
-  .requiredOption("--prepare-intent-id <id>", "Prepare intent ID")
+  .option("--prepare-intent-id <id>", "Prepare intent ID (auto-created if omitted)")
   .option("--type <type>", "Transfer type", "sale")
   .option("--price-per-share-cents <n>", "Price per share in cents", parseInt)
   .option("--relationship <rel>", "Relationship to holder")
@@ -436,9 +436,10 @@ governanceCmd
   .requiredOption("--holder <contact-id>", "Contact ID for the seat holder")
   .option("--role <role>", "Seat role (chair, member, officer, observer)", "member")
   .description("Add a seat to a governance body")
-  .action(async (bodyId: string, opts) => {
+  .action(async (bodyId: string, opts, cmd) => {
+    const parent = cmd.parent!.opts();
     const { governanceAddSeatCommand } = await import("./commands/governance.js");
-    await governanceAddSeatCommand(bodyId, opts);
+    await governanceAddSeatCommand(bodyId, { ...opts, entityId: parent.entityId });
   });
 governanceCmd
   .command("seats <body-id>")
@@ -467,7 +468,7 @@ governanceCmd
 governanceCmd
   .command("convene")
   .requiredOption("--body <id>", "Governance body ID")
-  .requiredOption("--type <type>", "Meeting type")
+  .requiredOption("--type <type>", "Meeting type (board_meeting, shareholder_meeting, member_meeting, written_consent)")
   .requiredOption("--title <title>", "Meeting title")
   .requiredOption("--date <date>", "Meeting date (ISO 8601)")
   .option("--agenda <item>", "Agenda item (repeatable)", (v: string, a: string[]) => [...a, v], [] as string[])

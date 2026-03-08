@@ -319,7 +319,7 @@ export class CorpAPIClient {
 
   // --- Governance bodies ---
   createGovernanceBody(data: ApiRecord) { return this.post("/v1/governance-bodies", data) as Promise<ApiRecord>; }
-  createGovernanceSeat(bodyId: string, data: ApiRecord) { return this.post(`/v1/governance-bodies/${bodyId}/seats`, data) as Promise<ApiRecord>; }
+  createGovernanceSeat(bodyId: string, entityId: string, data: ApiRecord) { return this.postWithParams(`/v1/governance-bodies/${bodyId}/seats`, data, { entity_id: entityId }) as Promise<ApiRecord>; }
 
   // --- API Keys ---
   listApiKeys() { return this.get("/v1/api-keys", { workspace_id: this.workspaceId }) as Promise<ApiRecord[]>; }

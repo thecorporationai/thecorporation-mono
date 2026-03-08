@@ -78,7 +78,7 @@ export interface ExecuteRoundConversionRequest {
 export interface CreateExecutionIntentRequest {
   entity_id: string;
   intent_type: string;
-  authority_tier: string;
+  authority_tier?: string;
   description: string;
   metadata?: Record<string, unknown>;
 }
