@@ -242,10 +242,12 @@ export async function transferSharesCommand(opts: {
     if (!intentId) {
       const intent = await client.createExecutionIntent({
         entity_id: eid,
-        intent_type: "share_transfer",
+        intent_type: "equity.transfer.prepare",
         description: `Transfer ${opts.shares} shares from ${opts.from} to ${opts.to}`,
       });
       intentId = (intent.intent_id ?? intent.id) as string;
+      await client.evaluateIntent(intentId, eid);
+      await client.authorizeIntent(intentId, eid);
     }
     const body: Record<string, unknown> = {
       entity_id: eid,

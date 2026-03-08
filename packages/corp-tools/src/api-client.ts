@@ -23,7 +23,9 @@ async function extractErrorMessage(resp: Response): Promise<string> {
     const text = await resp.text();
     try {
       const json = JSON.parse(text);
-      return json.error || json.message || json.detail || text;
+      const val = json.error || json.message || json.detail;
+      if (val == null) return text;
+      return typeof val === "string" ? val : JSON.stringify(val);
     } catch {
       return text;
     }
