@@ -380,7 +380,7 @@ pub fn setup_cap_table(
                     .unwrap_or_else(|| {
                         let pct = m.ownership_pct.unwrap_or(0.0);
                         let total = auth_units.unwrap_or(10_000_000);
-                        // Reserve 20% for future issuances (Cooley standard)
+                        // Reserve 20% for future issuances (standard practice)
                         ((pct / 100.0) * (total as f64 * 0.8)).round() as i64
                     })
             }

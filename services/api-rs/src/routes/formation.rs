@@ -1422,6 +1422,21 @@ pub struct SigningResolveResponse {
     pub document_title: String,
     pub document_status: String,
     pub signatures: Vec<SignatureSummary>,
+    /// Contract details when the document references a contract.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub contract: Option<SigningContractDetails>,
+    /// Entity legal name for display.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub entity_name: Option<String>,
+}
+
+/// Contract details included in signing resolve response.
+#[derive(Serialize, utoipa::ToSchema)]
+pub struct SigningContractDetails {
+    pub template_type: String,
+    pub counterparty_name: String,
+    pub effective_date: String,
+    pub parameters: serde_json::Value,
 }
 
 /// Query param for signing token.
@@ -2449,12 +2464,38 @@ async fn resolve_signing_link(
                 })
                 .collect();
 
+            // Load entity name for display
+            let entity_name = store
+                .read_entity("main")
+                .ok()
+                .map(|e| e.legal_name().to_owned());
+
+            // If document references a contract, load contract details
+            let contract = doc
+                .content()
+                .get("contract_id")
+                .and_then(|v| v.as_str())
+                .and_then(|cid| {
+                    let path = format!("contracts/{cid}.json");
+                    store
+                        .read_json::<Contract>("main", &path)
+                        .ok()
+                })
+                .map(|c| SigningContractDetails {
+                    template_type: format!("{:?}", c.template_type()),
+                    counterparty_name: c.counterparty_name().to_owned(),
+                    effective_date: c.effective_date().to_string(),
+                    parameters: c.parameters().clone(),
+                });
+
             Ok(SigningResolveResponse {
                 document_id: doc.document_id(),
                 entity_id: st.entity_id,
                 document_title: doc.title().to_owned(),
                 document_status: format!("{:?}", doc.status()),
                 signatures,
+                contract,
+                entity_name,
             })
         }
     })

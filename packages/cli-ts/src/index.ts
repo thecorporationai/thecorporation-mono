@@ -711,7 +711,7 @@ program
 // --- form ---
 const formCmd = program
   .command("form")
-  .description("Form a new entity with founders and cap table (Cooley-style)")
+  .description("Form a new entity with founders and cap table")
   .option("--entity-type <type>", "Entity type (llc, c_corp)")
   .option("--legal-name <name>", "Legal name")
   .option("--jurisdiction <jurisdiction>", "Jurisdiction (e.g. US-DE, US-WY)")
