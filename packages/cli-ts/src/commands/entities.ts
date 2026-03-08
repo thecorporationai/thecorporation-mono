@@ -38,10 +38,11 @@ export async function entitiesShowCommand(entityId: string, opts: { json?: boole
       console.log(chalk.blue("─".repeat(40)));
       console.log(chalk.blue.bold("  Entity Detail"));
       console.log(chalk.blue("─".repeat(40)));
-      console.log(`  ${chalk.bold("Name:")} ${entity.name ?? "N/A"}`);
+      console.log(`  ${chalk.bold("Name:")} ${entity.legal_name ?? entity.name ?? "N/A"}`);
       console.log(`  ${chalk.bold("Type:")} ${entity.entity_type ?? "N/A"}`);
       console.log(`  ${chalk.bold("Jurisdiction:")} ${entity.jurisdiction ?? "N/A"}`);
-      console.log(`  ${chalk.bold("Status:")} ${entity.status ?? "N/A"}`);
+      console.log(`  ${chalk.bold("Status:")} ${entity.formation_status ?? entity.status ?? "N/A"}`);
+      console.log(`  ${chalk.bold("State:")} ${entity.formation_state ?? "N/A"}`);
       console.log(`  ${chalk.bold("ID:")} ${entity.entity_id ?? "N/A"}`);
       if (entity.formation_date) console.log(`  ${chalk.bold("Formation Date:")} ${entity.formation_date}`);
       if (entity.ein) console.log(`  ${chalk.bold("EIN:")} ${entity.ein}`);

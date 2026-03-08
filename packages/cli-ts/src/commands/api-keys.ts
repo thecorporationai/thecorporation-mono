@@ -13,15 +13,14 @@ export async function apiKeysCommand(opts: { json?: boolean }): Promise<void> {
     if (keys.length === 0) { console.log("No API keys found."); return; }
     console.log(`\n${chalk.bold("API Keys")}`);
     const table = new Table({
-      head: [chalk.dim("ID"), chalk.dim("Name"), chalk.dim("Key"), chalk.dim("Created"), chalk.dim("Last Used")],
+      head: [chalk.dim("ID"), chalk.dim("Name"), chalk.dim("Key"), chalk.dim("Created")],
     });
     for (const k of keys) {
       table.push([
-        String(k.id ?? k.api_key_id ?? "").slice(0, 12),
+        String(k.key_id ?? k.id ?? k.api_key_id ?? "").slice(0, 12),
         String(k.name ?? ""),
         maskKey(String(k.key ?? k.api_key ?? "")),
         String(k.created_at ?? ""),
-        String(k.last_used_at ?? ""),
       ]);
     }
     console.log(table.toString());

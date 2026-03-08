@@ -75,7 +75,7 @@ function money(val: unknown): string {
 export function printEntitiesTable(entities: ApiRecord[]): void {
   const table = makeTable("Entities", ["ID", "Name", "Type", "Jurisdiction", "Status"]);
   for (const e of entities) {
-    table.push([s(e.entity_id, 12), s(e.name), s(e.entity_type), s(e.jurisdiction), s(e.status)]);
+    table.push([s(e.entity_id, 12), s(e.legal_name ?? e.name), s(e.entity_type), s(e.jurisdiction), s(e.formation_status ?? e.status)]);
   }
   console.log(table.toString());
 }
@@ -217,7 +217,7 @@ export function printMeetingsTable(meetings: ApiRecord[]): void {
     table.push([
       s(m.meeting_id ?? m.id, 12),
       s(m.title ?? m.name),
-      s(m.meeting_date ?? m.date),
+      s(m.scheduled_date ?? m.meeting_date ?? m.date),
       s(m.status),
       s(m.resolution_count ?? m.resolutions),
     ]);

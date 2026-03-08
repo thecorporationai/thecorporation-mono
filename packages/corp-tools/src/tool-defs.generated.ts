@@ -6,17 +6,21 @@ export const GENERATED_TOOL_DEFINITIONS: Record<string, unknown>[] = [
     "type": "function",
     "function": {
       "name": "workspace",
-      "description": "Workspace-level queries. Actions: status (get workspace summary), list_entities (list all entities), obligations (list obligations, optional tier filter), billing (get billing status and plans).",
+      "description": "Workspace-level queries. Actions: status (get workspace summary), list_entities (list all entities), obligations (list obligations, optional tier filter), billing (get billing status and plans), checkout (create Stripe checkout URL — requires plan_id), portal (get Stripe billing portal URL for managing subscription).",
       "parameters": {
         "type": "object",
         "properties": {
           "action": {
             "type": "string",
-            "enum": ["status", "list_entities", "obligations", "billing"]
+            "enum": ["status", "list_entities", "obligations", "billing", "checkout", "portal"]
           },
           "tier": {
             "type": "string",
             "description": "obligations: filter by urgency tier"
+          },
+          "plan_id": {
+            "type": "string",
+            "description": "checkout: plan to subscribe to (pro, enterprise)"
           }
         },
         "required": ["action"]

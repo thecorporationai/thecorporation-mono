@@ -2,8 +2,9 @@ import { requireConfig, resolveEntityId } from "../config.js";
 import { CorpAPIClient } from "../api-client.js";
 import {
   printGovernanceTable, printSeatsTable, printMeetingsTable,
-  printResolutionsTable, printError, printSuccess, printJson,
+  printResolutionsTable, printError, printSuccess, printJson, printWarning,
 } from "../output.js";
+import chalk from "chalk";
 
 export async function governanceCreateBodyCommand(opts: {
   entityId?: string; name: string; bodyType: string; quorum: string; voting: string;
@@ -19,8 +20,12 @@ export async function governanceCreateBodyCommand(opts: {
       quorum_rule: opts.quorum,
       voting_method: opts.voting,
     });
-    printSuccess(`Governance body created: ${result.body_id ?? "OK"}`);
+    const bodyId = result.body_id ?? "OK";
+    printSuccess(`Governance body created: ${bodyId}`);
     printJson(result);
+    console.log(chalk.dim("\n  Next steps:"));
+    console.log(chalk.dim(`    corp governance add-seat ${bodyId} --holder <contact-id>`));
+    console.log(chalk.dim(`    corp governance seats ${bodyId}`));
   } catch (err) { printError(`Failed to create governance body: ${err}`); process.exit(1); }
 }
 
@@ -98,8 +103,12 @@ export async function governanceConveneCommand(opts: {
       title: opts.title, scheduled_date: opts.date,
       agenda_item_titles: opts.agenda,
     });
-    printSuccess(`Meeting scheduled: ${result.meeting_id ?? "OK"}`);
+    const meetingId = result.meeting_id ?? "OK";
+    printSuccess(`Meeting scheduled: ${meetingId}`);
     printJson(result);
+    console.log(chalk.dim("\n  Next steps:"));
+    console.log(chalk.dim(`    corp governance notice ${meetingId}`));
+    console.log(chalk.dim(`    corp governance agenda-items ${meetingId}`));
   } catch (err) { printError(`Failed to schedule meeting: ${err}`); process.exit(1); }
 }
 
@@ -193,8 +202,12 @@ export async function writtenConsentCommand(opts: {
     const result = await client.writtenConsent({
       entity_id: eid, body_id: opts.body, title: opts.title, description: opts.description,
     });
-    printSuccess(`Written consent created: ${result.meeting_id ?? "OK"}`);
+    const meetingId = result.meeting_id ?? "OK";
+    printSuccess(`Written consent created: ${meetingId}`);
     printJson(result);
+    console.log(chalk.dim("\n  Next steps:"));
+    console.log(chalk.dim(`    corp governance agenda-items ${meetingId}`));
+    console.log(chalk.dim(`    corp governance vote ${meetingId} <item-id> --voter <contact-uuid> --vote for`));
   } catch (err) { printError(`Failed to create written consent: ${err}`); process.exit(1); }
 }
 

@@ -521,7 +521,7 @@ governanceCmd
   });
 governanceCmd
   .command("finalize-item <meeting-id> <item-id>")
-  .requiredOption("--status <status>", "Status: voted, discussed, tabled, or withdrawn")
+  .requiredOption("--status <status>", "Status: voted, discussed, tabled, withdrawn")
   .description("Finalize an agenda item")
   .action(async (meetingId: string, itemId: string, opts, cmd) => {
     const parent = cmd.parent!.opts();

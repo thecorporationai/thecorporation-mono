@@ -30,6 +30,13 @@ const workspaceActions: Record<string, ToolHandler> = {
     const [status, plans] = await Promise.all([client.getBillingStatus(), client.getBillingPlans()]);
     return { status, plans };
   },
+  checkout: async (args, client) => {
+    const planId = requiredString(args, "plan_id");
+    return client.createBillingCheckout(planId);
+  },
+  portal: async (_args, client) => {
+    return client.createBillingPortal();
+  },
 };
 
 const entityActions: Record<string, ToolHandler> = {

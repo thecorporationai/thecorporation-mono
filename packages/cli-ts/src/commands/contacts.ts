@@ -73,9 +73,11 @@ export async function contactsAddCommand(opts: {
       category: opts.category ?? "employee",
     };
     if (opts.phone) data.phone = opts.phone;
-    if (opts.notes) data.notes = opts.notes;
     const result = await client.createContact(data);
     printSuccess(`Contact created: ${result.contact_id ?? result.id ?? "OK"}`);
+    if (opts.notes) {
+      console.log(chalk.dim("  Tip: To add notes, use: corp contacts edit <contact-id> --notes \"...\""));
+    }
   } catch (err) {
     printError(`Failed to create contact: ${err}`);
     process.exit(1);
