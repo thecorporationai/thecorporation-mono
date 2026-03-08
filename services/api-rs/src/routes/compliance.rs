@@ -65,7 +65,15 @@ fn default_deadline_severity() -> DeadlineSeverity {
 }
 
 fn allowed_tax_document_type(document_type: &str) -> bool {
-    matches!(document_type, "1120" | "1120s" | "1065" | "franchise_tax" | "annual_report" | "83b")
+    matches!(
+        document_type,
+        "1120" | "1120s" | "1065" | "franchise_tax" | "annual_report" | "83b"
+            | "form_1120" | "form_1120s" | "form_1065"
+            | "1099_nec" | "form_1099_nec"
+            | "k1" | "form_k1"
+            | "941" | "form_941"
+            | "w2" | "form_w2"
+    )
 }
 
 fn validate_deadline_recurrence(

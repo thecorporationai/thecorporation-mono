@@ -6202,9 +6202,15 @@ async fn approve_valuation(
                             "approval resolution must belong to the same entity".to_owned(),
                         ));
                     }
-                    if !resolution.passed() || meeting.status() != MeetingStatus::Convened {
+                    if !resolution.passed()
+                        || !matches!(
+                            meeting.status(),
+                            MeetingStatus::Convened | MeetingStatus::Adjourned
+                        )
+                    {
                         return Err(AppError::BadRequest(
-                            "approval resolution must be passed in a convened meeting".to_owned(),
+                            "approval resolution must be passed in a convened or adjourned meeting"
+                                .to_owned(),
                         ));
                     }
                     found = true;

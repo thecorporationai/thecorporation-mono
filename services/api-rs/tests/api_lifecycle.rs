@@ -475,6 +475,7 @@ async fn create_resolution_for_body(
     vote_values: &[&str],
 ) -> (String, String) {
     let e_query = format!("entity_id={entity_id}");
+    let unique = uuid::Uuid::new_v4().to_string().split('-').next().unwrap().to_owned();
 
     let (status, body) = post_json(
         app,
@@ -482,7 +483,7 @@ async fn create_resolution_for_body(
         json!({
             "entity_id": entity_id,
             "body_type": body_type,
-            "name": format!("{} body", body_type),
+            "name": format!("{} body {}", body_type, unique),
             "quorum_rule": "majority",
             "voting_method": "per_capita",
         }),
@@ -501,8 +502,8 @@ async fn create_resolution_for_body(
             json!({
                 "entity_id": entity_id,
                 "contact_type": "individual",
-                "name": format!("Director {idx}"),
-                "email": format!("director{idx}@example.com"),
+                "name": format!("Director {idx} {unique}"),
+                "email": format!("director{idx}-{unique}@example.com"),
                 "category": "board_member",
             }),
             token,
