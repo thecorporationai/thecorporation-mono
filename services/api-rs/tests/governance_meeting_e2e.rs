@@ -107,6 +107,14 @@ async fn create_entity(app: &Router) -> (String, String) {
             "entity_type": "corporation",
             "legal_name": "Meeting Test Corp",
             "jurisdiction": "Delaware",
+            "registered_agent_name": "Delaware Registered Agent Co.",
+            "registered_agent_address": "1209 Orange St, Wilmington, DE 19801",
+            "company_address": {
+                "street": "2261 Market St",
+                "city": "San Francisco",
+                "state": "CA",
+                "zip": "94114"
+            },
             "members": [
                 {
                     "name": "Alice Director",
@@ -114,7 +122,10 @@ async fn create_entity(app: &Router) -> (String, String) {
                     "email": "alice@test.com",
                     "ownership_pct": 50.0,
                     "share_count": 5000,
-                    "role": "director"
+                    "role": "director",
+                    "officer_title": "ceo",
+                    "is_incorporator": true,
+                    "address": { "street": "2261 Market St", "city": "San Francisco", "state": "CA", "zip": "94114" }
                 },
                 {
                     "name": "Bob Director",
@@ -122,7 +133,9 @@ async fn create_entity(app: &Router) -> (String, String) {
                     "email": "bob@test.com",
                     "ownership_pct": 50.0,
                     "share_count": 5000,
-                    "role": "director"
+                    "role": "director",
+                    "officer_title": "secretary",
+                    "address": { "street": "548 Market St", "city": "San Francisco", "state": "CA", "zip": "94104" }
                 }
             ],
             "authorized_shares": 10000000,

@@ -843,6 +843,12 @@ async fn test_formation_lifecycle() {
             "jurisdiction": "Delaware",
             "registered_agent_name": "Delaware Registered Agent Co.",
             "registered_agent_address": "1209 Orange St, Wilmington, DE 19801",
+            "company_address": {
+                "street": "2261 Market St",
+                "city": "San Francisco",
+                "state": "CA",
+                "zip": "94114"
+            },
             "members": [
                 {
                     "name": "Alice Founder",
@@ -4006,6 +4012,12 @@ async fn test_admin_endpoints() {
             "jurisdiction": "Wyoming",
             "registered_agent_name": "Wyoming Registered Agent Co.",
             "registered_agent_address": "1712 Pioneer Ave, Cheyenne, WY 82001",
+            "company_address": {
+                "street": "1712 Pioneer Ave",
+                "city": "Cheyenne",
+                "state": "WY",
+                "zip": "82001"
+            },
             "members": [{
                 "name": "Owner",
                 "investor_type": "natural_person",
@@ -5267,6 +5279,12 @@ async fn test_signing_link_resolves_document_across_workspace_entities() {
             "jurisdiction": "Delaware",
             "registered_agent_name": "Delaware Registered Agent Co.",
             "registered_agent_address": "1209 Orange St, Wilmington, DE 19801",
+            "company_address": {
+                "street": "2261 Market St",
+                "city": "San Francisco",
+                "state": "CA",
+                "zip": "94114"
+            },
             "members": [
                 {
                     "name": "Carol Founder",
