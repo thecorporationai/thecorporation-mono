@@ -19,6 +19,7 @@
     "dev": "tsup --watch",
     "test": "vitest run",
     "test:integration": "vitest run --config vitest.integration.config.ts",
+    "generate:types": "tsx scripts/generate-api-types.ts",
     "generate:tools": "python3 ../../scripts/dev/generate_tool_defs.py --api-url http://localhost:8000 > src/tool-defs.generated.ts",
     "check:tools": "python3 ../../scripts/dev/check_tool_sync.py"
   },
@@ -26,7 +27,9 @@
     "vitest": "^3.0.0",
     "tsup": "^8.4.0",
     "typescript": "^5.8.0",
-    "@types/node": "^22.0.0"
+    "@types/node": "^22.0.0",
+    "openapi-typescript": "^7.0.0",
+    "tsx": "^4.0.0"
   },
   "publishConfig": {
     "access": "public"

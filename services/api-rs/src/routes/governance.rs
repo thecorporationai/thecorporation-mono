@@ -14,6 +14,7 @@ use super::AppState;
 use crate::auth::{
     RequireGovernanceRead, RequireGovernanceVote, RequireGovernanceWrite, RequireInternalWorker,
 };
+use crate::domain::contacts::contact::Contact;
 use crate::domain::formation::types::{EntityType, FormationStatus};
 use crate::domain::governance::{
     agenda_item::AgendaItem,
@@ -1540,6 +1541,25 @@ async fn create_governance_body(
         let layout = state.layout.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
+            let body_ids = store
+                .list_ids::<GovernanceBody>("main")
+                .map_err(|e| AppError::Internal(format!("list governance bodies: {e}")))?;
+            let normalized_name = req.name.trim().to_ascii_lowercase();
+            for existing_id in body_ids {
+                let existing = store
+                    .read::<GovernanceBody>("main", existing_id)
+                    .map_err(|e| AppError::Internal(format!("read governance body {existing_id}: {e}")))?;
+                if existing.entity_id() == entity_id
+                    && existing.body_type() == req.body_type
+                    && existing.status() == BodyStatus::Active
+                    && existing.name().trim().to_ascii_lowercase() == normalized_name
+                {
+                    return Err(AppError::Conflict(format!(
+                        "active governance body already exists for {}",
+                        req.name
+                    )));
+                }
+            }
 
             let body_id = GovernanceBodyId::new();
             let body = GovernanceBody::new(
@@ -2220,10 +2240,18 @@ async fn create_seat(
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
 
-            // Verify the body exists
-            store.read::<GovernanceBody>("main", body_id).map_err(|_| {
+            let body = store.read::<GovernanceBody>("main", body_id).map_err(|_| {
                 AppError::NotFound(format!("governance body {} not found", body_id))
             })?;
+            if body.entity_id() != entity_id {
+                return Err(AppError::BadRequest("governance body does not belong to entity".to_owned()));
+            }
+            let holder = store.read::<Contact>("main", req.holder_id).map_err(|_| {
+                AppError::NotFound(format!("contact {} not found", req.holder_id))
+            })?;
+            if holder.entity_id() != entity_id {
+                return Err(AppError::BadRequest("seat holder must belong to the same entity".to_owned()));
+            }
 
             let seat_id = GovernanceSeatId::new();
             let voting_power = req
@@ -2285,6 +2313,12 @@ async fn list_seats(
         let layout = state.layout.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
+            let body = store.read::<GovernanceBody>("main", body_id).map_err(|_| {
+                AppError::NotFound(format!("governance body {} not found", body_id))
+            })?;
+            if body.entity_id() != entity_id {
+                return Err(AppError::BadRequest("governance body does not belong to entity".to_owned()));
+            }
             let ids = store
                 .list_ids::<GovernanceSeat>("main")
                 .map_err(|e| AppError::Internal(format!("list governance seats: {e}")))?;
@@ -2473,6 +2507,12 @@ async fn list_meetings(
         let layout = state.layout.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
+            let body = store.read::<GovernanceBody>("main", body_id).map_err(|_| {
+                AppError::NotFound(format!("governance body {} not found", body_id))
+            })?;
+            if body.entity_id() != entity_id {
+                return Err(AppError::BadRequest("governance body does not belong to entity".to_owned()));
+            }
             let ids = store
                 .list_ids::<Meeting>("main")
                 .map_err(|e| AppError::Internal(format!("list meetings: {e}")))?;
@@ -2812,7 +2852,6 @@ async fn cast_vote(
             let meeting = store
                 .read::<Meeting>("main", meeting_id)
                 .map_err(|_| AppError::NotFound(format!("meeting {} not found", meeting_id)))?;
-
             if !meeting.can_vote() {
                 return Err(GovernanceError::VotingSessionNotOpen.into());
             }
@@ -3096,6 +3135,11 @@ async fn compute_resolution(
             // Total eligible = for + against (abstentions and recusals don't count
             // toward the denominator for pass/fail determination).
             let total_eligible = votes_for + votes_against;
+            if total_eligible == 0 {
+                return Err(AppError::BadRequest(
+                    "cannot compute a resolution with zero counted votes".to_owned(),
+                ));
+            }
             let passed = body.quorum_rule().is_met(votes_for, total_eligible);
 
             // Determine resolution type from quorum rule
@@ -3183,6 +3227,15 @@ async fn list_resolutions(
         let layout = state.layout.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
+            let meeting = store
+                .read::<Meeting>("main", meeting_id)
+                .map_err(|_| AppError::NotFound(format!("meeting {} not found", meeting_id)))?;
+            let body = store
+                .read::<GovernanceBody>("main", meeting.body_id())
+                .map_err(|_| AppError::NotFound(format!("governance body {} not found", meeting.body_id())))?;
+            if body.entity_id() != entity_id {
+                return Err(AppError::BadRequest("meeting does not belong to entity".to_owned()));
+            }
             let ids = store
                 .list_resolution_ids("main", meeting_id)
                 .unwrap_or_default();

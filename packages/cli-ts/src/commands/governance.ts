@@ -219,6 +219,20 @@ export async function listAgendaItemsCommand(meetingId: string, opts: { entityId
     const items = await client.listAgendaItems(meetingId, eid);
     if (opts.json) printJson(items);
     else if (items.length === 0) console.log("No agenda items found.");
-    else printJson(items);
+    else {
+      const Table = (await import("cli-table3")).default;
+      const chalk = (await import("chalk")).default;
+      console.log(`\n${chalk.bold("Agenda Items")}`);
+      const table = new Table({ head: [chalk.dim("ID"), chalk.dim("Title"), chalk.dim("Status"), chalk.dim("Type")] });
+      for (const item of items) {
+        table.push([
+          String(item.item_id ?? item.agenda_item_id ?? item.id ?? "").slice(0, 12),
+          String(item.title ?? ""),
+          String(item.status ?? ""),
+          String(item.item_type ?? item.type ?? ""),
+        ]);
+      }
+      console.log(table.toString());
+    }
   } catch (err) { printError(`Failed to list agenda items: ${err}`); process.exit(1); }
 }

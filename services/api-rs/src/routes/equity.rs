@@ -21,6 +21,7 @@ use crate::domain::equity::{
     fundraising_workflow::{
         FundraisingWorkflow, WorkflowExecutionStatus as FundraisingExecutionStatus,
     },
+    grant::EquityGrant,
     holder::{Holder, HolderType},
     instrument::{Instrument, InstrumentKind, InstrumentStatus},
     legal_entity::{LegalEntity, LegalEntityRole},
@@ -31,8 +32,8 @@ use crate::domain::equity::{
     transfer::ShareTransfer,
     transfer_workflow::{TransferWorkflow, WorkflowExecutionStatus as TransferExecutionStatus},
     types::{
-        GoverningDocType, ShareCount, TransferStatus, TransferType, TransfereeRights,
-        ValuationMethodology, ValuationStatus, ValuationType,
+        GoverningDocType, GrantType, ShareCount, TransferStatus, TransferType,
+        TransfereeRights, ValuationMethodology, ValuationStatus, ValuationType,
     },
     valuation::Valuation,
 };
@@ -738,6 +739,54 @@ fn read_all<T: StoredEntity>(store: &EntityStore<'_>) -> Result<Vec<T>, AppError
         out.push(rec);
     }
     Ok(out)
+}
+
+fn resolve_contact_reference(
+    store: &EntityStore<'_>,
+    reference: &str,
+) -> Result<Contact, AppError> {
+    let ids = store
+        .list_ids::<Contact>("main")
+        .map_err(|e| AppError::Internal(format!("list contacts: {e}")))?;
+    let trimmed = reference.trim();
+    let normalized = trimmed.to_ascii_lowercase();
+    let mut name_matches = Vec::new();
+    for id in ids {
+        let contact = store
+            .read::<Contact>("main", id)
+            .map_err(|e| AppError::Internal(format!("read contact {id}: {e}")))?;
+        if contact.contact_id().to_string() == trimmed {
+            return Ok(contact);
+        }
+        if contact.name().trim().to_ascii_lowercase() == normalized {
+            name_matches.push(contact);
+        }
+    }
+    match name_matches.len() {
+        0 => Err(AppError::NotFound(format!("contact not found: {reference}"))),
+        1 => Ok(name_matches.remove(0)),
+        _ => Err(AppError::BadRequest(format!(
+            "contact reference is ambiguous: {reference}; use a contact_id"
+        ))),
+    }
+}
+
+fn resolve_transfer_sender_contact(
+    store: &EntityStore<'_>,
+    reference: &str,
+) -> Result<Contact, AppError> {
+    if let Ok(grant_id) = reference.parse::<crate::domain::ids::EquityGrantId>() {
+        let grant = store
+            .read::<EquityGrant>("main", grant_id)
+            .map_err(|_| AppError::NotFound(format!("grant not found: {reference}")))?;
+        if let Some(contact_id) = grant.contact_id() {
+            return store
+                .read::<Contact>("main", contact_id)
+                .map_err(|_| AppError::NotFound(format!("contact {} not found for grant", contact_id)));
+        }
+        return resolve_contact_reference(store, grant.recipient_name());
+    }
+    resolve_contact_reference(store, reference)
 }
 
 fn checked_bps(part: i64, total: i64) -> u32 {
@@ -5763,6 +5812,28 @@ pub struct ApproveValuationRequest {
     pub resolution_id: Option<ResolutionId>,
 }
 
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
+pub struct CreateLegacyGrantRequest {
+    pub entity_id: EntityId,
+    pub grant_type: GrantType,
+    pub shares: i64,
+    pub recipient_name: String,
+}
+
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
+pub struct CreateLegacyShareTransferRequest {
+    pub entity_id: EntityId,
+    pub share_class_id: ShareClassId,
+    pub from_holder: String,
+    pub to_holder: String,
+    pub shares: i64,
+    pub transfer_type: TransferType,
+    #[serde(default)]
+    pub transferee_rights: Option<TransfereeRights>,
+    #[serde(default)]
+    pub governing_doc_type: Option<GoverningDocType>,
+}
+
 #[derive(Debug, Serialize, utoipa::ToSchema)]
 pub struct ValuationResponse {
     pub valuation_id: ValuationId,
@@ -5827,6 +5898,21 @@ async fn create_valuation(
     let entity_id = req.entity_id;
     if !auth.allows_entity(entity_id) {
         return Err(AppError::Forbidden("entity access denied".to_owned()));
+    }
+    if let Some(amount) = req.fmv_per_share_cents {
+        Cents::new(amount)
+            .require_positive()
+            .map_err(|e| AppError::BadRequest(e.to_owned()))?;
+    }
+    if let Some(amount) = req.enterprise_value_cents {
+        Cents::new(amount)
+            .require_positive()
+            .map_err(|e| AppError::BadRequest(e.to_owned()))?;
+    }
+    if let Some(amount) = req.hurdle_amount_cents {
+        Cents::new(amount)
+            .require_positive()
+            .map_err(|e| AppError::BadRequest(e.to_owned()))?;
     }
 
     let valuation = tokio::task::spawn_blocking({
@@ -6095,6 +6181,42 @@ async fn approve_valuation(
             let mut valuation = store
                 .read::<Valuation>("main", valuation_id)
                 .map_err(|_| AppError::NotFound(format!("valuation {} not found", valuation_id)))?;
+            if let Some(resolution_id) = req.resolution_id {
+                let meetings = read_all::<Meeting>(&store)?;
+                let mut found = false;
+                for meeting in meetings {
+                    let resolution_ids = store
+                        .list_resolution_ids("main", meeting.meeting_id())
+                        .unwrap_or_default();
+                    if !resolution_ids.contains(&resolution_id) {
+                        continue;
+                    }
+                    let resolution = store
+                        .read_resolution("main", meeting.meeting_id(), resolution_id)
+                        .map_err(|e| AppError::Internal(format!("read resolution: {e}")))?;
+                    let body = store
+                        .read::<GovernanceBody>("main", meeting.body_id())
+                        .map_err(|_| AppError::NotFound(format!("governance body {} not found", meeting.body_id())))?;
+                    if body.entity_id() != entity_id {
+                        return Err(AppError::BadRequest(
+                            "approval resolution must belong to the same entity".to_owned(),
+                        ));
+                    }
+                    if !resolution.passed() || meeting.status() != MeetingStatus::Convened {
+                        return Err(AppError::BadRequest(
+                            "approval resolution must be passed in a convened meeting".to_owned(),
+                        ));
+                    }
+                    found = true;
+                    break;
+                }
+                if !found {
+                    return Err(AppError::NotFound(format!(
+                        "resolution {} not found for entity",
+                        resolution_id
+                    )));
+                }
+            }
             valuation
                 .approve(req.resolution_id)
                 .map_err(|e| AppError::BadRequest(format!("{e}")))?;
@@ -6143,6 +6265,168 @@ async fn approve_valuation(
     .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
 
     Ok(Json(valuation_to_response(&valuation)))
+}
+
+#[utoipa::path(
+    post,
+    path = "/v1/equity/grants",
+    tag = "equity",
+    request_body = CreateLegacyGrantRequest,
+    security(("bearer_auth" = [])),
+    responses((status = 501, description = "Not implemented")),
+)]
+async fn create_legacy_grant(
+    RequireEquityWrite(auth): RequireEquityWrite,
+    State(_state): State<AppState>,
+    Json(req): Json<CreateLegacyGrantRequest>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let entity_id = req.entity_id;
+    if !auth.allows_entity(entity_id) {
+        return Err(AppError::Forbidden("entity access denied".to_owned()));
+    }
+    let _ = req;
+    Err(AppError::NotImplemented(
+        "legacy equity grant issuance is disabled; use the governed equity issuance workflow"
+            .to_owned(),
+    ))
+}
+
+#[utoipa::path(
+    post,
+    path = "/v1/share-transfers",
+    tag = "equity",
+    request_body = CreateLegacyShareTransferRequest,
+    security(("bearer_auth" = [])),
+    responses((status = 200, description = "Transfer created")),
+)]
+async fn create_legacy_share_transfer(
+    RequireEquityWrite(auth): RequireEquityWrite,
+    State(state): State<AppState>,
+    Json(req): Json<CreateLegacyShareTransferRequest>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let workspace_id = auth.workspace_id();
+    let entity_id = req.entity_id;
+    if !auth.allows_entity(entity_id) {
+        return Err(AppError::Forbidden("entity access denied".to_owned()));
+    }
+    let shares = ShareCount::new(req.shares)
+        .require_positive()
+        .map_err(|e| AppError::BadRequest(e.to_owned()))?;
+    let from_holder = req.from_holder.clone();
+    let to_holder = req.to_holder.clone();
+    let share_class_id = req.share_class_id;
+
+    let transfer = tokio::task::spawn_blocking({
+        let layout = state.layout.clone();
+        move || {
+            let store = open_store(&layout, workspace_id, entity_id)?;
+            let from_contact = resolve_transfer_sender_contact(&store, &from_holder)?;
+            let to_contact = resolve_contact_reference(&store, &to_holder)?;
+            let share_class = read_all::<ShareClass>(&store)?
+                .into_iter()
+                .find(|sc| sc.share_class_id() == share_class_id)
+                .ok_or_else(|| AppError::BadRequest(format!("share class {} not found", share_class_id)))?;
+            let transfer_id = TransferId::new();
+            let mut transfer = ShareTransfer::new(
+                transfer_id,
+                entity_id,
+                workspace_id,
+                share_class.share_class_id(),
+                from_contact.contact_id(),
+                to_contact.contact_id(),
+                req.transfer_type,
+                shares,
+                None,
+                None,
+                req.governing_doc_type.unwrap_or(GoverningDocType::Other),
+                req.transferee_rights.unwrap_or(TransfereeRights::Limited),
+            )
+            .map_err(|e| AppError::BadRequest(format!("{e}")))?;
+            transfer
+                .submit_for_review()
+                .map_err(|e| AppError::BadRequest(format!("{e}")))?;
+            let path = format!("cap-table/transfers/{}.json", transfer_id);
+            store
+                .write_json(
+                    "main",
+                    &path,
+                    &transfer,
+                    &format!("Create share transfer {transfer_id}"),
+                )
+                .map_err(|e| AppError::Internal(format!("commit: {e}")))?;
+            Ok::<_, AppError>(transfer)
+        }
+    })
+    .await
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+
+    Ok(Json(serde_json::json!({
+        "transfer_id": transfer.transfer_id(),
+        "entity_id": transfer.entity_id(),
+        "from_holder": req.from_holder,
+        "to_holder": req.to_holder,
+        "from_contact_id": transfer.sender_contact_id(),
+        "to_contact_id": transfer.to_contact_id(),
+        "shares": transfer.share_count().raw(),
+        "share_count": transfer.share_count().raw(),
+        "transfer_type": transfer.transfer_type(),
+        "status": transfer.status(),
+    })))
+}
+
+#[utoipa::path(
+    get,
+    path = "/v1/entities/{entity_id}/share-transfers",
+    tag = "equity",
+    security(("bearer_auth" = [])),
+    responses((status = 200, description = "List of share transfers")),
+)]
+async fn list_legacy_share_transfers(
+    RequireEquityRead(auth): RequireEquityRead,
+    State(state): State<AppState>,
+    Path(entity_id): Path<EntityId>,
+) -> Result<Json<Vec<serde_json::Value>>, AppError> {
+    let workspace_id = auth.workspace_id();
+    if !auth.allows_entity(entity_id) {
+        return Err(AppError::Forbidden("entity access denied".to_owned()));
+    }
+
+    let transfers = tokio::task::spawn_blocking({
+        let layout = state.layout.clone();
+        move || {
+            let store = open_store(&layout, workspace_id, entity_id)?;
+            let all = read_all::<ShareTransfer>(&store)?;
+            Ok::<_, AppError>(
+                all.into_iter()
+                    .filter(|transfer| transfer.entity_id() == entity_id)
+                    .map(|transfer| {
+                        let from_holder = store
+                            .read::<Contact>("main", transfer.sender_contact_id())
+                            .map(|contact| contact.name().to_owned())
+                            .unwrap_or_else(|_| transfer.sender_contact_id().to_string());
+                        let to_holder = store
+                            .read::<Contact>("main", transfer.to_contact_id())
+                            .map(|contact| contact.name().to_owned())
+                            .unwrap_or_else(|_| transfer.to_contact_id().to_string());
+                        serde_json::json!({
+                            "transfer_id": transfer.transfer_id(),
+                            "entity_id": transfer.entity_id(),
+                            "from_holder": from_holder,
+                            "to_holder": to_holder,
+                            "shares": transfer.share_count().raw(),
+                            "share_count": transfer.share_count().raw(),
+                            "transfer_type": transfer.transfer_type(),
+                            "status": transfer.status(),
+                        })
+                    })
+                    .collect::<Vec<_>>(),
+            )
+        }
+    })
+    .await
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+
+    Ok(Json(transfers))
 }
 
 // ── OpenAPI ──────────────────────────────────────────────────────────
@@ -6199,6 +6483,9 @@ async fn approve_valuation(
         get_current_409a,
         submit_valuation_for_approval,
         approve_valuation,
+        create_legacy_grant,
+        create_legacy_share_transfer,
+        list_legacy_share_transfers,
     ),
     components(schemas(
         CapTableBasis,
@@ -6264,6 +6551,8 @@ async fn approve_valuation(
         PacketSignatureResponse,
         WorkflowStatusResponse,
         ValuationResponse,
+        CreateLegacyGrantRequest,
+        CreateLegacyShareTransferRequest,
     )),
     tags((name = "equity", description = "Cap table, instruments, rounds, and conversions")),
 )]
@@ -6407,6 +6696,12 @@ pub fn equity_routes() -> Router<AppState> {
         )
         .route("/v1/equity/conversions/preview", post(preview_conversion))
         .route("/v1/equity/conversions/execute", post(execute_conversion))
+        .route("/v1/equity/grants", post(create_legacy_grant))
+        .route("/v1/share-transfers", post(create_legacy_share_transfer))
+        .route(
+            "/v1/entities/{entity_id}/share-transfers",
+            get(list_legacy_share_transfers),
+        )
         .route("/v1/entities/{entity_id}/cap-table", get(get_cap_table))
         .route("/v1/equity/control-map", get(get_control_map))
         .route("/v1/equity/dilution/preview", get(get_dilution_preview))

@@ -18,6 +18,7 @@ use crate::domain::formation::error::FormationError;
 use crate::domain::governance::error::GovernanceError;
 use crate::domain::services::error::ServiceError;
 use crate::domain::treasury::error::TreasuryError;
+use crate::domain::work_items::error::WorkItemError;
 use crate::git::error::GitStorageError;
 
 #[derive(Debug)]
@@ -36,6 +37,8 @@ pub enum AppError {
     UnprocessableEntity(String),
     /// 429 — rate limited
     RateLimited { limit: u32, window_seconds: u32 },
+    /// 501 — not implemented
+    NotImplemented(String),
     /// 503 — service temporarily unavailable (e.g., queue full)
     ServiceUnavailable(String),
     /// 500 — unexpected internal error
@@ -70,6 +73,9 @@ impl IntoResponse for AppError {
                     Json(body),
                 )
                     .into_response();
+            }
+            Self::NotImplemented(msg) => {
+                (StatusCode::NOT_IMPLEMENTED, "not_implemented", msg)
             }
             Self::ServiceUnavailable(msg) => {
                 (StatusCode::SERVICE_UNAVAILABLE, "service_unavailable", msg)
@@ -192,6 +198,16 @@ impl From<AgentError> for AppError {
         match e {
             AgentError::AgentNotFound(_) => Self::NotFound(e.to_string()),
             AgentError::Validation(msg) => Self::UnprocessableEntity(msg),
+        }
+    }
+}
+
+impl From<WorkItemError> for AppError {
+    fn from(e: WorkItemError) -> Self {
+        match e {
+            WorkItemError::WorkItemNotFound(_) => Self::NotFound(e.to_string()),
+            WorkItemError::InvalidTransition { .. } => Self::UnprocessableEntity(e.to_string()),
+            WorkItemError::NotClaimed(_) => Self::UnprocessableEntity(e.to_string()),
         }
     }
 }

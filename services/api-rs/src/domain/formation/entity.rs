@@ -172,6 +172,19 @@ impl Entity {
         }
     }
 
+    pub fn set_jurisdiction(&mut self, jurisdiction: Jurisdiction) -> Result<(), FormationError> {
+        match self.formation_status {
+            FormationStatus::Pending => {
+                self.jurisdiction = jurisdiction;
+                Ok(())
+            }
+            _ => Err(FormationError::Validation(format!(
+                "jurisdiction change only allowed in Pending status, currently {}",
+                self.formation_status
+            ))),
+        }
+    }
+
     /// Dissolve the entity — transitions from Active to Dissolved.
     pub fn dissolve(&mut self) -> Result<(), FormationError> {
         self.advance_status(FormationStatus::Dissolved)

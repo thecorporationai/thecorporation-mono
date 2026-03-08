@@ -1,4 +1,4 @@
-import { Command } from "commander";
+import { Command, Option } from "commander";
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
@@ -481,7 +481,7 @@ governanceCmd
 governanceCmd
   .command("vote <meeting-id> <item-id>")
   .requiredOption("--voter <id>", "Voter contact UUID")
-  .requiredOption("--vote <value>", "Vote (for, against, abstain, recusal)")
+  .addOption(new Option("--vote <value>", "Vote (for, against, abstain, recusal)").choices(["for", "against", "abstain", "recusal"]).makeOptionMandatory())
   .description("Cast a vote on an agenda item")
   .action(async (meetingId: string, itemId: string, opts) => {
     const { governanceVoteCommand } = await import("./commands/governance.js");
@@ -581,7 +581,7 @@ documentsCmd
 documentsCmd
   .command("preview-pdf")
   .requiredOption("--document-id <id>", "AST document definition ID (e.g. 'bylaws')")
-  .description("Preview a governance document as PDF")
+  .description("Validate and print the authenticated PDF preview URL for a governance document")
   .action(async (opts, cmd) => {
     const parent = cmd.parent!.opts();
     const { documentsPreviewPdfCommand } = await import("./commands/documents.js");
@@ -608,7 +608,7 @@ taxCmd
   .requiredOption("--type <type>", "Deadline type")
   .requiredOption("--due-date <date>", "Due date (ISO 8601)")
   .requiredOption("--description <desc>", "Description")
-  .option("--recurrence <recurrence>", "Recurrence")
+  .option("--recurrence <recurrence>", "Recurrence (e.g. annual; 'yearly' is normalized)")
   .description("Track a compliance deadline")
   .action(async (opts, cmd) => {
     const parent = cmd.parent!.opts();
@@ -658,18 +658,84 @@ agentsCmd.command("message <agent-id>").requiredOption("--body <text>", "Message
     const { agentsMessageCommand } = await import("./commands/agents.js");
     await agentsMessageCommand(agentId, opts);
   });
-agentsCmd.command("executions <agent-id>").option("--json", "Output as JSON")
-  .description("List agent execution history")
-  .action(async (agentId: string, opts) => {
-    const { agentsExecutionsCommand } = await import("./commands/agents.js");
-    await agentsExecutionsCommand(agentId, opts);
-  });
 agentsCmd.command("skill <agent-id>").requiredOption("--name <name>", "Skill name")
   .requiredOption("--description <desc>", "Skill description").option("--instructions <text>", "Instructions")
   .description("Add a skill to an agent")
   .action(async (agentId: string, opts) => {
     const { agentsSkillCommand } = await import("./commands/agents.js");
     await agentsSkillCommand(agentId, opts);
+  });
+
+// --- work-items ---
+const workItemsCmd = program
+  .command("work-items")
+  .description("Long-term work item coordination")
+  .option("--entity-id <id>", "Entity ID (overrides active entity)")
+  .option("--json", "Output as JSON")
+  .option("--status <status>", "Filter by status (open, claimed, completed, cancelled)")
+  .option("--category <category>", "Filter by category")
+  .action(async (opts) => {
+    const { workItemsListCommand } = await import("./commands/work-items.js");
+    await workItemsListCommand(opts);
+  });
+workItemsCmd
+  .command("show <item-id>")
+  .option("--json", "Output as JSON")
+  .description("Show work item detail")
+  .action(async (itemId: string, opts, cmd) => {
+    const parent = cmd.parent!.opts();
+    const { workItemsShowCommand } = await import("./commands/work-items.js");
+    await workItemsShowCommand(itemId, { ...opts, entityId: parent.entityId });
+  });
+workItemsCmd
+  .command("create")
+  .requiredOption("--title <title>", "Work item title")
+  .requiredOption("--category <category>", "Work item category")
+  .option("--description <desc>", "Description")
+  .option("--deadline <date>", "Deadline (YYYY-MM-DD)")
+  .option("--asap", "Mark as ASAP priority")
+  .option("--created-by <name>", "Creator identifier")
+  .description("Create a new work item")
+  .action(async (opts, cmd) => {
+    const parent = cmd.parent!.opts();
+    const { workItemsCreateCommand } = await import("./commands/work-items.js");
+    await workItemsCreateCommand({ ...opts, entityId: parent.entityId });
+  });
+workItemsCmd
+  .command("claim <item-id>")
+  .requiredOption("--by <name>", "Agent or user claiming the item")
+  .option("--ttl <seconds>", "Auto-release TTL in seconds", parseInt)
+  .description("Claim a work item")
+  .action(async (itemId: string, opts, cmd) => {
+    const parent = cmd.parent!.opts();
+    const { workItemsClaimCommand } = await import("./commands/work-items.js");
+    await workItemsClaimCommand(itemId, { claimedBy: opts.by, ttl: opts.ttl, entityId: parent.entityId });
+  });
+workItemsCmd
+  .command("complete <item-id>")
+  .requiredOption("--by <name>", "Agent or user completing the item")
+  .option("--result <text>", "Completion result or notes")
+  .description("Mark a work item as completed")
+  .action(async (itemId: string, opts, cmd) => {
+    const parent = cmd.parent!.opts();
+    const { workItemsCompleteCommand } = await import("./commands/work-items.js");
+    await workItemsCompleteCommand(itemId, { completedBy: opts.by, result: opts.result, entityId: parent.entityId });
+  });
+workItemsCmd
+  .command("release <item-id>")
+  .description("Release a claimed work item")
+  .action(async (itemId: string, _opts, cmd) => {
+    const parent = cmd.parent!.opts();
+    const { workItemsReleaseCommand } = await import("./commands/work-items.js");
+    await workItemsReleaseCommand(itemId, { entityId: parent.entityId });
+  });
+workItemsCmd
+  .command("cancel <item-id>")
+  .description("Cancel a work item")
+  .action(async (itemId: string, _opts, cmd) => {
+    const parent = cmd.parent!.opts();
+    const { workItemsCancelCommand } = await import("./commands/work-items.js");
+    await workItemsCancelCommand(itemId, { entityId: parent.entityId });
   });
 
 // --- billing ---

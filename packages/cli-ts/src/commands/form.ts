@@ -5,6 +5,7 @@ import { requireConfig } from "../config.js";
 import { CorpAPIClient } from "../api-client.js";
 import { printError, printSuccess } from "../output.js";
 import type { ApiRecord } from "../types.js";
+import { EntityType, OfficerTitle } from "@thecorporation/corp-tools";
 
 // ── Types ──────────────────────────────────────────────────────
 
@@ -165,13 +166,10 @@ async function phasePeople(
       if (wantOfficer) {
         officerTitle = await select({
           message: "  Officer title",
-          choices: [
-            { value: "ceo", name: "CEO" },
-            { value: "cfo", name: "CFO" },
-            { value: "secretary", name: "Secretary" },
-            { value: "president", name: "President" },
-            { value: "vp", name: "VP" },
-          ],
+          choices: OfficerTitle.map((t) => ({
+            value: t,
+            name: t === "ceo" ? "CEO" : t === "cfo" ? "CFO" : t === "vp" ? "VP" : t.charAt(0).toUpperCase() + t.slice(1),
+          })),
         });
       }
     }
@@ -367,7 +365,7 @@ export async function formCommand(opts: FormOptions): Promise<void> {
     const result = await client.createFormationWithCapTable(payload);
 
     // Output results
-    printSuccess(`Formation created: ${result.formation_id ?? result.id ?? "OK"}`);
+    printSuccess(`Formation created: ${result.formation_id ?? "OK"}`);
     if (result.entity_id) console.log(`  Entity ID: ${result.entity_id}`);
     if (result.legal_entity_id) console.log(`  Legal Entity ID: ${result.legal_entity_id}`);
     if (result.instrument_id) console.log(`  Instrument ID: ${result.instrument_id}`);
@@ -454,7 +452,7 @@ export async function formAddFounderCommand(entityId: string, opts: FormAddFound
       role: opts.role,
       ownership_pct: parseFloat(opts.pct),
     };
-    if (opts.officerTitle) payload.officer_title = opts.officerTitle;
+    if (opts.officerTitle) payload.officer_title = opts.officerTitle.toLowerCase();
     if (opts.incorporator) payload.is_incorporator = true;
 
     const result = await client.addFounder(entityId, payload);

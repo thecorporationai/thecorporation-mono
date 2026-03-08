@@ -41,6 +41,8 @@ enum Command {
         #[arg(long, default_value = "./data/repos")]
         data_dir: PathBuf,
     },
+    /// Write the OpenAPI specification JSON to stdout.
+    DumpOpenApi,
     /// Generate governance markdown docs bundle from Rust.
     GenerateGovernanceDocs {
         /// Governance profile to generate.
@@ -74,6 +76,10 @@ async fn main() {
         Some(Command::Validate { data_dir }) => {
             let code = validate::run(data_dir);
             std::process::exit(code);
+        }
+        Some(Command::DumpOpenApi) => {
+            let spec = openapi::openapi_spec();
+            println!("{}", serde_json::to_string_pretty(&spec).unwrap());
         }
         Some(Command::GenerateGovernanceDocs {
             entity_type,
@@ -297,6 +303,7 @@ async fn run_server(skip_validation: bool) {
         .merge(routes::secrets_proxy::secrets_routes())
         .merge(routes::llm_proxy::llm_proxy_routes())
         .merge(routes::secret_proxies::secret_proxy_routes())
+        .merge(routes::work_items::work_items_routes())
         .merge(routes::admin::admin_routes())
         .with_state(state)
         .layer(middleware::map_response(security_headers));

@@ -333,6 +333,37 @@ export const GENERATED_TOOL_DEFINITIONS: Record<string, unknown>[] = [
   {
     "type": "function",
     "function": {
+      "name": "work_item",
+      "description": "Long-term work item coordination stored in entity repos. Agents claim items with TTL, complete them, or release/cancel. Actions: list (entity_id, optional status filter), get (entity_id + work_item_id), create (entity_id + title + category + optional deadline/asap/description/metadata/created_by), claim (entity_id + work_item_id + claimed_by + optional ttl_seconds), complete (entity_id + work_item_id + completed_by + optional result), release (entity_id + work_item_id — release a claim), cancel (entity_id + work_item_id).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": ["list", "get", "create", "claim", "complete", "release", "cancel"]
+          },
+          "entity_id": { "type": "string", "description": "All actions: entity ID" },
+          "work_item_id": { "type": "string", "description": "get/claim/complete/release/cancel: work item ID" },
+          "title": { "type": "string", "description": "create: work item title" },
+          "category": { "type": "string", "description": "create/list: work item category" },
+          "description": { "type": "string", "description": "create: work item description" },
+          "deadline": { "type": "string", "description": "create: deadline date (YYYY-MM-DD)" },
+          "asap": { "type": "boolean", "description": "create: mark as ASAP priority" },
+          "metadata": { "type": "object", "description": "create: arbitrary metadata" },
+          "created_by": { "type": "string", "description": "create: creator identifier" },
+          "claimed_by": { "type": "string", "description": "claim: agent or user identifier" },
+          "ttl_seconds": { "type": "integer", "description": "claim: auto-release TTL in seconds" },
+          "completed_by": { "type": "string", "description": "complete: agent or user identifier" },
+          "result": { "type": "string", "description": "complete: completion result/notes" },
+          "status": { "type": "string", "enum": ["open", "claimed", "completed", "cancelled"], "description": "list: filter by effective status" }
+        },
+        "required": ["action"]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
       "name": "agent",
       "description": "Agent management. Agents are for delegating recurring tasks — NOT for research or one-off questions. Requires a paid plan. Actions: list (list all agents), create (name + system_prompt), message (agent_id + message), update (agent_id + optional status), add_skill (agent_id + name + description).",
       "parameters": {

@@ -2,7 +2,6 @@ import { requireConfig } from "../config.js";
 import { CorpAPIClient } from "../api-client.js";
 import { printAgentsTable, printError, printSuccess, printJson } from "../output.js";
 import chalk from "chalk";
-import Table from "cli-table3";
 import type { ApiRecord } from "../types.js";
 
 export async function agentsListCommand(opts: { json?: boolean }): Promise<void> {
@@ -49,6 +48,7 @@ export async function agentsCreateCommand(opts: { name: string; prompt: string; 
     if (opts.model) data.model = opts.model;
     const result = await client.createAgent(data);
     printSuccess(`Agent created: ${result.agent_id ?? result.id ?? "OK"}`);
+    printJson(result);
   } catch (err) { printError(`Failed to create agent: ${err}`); process.exit(1); }
 }
 
@@ -98,6 +98,7 @@ export async function agentsExecutionsCommand(agentId: string, _opts: { json?: b
   );
   process.exit(1);
 }
+
 
 export async function agentsSkillCommand(agentId: string, opts: {
   name: string; description: string; instructions?: string;

@@ -52,9 +52,14 @@ export async function documentsPreviewPdfCommand(opts: {
 }): Promise<void> {
   const cfg = requireConfig("api_url", "api_key", "workspace_id");
   const eid = resolveEntityId(cfg, opts.entityId);
-  const apiUrl = cfg.api_url.replace(/\/+$/, "");
-  const qs = new URLSearchParams({ entity_id: eid, document_id: opts.documentId }).toString();
-  const url = `${apiUrl}/v1/documents/preview/pdf?${qs}`;
-  printSuccess(`Preview PDF URL: ${url}`);
-  console.log("Use your API key to authenticate the download.");
+  const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
+  try {
+    await client.validatePreviewPdf(eid, opts.documentId);
+    const url = client.getPreviewPdfUrl(eid, opts.documentId);
+    printSuccess(`Preview PDF URL: ${url}`);
+    console.log("The document definition was validated successfully. Use your API key to download the PDF.");
+  } catch (err) {
+    printError(`Failed to validate preview PDF: ${err}`);
+    process.exit(1);
+  }
 }

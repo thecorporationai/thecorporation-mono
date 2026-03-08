@@ -30,6 +30,8 @@ pub struct CreateContactRequest {
     #[serde(default)]
     pub email: Option<String>,
     pub category: ContactCategory,
+    #[serde(default)]
+    pub notes: Option<String>,
 }
 
 // ── Response types ───────────────────────────────────────────────────
@@ -82,6 +84,22 @@ fn open_store<'a>(
     })
 }
 
+fn normalize_email(email: &str) -> String {
+    email.trim().to_ascii_lowercase()
+}
+
+fn validate_email(email: &str) -> Result<String, AppError> {
+    let normalized = normalize_email(email);
+    if normalized.is_empty() || !normalized.contains('@') {
+        return Err(AppError::BadRequest("email must be a valid address".to_owned()));
+    }
+    let parts: Vec<&str> = normalized.splitn(2, '@').collect();
+    if parts.len() != 2 || parts[0].is_empty() || parts[1].is_empty() || !parts[1].contains('.') {
+        return Err(AppError::BadRequest("email must be a valid address".to_owned()));
+    }
+    Ok(normalized)
+}
+
 // ── Handlers ─────────────────────────────────────────────────────────
 
 #[utoipa::path(
@@ -103,22 +121,44 @@ async fn create_contact(
     if !auth.allows_entity(entity_id) {
         return Err(AppError::Forbidden("entity access denied".to_owned()));
     }
+    let normalized_email = req.email.as_deref().map(validate_email).transpose()?;
 
     let contact = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
+            let contact_ids = store
+                .list_ids::<Contact>("main")
+                .map_err(|e| AppError::Internal(format!("list contacts: {e}")))?;
+            for existing_id in contact_ids {
+                let existing = store
+                    .read::<Contact>("main", existing_id)
+                    .map_err(|e| AppError::Internal(format!("read contact {existing_id}: {e}")))?;
+                if let (Some(existing_email), Some(new_email)) =
+                    (existing.email(), normalized_email.as_deref())
+                    && normalize_email(existing_email) == new_email
+                {
+                    return Err(AppError::Conflict(format!(
+                        "contact email already exists for entity: {new_email}"
+                    )));
+                }
+            }
 
             let contact_id = ContactId::new();
-            let contact = Contact::new(
+            let mut contact = Contact::new(
                 contact_id,
                 entity_id,
                 workspace_id,
                 req.contact_type,
                 req.name,
-                req.email,
+                normalized_email,
                 req.category,
             );
+            if let Some(notes) = req.notes
+                && !notes.trim().is_empty()
+            {
+                contact.set_notes(notes);
+            }
 
             let path = format!("contacts/{}.json", contact_id);
             store
@@ -235,6 +275,8 @@ pub struct UpdateContactRequest {
     #[serde(default)]
     pub notes: Option<String>,
     #[serde(default)]
+    pub category: Option<ContactCategory>,
+    #[serde(default)]
     pub cap_table_access: Option<CapTableAccess>,
 }
 
@@ -268,6 +310,7 @@ async fn update_contact(
     if req.email.as_deref().is_some_and(|s| s.trim().is_empty()) {
         return Err(AppError::BadRequest("email cannot be empty".to_owned()));
     }
+    let normalized_email = req.email.as_deref().map(validate_email).transpose()?;
 
     let contact = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
@@ -277,10 +320,32 @@ async fn update_contact(
                 .read::<Contact>("main", contact_id)
                 .map_err(|_| AppError::NotFound(format!("contact {} not found", contact_id)))?;
 
+            if let Some(new_email) = normalized_email.as_deref() {
+                let contact_ids = store
+                    .list_ids::<Contact>("main")
+                    .map_err(|e| AppError::Internal(format!("list contacts: {e}")))?;
+                for existing_id in contact_ids {
+                    if existing_id == contact_id {
+                        continue;
+                    }
+                    let existing = store
+                        .read::<Contact>("main", existing_id)
+                        .map_err(|e| AppError::Internal(format!("read contact {existing_id}: {e}")))?;
+                    if existing
+                        .email()
+                        .is_some_and(|email| normalize_email(email) == new_email)
+                    {
+                        return Err(AppError::Conflict(format!(
+                            "contact email already exists for entity: {new_email}"
+                        )));
+                    }
+                }
+            }
+
             if let Some(name) = req.name {
                 contact.set_name(name);
             }
-            if let Some(email) = req.email {
+            if let Some(email) = normalized_email {
                 contact.set_email(Some(email));
             }
             if let Some(phone) = req.phone {
@@ -288,6 +353,9 @@ async fn update_contact(
             }
             if let Some(notes) = req.notes {
                 contact.set_notes(notes);
+            }
+            if let Some(category) = req.category {
+                contact.set_category(category);
             }
             if let Some(access) = req.cap_table_access {
                 contact.set_cap_table_access(access);

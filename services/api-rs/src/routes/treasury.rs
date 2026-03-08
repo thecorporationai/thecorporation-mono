@@ -807,6 +807,24 @@ async fn create_bank_account(
         let layout = state.layout.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
+            let existing_ids = store
+                .list_ids::<BankAccount>("main")
+                .map_err(|e| AppError::Internal(format!("list bank accounts: {e}")))?;
+            let normalized_bank = req.bank_name.trim().to_ascii_lowercase();
+            for existing_id in existing_ids {
+                let existing = store
+                    .read::<BankAccount>("main", existing_id)
+                    .map_err(|e| AppError::Internal(format!("read bank account {existing_id}: {e}")))?;
+                if existing.entity_id() == entity_id
+                    && existing.status() != BankAccountStatus::Closed
+                    && existing.bank_name().trim().to_ascii_lowercase() == normalized_bank
+                {
+                    return Err(AppError::Conflict(format!(
+                        "open bank account already exists for {}",
+                        req.bank_name
+                    )));
+                }
+            }
 
             let bank_account_id = BankAccountId::new();
             let bank_account = BankAccount::new(
@@ -1097,6 +1115,9 @@ async fn submit_payment(
 ) -> Result<Json<PaymentResponse>, AppError> {
     let workspace_id = auth.workspace_id();
     let entity_id = req.entity_id;
+    Cents::new(req.amount_cents)
+        .require_positive()
+        .map_err(|e| AppError::BadRequest(e.to_owned()))?;
 
     let payment = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
@@ -1157,6 +1178,9 @@ async fn execute_payment(
 ) -> Result<Json<PaymentResponse>, AppError> {
     let workspace_id = auth.workspace_id();
     let entity_id = req.entity_id;
+    Cents::new(req.amount_cents)
+        .require_positive()
+        .map_err(|e| AppError::BadRequest(e.to_owned()))?;
 
     let payment = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
@@ -1220,6 +1244,11 @@ async fn create_payroll_run(
 ) -> Result<Json<PayrollRunResponse>, AppError> {
     let workspace_id = auth.workspace_id();
     let entity_id = req.entity_id;
+    if req.pay_period_end < req.pay_period_start {
+        return Err(AppError::BadRequest(
+            "pay_period_end must be on or after pay_period_start".to_owned(),
+        ));
+    }
 
     let run = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
@@ -1268,6 +1297,9 @@ async fn create_distribution(
 ) -> Result<Json<DistributionResponse>, AppError> {
     let workspace_id = auth.workspace_id();
     let entity_id = req.entity_id;
+    Cents::new(req.total_amount_cents)
+        .require_positive()
+        .map_err(|e| AppError::BadRequest(e.to_owned()))?;
 
     let dist = tokio::task::spawn_blocking({
         let layout = state.layout.clone();

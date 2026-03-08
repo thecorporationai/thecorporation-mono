@@ -30,6 +30,7 @@ export interface LLMResponse {
   finish_reason: string | null;
 }
 
+/** @deprecated Use specific generated types from api-schemas.ts instead */
 export type ApiRecord = Record<string, unknown>;
 
 export interface CreateEquityRoundRequest {

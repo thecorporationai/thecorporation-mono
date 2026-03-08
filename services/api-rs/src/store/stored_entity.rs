@@ -429,6 +429,18 @@ impl StoredEntity for ComplianceEvidenceLink {
     }
 }
 
+// ── Work Items ─────────────────────────────────────────────────────────
+
+use crate::domain::ids::WorkItemId;
+use crate::domain::work_items::work_item::WorkItem;
+
+impl StoredEntity for WorkItem {
+    type Id = WorkItemId;
+    fn storage_dir() -> &'static str {
+        "workitems"
+    }
+}
+
 // ── Services (fulfillment marketplace) ────────────────────────────────
 
 use crate::domain::ids::ServiceRequestId;

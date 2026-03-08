@@ -42,6 +42,7 @@ export async function financePayCommand(opts: {
   try {
     const result = await client.submitPayment({
       entity_id: eid, amount_cents: opts.amount, recipient: opts.recipient,
+      payment_method: opts.method,
       description: `Payment via ${opts.method}`,
     });
     printSuccess(`Payment submitted: ${result.payment_id ?? "OK"}`);

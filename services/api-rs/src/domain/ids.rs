@@ -131,6 +131,9 @@ define_id!(ContactId);
 define_id!(ObligationId);
 define_id!(DocumentRequestId);
 
+// ── Work Items ────────────────────────────────────────────────────────
+define_id!(WorkItemId);
+
 // ── Execution ──────────────────────────────────────────────────────────
 define_id!(IntentId);
 define_id!(ApprovalArtifactId);

@@ -29,6 +29,7 @@ pub fn openapi_spec() -> utoipa::openapi::OpenApi {
         routes::llm_proxy::LlmProxyApi::openapi(),
         routes::secret_proxies::SecretProxiesApi::openapi(),
         routes::agent_executions::AgentExecutionsApi::openapi(),
+        routes::work_items::WorkItemsApi::openapi(),
     ];
 
     for module_doc in modules {
@@ -53,6 +54,7 @@ pub fn openapi_spec() -> utoipa::openapi::OpenApi {
         version = "1.0.0",
         description = "Git-backed corporate operations platform API"
     ),
+    security(("bearer_auth" = [])),
     tags(
         (name = "formation", description = "Entity formation and document management"),
         (name = "equity", description = "Canonical cap table, instruments, rounds, and conversions"),
@@ -69,6 +71,7 @@ pub fn openapi_spec() -> utoipa::openapi::OpenApi {
         (name = "llm_proxy", description = "LLM proxy"),
         (name = "secret_proxies", description = "Secret proxy configurations"),
         (name = "agent_executions", description = "Agent execution queue"),
+        (name = "work_items", description = "Long-term work item coordination"),
     ),
 )]
 struct ApiDoc;

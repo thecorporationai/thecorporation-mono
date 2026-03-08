@@ -446,9 +446,13 @@ function print409a(data: Record<string, unknown>): void {
   console.log(chalk.green("─".repeat(40)));
   console.log(chalk.green.bold("  409A Valuation"));
   console.log(chalk.green("─".repeat(40)));
-  console.log(`  ${chalk.bold("FMV/Share:")} $${data.fmv_per_share ?? "N/A"}`);
-  console.log(`  ${chalk.bold("Enterprise Value:")} $${data.enterprise_value ?? "N/A"}`);
-  console.log(`  ${chalk.bold("Valuation Date:")} ${data.valuation_date ?? "N/A"}`);
+  const fmv = typeof data.fmv_per_share_cents === "number" ? (data.fmv_per_share_cents as number) / 100 : data.fmv_per_share;
+  const enterpriseValue = typeof data.enterprise_value_cents === "number"
+    ? (data.enterprise_value_cents as number) / 100
+    : data.enterprise_value;
+  console.log(`  ${chalk.bold("FMV/Share:")} $${fmv ?? "N/A"}`);
+  console.log(`  ${chalk.bold("Enterprise Value:")} $${enterpriseValue ?? "N/A"}`);
+  console.log(`  ${chalk.bold("Valuation Date:")} ${data.effective_date ?? data.valuation_date ?? "N/A"}`);
   if (data.provider) console.log(`  ${chalk.bold("Provider:")} ${data.provider}`);
   console.log(chalk.green("─".repeat(40)));
 }

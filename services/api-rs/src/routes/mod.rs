@@ -14,6 +14,7 @@ pub mod llm_proxy;
 pub mod secret_proxies;
 pub mod secrets_proxy;
 pub mod treasury;
+pub mod work_items;
 
 use std::collections::HashMap;
 use std::sync::Arc;

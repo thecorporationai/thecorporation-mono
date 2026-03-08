@@ -64,6 +64,30 @@ fn default_deadline_severity() -> DeadlineSeverity {
     DeadlineSeverity::Medium
 }
 
+fn allowed_tax_document_type(document_type: &str) -> bool {
+    matches!(document_type, "1120" | "1120s" | "1065" | "franchise_tax" | "annual_report" | "83b")
+}
+
+fn validate_deadline_recurrence(
+    deadline_type: &str,
+    recurrence: Recurrence,
+) -> Result<(), AppError> {
+    let expected = match deadline_type {
+        "annual_report" | "franchise_tax" => Some(Recurrence::Annual),
+        "quarterly_tax" => Some(Recurrence::Quarterly),
+        "monthly_payroll_tax" => Some(Recurrence::Monthly),
+        _ => None,
+    };
+    if let Some(expected) = expected
+        && recurrence != expected
+    {
+        return Err(AppError::BadRequest(format!(
+            "deadline type {deadline_type} requires recurrence {expected:?}"
+        )));
+    }
+    Ok(())
+}
+
 #[derive(Deserialize, utoipa::ToSchema)]
 pub struct ScanComplianceRequest {
     pub entity_id: EntityId,
@@ -269,6 +293,12 @@ async fn file_tax_document(
 ) -> Result<Json<TaxFilingResponse>, AppError> {
     let workspace_id = auth.workspace_id();
     let entity_id = req.entity_id;
+    if !allowed_tax_document_type(&req.document_type) {
+        return Err(AppError::BadRequest(format!(
+            "unsupported tax document type: {}",
+            req.document_type
+        )));
+    }
 
     let filing = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
@@ -329,6 +359,7 @@ async fn create_deadline(
 ) -> Result<Json<DeadlineResponse>, AppError> {
     let workspace_id = auth.workspace_id();
     let entity_id = req.entity_id;
+    validate_deadline_recurrence(&req.deadline_type, req.recurrence)?;
 
     let deadline = tokio::task::spawn_blocking({
         let layout = state.layout.clone();

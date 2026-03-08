@@ -65,9 +65,19 @@ function s(val: unknown, maxLen?: number): string {
   return str;
 }
 
-function money(val: unknown): string {
-  if (typeof val === "number") return `$${val.toLocaleString()}`;
+function money(val: unknown, cents = true): string {
+  if (typeof val === "number") {
+    const dollars = cents ? val / 100 : val;
+    return `$${dollars.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  }
   return String(val ?? "");
+}
+
+function date(val: unknown): string {
+  const str = s(val);
+  if (!str) return "";
+  const parsed = new Date(str);
+  return Number.isNaN(parsed.getTime()) ? str : parsed.toISOString().slice(0, 10);
 }
 
 // --- Domain tables ---
@@ -152,7 +162,7 @@ export function printSafesTable(safes: ApiRecord[]): void {
     table.push([
       s(s_.safe_id ?? s_.id, 12),
       s(s_.investor_name ?? s_.investor),
-      money(s_.investment_amount ?? s_.amount),
+      money(s_.investment_amount ?? s_.amount, false),
       s(s_.valuation_cap ?? s_.cap),
       s(s_.discount_rate ?? s_.discount),
       s(s_.date ?? s_.created_at),
@@ -180,10 +190,10 @@ export function printValuationsTable(valuations: ApiRecord[]): void {
   const table = makeTable("Valuations", ["Date", "Type", "Valuation", "PPS"]);
   for (const v of valuations) {
     table.push([
-      s(v.valuation_date ?? v.date),
+      date(v.effective_date ?? v.valuation_date ?? v.date),
       s(v.valuation_type ?? v.type),
-      s(v.enterprise_value ?? v.valuation),
-      s(v.price_per_share ?? v.pps ?? v.fmv_per_share),
+      money(v.enterprise_value_cents ?? v.enterprise_value ?? v.valuation),
+      money(v.fmv_per_share_cents ?? v.price_per_share ?? v.pps ?? v.fmv_per_share),
     ]);
   }
   console.log(table.toString());
@@ -252,6 +262,27 @@ export function printDocumentsTable(docs: ApiRecord[]): void {
       s(d.date ?? d.created_at),
       s(d.status),
       sigStr,
+    ]);
+  }
+  console.log(table.toString());
+}
+
+export function printWorkItemsTable(items: ApiRecord[]): void {
+  const table = makeTable("Work Items", ["ID", "Title", "Category", "Status", "Deadline", "Claimed By"]);
+  for (const w of items) {
+    const status = s(w.effective_status ?? w.status);
+    const colored =
+      status === "completed" ? chalk.green(status) :
+      status === "claimed" ? chalk.yellow(status) :
+      status === "cancelled" ? chalk.dim(status) :
+      status;
+    table.push([
+      s(w.work_item_id ?? w.id, 12),
+      s(w.title),
+      s(w.category),
+      colored,
+      w.asap ? chalk.red.bold("ASAP") : s(w.deadline ?? ""),
+      s(w.claimed_by ?? ""),
     ]);
   }
   console.log(table.toString());

@@ -1,18 +1,10 @@
 import { requireConfig } from "../config.js";
 import { CorpAPIClient } from "../api-client.js";
 import { printBillingPanel, printError, printSuccess, printJson } from "../output.js";
-import { execSync } from "node:child_process";
 
 function makeClient() {
   const cfg = requireConfig("api_url", "api_key", "workspace_id");
   return new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
-}
-
-function openUrl(url: string) {
-  try {
-    const cmd = process.platform === "darwin" ? "open" : process.platform === "win32" ? "start" : "xdg-open";
-    execSync(`${cmd} ${JSON.stringify(url)}`, { stdio: "ignore" });
-  } catch { /* browser open is best-effort */ }
 }
 
 export async function billingCommand(opts: { json?: boolean }): Promise<void> {
@@ -30,9 +22,8 @@ export async function billingPortalCommand(): Promise<void> {
     const result = await client.createBillingPortal();
     const url = result.portal_url as string;
     if (!url) { printError("No portal URL returned. Ensure you have an active subscription."); process.exit(1); }
-    console.log(`Opening Stripe Customer Portal...\n${url}`);
-    openUrl(url);
-    printSuccess("Portal opened in your browser.");
+    printSuccess("Stripe Customer Portal URL:");
+    console.log(url);
   } catch (err) { printError(`Failed to create portal session: ${err}`); process.exit(1); }
 }
 
@@ -42,8 +33,7 @@ export async function billingUpgradeCommand(opts: { plan: string }): Promise<voi
     const result = await client.createBillingCheckout(opts.plan);
     const url = result.checkout_url as string;
     if (!url) { printError("No checkout URL returned."); process.exit(1); }
-    console.log(`Opening Stripe Checkout for ${opts.plan}...\n${url}`);
-    openUrl(url);
-    printSuccess("Checkout opened in your browser.");
+    printSuccess(`Stripe Checkout URL for ${opts.plan}:`);
+    console.log(url);
   } catch (err) { printError(`Failed to create checkout session: ${err}`); process.exit(1); }
 }

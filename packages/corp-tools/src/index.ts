@@ -23,3 +23,7 @@ export { SYSTEM_PROMPT_BASE, formatConfigSection } from "./system-prompt.js";
 
 // Definitions registry
 export { TOOL_REGISTRY, GENERATED_TOOL_DEFINITIONS, READ_ONLY_TOOLS } from "./definitions.js";
+
+// Generated OpenAPI types and runtime enum constants
+export * from "./api-enums.generated.js";
+export type * from "./api-schemas.js";

@@ -9,3 +9,4 @@ pub mod governance;
 pub mod ids;
 pub mod services;
 pub mod treasury;
+pub mod work_items;

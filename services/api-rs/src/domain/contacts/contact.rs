@@ -73,6 +73,10 @@ impl Contact {
         self.notes = Some(notes);
     }
 
+    pub fn set_category(&mut self, category: ContactCategory) {
+        self.category = category;
+    }
+
     // Accessors
     pub fn contact_id(&self) -> ContactId {
         self.contact_id

@@ -441,6 +441,57 @@ const checklistActions: Record<string, ToolHandler> = {
   },
 };
 
+const workItemActions: Record<string, ToolHandler> = {
+  list: async (args, client) =>
+    client.listWorkItems(requiredString(args, "entity_id"), args.status ? { status: args.status as string } : undefined),
+
+  get: async (args, client) =>
+    client.getWorkItem(requiredString(args, "entity_id"), requiredString(args, "work_item_id")),
+
+  create: async (args, client) => {
+    const data: Record<string, unknown> = {
+      title: requiredString(args, "title"),
+      category: requiredString(args, "category"),
+    };
+    if (args.description) data.description = args.description;
+    if (args.deadline) data.deadline = args.deadline;
+    if (args.asap != null) data.asap = args.asap;
+    if (args.metadata) data.metadata = args.metadata;
+    if (args.created_by) data.created_by = args.created_by;
+    return client.createWorkItem(requiredString(args, "entity_id"), data);
+  },
+
+  claim: async (args, client) => {
+    const data: Record<string, unknown> = {
+      claimed_by: requiredString(args, "claimed_by"),
+    };
+    if (args.ttl_seconds != null) data.ttl_seconds = args.ttl_seconds;
+    return client.claimWorkItem(
+      requiredString(args, "entity_id"),
+      requiredString(args, "work_item_id"),
+      data,
+    );
+  },
+
+  complete: async (args, client) => {
+    const data: Record<string, unknown> = {
+      completed_by: requiredString(args, "completed_by"),
+    };
+    if (args.result) data.result = args.result;
+    return client.completeWorkItem(
+      requiredString(args, "entity_id"),
+      requiredString(args, "work_item_id"),
+      data,
+    );
+  },
+
+  release: async (args, client) =>
+    client.releaseWorkItem(requiredString(args, "entity_id"), requiredString(args, "work_item_id")),
+
+  cancel: async (args, client) =>
+    client.cancelWorkItem(requiredString(args, "entity_id"), requiredString(args, "work_item_id")),
+};
+
 const agentActions: Record<string, ToolHandler> = {
   list: async (_args, client) => client.listAgents(),
   create: async (args, client) => client.createAgent(args),
@@ -463,6 +514,7 @@ const TOOL_DISPATCH: Record<string, Record<string, ToolHandler>> = {
   compliance: complianceActions,
   document: documentActions,
   checklist: checklistActions,
+  work_item: workItemActions,
   agent: agentActions,
 };
 
@@ -486,6 +538,8 @@ const READ_ONLY_ACTIONS = new Set([
   "checklist:get",
   "meeting:list_items",
   "meeting:list_votes",
+  "work_item:list",
+  "work_item:get",
   "agent:list",
 ]);
 

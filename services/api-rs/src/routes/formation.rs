@@ -1371,6 +1371,31 @@ fn default_params() -> serde_json::Value {
     serde_json::json!({})
 }
 
+fn normalize_legal_name(name: &str) -> String {
+    name.trim().to_ascii_lowercase()
+}
+
+fn workspace_has_legal_name(
+    layout: &crate::store::RepoLayout,
+    workspace_id: WorkspaceId,
+    legal_name: &str,
+    skip_entity_id: Option<EntityId>,
+) -> Result<bool, AppError> {
+    let normalized = normalize_legal_name(legal_name);
+    for entity_id in layout.list_entity_ids(workspace_id) {
+        if skip_entity_id.is_some_and(|skip| skip == entity_id) {
+            continue;
+        }
+        if let Ok(store) = EntityStore::open(layout, workspace_id, entity_id)
+            && let Ok(entity) = store.read_entity("main")
+            && normalize_legal_name(entity.legal_name()) == normalized
+        {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
 #[derive(Serialize, utoipa::ToSchema)]
 pub struct ContractResponse {
     pub contract_id: ContractId,
@@ -1469,6 +1494,17 @@ async fn generate_contract(
 ) -> Result<Json<ContractResponse>, AppError> {
     let workspace_id = auth.workspace_id();
     let entity_id = req.entity_id;
+    if req.template_type == ContractTemplateType::Custom {
+        let has_payload = req
+            .parameters
+            .as_object()
+            .is_some_and(|value| !value.is_empty());
+        if !has_payload {
+            return Err(AppError::BadRequest(
+                "custom templates require non-empty parameters".to_owned(),
+            ));
+        }
+    }
 
     let contract = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
@@ -2095,7 +2131,10 @@ async fn list_entities(
 
 #[derive(Deserialize, utoipa::ToSchema)]
 pub struct ConvertEntityRequest {
+    #[serde(alias = "new_entity_type")]
     pub target_type: EntityType,
+    #[serde(default, alias = "new_jurisdiction")]
+    pub jurisdiction: Option<Jurisdiction>,
 }
 
 #[utoipa::path(
@@ -2128,6 +2167,9 @@ async fn convert_entity(
             })?;
 
             entity.set_entity_type(req.target_type)?;
+            if let Some(jurisdiction) = req.jurisdiction {
+                entity.set_jurisdiction(jurisdiction)?;
+            }
 
             store
                 .write_entity(
@@ -2256,6 +2298,13 @@ async fn create_pending_formation(
         let legal_name = req.legal_name;
         let jurisdiction = jurisdiction.clone();
         move || {
+            if workspace_has_legal_name(&layout, workspace_id, &legal_name, None)
+                .map_err(|e| crate::domain::formation::error::FormationError::Validation(format!("{e:?}")))?
+            {
+                return Err(crate::domain::formation::error::FormationError::Validation(
+                    format!("entity legal name already exists in workspace: {legal_name}"),
+                ));
+            }
             service::create_pending_entity(
                 &layout,
                 workspace_id,

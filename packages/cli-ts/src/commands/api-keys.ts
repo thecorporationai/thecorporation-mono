@@ -9,7 +9,14 @@ export async function apiKeysCommand(opts: { json?: boolean }): Promise<void> {
   const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
   try {
     const keys = await client.listApiKeys();
-    if (opts.json) { printJson(keys); return; }
+    if (opts.json) {
+      printJson(keys.map((k: any) => ({
+        ...k,
+        ...(k.key != null ? { key: maskKey(String(k.key)) } : {}),
+        ...(k.api_key != null ? { api_key: maskKey(String(k.api_key)) } : {}),
+      })));
+      return;
+    }
     if (keys.length === 0) { console.log("No API keys found."); return; }
     console.log(`\n${chalk.bold("API Keys")}`);
     const table = new Table({
