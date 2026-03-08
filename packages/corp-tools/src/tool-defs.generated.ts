@@ -31,7 +31,7 @@ export const GENERATED_TOOL_DEFINITIONS: Record<string, unknown>[] = [
     "type": "function",
     "function": {
       "name": "entity",
-      "description": "Entity reads and lifecycle. Actions: get_cap_table (entity_id), list_documents (entity_id), list_safe_notes (entity_id), form (entity_type + entity_name + jurisdiction + members — legacy one-shot formation), create (entity_type + entity_name — step 1 of staged formation), add_founder (entity_id + name + email + role + ownership_pct — step 2), finalize (entity_id — step 3, generates docs + cap table), convert (entity_id + target_type), dissolve (entity_id + reason).",
+      "description": "Entity reads and lifecycle. Actions: get_cap_table (entity_id), list_documents (entity_id), list_safe_notes (entity_id), form (entity_type + entity_name + jurisdiction + members — legacy one-shot formation), create (entity_type + entity_name + optional registered agent and company metadata — step 1 of staged formation), add_founder (entity_id + name + email + role + ownership_pct + optional founder address/officer data — step 2), finalize (entity_id + optional registered agent/company/share metadata — step 3, generates docs + cap table), convert (entity_id + target_type), dissolve (entity_id + reason).",
       "parameters": {
         "type": "object",
         "properties": {
@@ -43,10 +43,15 @@ export const GENERATED_TOOL_DEFINITIONS: Record<string, unknown>[] = [
           "entity_type": { "type": "string", "enum": ["llc", "c_corp"] },
           "entity_name": { "type": "string" },
           "jurisdiction": { "type": "string", "description": "e.g. US-DE, US-WY. Defaults to US-WY for LLC, US-DE for corporation." },
-          "fiscal_year_end": { "type": "string", "description": "form: fiscal year end e.g. '12-31'" },
-          "s_corp_election": { "type": "boolean", "description": "form: elect S-Corp tax treatment" },
-          "transfer_restrictions": { "type": "boolean", "description": "form: include transfer restrictions in bylaws (corp)" },
-          "right_of_first_refusal": { "type": "boolean", "description": "form: include ROFR in bylaws (corp)" },
+          "registered_agent_name": { "type": "string", "description": "create/finalize: registered agent legal name" },
+          "registered_agent_address": { "type": "string", "description": "create/finalize: registered agent street/city/state/zip line" },
+          "formation_date": { "type": "string", "description": "create/finalize/form: RFC3339 or YYYY-MM-DD formation date" },
+          "fiscal_year_end": { "type": "string", "description": "create/finalize/form: fiscal year end e.g. '12-31'" },
+          "s_corp_election": { "type": "boolean", "description": "create/finalize/form: elect S-Corp tax treatment" },
+          "transfer_restrictions": { "type": "boolean", "description": "create/finalize/form: include transfer restrictions in bylaws (corp)" },
+          "right_of_first_refusal": { "type": "boolean", "description": "create/finalize/form: include ROFR in bylaws (corp)" },
+          "authorized_shares": { "type": "integer", "description": "finalize: authorized shares for corporations" },
+          "par_value": { "type": "string", "description": "finalize: par value per share, e.g. 0.0001" },
           "company_address": {
             "type": "object",
             "properties": {
@@ -106,6 +111,17 @@ export const GENERATED_TOOL_DEFINITIONS: Record<string, unknown>[] = [
           "ownership_pct": { "type": "number", "description": "add_founder: ownership percentage (e.g. 50 for 50%)" },
           "officer_title": { "type": "string", "enum": ["ceo", "cfo", "secretary", "president", "vp", "other"], "description": "add_founder: officer title (corp only)" },
           "is_incorporator": { "type": "boolean", "description": "add_founder: is sole incorporator (corp only)" },
+          "address": {
+            "type": "object",
+            "description": "add_founder: founder mailing address",
+            "properties": {
+              "street": { "type": "string" },
+              "street2": { "type": "string" },
+              "city": { "type": "string" },
+              "state": { "type": "string" },
+              "zip": { "type": "string" }
+            }
+          },
           "target_type": { "type": "string", "enum": ["llc", "c_corp"], "description": "convert: target entity type" },
           "new_jurisdiction": { "type": "string", "description": "convert: target jurisdiction" },
           "reason": { "type": "string", "description": "dissolve: dissolution reason" },

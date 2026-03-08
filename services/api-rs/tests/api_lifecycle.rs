@@ -196,6 +196,14 @@ async fn create_entity(app: &Router) -> (WorkspaceId, String, String) {
             "entity_type": "corporation",
             "legal_name": "Test Corp",
             "jurisdiction": "Delaware",
+            "registered_agent_name": "Delaware Registered Agent Co.",
+            "registered_agent_address": "1209 Orange St, Wilmington, DE 19801",
+            "company_address": {
+                "street": "2261 Market St",
+                "city": "San Francisco",
+                "state": "CA",
+                "zip": "94114"
+            },
             "members": [
                 {
                     "name": "Alice Founder",
@@ -203,7 +211,15 @@ async fn create_entity(app: &Router) -> (WorkspaceId, String, String) {
                     "email": "alice@test.com",
                     "ownership_pct": 60.0,
                     "share_count": 6000,
-                    "role": "director"
+                    "role": "director",
+                    "officer_title": "ceo",
+                    "is_incorporator": true,
+                    "address": {
+                        "street": "2261 Market St",
+                        "city": "San Francisco",
+                        "state": "CA",
+                        "zip": "94114"
+                    }
                 },
                 {
                     "name": "Bob Cofounder",
@@ -211,7 +227,13 @@ async fn create_entity(app: &Router) -> (WorkspaceId, String, String) {
                     "email": "bob@test.com",
                     "ownership_pct": 40.0,
                     "share_count": 4000,
-                    "role": "member"
+                    "role": "member",
+                    "address": {
+                        "street": "548 Market St",
+                        "city": "San Francisco",
+                        "state": "CA",
+                        "zip": "94104"
+                    }
                 }
             ],
             "authorized_shares": 10000000,
@@ -4372,12 +4394,6 @@ async fn test_packet_routes_and_escalation_evidence_resolution() {
 
 #[tokio::test]
 async fn test_governance_profile_and_doc_bundle_generation() {
-    let docs_root =
-        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../documents/governance");
-    if !docs_root.is_dir() {
-        eprintln!("skipping: documents/governance not present");
-        return;
-    }
     let tmp = TempDir::new().unwrap();
     let app = build_app(&tmp);
     let (ws_id, entity_id, token) = create_entity(&app).await;
@@ -4421,7 +4437,7 @@ async fn test_governance_profile_and_doc_bundle_generation() {
         "update governance profile: {updated_profile}"
     );
     assert_eq!(updated_profile["legal_name"], "Parity Labs, Inc.");
-    assert_eq!(updated_profile["version"], 2);
+    assert_eq!(updated_profile["version"], 3);
     assert_eq!(updated_profile["incomplete_profile"], false);
 
     let (status, generated) = post_json(
@@ -4446,7 +4462,7 @@ async fn test_governance_profile_and_doc_bundle_generation() {
     assert!(
         generated["manifest"]["documents"]
             .as_array()
-            .is_some_and(|docs| docs.len() >= 10)
+            .is_some_and(|docs| docs.len() == 8)
     );
 
     let (status, current) = get_json(
@@ -4496,7 +4512,7 @@ async fn test_governance_profile_and_doc_bundle_generation() {
     );
     let bylaws = String::from_utf8(store.repo().read_blob("main", &bylaws_path).unwrap()).unwrap();
     assert!(bylaws.contains("Parity Labs, Inc."));
-    assert!(bylaws.contains("The Board shall consist of `3` director(s)."));
+    assert!(bylaws.contains("The Board of Directors shall consist of `3` director(s)."));
 }
 
 #[tokio::test]

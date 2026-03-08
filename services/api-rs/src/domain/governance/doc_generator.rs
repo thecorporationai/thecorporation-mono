@@ -1,20 +1,23 @@
 //! Governance markdown document generator and bundle metadata.
 
-use anyhow::{Context, bail};
+use anyhow::Context;
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
-use super::doc_ast::{ContentNode, DocumentDefinition, EntityTypeKey, GovernanceDocAst};
+use super::doc_ast::{
+    ContentNode, DocumentCategory, DocumentDefinition, EntityTypeKey, GovernanceDocAst,
+};
 use super::profile::{CompanyAddress, FiscalYearEnd, GovernanceProfile};
 use crate::domain::ids::{EntityId, GovernanceDocBundleId};
 
 pub const GOVERNANCE_DOC_BUNDLES_ROOT: &str = "governance/doc-bundles";
 pub const GOVERNANCE_DOC_BUNDLES_CURRENT_PATH: &str = "governance/doc-bundles/current.json";
 pub const GOVERNANCE_DOC_BUNDLES_HISTORY_DIR: &str = "governance/doc-bundles/history";
+pub const GOVERNANCE_DOC_AST_SOURCE_PATH: &str = "governance/ast/governance-ast.json";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GovernanceDocEntityType {
@@ -122,63 +125,53 @@ pub fn relative_document_paths(entity_type: GovernanceDocEntityType) -> Vec<Stri
     };
     ast.documents
         .iter()
+        .filter(|d| include_in_production_bundle(d))
         .filter(|d| d.entity_scope.matches(key))
         .map(|d| d.path.clone())
         .collect()
 }
 
-/// Legacy copy-style bundle generation to filesystem (CLI fallback).
+/// Export canonical governance templates from the compiled AST.
 pub fn generate_bundle(
     entity_type: GovernanceDocEntityType,
     out_dir: &Path,
 ) -> anyhow::Result<GovernanceDocManifest> {
-    let repo_root = find_repo_root(&std::env::current_dir().context("read current directory")?)?;
-    generate_bundle_from_repo_root(entity_type, &repo_root, out_dir)
+    generate_bundle_from_repo_root(entity_type, Path::new("."), out_dir)
 }
 
-/// Legacy copy-style bundle generation to filesystem (CLI fallback).
+/// Backward-compatible entry point. `repo_root` is ignored because the AST is
+/// the sole source of truth for canonical document content.
 pub fn generate_bundle_from_repo_root(
     entity_type: GovernanceDocEntityType,
-    repo_root: &Path,
+    _repo_root: &Path,
     out_dir: &Path,
 ) -> anyhow::Result<GovernanceDocManifest> {
-    let docs_root = repo_root.join("documents/governance");
-    if !docs_root.is_dir() {
-        bail!(
-            "missing governance docs root at {}",
-            docs_root.to_string_lossy()
-        );
-    }
-
     fs::create_dir_all(out_dir)
         .with_context(|| format!("create output dir {}", out_dir.to_string_lossy()))?;
 
+    let ast = super::doc_ast::default_doc_ast();
+    let entity_key = match entity_type {
+        GovernanceDocEntityType::Corporation => EntityTypeKey::Corporation,
+        GovernanceDocEntityType::Llc => EntityTypeKey::Llc,
+    };
     let mut generated = Vec::new();
-    let doc_paths = relative_document_paths(entity_type);
-    for rel in &doc_paths {
-        let source = docs_root.join(rel);
-        if !source.is_file() {
-            bail!(
-                "missing governance source document: {}",
-                source.to_string_lossy()
-            );
-        }
-        let target = out_dir.join(rel);
+    for doc in ast
+        .documents
+        .iter()
+        .filter(|doc| include_in_production_bundle(doc))
+        .filter(|doc| doc.entity_scope.matches(entity_key))
+    {
+        let target = out_dir.join(&doc.path);
         if let Some(parent) = target.parent() {
             fs::create_dir_all(parent)
                 .with_context(|| format!("create output parent {}", parent.to_string_lossy()))?;
         }
-        let bytes = fs::read(&source)
-            .with_context(|| format!("read source document {}", source.to_string_lossy()))?;
+        let bytes = render_document_template_from_ast(doc, ast, entity_key).into_bytes();
         fs::write(&target, &bytes)
             .with_context(|| format!("write target document {}", target.to_string_lossy()))?;
         generated.push(GeneratedGovernanceDocument {
-            path: rel.clone(),
-            source_path: source
-                .strip_prefix(repo_root)
-                .unwrap_or(&source)
-                .to_string_lossy()
-                .into_owned(),
+            path: doc.path.clone(),
+            source_path: governance_ast_source_path(doc),
             sha256: sha256_hex(&bytes),
             bytes: bytes.len(),
         });
@@ -186,10 +179,10 @@ pub fn generate_bundle_from_repo_root(
 
     generated.sort_by(|a, b| a.path.cmp(&b.path));
     let manifest = GovernanceDocManifest {
-        version: 1,
+        version: 2,
         entity_type: entity_type.as_str().to_owned(),
         generated_at: Utc::now().to_rfc3339(),
-        source_root: docs_root.to_string_lossy().into_owned(),
+        source_root: GOVERNANCE_DOC_AST_SOURCE_PATH.to_owned(),
         documents: generated,
     };
     fs::write(
@@ -211,13 +204,12 @@ pub fn render_bundle_from_profile(
     profile: &GovernanceProfile,
     template_version: &str,
 ) -> anyhow::Result<RenderedGovernanceBundle> {
-    let repo_root = find_repo_root(&std::env::current_dir().context("read current directory")?)?;
     render_bundle_from_profile_with_repo_root(
         entity_type,
         entity_id,
         profile,
         template_version,
-        &repo_root,
+        Path::new("."),
     )
 }
 
@@ -226,16 +218,8 @@ pub fn render_bundle_from_profile_with_repo_root(
     entity_id: EntityId,
     profile: &GovernanceProfile,
     template_version: &str,
-    repo_root: &Path,
+    _repo_root: &Path,
 ) -> anyhow::Result<RenderedGovernanceBundle> {
-    let docs_root = repo_root.join("documents/governance");
-    if !docs_root.is_dir() {
-        bail!(
-            "missing governance docs root at {}",
-            docs_root.to_string_lossy()
-        );
-    }
-
     let ast = super::doc_ast::default_doc_ast();
     let entity_key = match entity_type {
         GovernanceDocEntityType::Corporation => EntityTypeKey::Corporation,
@@ -245,26 +229,14 @@ pub fn render_bundle_from_profile_with_repo_root(
     for doc in ast
         .documents
         .iter()
+        .filter(|doc| include_in_production_bundle(doc))
         .filter(|doc| doc.entity_scope.matches(entity_key))
     {
-        let source = docs_root.join(&doc.path);
-        if !source.is_file() {
-            bail!(
-                "missing governance source document: {}",
-                source.to_string_lossy()
-            );
-        }
-        let source_path = source
-            .strip_prefix(repo_root)
-            .unwrap_or(&source)
-            .to_string_lossy()
-            .into_owned();
-
         let rendered = render_document_from_ast(doc, ast, entity_key, profile);
         let content = rendered.into_bytes();
         rendered_docs.push(RenderedGovernanceDocument {
             path: doc.path.clone(),
-            source_path,
+            source_path: governance_ast_source_path(doc),
             sha256: sha256_hex(&content),
             content,
         });
@@ -281,7 +253,7 @@ pub fn render_bundle_from_profile_with_repo_root(
         profile_version: profile.version(),
         template_version: template_version.to_owned(),
         generated_at: generated_at.clone(),
-        source_root: docs_root.to_string_lossy().into_owned(),
+        source_root: GOVERNANCE_DOC_AST_SOURCE_PATH.to_owned(),
         documents: rendered_docs
             .iter()
             .map(|d| GeneratedGovernanceDocument {
@@ -317,11 +289,28 @@ pub fn render_bundle_from_profile_with_repo_root(
     })
 }
 
+fn include_in_production_bundle(doc: &super::doc_ast::DocumentDefinition) -> bool {
+    !doc.id.ends_with("_template") && doc.category != DocumentCategory::Transactions
+}
+
+fn governance_ast_source_path(doc: &DocumentDefinition) -> String {
+    format!("{GOVERNANCE_DOC_AST_SOURCE_PATH}#{}", doc.id)
+}
+
 /// Placeholder patterns that indicate unfinished document generation.
 const PLACEHOLDER_PATTERNS: &[&str] = &["`TBD`", "`TBD ", "TBD`", "{{"];
 
 fn missing_field_marker(key: &str) -> String {
     format!("[MISSING: {key}]")
+}
+
+fn template_field_marker(key: &str) -> String {
+    format!("{{{{{key}}}}}")
+}
+
+fn looks_like_legacy_placeholder(value: &str) -> bool {
+    let trimmed = value.trim();
+    trimmed.contains("TBD") || trimmed.contains("YYYY-MM-DD")
 }
 
 fn extract_missing_field_keys(content: &str) -> Vec<String> {
@@ -372,6 +361,158 @@ fn detect_placeholders(docs: &[RenderedGovernanceDocument]) -> Vec<String> {
         warnings.extend(detect_placeholder_warnings_for_text(&doc.path, content));
     }
     warnings
+}
+
+fn substitute_template(text: &str, ast: &GovernanceDocAst) -> String {
+    let mut result = text.to_owned();
+    if result.contains("{{spending_defaults.per_vendor_annual_cap}}") {
+        result = result.replace(
+            "{{spending_defaults.per_vendor_annual_cap}}",
+            &format_usd(ast.spending_defaults.per_vendor_annual_cap_cents),
+        );
+    }
+    result
+}
+
+fn render_template_node(
+    out: &mut String,
+    node: &ContentNode,
+    ast: &GovernanceDocAst,
+    entity_type: EntityTypeKey,
+) {
+    match node {
+        ContentNode::Heading { level, text } => {
+            out.push('\n');
+            for _ in 0..*level {
+                out.push('#');
+            }
+            out.push(' ');
+            out.push_str(&substitute_template(text, ast));
+            out.push('\n');
+        }
+        ContentNode::Paragraph { text } => {
+            out.push('\n');
+            out.push_str(&substitute_template(text, ast));
+            out.push('\n');
+        }
+        ContentNode::OrderedList { items } => {
+            out.push('\n');
+            for (i, item) in items.iter().enumerate() {
+                out.push_str(&format!("{}. {}\n", i + 1, substitute_template(item, ast)));
+            }
+        }
+        ContentNode::UnorderedList { items } => {
+            out.push('\n');
+            for item in items {
+                out.push_str(&format!("- {}\n", substitute_template(item, ast)));
+            }
+        }
+        ContentNode::Table { headers, rows } => {
+            out.push('\n');
+            out.push('|');
+            for header in headers {
+                out.push_str(&format!(" {} |", header));
+            }
+            out.push('\n');
+            out.push('|');
+            for _ in headers {
+                out.push_str("---|");
+            }
+            out.push('\n');
+            for row in rows {
+                out.push('|');
+                for cell in row {
+                    out.push_str(&format!(" {} |", substitute_template(cell, ast)));
+                }
+                out.push('\n');
+            }
+        }
+        ContentNode::DataTable { source, columns } => {
+            render_data_table(out, source, columns, ast, entity_type);
+        }
+        ContentNode::Conditional {
+            when_entity,
+            content,
+        } => {
+            if *when_entity == entity_type {
+                for child in content {
+                    render_template_node(out, child, ast, entity_type);
+                }
+            }
+        }
+        ContentNode::SignatureBlock { role, fields } => {
+            out.push('\n');
+            out.push_str(&format!("{role}: ____________________"));
+            for field in fields {
+                match field.as_str() {
+                    "date" => out.push_str("\nDate: ____________________"),
+                    "name" => out.push_str("\nName: ____________________"),
+                    "title" => out.push_str("\nTitle: ____________________"),
+                    _ => out.push_str(&format!("\n{field}: ____________________")),
+                }
+            }
+            out.push('\n');
+        }
+        ContentNode::Placeholder { key, label } => {
+            out.push_str(&format!("**{label}**: {}\n", template_field_marker(key)));
+        }
+        ContentNode::Note { text } => {
+            out.push('\n');
+            out.push_str(&format!("> **Note:** {}\n", substitute_template(text, ast)));
+        }
+        ContentNode::CodeBlock { language, lines } => {
+            out.push('\n');
+            out.push_str("```");
+            if let Some(lang) = language {
+                out.push_str(lang);
+            }
+            out.push('\n');
+            for line in lines {
+                out.push_str(line);
+                out.push('\n');
+            }
+            out.push_str("```\n");
+        }
+        ContentNode::DocumentRef { text, .. } => {
+            out.push_str(&substitute_template(text, ast));
+        }
+        ContentNode::HorizontalRule => {
+            out.push_str("\n---\n");
+        }
+    }
+}
+
+fn render_document_template_from_ast(
+    doc: &DocumentDefinition,
+    ast: &GovernanceDocAst,
+    entity_type: EntityTypeKey,
+) -> String {
+    let mut out = String::new();
+    out.push_str(&format!("# {}\n", doc.title));
+
+    if let Some(preamble) = &doc.preamble {
+        out.push('\n');
+        out.push_str(&format!("> {}\n", substitute_template(preamble, ast)));
+    }
+
+    if !doc.metadata_fields.is_empty() {
+        out.push('\n');
+        for field in &doc.metadata_fields {
+            let value = field
+                .default
+                .as_deref()
+                .filter(|value| !looks_like_legacy_placeholder(value))
+                .map(ToOwned::to_owned)
+                .unwrap_or_else(|| template_field_marker(&field.key));
+            out.push_str(&format!("**{}**: `{}`\n", field.label, value));
+        }
+    }
+
+    for node in &doc.content {
+        render_template_node(&mut out, node, ast, entity_type);
+    }
+
+    out
 }
 
 fn sha256_hex(bytes: &[u8]) -> String {
@@ -1310,20 +1451,6 @@ pub(super) fn substitute(
     result
 }
 
-fn find_repo_root(start: &Path) -> anyhow::Result<PathBuf> {
-    let mut cursor = Some(start);
-    while let Some(current) = cursor {
-        if current.join("documents/governance").is_dir() {
-            return Ok(current.to_path_buf());
-        }
-        cursor = current.parent();
-    }
-    bail!(
-        "could not locate repository root containing documents/governance from {}",
-        start.to_string_lossy()
-    )
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1332,6 +1459,7 @@ mod tests {
         types::{EntityType, Jurisdiction},
     };
     use crate::domain::ids::WorkspaceId;
+    use std::fs;
     use tempfile::TempDir;
 
     fn make_entity(entity_type: EntityType) -> Entity {
@@ -1354,28 +1482,31 @@ mod tests {
         assert!(has("common/agent-delegation-schedule.md"));
         assert!(has("corporation/bylaws.md"));
         assert!(has("corporation/certificate-of-incorporation.md"));
+        assert!(!has("common/agent-operator-service-agreement-template.md"));
+        assert!(!has("transactions/board-consent.md"));
         assert!(!has("llc/operating-agreement.md"));
         assert!(!has("llc/articles-of-organization.md"));
     }
 
     #[test]
     fn can_generate_bundle_from_repo_root() {
-        let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-        if !repo_root.join("documents/governance").is_dir() {
-            eprintln!("skipping: documents/governance not present");
-            return;
-        }
+        let repo_root = TempDir::new().expect("temp repo root");
         let out = TempDir::new().expect("temp dir");
         let manifest = generate_bundle_from_repo_root(
             GovernanceDocEntityType::Corporation,
-            &repo_root,
+            repo_root.path(),
             out.path(),
         )
         .expect("generate bundle");
         assert!(!manifest.documents.is_empty());
+        assert_eq!(manifest.version, 2);
+        assert_eq!(manifest.source_root, GOVERNANCE_DOC_AST_SOURCE_PATH);
         assert!(out.path().join("manifest.json").is_file());
         assert!(out.path().join("corporation/bylaws.md").is_file());
-        assert!(out.path().join("transactions/board-consent.md").is_file());
+        assert!(!out.path().join("transactions/board-consent.md").exists());
+        let bylaws = fs::read_to_string(out.path().join("corporation/bylaws.md")).expect("bylaws");
+        assert!(bylaws.contains("{{legal_name}}"));
+        assert!(!bylaws.contains("`TBD`"));
     }
 
     #[test]
@@ -1442,11 +1573,7 @@ mod tests {
 
     #[test]
     fn render_bundle_with_profile_replacements() {
-        let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-        if !repo_root.join("documents/governance").is_dir() {
-            eprintln!("skipping: documents/governance not present");
-            return;
-        }
+        let repo_root = TempDir::new().expect("temp repo root");
         let entity = make_entity(EntityType::CCorp);
         let mut profile = GovernanceProfile::default_for_entity(&entity);
         profile.update(
@@ -1471,7 +1598,7 @@ mod tests {
             entity.entity_id(),
             &profile,
             "v2",
-            &repo_root,
+            repo_root.path(),
         )
         .expect("render bundle");
 
@@ -1484,6 +1611,24 @@ mod tests {
         assert!(text.contains("Acme Holdings"));
         assert!(bundle.summary.document_count > 0);
         assert_eq!(bundle.manifest.template_version, "v2");
+        assert_eq!(bundle.manifest.source_root, GOVERNANCE_DOC_AST_SOURCE_PATH);
+        assert!(
+            bylaws.source_path.ends_with("#bylaws"),
+            "unexpected source path: {}",
+            bylaws.source_path
+        );
+        assert!(
+            !bundle
+                .documents
+                .iter()
+                .any(|d| d.path == "transactions/board-consent.md")
+        );
+        assert!(
+            !bundle
+                .documents
+                .iter()
+                .any(|d| d.path == "common/agent-operator-service-agreement-template.md")
+        );
     }
 
     fn make_complete_profile() -> GovernanceProfile {

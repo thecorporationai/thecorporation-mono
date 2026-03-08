@@ -329,7 +329,7 @@ export class CorpAPIClient {
   createFormationWithCapTable(data: ApiRecord) { return this.post("/v1/formations/with-cap-table", data) as Promise<FormationWithCapTableResponse>; }
   createPendingEntity(data: ApiRecord) { return this.post("/v1/formations/pending", data) as Promise<PendingFormationResponse>; }
   addFounder(entityId: string, data: ApiRecord) { return this.post(`/v1/formations/${entityId}/founders`, data) as Promise<AddFounderResponse>; }
-  finalizeFormation(entityId: string) { return this.post(`/v1/formations/${entityId}/finalize`, {}) as Promise<FormationWithCapTableResponse>; }
+  finalizeFormation(entityId: string, data: ApiRecord = {}) { return this.post(`/v1/formations/${entityId}/finalize`, data) as Promise<FormationWithCapTableResponse>; }
 
   // --- Human obligations ---
   getHumanObligations() { return this.get(`/v1/workspaces/${this.workspaceId}/human-obligations`) as Promise<ObligationResponse[]>; }

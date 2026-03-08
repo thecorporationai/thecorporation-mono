@@ -185,6 +185,24 @@ impl Entity {
         }
     }
 
+    pub fn set_registered_agent(
+        &mut self,
+        registered_agent_name: Option<String>,
+        registered_agent_address: Option<String>,
+    ) -> Result<(), FormationError> {
+        match self.formation_status {
+            FormationStatus::Pending => {
+                self.registered_agent_name = registered_agent_name;
+                self.registered_agent_address = registered_agent_address;
+                Ok(())
+            }
+            _ => Err(FormationError::Validation(format!(
+                "registered agent changes only allowed in Pending status, currently {}",
+                self.formation_status
+            ))),
+        }
+    }
+
     /// Dissolve the entity — transitions from Active to Dissolved.
     pub fn dissolve(&mut self) -> Result<(), FormationError> {
         self.advance_status(FormationStatus::Dissolved)
@@ -390,6 +408,21 @@ mod tests {
         e.advance_status(FormationStatus::Active).unwrap();
         // Should preserve the explicitly set date, not override it
         assert_eq!(e.formation_date(), Some(explicit_date));
+    }
+
+    #[test]
+    fn registered_agent_can_change_while_pending() {
+        let mut e = make_entity();
+        e.set_registered_agent(
+            Some("Delaware RA".to_owned()),
+            Some("123 Main St, Dover, DE 19901".to_owned()),
+        )
+        .unwrap();
+        assert_eq!(e.registered_agent_name(), Some("Delaware RA"));
+        assert_eq!(
+            e.registered_agent_address(),
+            Some("123 Main St, Dover, DE 19901")
+        );
     }
 
     #[test]

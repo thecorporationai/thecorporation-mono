@@ -800,6 +800,14 @@ formCmd.command("create")
   .requiredOption("--type <type>", "Entity type (llc, c_corp)")
   .requiredOption("--name <name>", "Legal name")
   .option("--jurisdiction <jurisdiction>", "Jurisdiction (e.g. US-DE, US-WY)")
+  .option("--registered-agent-name <name>", "Registered agent legal name")
+  .option("--registered-agent-address <address>", "Registered agent address line")
+  .option("--formation-date <date>", "Formation date (RFC3339 or YYYY-MM-DD)")
+  .option("--fiscal-year-end <date>", "Fiscal year end (MM-DD)")
+  .option("--s-corp", "Elect S-Corp status")
+  .option("--transfer-restrictions", "Enable transfer restrictions")
+  .option("--rofr", "Enable right of first refusal")
+  .option("--company-address <address>", "Company address as 'street,city,state,zip'")
   .action(async (opts) => {
     const { formCreateCommand } = await import("./commands/form.js");
     await formCreateCommand(opts);
@@ -812,15 +820,26 @@ formCmd.command("add-founder <entity-id>")
   .requiredOption("--pct <pct>", "Ownership percentage")
   .option("--officer-title <title>", "Officer title (corporations only)")
   .option("--incorporator", "Mark as sole incorporator (corporations only)")
+  .option("--address <address>", "Founder address as 'street,city,state,zip'")
   .action(async (entityId: string, opts) => {
     const { formAddFounderCommand } = await import("./commands/form.js");
     await formAddFounderCommand(entityId, opts);
   });
 formCmd.command("finalize <entity-id>")
   .description("Finalize formation and generate documents + cap table (staged flow step 3)")
-  .action(async (entityId: string) => {
+  .option("--authorized-shares <count>", "Authorized shares for corporations")
+  .option("--par-value <value>", "Par value per share, e.g. 0.0001")
+  .option("--registered-agent-name <name>", "Registered agent legal name")
+  .option("--registered-agent-address <address>", "Registered agent address line")
+  .option("--formation-date <date>", "Formation date (RFC3339 or YYYY-MM-DD)")
+  .option("--fiscal-year-end <date>", "Fiscal year end (MM-DD)")
+  .option("--s-corp", "Elect S-Corp status")
+  .option("--transfer-restrictions", "Enable transfer restrictions")
+  .option("--rofr", "Enable right of first refusal")
+  .option("--company-address <address>", "Company address as 'street,city,state,zip'")
+  .action(async (entityId: string, opts) => {
     const { formFinalizeCommand } = await import("./commands/form.js");
-    await formFinalizeCommand(entityId);
+    await formFinalizeCommand(entityId, opts);
   });
 
 // --- api-keys ---

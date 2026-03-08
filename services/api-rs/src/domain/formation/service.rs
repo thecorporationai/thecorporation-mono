@@ -398,6 +398,18 @@ fn default_document_options() -> DocumentOptions {
     }
 }
 
+fn signature_requirement_to_json(req: &SignatureRequirement) -> serde_json::Value {
+    let mut value = serde_json::json!({
+        "role": req.role,
+        "signer_name": req.signer_name,
+        "required": req.required,
+    });
+    if let Some(email) = &req.signer_email {
+        value["signer_email"] = serde_json::Value::String(email.clone());
+    }
+    value
+}
+
 fn format_par_value_units(units: u64) -> String {
     if units == 0 {
         return "0".to_owned();
@@ -485,7 +497,7 @@ fn build_governance_profile(
         .iter()
         .find(|member| matches!(member.role, Some(MemberRole::Manager)))
         .copied()
-        .or_else(|| (non_agent_members.len() == 1).then_some(non_agent_members[0]));
+        .or_else(|| (non_agent_members.len() == 1).then(|| non_agent_members[0]));
     let principal_title = principal.and_then(|member| match member.role {
         Some(MemberRole::Manager) => Some("Manager".to_owned()),
         Some(MemberRole::Member) if entity.entity_type() == EntityType::Llc => {
@@ -640,7 +652,7 @@ fn formation_signature_requirements(
         (EntityType::CCorp, "certificate_of_incorporation")
         | (EntityType::CCorp, "incorporator_action") => incorporator
             .map(|member| {
-                vec![sig_req_to_json(&SignatureRequirement {
+                vec![signature_requirement_to_json(&SignatureRequirement {
                     role: "Incorporator".to_owned(),
                     signer_name: member.name.clone(),
                     signer_email: member.email.clone(),
@@ -652,7 +664,7 @@ fn formation_signature_requirements(
             director_signers
                 .into_iter()
                 .map(|member| {
-                    sig_req_to_json(&SignatureRequirement {
+                    signature_requirement_to_json(&SignatureRequirement {
                         role: "Director".to_owned(),
                         signer_name: member.name.clone(),
                         signer_email: member.email.clone(),
@@ -663,7 +675,7 @@ fn formation_signature_requirements(
         }
         (EntityType::Llc, "articles_of_organization") => incorporator
             .map(|member| {
-                vec![sig_req_to_json(&SignatureRequirement {
+                vec![signature_requirement_to_json(&SignatureRequirement {
                     role: "Organizer".to_owned(),
                     signer_name: member.name.clone(),
                     signer_email: member.email.clone(),
@@ -682,7 +694,7 @@ fn formation_signature_requirements(
                             _ => "Member".to_owned(),
                         },
                     };
-                    sig_req_to_json(&SignatureRequirement {
+                    signature_requirement_to_json(&SignatureRequirement {
                         role,
                         signer_name: member.name.clone(),
                         signer_email: member.email.clone(),
@@ -1030,18 +1042,46 @@ pub fn create_pending_entity(
     entity_type: EntityType,
     jurisdiction: Jurisdiction,
 ) -> Result<Entity, FormationError> {
-    let entity_id = EntityId::new();
-
-    let entity = Entity::new(
-        entity_id,
+    create_pending_entity_with_profile_overrides(
+        layout,
         workspace_id,
         legal_name,
         entity_type,
         jurisdiction,
         None,
         None,
+        FormationProfileOverrides::default(),
+    )
+}
+
+/// Create a pending entity with explicit company-level metadata.
+#[allow(clippy::too_many_arguments)]
+pub fn create_pending_entity_with_profile_overrides(
+    layout: &crate::store::RepoLayout,
+    workspace_id: WorkspaceId,
+    legal_name: String,
+    entity_type: EntityType,
+    jurisdiction: Jurisdiction,
+    registered_agent_name: Option<String>,
+    registered_agent_address: Option<String>,
+    profile_overrides: FormationProfileOverrides,
+) -> Result<Entity, FormationError> {
+    let entity_id = EntityId::new();
+
+    let mut entity = Entity::new(
+        entity_id,
+        workspace_id,
+        legal_name,
+        entity_type,
+        jurisdiction,
+        registered_agent_name,
+        registered_agent_address,
     )?;
-    let governance_profile = GovernanceProfile::default_for_entity(&entity);
+    if let Some(formation_date) = profile_overrides.formation_date.as_ref().cloned() {
+        entity.set_formation_date(formation_date);
+    }
+    let governance_profile =
+        build_governance_profile(&entity, &[], None, None, None, Some(&profile_overrides));
     governance_profile
         .validate()
         .map_err(FormationError::Validation)?;
@@ -1134,6 +1174,30 @@ pub fn finalize_formation(
     authorized_shares: Option<i64>,
     par_value: Option<&str>,
 ) -> Result<(FormationResult, CapTableSetupResult), FormationError> {
+    finalize_formation_with_profile_overrides(
+        layout,
+        workspace_id,
+        entity_id,
+        authorized_shares,
+        par_value,
+        None,
+        None,
+        FormationProfileOverrides::default(),
+    )
+}
+
+/// Finalize a pending entity using explicit company-level metadata overrides.
+#[allow(clippy::too_many_arguments)]
+pub fn finalize_formation_with_profile_overrides(
+    layout: &crate::store::RepoLayout,
+    workspace_id: WorkspaceId,
+    entity_id: EntityId,
+    authorized_shares: Option<i64>,
+    par_value: Option<&str>,
+    registered_agent_name: Option<String>,
+    registered_agent_address: Option<String>,
+    profile_overrides: FormationProfileOverrides,
+) -> Result<(FormationResult, CapTableSetupResult), FormationError> {
     let repo_path = layout.entity_repo_path(workspace_id, entity_id);
     let repo = crate::git::repo::CorpRepo::open(&repo_path)
         .map_err(|e| FormationError::Storage(format!("failed to open repo: {e}")))?;
@@ -1159,16 +1223,27 @@ pub fn finalize_formation(
         ));
     }
 
-    let existing_profile = match repo.read_json::<GovernanceProfile>("main", GOVERNANCE_PROFILE_PATH)
-    {
-        Ok(profile) => Some(profile),
-        Err(crate::git::error::GitStorageError::NotFound(_)) => None,
-        Err(e) => {
-            return Err(FormationError::Storage(format!(
-                "failed to read governance profile: {e}"
-            )));
-        }
-    };
+    if registered_agent_name.is_some() || registered_agent_address.is_some() {
+        entity.set_registered_agent(
+            registered_agent_name.or_else(|| entity.registered_agent_name().map(ToOwned::to_owned)),
+            registered_agent_address
+                .or_else(|| entity.registered_agent_address().map(ToOwned::to_owned)),
+        )?;
+    }
+    if let Some(formation_date) = profile_overrides.formation_date.as_ref().cloned() {
+        entity.set_formation_date(formation_date);
+    }
+
+    let existing_profile =
+        match repo.read_json::<GovernanceProfile>("main", GOVERNANCE_PROFILE_PATH) {
+            Ok(profile) => Some(profile),
+            Err(crate::git::error::GitStorageError::NotFound(_)) => None,
+            Err(e) => {
+                return Err(FormationError::Storage(format!(
+                    "failed to read governance profile: {e}"
+                )));
+            }
+        };
     let resolved_authorized_shares = authorized_shares.or_else(|| {
         existing_profile
             .as_ref()
@@ -1187,7 +1262,7 @@ pub fn finalize_formation(
         resolved_authorized_shares,
         resolved_par_value.as_deref(),
         existing_profile,
-        None,
+        Some(&profile_overrides),
     );
     governance_profile
         .validate()
@@ -1316,47 +1391,6 @@ mod tests {
             state: "DE".to_string(),
             zip: "19901".to_string(),
         }
-    }
-
-    fn set_registered_agent_profile(
-        layout: &RepoLayout,
-        workspace_id: WorkspaceId,
-        entity_id: EntityId,
-        registered_agent_name: &str,
-        registered_agent_address: &str,
-    ) {
-        let repo_path = layout.entity_repo_path(workspace_id, entity_id);
-        let repo = crate::git::repo::CorpRepo::open(&repo_path)
-            .expect("entity repo should exist when updating governance profile");
-        let mut profile: GovernanceProfile = repo
-            .read_json("main", GOVERNANCE_PROFILE_PATH)
-            .expect("governance profile should exist");
-        profile.update(
-            profile.legal_name().to_owned(),
-            profile.jurisdiction().to_owned(),
-            profile.effective_date(),
-            profile.adopted_by().to_owned(),
-            profile.last_reviewed(),
-            profile.next_mandatory_review(),
-            Some(registered_agent_name.to_owned()),
-            Some(registered_agent_address.to_owned()),
-            profile.board_size(),
-            profile.incorporator_name().map(ToOwned::to_owned),
-            profile.incorporator_address().map(ToOwned::to_owned),
-            profile.principal_name().map(ToOwned::to_owned),
-            profile.principal_title().map(ToOwned::to_owned),
-            Some(profile.incomplete_profile()),
-        );
-        let file = FileWrite::json(GOVERNANCE_PROFILE_PATH, &profile)
-            .expect("governance profile should serialize");
-        crate::git::commit::commit_files(
-            &repo,
-            "main",
-            "Set registered agent details",
-            &[file],
-            None,
-        )
-        .expect("registered agent update should commit");
     }
 
     fn alice() -> MemberInput {
@@ -1499,6 +1533,7 @@ mod tests {
         alice.role = Some(MemberRole::Director);
         alice.is_incorporator = Some(true);
         alice.address = Some(delaware_address());
+        alice.officer_title = Some(OfficerTitle::Ceo);
 
         let result = create_entity(
             &layout,
@@ -1676,18 +1711,28 @@ mod tests {
         let workspace_id = WorkspaceId::new();
 
         // Step 1: Create pending entity
-        let entity = create_pending_entity(
+        let entity = create_pending_entity_with_profile_overrides(
             &layout,
             workspace_id,
             "Staged LLC".to_string(),
             EntityType::Llc,
             Jurisdiction::new("Wyoming").unwrap(),
+            Some("Wyoming Registered Agent LLC".to_string()),
+            Some("123 Capitol Ave, Cheyenne, WY 82001".to_string()),
+            FormationProfileOverrides::default(),
         )
         .expect("create_pending_entity should succeed");
 
         assert_eq!(entity.legal_name(), "Staged LLC");
         assert_eq!(entity.formation_status(), FormationStatus::Pending);
         let entity_id = entity.entity_id();
+        let repo =
+            crate::git::repo::CorpRepo::open(&layout.entity_repo_path(workspace_id, entity_id))
+                .expect("pending entity repo should exist");
+        let profile: GovernanceProfile = repo
+            .read_json("main", GOVERNANCE_PROFILE_PATH)
+            .expect("pending entity should seed a governance profile");
+        assert_eq!(profile.legal_name(), "Staged LLC");
 
         // Step 2: Add founders
         let members = add_pending_member(&layout, workspace_id, entity_id, alice())
@@ -1697,13 +1742,6 @@ mod tests {
         let members = add_pending_member(&layout, workspace_id, entity_id, bob())
             .expect("add second member should succeed");
         assert_eq!(members.len(), 2);
-        set_registered_agent_profile(
-            &layout,
-            workspace_id,
-            entity_id,
-            "Wyoming Registered Agent LLC",
-            "123 Capitol Ave, Cheyenne, WY 82001",
-        );
 
         // Step 3: Finalize
         let (formation, cap_table) =
@@ -1750,10 +1788,38 @@ mod tests {
         let layout = RepoLayout::new(tmp.path().to_path_buf());
         let workspace_id = WorkspaceId::new();
 
-        let entity = create_pending_entity(
+        let entity = create_pending_entity_with_profile_overrides(
             &layout,
             workspace_id,
             "Finalized LLC".to_string(),
+            EntityType::Llc,
+            Jurisdiction::new("Wyoming").unwrap(),
+            Some("Wyoming Registered Agent LLC".to_string()),
+            Some("123 Capitol Ave, Cheyenne, WY 82001".to_string()),
+            FormationProfileOverrides::default(),
+        )
+        .unwrap();
+        let entity_id = entity.entity_id();
+
+        add_pending_member(&layout, workspace_id, entity_id, alice()).unwrap();
+        finalize_formation(&layout, workspace_id, entity_id, None, None).unwrap();
+
+        // Should reject adding members after finalization
+        let result = add_pending_member(&layout, workspace_id, entity_id, bob());
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Pending"));
+    }
+
+    #[test]
+    fn staged_flow_finalize_accepts_company_metadata_overrides() {
+        let tmp = TempDir::new().unwrap();
+        let layout = RepoLayout::new(tmp.path().to_path_buf());
+        let workspace_id = WorkspaceId::new();
+
+        let entity = create_pending_entity(
+            &layout,
+            workspace_id,
+            "Override LLC".to_string(),
             EntityType::Llc,
             Jurisdiction::new("Wyoming").unwrap(),
         )
@@ -1761,18 +1827,22 @@ mod tests {
         let entity_id = entity.entity_id();
 
         add_pending_member(&layout, workspace_id, entity_id, alice()).unwrap();
-        set_registered_agent_profile(
+
+        let (formation, _) = finalize_formation_with_profile_overrides(
             &layout,
             workspace_id,
             entity_id,
-            "Wyoming Registered Agent LLC",
-            "123 Capitol Ave, Cheyenne, WY 82001",
-        );
-        finalize_formation(&layout, workspace_id, entity_id, None, None).unwrap();
+            None,
+            None,
+            Some("Wyoming Registered Agent LLC".to_string()),
+            Some("123 Capitol Ave, Cheyenne, WY 82001".to_string()),
+            FormationProfileOverrides::default(),
+        )
+        .expect("finalize_formation_with_profile_overrides should succeed");
 
-        // Should reject adding members after finalization
-        let result = add_pending_member(&layout, workspace_id, entity_id, bob());
-        assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Pending"));
+        assert_eq!(
+            formation.entity.registered_agent_name(),
+            Some("Wyoming Registered Agent LLC")
+        );
     }
 }

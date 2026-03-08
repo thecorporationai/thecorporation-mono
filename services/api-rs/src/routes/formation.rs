@@ -28,8 +28,7 @@ use crate::domain::formation::{
 use crate::domain::governance::{
     doc_ast, doc_generator,
     profile::{
-        CompanyAddress, DocumentOptions, FiscalYearEnd, GOVERNANCE_PROFILE_PATH,
-        GovernanceProfile,
+        CompanyAddress, DocumentOptions, FiscalYearEnd, GOVERNANCE_PROFILE_PATH, GovernanceProfile,
     },
     typst_renderer,
 };
@@ -237,6 +236,22 @@ pub struct CreatePendingFormationRequest {
     pub legal_name: String,
     #[serde(default = "default_staged_jurisdiction")]
     pub jurisdiction: Option<Jurisdiction>,
+    #[serde(default)]
+    pub registered_agent_name: Option<String>,
+    #[serde(default)]
+    pub registered_agent_address: Option<String>,
+    #[serde(default)]
+    pub formation_date: Option<String>,
+    #[serde(default)]
+    pub fiscal_year_end: Option<String>,
+    #[serde(default)]
+    pub s_corp_election: Option<bool>,
+    #[serde(default)]
+    pub transfer_restrictions: Option<bool>,
+    #[serde(default)]
+    pub right_of_first_refusal: Option<bool>,
+    #[serde(default)]
+    pub company_address: Option<crate::domain::formation::content::Address>,
 }
 
 fn default_staged_jurisdiction() -> Option<Jurisdiction> {
@@ -265,6 +280,32 @@ pub struct AddFounderRequest {
     pub officer_title: Option<OfficerTitle>,
     #[serde(default)]
     pub is_incorporator: Option<bool>,
+    #[serde(default)]
+    pub address: Option<crate::domain::formation::content::Address>,
+}
+
+#[derive(Deserialize, utoipa::ToSchema)]
+pub struct FinalizePendingFormationRequest {
+    #[serde(default)]
+    pub authorized_shares: Option<i64>,
+    #[serde(default)]
+    pub par_value: Option<String>,
+    #[serde(default)]
+    pub registered_agent_name: Option<String>,
+    #[serde(default)]
+    pub registered_agent_address: Option<String>,
+    #[serde(default)]
+    pub formation_date: Option<String>,
+    #[serde(default)]
+    pub fiscal_year_end: Option<String>,
+    #[serde(default)]
+    pub s_corp_election: Option<bool>,
+    #[serde(default)]
+    pub transfer_restrictions: Option<bool>,
+    #[serde(default)]
+    pub right_of_first_refusal: Option<bool>,
+    #[serde(default)]
+    pub company_address: Option<crate::domain::formation::content::Address>,
 }
 
 #[derive(Serialize, utoipa::ToSchema)]
@@ -280,6 +321,7 @@ pub struct FounderSummary {
     pub email: Option<String>,
     pub role: Option<MemberRole>,
     pub ownership_pct: Option<f64>,
+    pub address: Option<crate::domain::formation::content::Address>,
 }
 
 fn build_formation_gates_response(entity: &Entity, filing: &Filing) -> FormationGatesResponse {
@@ -386,9 +428,9 @@ fn parse_fiscal_year_end(raw: Option<&str>) -> Result<Option<FiscalYearEnd>, App
     let Some(raw) = raw.map(str::trim).filter(|value| !value.is_empty()) else {
         return Ok(None);
     };
-    let (month, day) = raw.split_once('-').ok_or_else(|| {
-        AppError::BadRequest("fiscal_year_end must use MM-DD format".to_owned())
-    })?;
+    let (month, day) = raw
+        .split_once('-')
+        .ok_or_else(|| AppError::BadRequest("fiscal_year_end must use MM-DD format".to_owned()))?;
     let month = month
         .parse::<u32>()
         .map_err(|_| AppError::BadRequest("fiscal_year_end month must be numeric".to_owned()))?;
@@ -418,19 +460,31 @@ fn request_company_address(
     })
 }
 
-fn build_profile_overrides(
-    req: &CreateFormationRequest,
+fn cleaned_optional_string(value: Option<String>) -> Option<String> {
+    value.and_then(|value| {
+        let trimmed = value.trim();
+        (!trimmed.is_empty()).then(|| trimmed.to_owned())
+    })
+}
+
+fn build_profile_overrides_from_fields(
+    formation_date: Option<&str>,
+    fiscal_year_end: Option<&str>,
+    s_corp_election: Option<bool>,
+    transfer_restrictions: Option<bool>,
+    right_of_first_refusal: Option<bool>,
+    company_address: Option<crate::domain::formation::content::Address>,
 ) -> Result<service::FormationProfileOverrides, AppError> {
     Ok(service::FormationProfileOverrides {
-        formation_date: parse_formation_date(req.formation_date.as_deref())?,
-        fiscal_year_end: parse_fiscal_year_end(req.fiscal_year_end.as_deref())?,
+        formation_date: parse_formation_date(formation_date)?,
+        fiscal_year_end: parse_fiscal_year_end(fiscal_year_end)?,
         document_options: Some(DocumentOptions {
             dating_format: "blank_line".to_owned(),
-            transfer_restrictions: req.transfer_restrictions.unwrap_or(true),
-            right_of_first_refusal: req.right_of_first_refusal.unwrap_or(true),
-            s_corp_election: req.s_corp_election.unwrap_or(false),
+            transfer_restrictions: transfer_restrictions.unwrap_or(true),
+            right_of_first_refusal: right_of_first_refusal.unwrap_or(true),
+            s_corp_election: s_corp_election.unwrap_or(false),
         }),
-        company_address: request_company_address(req.company_address.clone()),
+        company_address: request_company_address(company_address),
     })
 }
 
@@ -470,7 +524,14 @@ async fn create_formation(
         ));
     }
     let workspace_id = auth.workspace_id();
-    let profile_overrides = build_profile_overrides(&req)?;
+    let profile_overrides = build_profile_overrides_from_fields(
+        req.formation_date.as_deref(),
+        req.fiscal_year_end.as_deref(),
+        req.s_corp_election,
+        req.transfer_restrictions,
+        req.right_of_first_refusal,
+        req.company_address.clone(),
+    )?;
 
     let result = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
@@ -478,8 +539,8 @@ async fn create_formation(
         let jurisdiction = req.jurisdiction;
         let members = req.members;
         let entity_type = req.entity_type;
-        let ra_name = req.registered_agent_name;
-        let ra_addr = req.registered_agent_address;
+        let ra_name = cleaned_optional_string(req.registered_agent_name);
+        let ra_addr = cleaned_optional_string(req.registered_agent_address);
         let shares = req.authorized_shares;
         let par_value = req.par_value;
         let profile_overrides = profile_overrides.clone();
@@ -536,7 +597,14 @@ async fn create_formation_with_cap_table(
         ));
     }
     let workspace_id = auth.workspace_id();
-    let profile_overrides = build_profile_overrides(&req)?;
+    let profile_overrides = build_profile_overrides_from_fields(
+        req.formation_date.as_deref(),
+        req.fiscal_year_end.as_deref(),
+        req.s_corp_election,
+        req.transfer_restrictions,
+        req.right_of_first_refusal,
+        req.company_address.clone(),
+    )?;
 
     let result = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
@@ -544,8 +612,8 @@ async fn create_formation_with_cap_table(
         let jurisdiction = req.jurisdiction;
         let members = req.members;
         let entity_type = req.entity_type;
-        let ra_name = req.registered_agent_name;
-        let ra_addr = req.registered_agent_address;
+        let ra_name = cleaned_optional_string(req.registered_agent_name);
+        let ra_addr = cleaned_optional_string(req.registered_agent_address);
         let shares = req.authorized_shares;
         let par_value = req.par_value;
         let profile_overrides = profile_overrides.clone();
@@ -2741,7 +2809,8 @@ async fn get_current_governance_document(
                     if is_core_governance_document(&doc)
                         && latest_doc
                             .as_ref()
-                            .is_none_or(|current: &Document| doc.created_at() > current.created_at())
+                            .map(|current: &Document| doc.created_at() > current.created_at())
+                            .unwrap_or(true)
                     {
                         latest_doc = Some(doc);
                     }
@@ -2974,6 +3043,14 @@ async fn create_pending_formation(
 ) -> Result<Json<PendingFormationResponse>, AppError> {
     let workspace_id = auth.workspace_id();
     let entity_type = req.entity_type;
+    let profile_overrides = build_profile_overrides_from_fields(
+        req.formation_date.as_deref(),
+        req.fiscal_year_end.as_deref(),
+        req.s_corp_election,
+        req.transfer_restrictions,
+        req.right_of_first_refusal,
+        req.company_address.clone(),
+    )?;
     let jurisdiction = req.jurisdiction.unwrap_or_else(|| {
         let j = match entity_type {
             EntityType::Llc => "US-WY",
@@ -2986,6 +3063,9 @@ async fn create_pending_formation(
         let layout = state.layout.clone();
         let legal_name = req.legal_name;
         let jurisdiction = jurisdiction.clone();
+        let registered_agent_name = cleaned_optional_string(req.registered_agent_name);
+        let registered_agent_address = cleaned_optional_string(req.registered_agent_address);
+        let profile_overrides = profile_overrides.clone();
         move || {
             if workspace_has_legal_name(&layout, workspace_id, &legal_name, None).map_err(|e| {
                 crate::domain::formation::error::FormationError::Validation(format!("{e:?}"))
@@ -2994,12 +3074,15 @@ async fn create_pending_formation(
                     format!("entity legal name already exists in workspace: {legal_name}"),
                 ));
             }
-            service::create_pending_entity(
+            service::create_pending_entity_with_profile_overrides(
                 &layout,
                 workspace_id,
                 legal_name,
                 entity_type,
                 jurisdiction,
+                registered_agent_name,
+                registered_agent_address,
+                profile_overrides,
             )
         }
     })
@@ -3047,7 +3130,7 @@ async fn add_founder(
         share_count: None,
         share_class: None,
         role: req.role,
-        address: None,
+        address: req.address,
         officer_title: req.officer_title,
         shares_purchased: None,
         vesting: None,
@@ -3069,6 +3152,7 @@ async fn add_founder(
             email: m.email.clone(),
             role: m.role,
             ownership_pct: m.ownership_pct,
+            address: m.address.clone(),
         })
         .collect();
 
@@ -3086,6 +3170,7 @@ async fn add_founder(
     params(
         ("entity_id" = EntityId, Path, description = "Entity ID"),
     ),
+    request_body = FinalizePendingFormationRequest,
     responses(
         (status = 200, description = "Formation finalized with cap table", body = FormationWithCapTableResponse),
         (status = 404, description = "Entity not found"),
@@ -3095,12 +3180,37 @@ async fn finalize_pending_formation(
     RequireFormationCreate(auth): RequireFormationCreate,
     State(state): State<AppState>,
     Path(entity_id): Path<EntityId>,
+    Json(req): Json<FinalizePendingFormationRequest>,
 ) -> Result<Json<FormationWithCapTableResponse>, AppError> {
     let workspace_id = auth.workspace_id();
+    let profile_overrides = build_profile_overrides_from_fields(
+        req.formation_date.as_deref(),
+        req.fiscal_year_end.as_deref(),
+        req.s_corp_election,
+        req.transfer_restrictions,
+        req.right_of_first_refusal,
+        req.company_address.clone(),
+    )?;
 
     let result = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
-        move || service::finalize_formation(&layout, workspace_id, entity_id, None, None)
+        let registered_agent_name = cleaned_optional_string(req.registered_agent_name);
+        let registered_agent_address = cleaned_optional_string(req.registered_agent_address);
+        let authorized_shares = req.authorized_shares;
+        let par_value = req.par_value;
+        let profile_overrides = profile_overrides.clone();
+        move || {
+            service::finalize_formation_with_profile_overrides(
+                &layout,
+                workspace_id,
+                entity_id,
+                authorized_shares,
+                par_value.as_deref(),
+                registered_agent_name,
+                registered_agent_address,
+                profile_overrides,
+            )
+        }
     })
     .await
     .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
@@ -3566,6 +3676,7 @@ pub fn formation_routes() -> Router<AppState> {
         AddFounderRequest,
         AddFounderResponse,
         FounderSummary,
+        FinalizePendingFormationRequest,
         GenerateContractRequest,
         ContractResponse,
         SigningLinkResponse,

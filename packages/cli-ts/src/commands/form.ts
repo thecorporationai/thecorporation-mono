@@ -405,6 +405,23 @@ interface FormCreateOptions {
   type: string;
   name: string;
   jurisdiction?: string;
+  registeredAgentName?: string;
+  registeredAgentAddress?: string;
+  formationDate?: string;
+  fiscalYearEnd?: string;
+  sCorp?: boolean;
+  transferRestrictions?: boolean;
+  rofr?: boolean;
+  companyAddress?: string;
+}
+
+function parseCsvAddress(raw?: string): { street: string; city: string; state: string; zip: string } | undefined {
+  if (!raw) return undefined;
+  const parts = raw.split(",").map((p) => p.trim()).filter(Boolean);
+  if (parts.length !== 4) {
+    throw new Error(`Invalid address format: ${raw}. Expected 'street,city,state,zip'`);
+  }
+  return { street: parts[0], city: parts[1], state: parts[2], zip: parts[3] };
 }
 
 export async function formCreateCommand(opts: FormCreateOptions): Promise<void> {
@@ -418,6 +435,15 @@ export async function formCreateCommand(opts: FormCreateOptions): Promise<void> 
       legal_name: opts.name,
     };
     if (opts.jurisdiction) payload.jurisdiction = opts.jurisdiction;
+    if (opts.registeredAgentName) payload.registered_agent_name = opts.registeredAgentName;
+    if (opts.registeredAgentAddress) payload.registered_agent_address = opts.registeredAgentAddress;
+    if (opts.formationDate) payload.formation_date = opts.formationDate;
+    if (opts.fiscalYearEnd) payload.fiscal_year_end = opts.fiscalYearEnd;
+    if (opts.sCorp !== undefined) payload.s_corp_election = opts.sCorp;
+    if (opts.transferRestrictions !== undefined) payload.transfer_restrictions = opts.transferRestrictions;
+    if (opts.rofr !== undefined) payload.right_of_first_refusal = opts.rofr;
+    const companyAddress = parseCsvAddress(opts.companyAddress);
+    if (companyAddress) payload.company_address = companyAddress;
 
     const result = await client.createPendingEntity(payload);
     printSuccess(`Pending entity created: ${result.entity_id}`);
@@ -439,6 +465,20 @@ interface FormAddFounderOptions {
   pct: string;
   officerTitle?: string;
   incorporator?: boolean;
+  address?: string;
+}
+
+interface FormFinalizeOptions {
+  authorizedShares?: string;
+  parValue?: string;
+  registeredAgentName?: string;
+  registeredAgentAddress?: string;
+  formationDate?: string;
+  fiscalYearEnd?: string;
+  sCorp?: boolean;
+  transferRestrictions?: boolean;
+  rofr?: boolean;
+  companyAddress?: string;
 }
 
 export async function formAddFounderCommand(entityId: string, opts: FormAddFounderOptions): Promise<void> {
@@ -454,6 +494,8 @@ export async function formAddFounderCommand(entityId: string, opts: FormAddFound
     };
     if (opts.officerTitle) payload.officer_title = opts.officerTitle.toLowerCase();
     if (opts.incorporator) payload.is_incorporator = true;
+    const address = parseCsvAddress(opts.address);
+    if (address) payload.address = address;
 
     const result = await client.addFounder(entityId, payload);
     printSuccess(`Founder added (${result.member_count} total)`);
@@ -469,12 +511,31 @@ export async function formAddFounderCommand(entityId: string, opts: FormAddFound
   }
 }
 
-export async function formFinalizeCommand(entityId: string): Promise<void> {
+export async function formFinalizeCommand(entityId: string, opts: FormFinalizeOptions): Promise<void> {
   const cfg = requireConfig("api_url", "api_key", "workspace_id");
   const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
 
   try {
-    const result = await client.finalizeFormation(entityId);
+    const payload: ApiRecord = {};
+    if (opts.authorizedShares) {
+      const authorizedShares = parseInt(opts.authorizedShares, 10);
+      if (!Number.isFinite(authorizedShares)) {
+        throw new Error(`Invalid authorized shares: ${opts.authorizedShares}`);
+      }
+      payload.authorized_shares = authorizedShares;
+    }
+    if (opts.parValue) payload.par_value = opts.parValue;
+    if (opts.registeredAgentName) payload.registered_agent_name = opts.registeredAgentName;
+    if (opts.registeredAgentAddress) payload.registered_agent_address = opts.registeredAgentAddress;
+    if (opts.formationDate) payload.formation_date = opts.formationDate;
+    if (opts.fiscalYearEnd) payload.fiscal_year_end = opts.fiscalYearEnd;
+    if (opts.sCorp !== undefined) payload.s_corp_election = opts.sCorp;
+    if (opts.transferRestrictions !== undefined) payload.transfer_restrictions = opts.transferRestrictions;
+    if (opts.rofr !== undefined) payload.right_of_first_refusal = opts.rofr;
+    const companyAddress = parseCsvAddress(opts.companyAddress);
+    if (companyAddress) payload.company_address = companyAddress;
+
+    const result = await client.finalizeFormation(entityId, payload);
     printSuccess(`Formation finalized: ${result.entity_id}`);
     if (result.legal_entity_id) console.log(`  Legal Entity ID: ${result.legal_entity_id}`);
     if (result.instrument_id) console.log(`  Instrument ID: ${result.instrument_id}`);

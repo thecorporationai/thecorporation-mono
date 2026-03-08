@@ -54,28 +54,44 @@ const entityActions: Record<string, ToolHandler> = {
       entity_type: entityType,
       legal_name: args.entity_name,
       jurisdiction,
+      registered_agent_name: args.registered_agent_name,
+      registered_agent_address: args.registered_agent_address,
+      formation_date: args.formation_date,
+      fiscal_year_end: args.fiscal_year_end,
+      s_corp_election: args.s_corp_election,
+      transfer_restrictions: args.transfer_restrictions,
+      right_of_first_refusal: args.right_of_first_refusal,
+      company_address: args.company_address,
     });
   },
 
   add_founder: async (args, client) => {
     const entityId = requiredString(args, "entity_id");
-    let ownershipPct = args.ownership_pct as number | undefined;
-    if (typeof ownershipPct === "number" && ownershipPct > 1) {
-      ownershipPct = ownershipPct / 100;
-    }
     return client.addFounder(entityId, {
       name: args.name,
       email: args.email,
       role: args.role,
-      ownership_pct: ownershipPct,
+      ownership_pct: args.ownership_pct,
       officer_title: args.officer_title,
       is_incorporator: args.is_incorporator,
+      address: args.address,
     });
   },
 
   finalize: async (args, client, ctx) => {
     const entityId = requiredString(args, "entity_id");
-    const result = await client.finalizeFormation(entityId);
+    const result = await client.finalizeFormation(entityId, {
+      authorized_shares: args.authorized_shares,
+      par_value: args.par_value,
+      registered_agent_name: args.registered_agent_name,
+      registered_agent_address: args.registered_agent_address,
+      formation_date: args.formation_date,
+      fiscal_year_end: args.fiscal_year_end,
+      s_corp_election: args.s_corp_election,
+      transfer_restrictions: args.transfer_restrictions,
+      right_of_first_refusal: args.right_of_first_refusal,
+      company_address: args.company_address,
+    });
     if (entityId && ctx.onEntityFormed) {
       ctx.onEntityFormed(entityId);
     }
@@ -92,9 +108,6 @@ const entityActions: Record<string, ToolHandler> = {
     if (!members.length) return { error: "Members are required." };
     for (const m of members) {
       if (!m.investor_type) m.investor_type = "natural_person";
-      if (typeof m.ownership_pct === "number" && (m.ownership_pct as number) > 1) {
-        m.ownership_pct = (m.ownership_pct as number) / 100;
-      }
     }
     const result = await client.createFormationWithCapTable({
       entity_type: entityType, legal_name: args.entity_name, jurisdiction,
