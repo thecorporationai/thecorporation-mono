@@ -1017,7 +1017,8 @@ pub fn setup_cap_table(
     })
 }
 
-/// Create a pending entity — initializes a git repo with an empty pending members list.
+/// Create a pending entity — initializes a git repo with an empty pending members list
+/// and a default governance profile.
 ///
 /// Unlike `create_entity`, this does NOT require members upfront and does NOT generate
 /// formation documents. The entity stays in `Pending` status until `finalize_formation`
@@ -1040,11 +1041,19 @@ pub fn create_pending_entity(
         None,
         None,
     )?;
+    let governance_profile = GovernanceProfile::default_for_entity(&entity);
+    governance_profile
+        .validate()
+        .map_err(FormationError::Validation)?;
 
-    // Build files: corp.json + empty pending members list
+    // Build files: corp.json + governance profile + empty pending members list
     let mut files = Vec::new();
     files.push(
         FileWrite::json("corp.json", &entity)
+            .map_err(|e| FormationError::Storage(e.to_string()))?,
+    );
+    files.push(
+        FileWrite::json(GOVERNANCE_PROFILE_PATH, &governance_profile)
             .map_err(|e| FormationError::Storage(e.to_string()))?,
     );
     let empty_members: Vec<MemberInput> = Vec::new();
@@ -1115,10 +1124,8 @@ pub fn add_pending_member(
     Ok(members)
 }
 
-/// Finalize a pending entity's formation — generates documents, cap table, and advances status.
-///
-/// Reads pending members from the repo, validates at least one exists, then reuses
-/// `generate_formation_documents` and `setup_cap_table` to complete the formation.
+/// Finalize a pending entity's formation — generates canonical AST-backed
+/// formation documents, cap table records, and advances status.
 #[allow(clippy::too_many_arguments)]
 pub fn finalize_formation(
     layout: &crate::store::RepoLayout,
@@ -1152,19 +1159,39 @@ pub fn finalize_formation(
         ));
     }
 
-    // Generate formation documents
-    let doc_specs = generate_formation_documents(
-        entity.entity_type(),
-        entity.legal_name(),
-        entity.jurisdiction(),
-        "", // no registered agent for staged flow
-        "",
+    let existing_profile = match repo.read_json::<GovernanceProfile>("main", GOVERNANCE_PROFILE_PATH)
+    {
+        Ok(profile) => Some(profile),
+        Err(crate::git::error::GitStorageError::NotFound(_)) => None,
+        Err(e) => {
+            return Err(FormationError::Storage(format!(
+                "failed to read governance profile: {e}"
+            )));
+        }
+    };
+    let resolved_authorized_shares = authorized_shares.or_else(|| {
+        existing_profile
+            .as_ref()
+            .and_then(|profile| profile.stock_details())
+            .map(|details| details.authorized_shares as i64)
+    });
+    let resolved_par_value = par_value.map(ToOwned::to_owned).or_else(|| {
+        existing_profile
+            .as_ref()
+            .and_then(|profile| profile.stock_details())
+            .map(|details| format_par_value_units(details.par_value_cents))
+    });
+    let governance_profile = build_governance_profile(
+        &entity,
         &members,
-        authorized_shares,
-        par_value,
+        resolved_authorized_shares,
+        resolved_par_value.as_deref(),
+        existing_profile,
+        None,
     );
-    let governance_profile =
-        build_governance_profile(&entity, &members, authorized_shares, par_value);
+    governance_profile
+        .validate()
+        .map_err(FormationError::Validation)?;
 
     // Create filing record
     let filing_type = match entity.entity_type() {
@@ -1208,20 +1235,8 @@ pub fn finalize_formation(
     let tax_profile = TaxProfile::new(TaxProfileId::new(), entity_id, classification);
 
     // Create Document records
-    let mut documents = Vec::new();
-    for (doc_type, title, governance_tag, content) in doc_specs {
-        let doc = Document::new(
-            DocumentId::new(),
-            entity_id,
-            workspace_id,
-            doc_type,
-            title,
-            content,
-            governance_tag,
-            None,
-        );
-        documents.push(doc);
-    }
+    let documents =
+        generate_ast_formation_documents(&entity, workspace_id, &members, &governance_profile)?;
     let document_ids: Vec<DocumentId> = documents.iter().map(|d| d.document_id()).collect();
 
     // Build files for the formation commit
@@ -1280,8 +1295,8 @@ pub fn finalize_formation(
         formation_result.entity.entity_type(),
         formation_result.entity.legal_name(),
         &members,
-        authorized_shares,
-        par_value,
+        resolved_authorized_shares,
+        resolved_par_value.as_deref(),
     )?;
 
     Ok((formation_result, cap_table_result))
@@ -1437,8 +1452,8 @@ mod tests {
             FormationStatus::DocumentsGenerated
         );
 
-        // Verify documents were generated (LLC: articles of org + operating agreement)
-        assert_eq!(result.document_ids.len(), 2);
+        // Verify documents were generated (LLC: articles + operating agreement + initial consent)
+        assert_eq!(result.document_ids.len(), 3);
 
         // Verify the entity repo exists on disk and is readable
         let entity_id = result.entity.entity_id();
@@ -1500,8 +1515,8 @@ mod tests {
         .expect("create_entity should succeed for corporation");
 
         assert_eq!(result.entity.entity_type(), EntityType::CCorp);
-        // Corporation: articles of incorporation + bylaws
-        assert_eq!(result.document_ids.len(), 2);
+        // Corporation: charter + bylaws + incorporator action + initial board consent
+        assert_eq!(result.document_ids.len(), 4);
         assert_eq!(
             result.entity.formation_status(),
             FormationStatus::DocumentsGenerated
@@ -1699,7 +1714,7 @@ mod tests {
             formation.entity.formation_status(),
             FormationStatus::DocumentsGenerated
         );
-        assert_eq!(formation.document_ids.len(), 2); // LLC: articles + operating agreement
+        assert_eq!(formation.document_ids.len(), 3);
         assert_eq!(cap_table.holders.len(), 2);
     }
 

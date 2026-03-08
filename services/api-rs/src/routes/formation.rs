@@ -10,7 +10,7 @@ use axum::{
     response::IntoResponse,
     routing::{get, post},
 };
-use chrono::Datelike;
+use chrono::{DateTime, Datelike, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -27,7 +27,10 @@ use crate::domain::formation::{
 };
 use crate::domain::governance::{
     doc_ast, doc_generator,
-    profile::{CompanyAddress, GOVERNANCE_PROFILE_PATH, GovernanceProfile},
+    profile::{
+        CompanyAddress, DocumentOptions, FiscalYearEnd, GOVERNANCE_PROFILE_PATH,
+        GovernanceProfile,
+    },
     typst_renderer,
 };
 use crate::domain::ids::{ContractId, DocumentId, EntityId, SignatureId, WorkspaceId};
@@ -362,6 +365,88 @@ fn resolve_document_entity_id(
     )))
 }
 
+fn parse_formation_date(raw: Option<&str>) -> Result<Option<DateTime<Utc>>, AppError> {
+    let Some(raw) = raw.map(str::trim).filter(|value| !value.is_empty()) else {
+        return Ok(None);
+    };
+    if let Ok(timestamp) = DateTime::parse_from_rfc3339(raw) {
+        return Ok(Some(timestamp.with_timezone(&Utc)));
+    }
+    let date = NaiveDate::parse_from_str(raw, "%Y-%m-%d").map_err(|_| {
+        AppError::BadRequest("formation_date must be RFC3339 or YYYY-MM-DD".to_owned())
+    })?;
+    Ok(Some(
+        date.and_hms_opt(0, 0, 0)
+            .expect("midnight is a valid timestamp")
+            .and_utc(),
+    ))
+}
+
+fn parse_fiscal_year_end(raw: Option<&str>) -> Result<Option<FiscalYearEnd>, AppError> {
+    let Some(raw) = raw.map(str::trim).filter(|value| !value.is_empty()) else {
+        return Ok(None);
+    };
+    let (month, day) = raw.split_once('-').ok_or_else(|| {
+        AppError::BadRequest("fiscal_year_end must use MM-DD format".to_owned())
+    })?;
+    let month = month
+        .parse::<u32>()
+        .map_err(|_| AppError::BadRequest("fiscal_year_end month must be numeric".to_owned()))?;
+    let day = day
+        .parse::<u32>()
+        .map_err(|_| AppError::BadRequest("fiscal_year_end day must be numeric".to_owned()))?;
+    NaiveDate::from_ymd_opt(2024, month, day).ok_or_else(|| {
+        AppError::BadRequest("fiscal_year_end must be a real calendar date".to_owned())
+    })?;
+    Ok(Some(FiscalYearEnd { month, day }))
+}
+
+fn request_company_address(
+    address: Option<crate::domain::formation::content::Address>,
+) -> Option<CompanyAddress> {
+    address.map(|address| CompanyAddress {
+        street: match address.street2 {
+            Some(street2) if !street2.trim().is_empty() => {
+                format!("{}, {}", address.street, street2)
+            }
+            _ => address.street,
+        },
+        city: address.city,
+        county: None,
+        state: address.state,
+        zip: address.zip,
+    })
+}
+
+fn build_profile_overrides(
+    req: &CreateFormationRequest,
+) -> Result<service::FormationProfileOverrides, AppError> {
+    Ok(service::FormationProfileOverrides {
+        formation_date: parse_formation_date(req.formation_date.as_deref())?,
+        fiscal_year_end: parse_fiscal_year_end(req.fiscal_year_end.as_deref())?,
+        document_options: Some(DocumentOptions {
+            dating_format: "blank_line".to_owned(),
+            transfer_restrictions: req.transfer_restrictions.unwrap_or(true),
+            right_of_first_refusal: req.right_of_first_refusal.unwrap_or(true),
+            s_corp_election: req.s_corp_election.unwrap_or(false),
+        }),
+        company_address: request_company_address(req.company_address.clone()),
+    })
+}
+
+fn is_core_governance_document(doc: &Document) -> bool {
+    matches!(
+        doc.document_type(),
+        DocumentType::ArticlesOfIncorporation
+            | DocumentType::ArticlesOfOrganization
+            | DocumentType::Bylaws
+            | DocumentType::IncorporatorAction
+            | DocumentType::InitialBoardConsent
+            | DocumentType::OperatingAgreement
+            | DocumentType::InitialWrittenConsent
+    )
+}
+
 // ── Handlers ────────────────────────────────────────────────────────────
 
 #[utoipa::path(
@@ -385,6 +470,7 @@ async fn create_formation(
         ));
     }
     let workspace_id = auth.workspace_id();
+    let profile_overrides = build_profile_overrides(&req)?;
 
     let result = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
@@ -396,8 +482,9 @@ async fn create_formation(
         let ra_addr = req.registered_agent_address;
         let shares = req.authorized_shares;
         let par_value = req.par_value;
+        let profile_overrides = profile_overrides.clone();
         move || {
-            service::create_entity(
+            service::create_entity_with_profile_overrides(
                 &layout,
                 workspace_id,
                 legal_name,
@@ -408,6 +495,7 @@ async fn create_formation(
                 &members,
                 shares,
                 par_value.as_deref(),
+                profile_overrides,
             )
         }
     })
@@ -448,6 +536,7 @@ async fn create_formation_with_cap_table(
         ));
     }
     let workspace_id = auth.workspace_id();
+    let profile_overrides = build_profile_overrides(&req)?;
 
     let result = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
@@ -459,9 +548,10 @@ async fn create_formation_with_cap_table(
         let ra_addr = req.registered_agent_address;
         let shares = req.authorized_shares;
         let par_value = req.par_value;
+        let profile_overrides = profile_overrides.clone();
         move || {
             // Step 1: Create the entity (formation documents, filing, tax profile)
-            let formation = service::create_entity(
+            let formation = service::create_entity_with_profile_overrides(
                 &layout,
                 workspace_id,
                 legal_name.clone(),
@@ -472,6 +562,7 @@ async fn create_formation_with_cap_table(
                 &members,
                 shares,
                 par_value.as_deref(),
+                profile_overrides,
             )?;
 
             // Step 2: Set up the cap table (contacts, legal entity, instrument, holders, positions)
@@ -2411,19 +2502,12 @@ async fn preview_document_pdf(
                     Err(_) => GovernanceProfile::default_for_entity(&entity),
                 };
 
-            // Alias: articles_of_incorporation → certificate_of_incorporation
-            let lookup_id = if doc_id == "articles_of_incorporation" {
-                "certificate_of_incorporation".to_string()
-            } else {
-                doc_id.clone()
-            };
-
             // Load AST and find the document definition
             let ast = doc_ast::default_doc_ast();
             let doc_def = ast
                 .documents
                 .iter()
-                .find(|d| d.id == lookup_id)
+                .find(|d| d.id == doc_id)
                 .ok_or_else(|| {
                     AppError::NotFound(format!("no AST document definition matches id '{doc_id}'"))
                 })?;
@@ -2600,18 +2684,10 @@ async fn list_governance_documents(
                 crate::domain::formation::error::FormationError::Validation(e.to_string())
             })?;
 
-            let governance_types = [
-                "articles_of_incorporation",
-                "bylaws",
-                "operating_agreement",
-                "certificate_of_formation",
-            ];
-
             let mut results = Vec::new();
             for id in ids {
                 if let Ok(doc) = store.read_document("main", id) {
-                    let doc_type = format!("{:?}", doc.document_type()).to_lowercase();
-                    if governance_types.iter().any(|gt| doc_type.contains(gt)) {
+                    if is_core_governance_document(&doc) {
                         results.push(DocumentSummary {
                             document_id: doc.document_id(),
                             document_type: doc.document_type(),
@@ -2662,10 +2738,10 @@ async fn get_current_governance_document(
             let mut latest_doc = None;
             for id in ids {
                 if let Ok(doc) = store.read_document("main", id) {
-                    let doc_type = format!("{:?}", doc.document_type()).to_lowercase();
-                    if doc_type.contains("articles")
-                        || doc_type.contains("bylaws")
-                        || doc_type.contains("operating_agreement")
+                    if is_core_governance_document(&doc)
+                        && latest_doc
+                            .as_ref()
+                            .is_none_or(|current: &Document| doc.created_at() > current.created_at())
                     {
                         latest_doc = Some(doc);
                     }
