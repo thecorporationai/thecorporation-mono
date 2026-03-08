@@ -841,6 +841,8 @@ async fn test_formation_lifecycle() {
             "entity_type": "corporation",
             "legal_name": "FormCo Inc.",
             "jurisdiction": "Delaware",
+            "registered_agent_name": "Delaware Registered Agent Co.",
+            "registered_agent_address": "1209 Orange St, Wilmington, DE 19801",
             "members": [
                 {
                     "name": "Alice Founder",
@@ -848,7 +850,15 @@ async fn test_formation_lifecycle() {
                     "email": "alice@formco.com",
                     "ownership_pct": 100.0,
                     "share_count": 10000,
-                    "role": "director"
+                    "role": "director",
+                    "officer_title": "ceo",
+                    "is_incorporator": true,
+                    "address": {
+                        "street": "2261 Market St",
+                        "city": "San Francisco",
+                        "state": "CA",
+                        "zip": "94114"
+                    }
                 }
             ],
             "authorized_shares": 10000000,
@@ -3994,13 +4004,22 @@ async fn test_admin_endpoints() {
             "entity_type": "llc",
             "legal_name": "Admin Test LLC",
             "jurisdiction": "Wyoming",
+            "registered_agent_name": "Wyoming Registered Agent Co.",
+            "registered_agent_address": "1712 Pioneer Ave, Cheyenne, WY 82001",
             "members": [{
                 "name": "Owner",
                 "investor_type": "natural_person",
                 "email": "owner@test.com",
                 "ownership_pct": 100.0,
                 "share_count": 1000,
-                "role": "member"
+                "role": "member",
+                "is_incorporator": true,
+                "address": {
+                    "street": "1712 Pioneer Ave",
+                    "city": "Cheyenne",
+                    "state": "WY",
+                    "zip": "82001"
+                }
             }],
             "authorized_shares": 1000000,
             "par_value": "0.001",
@@ -5246,6 +5265,8 @@ async fn test_signing_link_resolves_document_across_workspace_entities() {
             "entity_type": "corporation",
             "legal_name": "Fallback Lookup Corp",
             "jurisdiction": "Delaware",
+            "registered_agent_name": "Delaware Registered Agent Co.",
+            "registered_agent_address": "1209 Orange St, Wilmington, DE 19801",
             "members": [
                 {
                     "name": "Carol Founder",
@@ -5253,7 +5274,15 @@ async fn test_signing_link_resolves_document_across_workspace_entities() {
                     "email": "carol@test.com",
                     "ownership_pct": 100.0,
                     "share_count": 1000,
-                    "role": "director"
+                    "role": "director",
+                    "officer_title": "ceo",
+                    "is_incorporator": true,
+                    "address": {
+                        "street": "2261 Market St",
+                        "city": "San Francisco",
+                        "state": "CA",
+                        "zip": "94114"
+                    }
                 }
             ],
             "authorized_shares": 1000000,
