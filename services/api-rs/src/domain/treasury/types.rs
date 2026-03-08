@@ -11,7 +11,19 @@ use std::ops::{Add, AddAssign, Neg, Sub, SubAssign};
 // ── Monetary newtypes ──────────────────────────────────────────────────
 
 /// Integer cents (USD). $1.00 = 100 cents.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    utoipa::ToSchema,
+)]
 #[schema(value_type = i64)]
 #[serde(transparent)]
 pub struct Cents(i64);
@@ -204,7 +216,9 @@ impl LedgerAmount {
 // ── Currency ───────────────────────────────────────────────────────────
 
 /// Supported currencies. Currently USD only.
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(
+    Debug, Default, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, utoipa::ToSchema,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum Currency {
     /// United States Dollar.
@@ -322,7 +336,9 @@ impl GlAccountCode {
 // ── Bank Account Types ─────────────────────────────────────────────────
 
 /// Type of bank account held by the entity.
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(
+    Debug, Default, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, utoipa::ToSchema,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum BankAccountType {
     /// Standard checking account.

@@ -814,7 +814,9 @@ async fn create_bank_account(
             for existing_id in existing_ids {
                 let existing = store
                     .read::<BankAccount>("main", existing_id)
-                    .map_err(|e| AppError::Internal(format!("read bank account {existing_id}: {e}")))?;
+                    .map_err(|e| {
+                        AppError::Internal(format!("read bank account {existing_id}: {e}"))
+                    })?;
                 if existing.entity_id() == entity_id
                     && existing.status() != BankAccountStatus::Closed
                     && existing.bank_name().trim().to_ascii_lowercase() == normalized_bank

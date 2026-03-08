@@ -129,7 +129,19 @@ pub enum AssigneeType {
 // ── AuthorityTier ──────────────────────────────────────────────────────
 
 /// The authority level required to approve an action.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Hash,
+    PartialOrd,
+    Ord,
+    Serialize,
+    Deserialize,
+    utoipa::ToSchema,
+)]
 pub enum AuthorityTier {
     /// Lowest authority level — routine operations.
     #[serde(rename = "tier_1")]

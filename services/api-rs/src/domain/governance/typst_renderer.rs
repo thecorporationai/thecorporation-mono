@@ -18,10 +18,11 @@ use super::doc_ast::{
     ContentNode, DataTableColumn, DocumentDefinition, EntityTypeKey, GovernanceDocAst,
 };
 use super::doc_generator::{
-    capitalize, format_json_value, format_usd, resolve_profile_field, substitute,
+    capitalize, format_json_value, format_usd, resolve_context_field, substitute,
 };
 use super::profile::GovernanceProfile;
 use crate::domain::formation::document::Signature;
+use serde_json::Value;
 
 // ── Fonts ───────────────────────────────────────────────────────────
 
@@ -158,23 +159,37 @@ pub fn render_pdf(
     profile: &GovernanceProfile,
     signatures: &[Signature],
 ) -> Result<Vec<u8>, String> {
-    let typst_source = render_typst_document(doc, ast, entity_type, profile, signatures);
+    render_pdf_with_context(doc, ast, entity_type, profile, &Value::Null, signatures)
+}
+
+pub fn render_pdf_with_context(
+    doc: &DocumentDefinition,
+    ast: &GovernanceDocAst,
+    entity_type: EntityTypeKey,
+    profile: &GovernanceProfile,
+    context: &Value,
+    signatures: &[Signature],
+) -> Result<Vec<u8>, String> {
+    let typst_source = render_typst_document(doc, ast, entity_type, profile, context, signatures);
     compile_typst_to_pdf(&typst_source)
+}
+
+/// Compile an arbitrary Typst source string to PDF bytes.
+pub fn render_source_pdf(source: &str) -> Result<Vec<u8>, String> {
+    compile_typst_to_pdf(source)
 }
 
 fn compile_typst_to_pdf(source: &str) -> Result<Vec<u8>, String> {
     let world = PdfWorld::new(source.to_owned());
     let result = typst::compile::<PagedDocument>(&world);
 
-    let document = result
-        .output
-        .map_err(|errors| {
-            errors
-                .into_iter()
-                .map(|e| e.message.to_string())
-                .collect::<Vec<_>>()
-                .join("; ")
-        })?;
+    let document = result.output.map_err(|errors| {
+        errors
+            .into_iter()
+            .map(|e| e.message.to_string())
+            .collect::<Vec<_>>()
+            .join("; ")
+    })?;
 
     typst_pdf::pdf(&document, &typst_pdf::PdfOptions::default()).map_err(|errors| {
         errors
@@ -192,6 +207,7 @@ fn render_typst_document(
     ast: &GovernanceDocAst,
     entity_type: EntityTypeKey,
     profile: &GovernanceProfile,
+    context: &Value,
     signatures: &[Signature],
 ) -> String {
     let mut out = String::from(TYPST_PREAMBLE);
@@ -201,7 +217,7 @@ fn render_typst_document(
 
     // Preamble (as block quote)
     if let Some(preamble) = &doc.preamble {
-        let rendered = substitute(preamble, ast, profile);
+        let rendered = substitute(preamble, ast, profile, context);
         out.push_str(&format!(
             "\n#block(fill: luma(245), inset: 10pt, radius: 4pt)[{}]\n",
             escape_typst(&rendered)
@@ -212,25 +228,24 @@ fn render_typst_document(
     if !doc.metadata_fields.is_empty() {
         out.push('\n');
         for field in &doc.metadata_fields {
-            let value = resolve_profile_field(&field.key, profile)
+            let value = resolve_context_field(&field.key, profile, context)
                 .or_else(|| field.default.clone())
-                .unwrap_or_else(|| {
-                    field
-                        .placeholder
-                        .clone()
-                        .unwrap_or_else(|| "TBD".to_owned())
-                });
-            out.push_str(&format!(
-                "*{}*: `{}`\n",
-                escape_typst(&field.label),
-                value
-            ));
+                .unwrap_or_else(|| format!("[MISSING: {}]", field.key));
+            out.push_str(&format!("*{}*: `{}`\n", escape_typst(&field.label), value));
         }
     }
 
     // Content nodes
     for node in &doc.content {
-        render_node(&mut out, node, ast, entity_type, profile, signatures);
+        render_node(
+            &mut out,
+            node,
+            ast,
+            entity_type,
+            profile,
+            context,
+            signatures,
+        );
     }
 
     out
@@ -242,6 +257,7 @@ fn render_node(
     ast: &GovernanceDocAst,
     entity_type: EntityTypeKey,
     profile: &GovernanceProfile,
+    context: &Value,
     signatures: &[Signature],
 ) {
     match node {
@@ -251,28 +267,34 @@ fn render_node(
                 out.push('=');
             }
             out.push(' ');
-            out.push_str(&escape_typst(&substitute(text, ast, profile)));
+            out.push_str(&escape_typst(&substitute(text, ast, profile, context)));
             out.push('\n');
         }
         ContentNode::Paragraph { text } => {
             out.push('\n');
-            out.push_str(&escape_typst(&substitute(text, ast, profile)));
+            out.push_str(&escape_typst(&substitute(text, ast, profile, context)));
             out.push_str("\n\n");
         }
         ContentNode::OrderedList { items } => {
             out.push('\n');
             for item in items {
-                out.push_str(&format!("+ {}\n", escape_typst(&substitute(item, ast, profile))));
+                out.push_str(&format!(
+                    "+ {}\n",
+                    escape_typst(&substitute(item, ast, profile, context))
+                ));
             }
         }
         ContentNode::UnorderedList { items } => {
             out.push('\n');
             for item in items {
-                out.push_str(&format!("- {}\n", escape_typst(&substitute(item, ast, profile))));
+                out.push_str(&format!(
+                    "- {}\n",
+                    escape_typst(&substitute(item, ast, profile, context))
+                ));
             }
         }
         ContentNode::Table { headers, rows } => {
-            render_static_table(out, headers, rows, ast, profile);
+            render_static_table(out, headers, rows, ast, profile, context);
         }
         ContentNode::DataTable { source, columns } => {
             render_typst_data_table(out, source, columns, ast, entity_type);
@@ -283,7 +305,7 @@ fn render_node(
         } => {
             if *when_entity == entity_type {
                 for child in content {
-                    render_node(out, child, ast, entity_type, profile, signatures);
+                    render_node(out, child, ast, entity_type, profile, context, signatures);
                 }
             }
         }
@@ -291,8 +313,8 @@ fn render_node(
             render_signature_block(out, role, fields, signatures);
         }
         ContentNode::Placeholder { key, label } => {
-            let value = resolve_profile_field(key, profile)
-                .unwrap_or_else(|| "TBD".to_owned());
+            let value = resolve_context_field(key, profile, context)
+                .unwrap_or_else(|| format!("[MISSING: {key}]"));
             out.push_str(&format!(
                 "*{}*: {}\n",
                 escape_typst(label),
@@ -318,7 +340,7 @@ fn render_node(
             out.push_str("```\n");
         }
         ContentNode::DocumentRef { text, .. } => {
-            out.push_str(&escape_typst(&substitute(text, ast, profile)));
+            out.push_str(&escape_typst(&substitute(text, ast, profile, context)));
         }
         ContentNode::HorizontalRule => {
             out.push_str("\n#line(length: 100%)\n");
@@ -334,6 +356,7 @@ fn render_static_table(
     rows: &[Vec<String>],
     ast: &GovernanceDocAst,
     profile: &GovernanceProfile,
+    context: &Value,
 ) {
     let ncols = headers.len();
     out.push_str(&format!("\n#table(\n  columns: {ncols},\n"));
@@ -351,7 +374,7 @@ fn render_static_table(
     // Data rows
     for row in rows {
         for cell in row {
-            let rendered = substitute(cell, ast, profile);
+            let rendered = substitute(cell, ast, profile, context);
             out.push_str(&format!("  [{}],\n", escape_typst(&rendered)));
         }
     }
@@ -391,16 +414,10 @@ fn render_signature_block(
         for field in fields {
             match field.as_str() {
                 "name" => {
-                    out.push_str(&format!(
-                        "Name: {}\n\n",
-                        escape_typst(sig.signer_name())
-                    ));
+                    out.push_str(&format!("Name: {}\n\n", escape_typst(sig.signer_name())));
                 }
                 "date" => {
-                    out.push_str(&format!(
-                        "Date: {}\n\n",
-                        sig.signed_at().format("%Y-%m-%d")
-                    ));
+                    out.push_str(&format!("Date: {}\n\n", sig.signed_at().format("%Y-%m-%d")));
                 }
                 "title" => {} // included in name line typically
                 _ => {
@@ -520,9 +537,7 @@ fn render_typst_data_table(
                                 } else {
                                     lane.conditions
                                         .iter()
-                                        .filter_map(|c| {
-                                            c.get("label").and_then(|l| l.as_str())
-                                        })
+                                        .filter_map(|c| c.get("label").and_then(|l| l.as_str()))
                                         .collect::<Vec<_>>()
                                         .join("; ")
                                 }
@@ -730,7 +745,10 @@ fn render_typst_data_table(
             }
         }
         _ => {
-            out.push_str(&format!("  [Unknown data source: {}],\n", escape_typst(source)));
+            out.push_str(&format!(
+                "  [Unknown data source: {}],\n",
+                escape_typst(source)
+            ));
         }
     }
 
@@ -763,7 +781,10 @@ mod tests {
     fn typst_preamble_compiles() {
         let source = format!("{TYPST_PREAMBLE}Hello, world!");
         let pdf = compile_typst_to_pdf(&source).expect("should compile");
-        assert!(pdf.starts_with(b"%PDF"), "output should start with %PDF header");
+        assert!(
+            pdf.starts_with(b"%PDF"),
+            "output should start with %PDF header"
+        );
         assert!(pdf.len() > 100, "PDF should have substantial size");
     }
 
@@ -790,7 +811,10 @@ mod tests {
             .expect("delegation schedule");
         let pdf = render_pdf(doc, ast, EntityTypeKey::Corporation, &profile, &[])
             .expect("should render PDF");
-        assert!(pdf.starts_with(b"%PDF"), "output should start with %PDF header");
+        assert!(
+            pdf.starts_with(b"%PDF"),
+            "output should start with %PDF header"
+        );
         assert!(pdf.len() > 1000, "PDF should have substantial size");
     }
 

@@ -357,9 +357,6 @@ pub fn execution_routes() -> Router<AppState> {
         get_execution_logs,
         kill_execution,
     ),
-    components(schemas(
-        ExecutionResponse,
-        KillResponse,
-    )),
+    components(schemas(ExecutionResponse, KillResponse,))
 )]
 pub struct AgentExecutionsApi;

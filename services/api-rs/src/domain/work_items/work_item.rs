@@ -1,9 +1,9 @@
 use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 
-use crate::domain::ids::{EntityId, WorkItemId};
 use super::error::WorkItemError;
 use super::types::WorkItemStatus;
+use crate::domain::ids::{EntityId, WorkItemId};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkItem {
@@ -76,23 +76,57 @@ impl WorkItem {
 
     // ── Accessors ────────────────────────────────────────────────────
 
-    pub fn work_item_id(&self) -> WorkItemId { self.work_item_id }
-    pub fn entity_id(&self) -> EntityId { self.entity_id }
-    pub fn title(&self) -> &str { &self.title }
-    pub fn description(&self) -> &str { &self.description }
-    pub fn category(&self) -> &str { &self.category }
-    pub fn deadline(&self) -> Option<NaiveDate> { self.deadline }
-    pub fn asap(&self) -> bool { self.asap }
-    pub fn claimed_by(&self) -> Option<&str> { self.claimed_by.as_deref() }
-    pub fn claimed_at(&self) -> Option<DateTime<Utc>> { self.claimed_at }
-    pub fn claim_ttl_seconds(&self) -> Option<u64> { self.claim_ttl_seconds }
-    pub fn status(&self) -> WorkItemStatus { self.status }
-    pub fn completed_at(&self) -> Option<DateTime<Utc>> { self.completed_at }
-    pub fn completed_by(&self) -> Option<&str> { self.completed_by.as_deref() }
-    pub fn result(&self) -> Option<&str> { self.result.as_deref() }
-    pub fn metadata(&self) -> &serde_json::Value { &self.metadata }
-    pub fn created_at(&self) -> DateTime<Utc> { self.created_at }
-    pub fn created_by(&self) -> Option<&str> { self.created_by.as_deref() }
+    pub fn work_item_id(&self) -> WorkItemId {
+        self.work_item_id
+    }
+    pub fn entity_id(&self) -> EntityId {
+        self.entity_id
+    }
+    pub fn title(&self) -> &str {
+        &self.title
+    }
+    pub fn description(&self) -> &str {
+        &self.description
+    }
+    pub fn category(&self) -> &str {
+        &self.category
+    }
+    pub fn deadline(&self) -> Option<NaiveDate> {
+        self.deadline
+    }
+    pub fn asap(&self) -> bool {
+        self.asap
+    }
+    pub fn claimed_by(&self) -> Option<&str> {
+        self.claimed_by.as_deref()
+    }
+    pub fn claimed_at(&self) -> Option<DateTime<Utc>> {
+        self.claimed_at
+    }
+    pub fn claim_ttl_seconds(&self) -> Option<u64> {
+        self.claim_ttl_seconds
+    }
+    pub fn status(&self) -> WorkItemStatus {
+        self.status
+    }
+    pub fn completed_at(&self) -> Option<DateTime<Utc>> {
+        self.completed_at
+    }
+    pub fn completed_by(&self) -> Option<&str> {
+        self.completed_by.as_deref()
+    }
+    pub fn result(&self) -> Option<&str> {
+        self.result.as_deref()
+    }
+    pub fn metadata(&self) -> &serde_json::Value {
+        &self.metadata
+    }
+    pub fn created_at(&self) -> DateTime<Utc> {
+        self.created_at
+    }
+    pub fn created_by(&self) -> Option<&str> {
+        self.created_by.as_deref()
+    }
 
     // ── Claim expiry ─────────────────────────────────────────────────
 

@@ -211,8 +211,7 @@ where
             if token.starts_with("sk_") {
                 // Direct API key path (Bearer sk_...) for integration parity.
                 let layout = Arc::<RepoLayout>::from_ref(_state);
-                return principal_from_api_key(layout.as_ref(), token)
-                    .map_err(AuthRejection);
+                return principal_from_api_key(layout.as_ref(), token).map_err(AuthRejection);
             }
 
             // JWT path — decode the token using the shared secret from env.
@@ -244,8 +243,7 @@ where
         if auth_header.starts_with("sk_") {
             // Also accept raw API key header (without Bearer prefix).
             let layout = Arc::<RepoLayout>::from_ref(_state);
-            return principal_from_api_key(layout.as_ref(), auth_header)
-                .map_err(AuthRejection);
+            return principal_from_api_key(layout.as_ref(), auth_header).map_err(AuthRejection);
         }
 
         Err(AuthRejection(AuthError::Unauthorized))

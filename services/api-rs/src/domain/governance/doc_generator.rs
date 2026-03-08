@@ -3,13 +3,12 @@
 use anyhow::{Context, bail};
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use super::doc_ast::{
-    ContentNode, DocumentDefinition, EntityTypeKey, GovernanceDocAst,
-};
+use super::doc_ast::{ContentNode, DocumentDefinition, EntityTypeKey, GovernanceDocAst};
 use super::profile::{CompanyAddress, FiscalYearEnd, GovernanceProfile};
 use crate::domain::ids::{EntityId, GovernanceDocBundleId};
 
@@ -98,7 +97,6 @@ pub struct RenderedGovernanceBundle {
     pub summary: GovernanceDocBundleSummary,
     pub documents: Vec<RenderedGovernanceDocument>,
 }
-
 
 pub fn bundle_root(bundle_id: GovernanceDocBundleId) -> String {
     format!("{GOVERNANCE_DOC_BUNDLES_ROOT}/{bundle_id}")
@@ -238,10 +236,18 @@ pub fn render_bundle_from_profile_with_repo_root(
         );
     }
 
+    let ast = super::doc_ast::default_doc_ast();
+    let entity_key = match entity_type {
+        GovernanceDocEntityType::Corporation => EntityTypeKey::Corporation,
+        GovernanceDocEntityType::Llc => EntityTypeKey::Llc,
+    };
     let mut rendered_docs = Vec::new();
-    let doc_paths = relative_document_paths(entity_type);
-    for rel in &doc_paths {
-        let source = docs_root.join(rel);
+    for doc in ast
+        .documents
+        .iter()
+        .filter(|doc| doc.entity_scope.matches(entity_key))
+    {
+        let source = docs_root.join(&doc.path);
         if !source.is_file() {
             bail!(
                 "missing governance source document: {}",
@@ -254,12 +260,10 @@ pub fn render_bundle_from_profile_with_repo_root(
             .to_string_lossy()
             .into_owned();
 
-        let markdown = fs::read_to_string(&source)
-            .with_context(|| format!("read source document {}", source.to_string_lossy()))?;
-        let rendered = apply_profile_replacements(&markdown, entity_type, profile);
+        let rendered = render_document_from_ast(doc, ast, entity_key, profile);
         let content = rendered.into_bytes();
         rendered_docs.push(RenderedGovernanceDocument {
-            path: rel.clone(),
+            path: doc.path.clone(),
             source_path,
             sha256: sha256_hex(&content),
             content,
@@ -313,88 +317,49 @@ pub fn render_bundle_from_profile_with_repo_root(
     })
 }
 
-fn apply_profile_replacements(
-    source: &str,
-    entity_type: GovernanceDocEntityType,
-    profile: &GovernanceProfile,
-) -> String {
-    let mut out = source.to_owned();
+/// Placeholder patterns that indicate unfinished document generation.
+const PLACEHOLDER_PATTERNS: &[&str] = &["`TBD`", "`TBD ", "TBD`", "{{"];
 
-    // Shared schedule/profile values.
-    out = out.replace(
-        "**Effective date**: `YYYY-MM-DD`",
-        &format!("**Effective date**: `{}`", profile.effective_date()),
-    );
-    out = out.replace(
-        "**Adopted by**: `TBD` (Initial Board Consent / Initial Member Consent)",
-        &format!(
-            "**Adopted by**: `{}` (Initial Board Consent / Initial Member Consent)",
-            profile.adopted_by()
-        ),
-    );
-    out = out.replace(
-        "**Last reviewed**: `YYYY-MM-DD`",
-        &format!("**Last reviewed**: `{}`", profile.last_reviewed()),
-    );
-    out = out.replace(
-        "**Next mandatory review**: 12 months from effective date",
-        &format!(
-            "**Next mandatory review**: {}",
-            profile.next_mandatory_review()
-        ),
-    );
-    out = out.replace(
-        "Effective Date: `YYYY-MM-DD`",
-        &format!("Effective Date: `{}`", profile.effective_date()),
-    );
-
-    match entity_type {
-        GovernanceDocEntityType::Corporation => {
-            out = out.replace("TBD Corporation Name", profile.legal_name());
-            out = out.replace(
-                "Registered agent name: `TBD`",
-                &format!(
-                    "Registered agent name: `{}`",
-                    profile.registered_agent_name().unwrap_or("TBD")
-                ),
-            );
-            out = out.replace(
-                "Registered office address (must be in Delaware): `TBD`",
-                &format!(
-                    "Registered office address (must be in Delaware): `{}`",
-                    profile.registered_agent_address().unwrap_or("TBD")
-                ),
-            );
-            if let Some(board_size) = profile.board_size() {
-                out = out.replace(
-                    "The Board shall consist of `TBD` director(s).",
-                    &format!("The Board shall consist of `{board_size}` director(s)."),
-                );
-            }
-            if let Some(inc_name) = profile.incorporator_name() {
-                out = out.replace("- Name: `TBD`", &format!("- Name: `{inc_name}`"));
-                out = out.replace(
-                    "Incorporator Name: `TBD`",
-                    &format!("Incorporator Name: `{inc_name}`"),
-                );
-            }
-            if let Some(inc_addr) = profile.incorporator_address() {
-                out = out.replace("- Address: `TBD`", &format!("- Address: `{inc_addr}`"));
-            }
-        }
-        GovernanceDocEntityType::Llc => {
-            out = out.replace("TBD LLC Name", profile.legal_name());
-            if let Some(principal) = profile.principal_name() {
-                out = out.replace("`TBD` (Principal)", &format!("`{principal}` (Principal)"));
-            }
-        }
-    }
-
-    out
+fn missing_field_marker(key: &str) -> String {
+    format!("[MISSING: {key}]")
 }
 
-/// Placeholder patterns that indicate unfinished document generation.
-const PLACEHOLDER_PATTERNS: &[&str] = &["`TBD`", "YYYY-MM-DD", "`TBD ", "TBD`"];
+fn extract_missing_field_keys(content: &str) -> Vec<String> {
+    let mut keys = std::collections::BTreeSet::new();
+    let mut remainder = content;
+    while let Some(start) = remainder.find("[MISSING:") {
+        let after = &remainder[start + "[MISSING:".len()..];
+        let Some(end) = after.find(']') else {
+            break;
+        };
+        let key = after[..end].trim();
+        if !key.is_empty() {
+            keys.insert(key.to_owned());
+        }
+        remainder = &after[end + 1..];
+    }
+    keys.into_iter().collect()
+}
+
+pub fn detect_placeholder_warnings_for_text(path: &str, content: &str) -> Vec<String> {
+    let mut warnings = Vec::new();
+    let missing_fields = extract_missing_field_keys(content);
+    if !missing_fields.is_empty() {
+        warnings.push(format!(
+            "{path}: missing required fields: {}",
+            missing_fields.join(", ")
+        ));
+    }
+    for pattern in PLACEHOLDER_PATTERNS {
+        let count = content.matches(pattern).count();
+        if count > 0 {
+            warnings.push(format!(
+                "{path}: {count} occurrence(s) of placeholder \"{pattern}\""
+            ));
+        }
+    }
+    warnings
+}
 
 /// Scan rendered documents for residual placeholder markers.
 fn detect_placeholders(docs: &[RenderedGovernanceDocument]) -> Vec<String> {
@@ -404,15 +369,7 @@ fn detect_placeholders(docs: &[RenderedGovernanceDocument]) -> Vec<String> {
             Ok(s) => s,
             Err(_) => continue,
         };
-        for pattern in PLACEHOLDER_PATTERNS {
-            let count = content.matches(pattern).count();
-            if count > 0 {
-                warnings.push(format!(
-                    "{}: {} occurrence(s) of placeholder \"{}\"",
-                    doc.path, count, pattern
-                ));
-            }
-        }
+        warnings.extend(detect_placeholder_warnings_for_text(&doc.path, content));
     }
     warnings
 }
@@ -427,13 +384,11 @@ fn sha256_hex(bytes: &[u8]) -> String {
 
 /// Format cents as a USD string (e.g. 1000000 → "$10,000").
 pub fn format_usd(cents: i64) -> String {
-    let dollars = cents / 100;
-    if dollars == 0 {
-        return "$0".to_owned();
-    }
-    let negative = dollars < 0;
-    let abs = dollars.unsigned_abs();
-    let s = abs.to_string();
+    let negative = cents < 0;
+    let abs = cents.unsigned_abs();
+    let dollars = abs / 100;
+    let remainder = abs % 100;
+    let s = dollars.to_string();
     let mut result = String::new();
     for (i, ch) in s.chars().enumerate() {
         if i > 0 && (s.len() - i) % 3 == 0 {
@@ -441,10 +396,16 @@ pub fn format_usd(cents: i64) -> String {
         }
         result.push(ch);
     }
-    if negative {
-        format!("-${result}")
+    if remainder == 0 {
+        if negative {
+            format!("-${result}")
+        } else {
+            format!("${result}")
+        }
+    } else if negative {
+        format!("-${result}.{remainder:02}")
     } else {
-        format!("${result}")
+        format!("${result}.{remainder:02}")
     }
 }
 
@@ -455,6 +416,16 @@ pub fn render_document_from_ast(
     entity_type: EntityTypeKey,
     profile: &GovernanceProfile,
 ) -> String {
+    render_document_from_ast_with_context(doc, ast, entity_type, profile, &Value::Null)
+}
+
+pub fn render_document_from_ast_with_context(
+    doc: &DocumentDefinition,
+    ast: &GovernanceDocAst,
+    entity_type: EntityTypeKey,
+    profile: &GovernanceProfile,
+    context: &Value,
+) -> String {
     let mut out = String::new();
 
     // Title
@@ -463,7 +434,7 @@ pub fn render_document_from_ast(
     // Preamble (as blockquote)
     if let Some(preamble) = &doc.preamble {
         out.push('\n');
-        let rendered_preamble = substitute(preamble, ast, profile);
+        let rendered_preamble = substitute(preamble, ast, profile, context);
         out.push_str(&format!("> {rendered_preamble}\n"));
     }
 
@@ -471,21 +442,16 @@ pub fn render_document_from_ast(
     if !doc.metadata_fields.is_empty() {
         out.push('\n');
         for field in &doc.metadata_fields {
-            let value = resolve_profile_field(&field.key, profile)
+            let value = resolve_context_field(&field.key, profile, context)
                 .or_else(|| field.default.clone())
-                .unwrap_or_else(|| {
-                    field
-                        .placeholder
-                        .clone()
-                        .unwrap_or_else(|| "`TBD`".to_owned())
-                });
+                .unwrap_or_else(|| missing_field_marker(&field.key));
             out.push_str(&format!("**{}**: `{}`\n", field.label, value));
         }
     }
 
     // Content nodes
     for node in &doc.content {
-        render_node(&mut out, node, ast, entity_type, profile);
+        render_node(&mut out, node, ast, entity_type, profile, context);
     }
 
     out
@@ -511,12 +477,41 @@ pub(super) fn resolve_profile_field(key: &str, profile: &GovernanceProfile) -> O
     }
 }
 
+fn resolve_json_path<'a>(value: &'a Value, key: &str) -> Option<&'a Value> {
+    let mut current = value;
+    for segment in key.split('.') {
+        current = current.get(segment)?;
+    }
+    Some(current)
+}
+
+fn json_value_to_string(value: &Value) -> Option<String> {
+    match value {
+        Value::Null => None,
+        Value::String(s) => Some(s.clone()),
+        other => Some(format_json_value(other)),
+    }
+}
+
+pub(super) fn resolve_context_field(
+    key: &str,
+    profile: &GovernanceProfile,
+    context: &Value,
+) -> Option<String> {
+    resolve_profile_field(key, profile)
+        .or_else(|| resolve_json_path(context, key).and_then(json_value_to_string))
+        .or_else(|| {
+            resolve_json_path(context, &format!("fields.{key}")).and_then(json_value_to_string)
+        })
+}
+
 fn render_node(
     out: &mut String,
     node: &ContentNode,
     ast: &GovernanceDocAst,
     entity_type: EntityTypeKey,
     profile: &GovernanceProfile,
+    context: &Value,
 ) {
     match node {
         ContentNode::Heading { level, text } => {
@@ -525,24 +520,28 @@ fn render_node(
                 out.push('#');
             }
             out.push(' ');
-            out.push_str(&substitute(text, ast, profile));
+            out.push_str(&substitute(text, ast, profile, context));
             out.push('\n');
         }
         ContentNode::Paragraph { text } => {
             out.push('\n');
-            out.push_str(&substitute(text, ast, profile));
+            out.push_str(&substitute(text, ast, profile, context));
             out.push('\n');
         }
         ContentNode::OrderedList { items } => {
             out.push('\n');
             for (i, item) in items.iter().enumerate() {
-                out.push_str(&format!("{}. {}\n", i + 1, substitute(item, ast, profile)));
+                out.push_str(&format!(
+                    "{}. {}\n",
+                    i + 1,
+                    substitute(item, ast, profile, context)
+                ));
             }
         }
         ContentNode::UnorderedList { items } => {
             out.push('\n');
             for item in items {
-                out.push_str(&format!("- {}\n", substitute(item, ast, profile)));
+                out.push_str(&format!("- {}\n", substitute(item, ast, profile, context)));
             }
         }
         ContentNode::Table { headers, rows } => {
@@ -563,7 +562,7 @@ fn render_node(
             for row in rows {
                 out.push('|');
                 for cell in row {
-                    out.push_str(&format!(" {} |", substitute(cell, ast, profile)));
+                    out.push_str(&format!(" {} |", substitute(cell, ast, profile, context)));
                 }
                 out.push('\n');
             }
@@ -577,7 +576,7 @@ fn render_node(
         } => {
             if *when_entity == entity_type {
                 for child in content {
-                    render_node(out, child, ast, entity_type, profile);
+                    render_node(out, child, ast, entity_type, profile, context);
                 }
             }
         }
@@ -586,17 +585,17 @@ fn render_node(
             out.push_str(&format!("{role}: ____________________"));
             for field in fields {
                 match field.as_str() {
-                    "date" => out.push_str("  Date: `YYYY-MM-DD`"),
-                    "name" => out.push_str(&format!("\nName / Title: `TBD`")),
-                    "title" => {} // included in name line
-                    _ => out.push_str(&format!("\n{field}: `TBD`")),
+                    "date" => out.push_str("\nDate: ____________________"),
+                    "name" => out.push_str("\nName: ____________________"),
+                    "title" => out.push_str("\nTitle: ____________________"),
+                    _ => out.push_str(&format!("\n{field}: ____________________")),
                 }
             }
             out.push('\n');
         }
         ContentNode::Placeholder { key, label } => {
-            let value = resolve_profile_field(key, profile)
-                .unwrap_or_else(|| "`TBD`".to_owned());
+            let value = resolve_context_field(key, profile, context)
+                .unwrap_or_else(|| missing_field_marker(key));
             out.push_str(&format!("**{label}**: {value}\n"));
         }
         ContentNode::Note { text } => {
@@ -617,7 +616,7 @@ fn render_node(
             out.push_str("```\n");
         }
         ContentNode::DocumentRef { text, .. } => {
-            out.push_str(&substitute(text, ast, profile));
+            out.push_str(&substitute(text, ast, profile, context));
         }
         ContentNode::HorizontalRule => {
             out.push_str("\n---\n");
@@ -654,22 +653,25 @@ pub(super) fn format_fiscal_year_end(fy: &FiscalYearEnd) -> String {
     format!("{} {}", month_name, fy.day)
 }
 
-pub(super) fn format_par_value(cents: u64) -> String {
-    if cents == 0 {
+pub(super) fn format_par_value(units: u64) -> String {
+    if units == 0 {
         return "0".to_owned();
     }
-    let dollars = cents / 100;
-    let remainder = cents % 100;
+    let dollars = units / 10_000;
+    let remainder = units % 10_000;
     if remainder == 0 {
         format!("{dollars}")
     } else {
-        // Format as decimal: e.g. 1 cent = 0.01, but par values can be
-        // fractional like 0.0001.  We express cents as dollars with up to
-        // 4 decimal places.
-        let value = cents as f64 / 100.0;
+        // Stored as ten-thousandths of a dollar so startup-standard par values
+        // like $0.0001 round-trip without collapsing to a cent.
+        let value = units as f64 / 10_000.0;
         let s = format!("{value:.4}");
         s.trim_end_matches('0').to_owned()
     }
+}
+
+fn par_value_units_to_total_cents(shares: u64, par_value_units: u64) -> i64 {
+    ((shares as u128 * par_value_units as u128) / 100) as i64
 }
 
 pub(super) fn format_number_with_commas(n: u64) -> String {
@@ -693,18 +695,17 @@ pub(super) fn format_json_value(v: &serde_json::Value) -> String {
             .filter_map(|item| item.as_str())
             .collect::<Vec<_>>()
             .join(", "),
-        serde_json::Value::Object(obj) => {
-            obj.iter()
-                .map(|(k, v)| {
-                    let val = match v {
-                        serde_json::Value::String(s) => s.clone(),
-                        other => other.to_string(),
-                    };
-                    format!("{}: {}", k, val)
-                })
-                .collect::<Vec<_>>()
-                .join(", ")
-        }
+        serde_json::Value::Object(obj) => obj
+            .iter()
+            .map(|(k, v)| {
+                let val = match v {
+                    serde_json::Value::String(s) => s.clone(),
+                    other => other.to_string(),
+                };
+                format!("{}: {}", k, val)
+            })
+            .collect::<Vec<_>>()
+            .join(", "),
         other => other.to_string(),
     }
 }
@@ -922,7 +923,11 @@ fn render_data_table(
                     for col in columns {
                         let val = match col.key.as_str() {
                             "description" => {
-                                format!("{} {}", capitalize(&rule.action), rule.target.replace('_', " "))
+                                format!(
+                                    "{} {}",
+                                    capitalize(&rule.action),
+                                    rule.target.replace('_', " ")
+                                )
                             }
                             "permitted_text" => {
                                 if rule.requires_board_resolution {
@@ -1028,7 +1033,12 @@ fn render_data_table(
 }
 
 /// Substitute `{{key}}` placeholders in text with values from the AST or profile.
-pub(super) fn substitute(text: &str, ast: &GovernanceDocAst, profile: &GovernanceProfile) -> String {
+pub(super) fn substitute(
+    text: &str,
+    ast: &GovernanceDocAst,
+    profile: &GovernanceProfile,
+    context: &Value,
+) -> String {
     let mut result = text.to_owned();
 
     // AST-derived substitutions
@@ -1058,7 +1068,7 @@ pub(super) fn substitute(text: &str, ast: &GovernanceDocAst, profile: &Governanc
         let val = profile
             .company_address()
             .map(format_company_address)
-            .unwrap_or_else(|| "TBD".to_owned());
+            .unwrap_or_else(|| missing_field_marker("company_address"));
         result = result.replace("{{company_address}}", &val);
     }
 
@@ -1066,20 +1076,24 @@ pub(super) fn substitute(text: &str, ast: &GovernanceDocAst, profile: &Governanc
     if result.contains("{{registered_agent_name}}") {
         result = result.replace(
             "{{registered_agent_name}}",
-            profile.registered_agent_name().unwrap_or("TBD"),
+            profile
+                .registered_agent_name()
+                .unwrap_or("[MISSING: registered_agent_name]"),
         );
     }
     if result.contains("{{registered_agent_address}}") {
         result = result.replace(
             "{{registered_agent_address}}",
-            profile.registered_agent_address().unwrap_or("TBD"),
+            profile
+                .registered_agent_address()
+                .unwrap_or("[MISSING: registered_agent_address]"),
         );
     }
 
     // Founders
     if result.contains("{{founders_list}}") {
         let val = if profile.founders().is_empty() {
-            "TBD".to_owned()
+            missing_field_marker("founders_list")
         } else {
             profile
                 .founders()
@@ -1096,7 +1110,7 @@ pub(super) fn substitute(text: &str, ast: &GovernanceDocAst, profile: &Governanc
         let val = profile
             .fiscal_year_end()
             .map(format_fiscal_year_end)
-            .unwrap_or_else(|| "TBD".to_owned());
+            .unwrap_or_else(|| missing_field_marker("fiscal_year_end"));
         result = result.replace("{{fiscal_year_end}}", &val);
     }
 
@@ -1105,12 +1119,12 @@ pub(super) fn substitute(text: &str, ast: &GovernanceDocAst, profile: &Governanc
         let val = profile
             .board_size()
             .map(|n| n.to_string())
-            .unwrap_or_else(|| "TBD".to_owned());
+            .unwrap_or_else(|| missing_field_marker("board_size"));
         result = result.replace("{{board_size}}", &val);
     }
     if result.contains("{{directors_list}}") {
         let val = if profile.directors().is_empty() {
-            "TBD".to_owned()
+            missing_field_marker("directors_list")
         } else {
             profile
                 .directors()
@@ -1123,7 +1137,7 @@ pub(super) fn substitute(text: &str, ast: &GovernanceDocAst, profile: &Governanc
     }
     if result.contains("{{officers_list}}") {
         let val = if profile.officers().is_empty() {
-            "TBD".to_owned()
+            missing_field_marker("officers_list")
         } else {
             profile
                 .officers()
@@ -1140,14 +1154,14 @@ pub(super) fn substitute(text: &str, ast: &GovernanceDocAst, profile: &Governanc
         let val = profile
             .stock_details()
             .map(|s| format_number_with_commas(s.authorized_shares))
-            .unwrap_or_else(|| "TBD".to_owned());
+            .unwrap_or_else(|| missing_field_marker("authorized_shares"));
         result = result.replace("{{authorized_shares}}", &val);
     }
     if result.contains("{{par_value}}") {
         let val = profile
             .stock_details()
             .map(|s| format_par_value(s.par_value_cents))
-            .unwrap_or_else(|| "TBD".to_owned());
+            .unwrap_or_else(|| missing_field_marker("par_value"));
         result = result.replace("{{par_value}}", &val);
     }
 
@@ -1155,13 +1169,17 @@ pub(super) fn substitute(text: &str, ast: &GovernanceDocAst, profile: &Governanc
     if result.contains("{{incorporator_name}}") {
         result = result.replace(
             "{{incorporator_name}}",
-            profile.incorporator_name().unwrap_or("TBD"),
+            profile
+                .incorporator_name()
+                .unwrap_or("[MISSING: incorporator_name]"),
         );
     }
     if result.contains("{{incorporator_address}}") {
         result = result.replace(
             "{{incorporator_address}}",
-            profile.incorporator_address().unwrap_or("TBD"),
+            profile
+                .incorporator_address()
+                .unwrap_or("[MISSING: incorporator_address]"),
         );
     }
 
@@ -1169,7 +1187,9 @@ pub(super) fn substitute(text: &str, ast: &GovernanceDocAst, profile: &Governanc
     if result.contains("{{principal_name}}") {
         result = result.replace(
             "{{principal_name}}",
-            profile.principal_name().unwrap_or("TBD"),
+            profile
+                .principal_name()
+                .unwrap_or("[MISSING: principal_name]"),
         );
     }
 
@@ -1186,14 +1206,14 @@ pub(super) fn substitute(text: &str, ast: &GovernanceDocAst, profile: &Governanc
     // Founders stock table
     if result.contains("{{founders_stock_table}}") {
         let val = if profile.founders().is_empty() {
-            "TBD".to_owned()
+            missing_field_marker("founders_stock_table")
         } else {
             let mut table = String::from("| Name | Shares |\n|---|---|\n");
             for f in profile.founders() {
                 let shares = f
                     .shares
                     .map(|s| format_number_with_commas(s))
-                    .unwrap_or_else(|| "TBD".to_owned());
+                    .unwrap_or_else(|| missing_field_marker("founder.shares"));
                 table.push_str(&format!("| {} | {} |\n", f.name, shares));
             }
             table
@@ -1204,7 +1224,7 @@ pub(super) fn substitute(text: &str, ast: &GovernanceDocAst, profile: &Governanc
     // Founders table (membership %)
     if result.contains("{{founders_table}}") {
         let val = if profile.founders().is_empty() {
-            "TBD".to_owned()
+            missing_field_marker("founders_table")
         } else {
             let total: u64 = profile.founders().iter().filter_map(|f| f.shares).sum();
             let mut table = String::from("| Name | Membership % |\n|---|---|\n");
@@ -1212,9 +1232,9 @@ pub(super) fn substitute(text: &str, ast: &GovernanceDocAst, profile: &Governanc
                 let pct = if total > 0 {
                     f.shares
                         .map(|s| format!("{:.1}%", (s as f64 / total as f64) * 100.0))
-                        .unwrap_or_else(|| "TBD".to_owned())
+                        .unwrap_or_else(|| missing_field_marker("founder.membership_pct"))
                 } else {
-                    "TBD".to_owned()
+                    missing_field_marker("founder.membership_pct")
                 };
                 table.push_str(&format!("| {} | {} |\n", f.name, pct));
             }
@@ -1228,25 +1248,25 @@ pub(super) fn substitute(text: &str, ast: &GovernanceDocAst, profile: &Governanc
     if result.contains("{{purchaser_name}}") {
         let val = first_founder
             .map(|f| f.name.as_str())
-            .unwrap_or("TBD");
+            .unwrap_or("[MISSING: purchaser_name]");
         result = result.replace("{{purchaser_name}}", val);
     }
     if result.contains("{{purchase_shares}}") {
         let val = first_founder
             .and_then(|f| f.shares)
             .map(|s| format_number_with_commas(s))
-            .unwrap_or_else(|| "TBD".to_owned());
+            .unwrap_or_else(|| missing_field_marker("purchase_shares"));
         result = result.replace("{{purchase_shares}}", &val);
     }
     if result.contains("{{total_purchase_price}}") {
         let val = first_founder
             .and_then(|f| f.shares)
             .and_then(|shares| {
-                profile
-                    .stock_details()
-                    .map(|sd| format_usd((shares * sd.par_value_cents) as i64))
+                profile.stock_details().map(|sd| {
+                    format_usd(par_value_units_to_total_cents(shares, sd.par_value_cents))
+                })
             })
-            .unwrap_or_else(|| "TBD".to_owned());
+            .unwrap_or_else(|| missing_field_marker("total_purchase_price"));
         result = result.replace("{{total_purchase_price}}", &val);
     }
     if result.contains("{{vesting_months}}") {
@@ -1266,14 +1286,25 @@ pub(super) fn substitute(text: &str, ast: &GovernanceDocAst, profile: &Governanc
     if result.contains("{{ip_description}}") {
         let val = first_founder
             .and_then(|f| f.ip_contribution.as_deref())
-            .unwrap_or("TBD");
+            .unwrap_or("[MISSING: ip_description]");
         result = result.replace("{{ip_description}}", val);
     }
     if result.contains("{{assignor_name}}") {
         let val = first_founder
             .map(|f| f.name.as_str())
-            .unwrap_or("TBD");
+            .unwrap_or("[MISSING: assignor_name]");
         result = result.replace("{{assignor_name}}", val);
+    }
+
+    while let Some(start) = result.find("{{") {
+        let Some(end_rel) = result[start + 2..].find("}}") else {
+            break;
+        };
+        let end = start + 2 + end_rel;
+        let key = result[start + 2..end].trim().to_owned();
+        let replacement = resolve_context_field(&key, profile, context)
+            .unwrap_or_else(|| missing_field_marker(&key));
+        result.replace_range(start..end + 2, &replacement);
     }
 
     result
@@ -1369,7 +1400,10 @@ mod tests {
         assert!(rendered.contains("$5,000"), "should contain $5,000");
         assert!(rendered.contains("$2,500"), "should contain $2,500");
         assert!(rendered.contains("$500"), "should contain $500");
-        assert!(rendered.contains("$50,000"), "should contain per-vendor cap $50,000");
+        assert!(
+            rendered.contains("$50,000"),
+            "should contain per-vendor cap $50,000"
+        );
         assert!(rendered.contains("# Agent Delegation Schedule"));
         assert!(rendered.contains("Authority precedence"));
     }
@@ -1503,10 +1537,7 @@ mod tests {
             par_value_cents: 1,
             share_class: "Common Stock".to_owned(),
         });
-        profile.set_fiscal_year_end(super::super::profile::FiscalYearEnd {
-            month: 12,
-            day: 31,
-        });
+        profile.set_fiscal_year_end(super::super::profile::FiscalYearEnd { month: 12, day: 31 });
         profile
     }
 

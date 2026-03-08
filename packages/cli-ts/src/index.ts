@@ -116,9 +116,9 @@ entitiesCmd
   .command("show <entity-id>")
   .option("--json", "Output as JSON")
   .description("Show entity detail")
-  .action(async (entityId: string, opts) => {
+  .action(async (entityId: string, opts, cmd) => {
     const { entitiesShowCommand } = await import("./commands/entities.js");
-    await entitiesShowCommand(entityId, opts);
+    await entitiesShowCommand(entityId, { ...cmd.opts(), ...opts });
   });
 entitiesCmd
   .command("convert <entity-id>")
@@ -561,11 +561,12 @@ const documentsCmd = program
   });
 documentsCmd
   .command("signing-link <doc-id>")
+  .option("--entity-id <id>", "Entity ID (overrides active entity and parent command)")
   .description("Get a signing link for a document")
-  .action(async (docId: string, _opts, cmd) => {
+  .action(async (docId: string, opts, cmd) => {
     const parent = cmd.parent!.opts();
     const { documentsSigningLinkCommand } = await import("./commands/documents.js");
-    await documentsSigningLinkCommand(docId, { entityId: parent.entityId });
+    await documentsSigningLinkCommand(docId, { entityId: opts.entityId ?? parent.entityId });
   });
 documentsCmd
   .command("generate")

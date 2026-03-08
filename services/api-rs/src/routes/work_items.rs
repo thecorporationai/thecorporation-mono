@@ -282,9 +282,9 @@ async fn get_work_item(
         let layout = state.layout.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
-            store.read::<WorkItem>("main", work_item_id).map_err(|_| {
-                AppError::NotFound(format!("work item {} not found", work_item_id))
-            })
+            store
+                .read::<WorkItem>("main", work_item_id)
+                .map_err(|_| AppError::NotFound(format!("work item {} not found", work_item_id)))
         }
     })
     .await
@@ -323,9 +323,9 @@ async fn claim_work_item(
         let layout = state.layout.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
-            let mut w = store.read::<WorkItem>("main", work_item_id).map_err(|_| {
-                AppError::NotFound(format!("work item {} not found", work_item_id))
-            })?;
+            let mut w = store
+                .read::<WorkItem>("main", work_item_id)
+                .map_err(|_| AppError::NotFound(format!("work item {} not found", work_item_id)))?;
 
             // Auto-release expired claims before attempting to claim
             w.auto_release_expired_claim(Utc::now());
@@ -381,9 +381,9 @@ async fn complete_work_item(
         let layout = state.layout.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
-            let mut w = store.read::<WorkItem>("main", work_item_id).map_err(|_| {
-                AppError::NotFound(format!("work item {} not found", work_item_id))
-            })?;
+            let mut w = store
+                .read::<WorkItem>("main", work_item_id)
+                .map_err(|_| AppError::NotFound(format!("work item {} not found", work_item_id)))?;
 
             w.complete(req.completed_by, req.result)?;
 
@@ -434,9 +434,9 @@ async fn release_work_item(
         let layout = state.layout.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
-            let mut w = store.read::<WorkItem>("main", work_item_id).map_err(|_| {
-                AppError::NotFound(format!("work item {} not found", work_item_id))
-            })?;
+            let mut w = store
+                .read::<WorkItem>("main", work_item_id)
+                .map_err(|_| AppError::NotFound(format!("work item {} not found", work_item_id)))?;
 
             w.release_claim()?;
 
@@ -487,9 +487,9 @@ async fn cancel_work_item(
         let layout = state.layout.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
-            let mut w = store.read::<WorkItem>("main", work_item_id).map_err(|_| {
-                AppError::NotFound(format!("work item {} not found", work_item_id))
-            })?;
+            let mut w = store
+                .read::<WorkItem>("main", work_item_id)
+                .map_err(|_| AppError::NotFound(format!("work item {} not found", work_item_id)))?;
 
             w.cancel()?;
 

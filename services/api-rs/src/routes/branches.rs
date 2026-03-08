@@ -409,7 +409,7 @@ pub fn branch_routes() -> Router<AppState> {
         BranchListEntry,
         MergeBranchRequest,
         MergeBranchResponse,
-    )),
+    ))
 )]
 pub struct BranchesApi;
 

@@ -1,10 +1,16 @@
 {
   "name": "@thecorporation/server-linux-arm64-gnu",
-  "version": "0.1.0",
+  "version": "26.3.8",
   "description": "Linux arm64 binary for the Corporation API server",
-  "os": ["linux"],
-  "cpu": ["arm64"],
-  "files": ["bin/"],
+  "os": [
+    "linux"
+  ],
+  "cpu": [
+    "arm64"
+  ],
+  "files": [
+    "bin/"
+  ],
   "publishConfig": {
     "access": "public"
   },

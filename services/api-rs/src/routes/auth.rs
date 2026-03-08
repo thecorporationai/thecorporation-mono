@@ -693,6 +693,6 @@ pub fn auth_routes() -> Router<AppState> {
         TokenExchangeResponse,
         ChatSessionRequest,
         ChatSessionResponse,
-    )),
+    ))
 )]
 pub struct AuthApi;

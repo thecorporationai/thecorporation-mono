@@ -1,5 +1,5 @@
-use crate::domain::ids::WorkItemId;
 use super::types::WorkItemStatus;
+use crate::domain::ids::WorkItemId;
 
 #[derive(Debug, thiserror::Error)]
 pub enum WorkItemError {

@@ -240,7 +240,10 @@ impl PolicyDecision {
         debug_assert!(
             higher_source.outranks(lower_source),
             "push_precedence_conflict: higher_source {:?} (rank {}) does not outrank lower_source {:?} (rank {})",
-            higher_source, higher_source.rank(), lower_source, lower_source.rank()
+            higher_source,
+            higher_source.rank(),
+            lower_source,
+            lower_source.rank()
         );
         self.precedence_conflicts.push(PolicyConflict {
             higher_source,
@@ -288,8 +291,7 @@ pub fn evaluate_intent_typed(intent: &TypedIntent<'_>) -> PolicyDecision {
     let mut reasons = Vec::new();
     let mut clause_refs = vec!["delegation.authority_tiers".to_owned()];
 
-    let policy_mapped = parsed_cap
-        .is_some_and(|cap| ast.rules.tier_defaults.contains_key(&cap));
+    let policy_mapped = parsed_cap.is_some_and(|cap| ast.rules.tier_defaults.contains_key(&cap));
     let default_tier = parsed_cap
         .and_then(|cap| ast.rules.tier_defaults.get(&cap))
         .map(|t| t.into_inner())
@@ -459,7 +461,8 @@ fn check_lane(metadata: &Value, check: &LaneCheck) -> bool {
                 .iter()
                 .map(|s| s.trim().to_ascii_lowercase())
                 .collect::<Vec<_>>();
-            !arr.iter().any(|item| banned.iter().any(|blocked| blocked == item))
+            !arr.iter()
+                .any(|item| banned.iter().any(|blocked| blocked == item))
         }
         LaneCheck::ContainsAny { field, value, .. } => {
             let got = get_field(metadata, LaneField::from(*field));
@@ -683,10 +686,7 @@ pub fn evaluate_full_with_override(
 }
 
 /// Entry point for the typed pipeline: evaluates base intent and returns `PipelineDecision<Raw>`.
-pub(crate) fn evaluate_pipeline(
-    intent_type: &str,
-    metadata: &Value,
-) -> PipelineDecision<Raw> {
+pub(crate) fn evaluate_pipeline(intent_type: &str, metadata: &Value) -> PipelineDecision<Raw> {
     let decision = evaluate_intent(intent_type, metadata);
     PipelineDecision::new(decision)
 }
@@ -748,9 +748,7 @@ pub fn apply_mode_overrides(
         }
         GovernanceMode::IncidentLockdown => {
             if !LOCKDOWN_ALLOWLIST.contains(&intent_type) {
-                decision.add_blocker(
-                    "incident_lockdown mode blocks this capability".to_owned(),
-                );
+                decision.add_blocker("incident_lockdown mode blocks this capability".to_owned());
                 if was_allowed {
                     decision.push_precedence_conflict(
                         AuthoritySource::Resolution,
@@ -882,10 +880,7 @@ pub fn apply_service_agreement_overrides(
     service_agreement_executed: bool,
 ) -> PolicyDecision {
     let was_allowed = decision.allowed();
-    if entity_is_active
-        && decision.tier() == AuthorityTier::Tier1
-        && !service_agreement_executed
-    {
+    if entity_is_active && decision.tier() == AuthorityTier::Tier1 && !service_agreement_executed {
         decision.add_blocker(
             "active entities require an executed service agreement for tier_1 autonomy".to_owned(),
         );
@@ -940,7 +935,6 @@ pub fn amount_from_metadata_cents(metadata: &Value) -> Option<i64> {
                 .map(|dollars| dollars.saturating_mul(100))
         })
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -1019,14 +1013,22 @@ mod tests {
             "pay_recurring_obligation",
             &json!({"context": {"priceIncreasePercent": 5}}),
         );
-        assert_eq!(d.tier, AuthorityTier::Tier2, "without laneId, insurance lane should fail");
+        assert_eq!(
+            d.tier,
+            AuthorityTier::Tier2,
+            "without laneId, insurance lane should fail"
+        );
 
         // With laneId targeting renewal lane, only that lane is checked.
         let d = evaluate_intent(
             "pay_recurring_obligation",
             &json!({"laneId": "lane-3.3-renewal", "context": {"priceIncreasePercent": 5}}),
         );
-        assert_eq!(d.tier, AuthorityTier::Tier1, "with laneId, only renewal lane should be checked");
+        assert_eq!(
+            d.tier,
+            AuthorityTier::Tier1,
+            "with laneId, only renewal lane should be checked"
+        );
     }
 
     #[test]
@@ -1050,7 +1052,11 @@ mod tests {
             &json!({"laneId": "lane-3.1-saas", "modifications": ["exclusivity"]}),
         );
         assert_eq!(d.tier, AuthorityTier::Tier2);
-        assert!(d.escalation_reasons.iter().any(|r| r.contains("lane-3.1-saas")));
+        assert!(
+            d.escalation_reasons
+                .iter()
+                .any(|r| r.contains("lane-3.1-saas"))
+        );
     }
 
     #[test]
@@ -1060,7 +1066,11 @@ mod tests {
             &json!({"laneId": "lane-3.1-saas", "modifications": "exclusivity"}),
         );
         assert_eq!(d.tier, AuthorityTier::Tier2);
-        assert!(d.escalation_reasons.iter().any(|r| r.contains("lane-3.1-saas")));
+        assert!(
+            d.escalation_reasons
+                .iter()
+                .any(|r| r.contains("lane-3.1-saas"))
+        );
     }
 
     #[test]
@@ -1070,7 +1080,11 @@ mod tests {
             &json!({"laneId": "lane-3.1-vendor-po", "modifications": ["InDemnification"]}),
         );
         assert_eq!(d.tier, AuthorityTier::Tier2);
-        assert!(d.escalation_reasons.iter().any(|r| r.contains("restricted areas")));
+        assert!(
+            d.escalation_reasons
+                .iter()
+                .any(|r| r.contains("restricted areas"))
+        );
     }
 
     #[test]
@@ -1080,7 +1094,11 @@ mod tests {
             &json!({"laneId": "lane-3.2-1099", "modifications": ["equity_compensation"]}),
         );
         assert_eq!(d.tier, AuthorityTier::Tier2);
-        assert!(d.escalation_reasons.iter().any(|r| r.contains("lane-3.2-1099")));
+        assert!(
+            d.escalation_reasons
+                .iter()
+                .any(|r| r.contains("lane-3.2-1099"))
+        );
     }
 
     #[test]
@@ -1090,7 +1108,11 @@ mod tests {
             &json!({"laneId": "lane-3.3-admin", "modifications": ["economics"]}),
         );
         assert_eq!(d.tier, AuthorityTier::Tier2);
-        assert!(d.escalation_reasons.iter().any(|r| r.contains("lane-3.3-admin")));
+        assert!(
+            d.escalation_reasons
+                .iter()
+                .any(|r| r.contains("lane-3.3-admin"))
+        );
     }
 
     #[test]
@@ -1127,7 +1149,9 @@ mod tests {
         let supported: BTreeSet<EscalationCondition> =
             supported_escalation_conditions().iter().copied().collect();
         for rule in &ast.rules.escalation {
-            let condition = rule.condition.expect("AST escalation rules must have a condition");
+            let condition = rule
+                .condition
+                .expect("AST escalation rules must have a condition");
             assert!(
                 supported.contains(&condition),
                 "unsupported AST escalation condition: {:?} (rule id: {})",
@@ -1165,7 +1189,8 @@ mod tests {
     #[test]
     fn full_tier1_normal_mode_allowed() {
         let schedule = make_default_schedule();
-        let metadata = json!({"laneId": "lane-3.3-renewal", "context": {"priceIncreasePercent": 5}});
+        let metadata =
+            json!({"laneId": "lane-3.3-renewal", "context": {"priceIncreasePercent": 5}});
         let ctx = make_ctx(
             "pay_recurring_obligation",
             &metadata,
@@ -1189,7 +1214,11 @@ mod tests {
         );
         let d = evaluate_full(&ctx);
         assert!(!d.allowed);
-        assert!(d.blockers.iter().any(|b| b.contains("principal_unavailable")));
+        assert!(
+            d.blockers
+                .iter()
+                .any(|b| b.contains("principal_unavailable"))
+        );
     }
 
     #[test]
@@ -1238,7 +1267,8 @@ mod tests {
     #[test]
     fn full_service_agreement_blocks_when_missing() {
         let schedule = make_default_schedule();
-        let metadata = json!({"laneId": "lane-3.3-renewal", "context": {"priceIncreasePercent": 5}});
+        let metadata =
+            json!({"laneId": "lane-3.3-renewal", "context": {"priceIncreasePercent": 5}});
         let mut ctx = make_ctx(
             "pay_recurring_obligation",
             &metadata,
@@ -1257,7 +1287,8 @@ mod tests {
         // Set last reauthorized 100 days ago (> 90 day threshold).
         let old_date = Utc::now() - chrono::Duration::days(100);
         schedule.set_last_reauthorized_at(old_date);
-        let metadata = json!({"laneId": "lane-3.3-renewal", "context": {"priceIncreasePercent": 5}});
+        let metadata =
+            json!({"laneId": "lane-3.3-renewal", "context": {"priceIncreasePercent": 5}});
         let ctx = make_ctx(
             "pay_recurring_obligation",
             &metadata,
@@ -1346,7 +1377,8 @@ mod tests {
     #[test]
     fn pipeline_stages_produce_same_result_as_evaluate_full() {
         let schedule = make_default_schedule();
-        let metadata = json!({"laneId": "lane-3.3-renewal", "context": {"priceIncreasePercent": 5}});
+        let metadata =
+            json!({"laneId": "lane-3.3-renewal", "context": {"priceIncreasePercent": 5}});
         let ctx = make_ctx(
             "pay_recurring_obligation",
             &metadata,

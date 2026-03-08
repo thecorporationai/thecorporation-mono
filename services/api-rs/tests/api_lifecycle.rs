@@ -475,7 +475,12 @@ async fn create_resolution_for_body(
     vote_values: &[&str],
 ) -> (String, String) {
     let e_query = format!("entity_id={entity_id}");
-    let unique = uuid::Uuid::new_v4().to_string().split('-').next().unwrap().to_owned();
+    let unique = uuid::Uuid::new_v4()
+        .to_string()
+        .split('-')
+        .next()
+        .unwrap()
+        .to_owned();
 
     let (status, body) = post_json(
         app,
@@ -663,7 +668,11 @@ async fn create_authorized_round_intent(
         token,
     )
     .await;
-    assert_eq!(status, StatusCode::OK, "create approval artifact: {artifact}");
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "create approval artifact: {artifact}"
+    );
     let artifact_id = artifact["approval_artifact_id"].as_str().unwrap();
 
     let (status, bound) = post_json(
@@ -2437,7 +2446,11 @@ async fn test_execution_lifecycle() {
         &token,
     )
     .await;
-    assert_eq!(status, StatusCode::OK, "create approval artifact: {artifact}");
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "create approval artifact: {artifact}"
+    );
     let artifact_id = artifact["approval_artifact_id"].as_str().unwrap();
 
     let (status, bound) = post_json(
@@ -4359,8 +4372,8 @@ async fn test_packet_routes_and_escalation_evidence_resolution() {
 
 #[tokio::test]
 async fn test_governance_profile_and_doc_bundle_generation() {
-    let docs_root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../documents/governance");
+    let docs_root =
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../documents/governance");
     if !docs_root.is_dir() {
         eprintln!("skipping: documents/governance not present");
         return;
@@ -4935,14 +4948,12 @@ async fn test_provision_workspace_edge_cases() {
     let token = make_token(WorkspaceId::new());
 
     // Empty body {} → 422 (the exact bug that corp setup hit)
-    let (status, _body) = post_json(
-        &app,
-        "/v1/workspaces/provision",
-        json!({}),
-        &token,
-    )
-    .await;
-    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "empty body should be 422");
+    let (status, _body) = post_json(&app, "/v1/workspaces/provision", json!({}), &token).await;
+    assert_eq!(
+        status,
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "empty body should be 422"
+    );
 
     // null name → 422
     let (status, _body) = post_json(
@@ -4952,7 +4963,11 @@ async fn test_provision_workspace_edge_cases() {
         &token,
     )
     .await;
-    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "null name should be 422");
+    assert_eq!(
+        status,
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "null name should be 422"
+    );
 
     // empty string name → 400
     let (status, _body) = post_json(
@@ -4984,7 +4999,11 @@ async fn test_provision_workspace_edge_cases() {
         &token,
     )
     .await;
-    assert_eq!(status, StatusCode::CREATED, "256-char name should succeed: {body}");
+    assert_eq!(
+        status,
+        StatusCode::CREATED,
+        "256-char name should succeed: {body}"
+    );
     assert_eq!(body["name"], boundary_name);
 
     // Unknown fields → 422 (deny_unknown_fields)
@@ -4995,7 +5014,11 @@ async fn test_provision_workspace_edge_cases() {
         &token,
     )
     .await;
-    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "unknown fields should be 422");
+    assert_eq!(
+        status,
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "unknown fields should be 422"
+    );
 
     // Wrong type for name → 422
     let (status, _body) = post_json(
@@ -5005,7 +5028,11 @@ async fn test_provision_workspace_edge_cases() {
         &token,
     )
     .await;
-    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "numeric name should be 422");
+    assert_eq!(
+        status,
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "numeric name should be 422"
+    );
 }
 
 #[tokio::test]
@@ -5034,7 +5061,11 @@ async fn test_create_api_key_edge_cases() {
         &ws_token,
     )
     .await;
-    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "missing name should be 422");
+    assert_eq!(
+        status,
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "missing name should be 422"
+    );
 
     // Empty name → 400
     let (status, _body) = post_json(
@@ -5084,7 +5115,11 @@ async fn test_token_exchange_edge_cases() {
         &ws_token,
     )
     .await;
-    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "missing api_key should be 422");
+    assert_eq!(
+        status,
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "missing api_key should be 422"
+    );
 
     // Invalid key format (no sk_ prefix) → 401
     let (status, _body) = post_json(
@@ -5094,7 +5129,11 @@ async fn test_token_exchange_edge_cases() {
         &ws_token,
     )
     .await;
-    assert_eq!(status, StatusCode::UNAUTHORIZED, "invalid key format should be 401");
+    assert_eq!(
+        status,
+        StatusCode::UNAUTHORIZED,
+        "invalid key format should be 401"
+    );
 
     // ttl_seconds: 0 → 400
     let api_key = ws_body["api_key"].as_str().unwrap();
@@ -5124,29 +5163,136 @@ async fn test_chat_session_edge_cases() {
     let app = build_app(&tmp);
 
     // Missing email → 422
-    let (status, _body) = post_json_no_auth(
-        &app,
-        "/v1/chat/session",
-        json!({}),
-    )
-    .await;
-    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "missing email should be 422");
+    let (status, _body) = post_json_no_auth(&app, "/v1/chat/session", json!({})).await;
+    assert_eq!(
+        status,
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "missing email should be 422"
+    );
 
     // Empty email → 400
-    let (status, _body) = post_json_no_auth(
-        &app,
-        "/v1/chat/session",
-        json!({ "email": "" }),
-    )
-    .await;
+    let (status, _body) = post_json_no_auth(&app, "/v1/chat/session", json!({ "email": "" })).await;
     assert_eq!(status, StatusCode::BAD_REQUEST, "empty email should be 400");
 
     // Email without @ → 400
-    let (status, _body) = post_json_no_auth(
+    let (status, _body) =
+        post_json_no_auth(&app, "/v1/chat/session", json!({ "email": "not-an-email" })).await;
+    assert_eq!(
+        status,
+        StatusCode::BAD_REQUEST,
+        "email without @ should be 400"
+    );
+}
+
+#[tokio::test]
+async fn test_contact_profile_includes_notes() {
+    let tmp = TempDir::new().unwrap();
+    let app = build_app(&tmp);
+    let (_ws_id, entity_id, token) = create_entity(&app).await;
+
+    let (status, body) = post_json(
         &app,
-        "/v1/chat/session",
-        json!({ "email": "not-an-email" }),
+        "/v1/contacts",
+        json!({
+            "entity_id": entity_id,
+            "contact_type": "individual",
+            "name": "Notes Contact",
+            "email": "notes@example.com",
+            "category": "employee",
+            "notes": "prefers email communication"
+        }),
+        &token,
     )
     .await;
-    assert_eq!(status, StatusCode::BAD_REQUEST, "email without @ should be 400");
+    assert_eq!(status, StatusCode::OK, "create contact: {body}");
+    let contact_id = body["contact_id"].as_str().unwrap();
+
+    let (status, body) = get_json(
+        &app,
+        &format!("/v1/contacts/{contact_id}/profile?entity_id={entity_id}"),
+        &token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "contact profile: {body}");
+    assert_eq!(body["notes"], "prefers email communication");
+}
+
+#[tokio::test]
+async fn test_signing_link_resolves_document_across_workspace_entities() {
+    let tmp = TempDir::new().unwrap();
+    let app = build_app(&tmp);
+    let (_ws_id, first_entity_id, token) = create_entity(&app).await;
+
+    let (status, body) = post_json(
+        &app,
+        "/v1/formations",
+        json!({
+            "entity_type": "corporation",
+            "legal_name": "Fallback Lookup Corp",
+            "jurisdiction": "Delaware",
+            "members": [
+                {
+                    "name": "Carol Founder",
+                    "investor_type": "natural_person",
+                    "email": "carol@test.com",
+                    "ownership_pct": 100.0,
+                    "share_count": 1000,
+                    "role": "director"
+                }
+            ],
+            "authorized_shares": 1000000,
+            "par_value": "0.0001"
+        }),
+        &token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "create second entity: {body}");
+    let second_entity_id = body["entity_id"].as_str().unwrap();
+
+    let (status, body) = get_json(
+        &app,
+        &format!("/v1/formations/{first_entity_id}/documents"),
+        &token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "list documents: {body}");
+    let document_id = body
+        .as_array()
+        .and_then(|docs| docs.first())
+        .and_then(|doc| doc["document_id"].as_str())
+        .expect("document id");
+
+    let (status, body) = get_json(
+        &app,
+        &format!("/v1/sign/{document_id}?entity_id={second_entity_id}"),
+        &token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "signing link fallback: {body}");
+    assert_eq!(body["document_id"], document_id);
+    assert_eq!(body["signing_url"], format!("/human/sign/{document_id}"));
+    assert!(
+        body["token"]
+            .as_str()
+            .is_some_and(|token| token.starts_with("sig_")),
+        "expected signing token in response: {body}"
+    );
+}
+
+#[tokio::test]
+async fn test_trigger_digests_returns_explanatory_message_when_no_digests_generated() {
+    let tmp = TempDir::new().unwrap();
+    let app = build_app(&tmp);
+    let token = make_token(WorkspaceId::new());
+
+    let (status, body) = post_json(&app, "/v1/digests/trigger", json!({}), &token).await;
+    assert_eq!(status, StatusCode::OK, "trigger digests: {body}");
+    assert_eq!(body["triggered"], true);
+    assert_eq!(body["digest_count"], 0);
+    assert!(
+        body["message"]
+            .as_str()
+            .is_some_and(|message| message.contains("no digests were produced")),
+        "expected explanatory message: {body}"
+    );
 }

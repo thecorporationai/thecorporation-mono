@@ -14,7 +14,8 @@ use std::collections::{HashMap, HashSet};
 
 use super::AppState;
 use crate::auth::{RequireEquityRead, RequireEquityWrite};
-use chrono::NaiveDate;
+use crate::domain::contacts::contact::Contact;
+use crate::domain::contacts::types::{ContactCategory, ContactType};
 use crate::domain::equity::{
     control_link::{ControlLink, ControlType},
     conversion_execution::ConversionExecution,
@@ -32,8 +33,8 @@ use crate::domain::equity::{
     transfer::ShareTransfer,
     transfer_workflow::{TransferWorkflow, WorkflowExecutionStatus as TransferExecutionStatus},
     types::{
-        GoverningDocType, GrantType, ShareCount, TransferStatus, TransferType,
-        TransfereeRights, ValuationMethodology, ValuationStatus, ValuationType,
+        GoverningDocType, GrantType, ShareCount, TransferStatus, TransferType, TransfereeRights,
+        ValuationMethodology, ValuationStatus, ValuationType,
     },
     valuation::Valuation,
 };
@@ -44,27 +45,33 @@ use crate::domain::execution::{
     transaction_packet::{PacketItem, TransactionPacket, TransactionPacketStatus, WorkflowType},
     types::{AuthorityTier, IntentStatus},
 };
+use crate::domain::formation::{
+    document::Document,
+    entity::Entity,
+    types::{DocumentType, EntityType},
+};
 use crate::domain::governance::policy_engine::evaluate_intent as evaluate_governance_intent;
 use crate::domain::governance::{
     agenda_item::AgendaItem,
     body::GovernanceBody,
+    doc_ast, doc_generator,
     meeting::Meeting,
+    profile::{GOVERNANCE_PROFILE_PATH, GovernanceProfile},
     resolution::Resolution,
     types::{AgendaItemType, BodyType, MeetingStatus, MeetingType},
 };
 use crate::domain::ids::{
     AgendaItemId, ContactId, ControlLinkId, ConversionExecutionId, DocumentId, EntityId,
-    EquityRoundId, EquityRuleSetId, FundraisingWorkflowId, HolderId,
-    InstrumentId, IntentId, LegalEntityId, MeetingId, PacketId, PacketSignatureId, PositionId,
-    ResolutionId, ShareClassId, TransferId, TransferWorkflowId, ValuationId, WorkspaceId,
+    EquityRoundId, EquityRuleSetId, FundraisingWorkflowId, HolderId, InstrumentId, IntentId,
+    LegalEntityId, MeetingId, PacketId, PacketSignatureId, PositionId, ResolutionId, ShareClassId,
+    TransferId, TransferWorkflowId, ValuationId, WorkspaceId,
 };
-use crate::domain::contacts::contact::Contact;
-use crate::domain::contacts::types::{ContactCategory, ContactType};
 use crate::domain::treasury::types::Cents;
 use crate::error::AppError;
 use crate::git::commit::FileWrite;
 use crate::store::entity_store::EntityStore;
 use crate::store::stored_entity::StoredEntity;
+use chrono::NaiveDate;
 
 // ── Queries ──────────────────────────────────────────────────────────
 
@@ -763,7 +770,9 @@ fn resolve_contact_reference(
         }
     }
     match name_matches.len() {
-        0 => Err(AppError::NotFound(format!("contact not found: {reference}"))),
+        0 => Err(AppError::NotFound(format!(
+            "contact not found: {reference}"
+        ))),
         1 => Ok(name_matches.remove(0)),
         _ => Err(AppError::BadRequest(format!(
             "contact reference is ambiguous: {reference}; use a contact_id"
@@ -780,9 +789,9 @@ fn resolve_transfer_sender_contact(
             .read::<EquityGrant>("main", grant_id)
             .map_err(|_| AppError::NotFound(format!("grant not found: {reference}")))?;
         if let Some(contact_id) = grant.contact_id() {
-            return store
-                .read::<Contact>("main", contact_id)
-                .map_err(|_| AppError::NotFound(format!("contact {} not found for grant", contact_id)));
+            return store.read::<Contact>("main", contact_id).map_err(|_| {
+                AppError::NotFound(format!("contact {} not found for grant", contact_id))
+            });
         }
         return resolve_contact_reference(store, grant.recipient_name());
     }
@@ -1638,42 +1647,487 @@ fn packet_to_response(packet: &TransactionPacket) -> TransactionPacketResponse {
     }
 }
 
-fn default_transfer_docs() -> Vec<String> {
-    vec![
-        "documents/governance/transactions/stock-transfer-agreement.md".to_owned(),
-        "documents/governance/transactions/transfer-board-consent.md".to_owned(),
-    ]
+fn entity_profile_for_docs(
+    store: &EntityStore<'_>,
+) -> Result<(Entity, GovernanceProfile), AppError> {
+    let entity = store
+        .read_entity("main")
+        .map_err(|e| AppError::Internal(format!("read entity: {e}")))?;
+    let profile = store
+        .read_json::<GovernanceProfile>("main", GOVERNANCE_PROFILE_PATH)
+        .unwrap_or_else(|_| GovernanceProfile::default_for_entity(&entity));
+    Ok((entity, profile))
 }
 
-fn default_board_packet_docs() -> Vec<String> {
-    vec![
-        "documents/governance/transactions/board-consent.md".to_owned(),
-        "documents/governance/transactions/equity-issuance-approval.md".to_owned(),
-    ]
+fn contact_name_email(store: &EntityStore<'_>, contact_id: ContactId) -> (String, Option<String>) {
+    let (name, email, _) = contact_details(store, contact_id);
+    (name, email)
 }
 
-fn default_closing_packet_docs() -> Vec<String> {
-    vec![
-        "documents/governance/transactions/subscription-agreement.md".to_owned(),
-        "documents/governance/transactions/investor-rights-agreement.md".to_owned(),
-    ]
+fn contact_details(
+    store: &EntityStore<'_>,
+    contact_id: ContactId,
+) -> (String, Option<String>, Option<String>) {
+    store
+        .read::<Contact>("main", contact_id)
+        .map(|c| {
+            (
+                c.name().to_owned(),
+                c.email().map(ToOwned::to_owned),
+                c.mailing_address().map(ToOwned::to_owned),
+            )
+        })
+        .unwrap_or_else(|_| (contact_id.to_string(), None, None))
+}
+
+fn signature_req(
+    role: &str,
+    signer_name: String,
+    signer_email: Option<String>,
+) -> serde_json::Value {
+    let mut value = serde_json::json!({
+        "role": role,
+        "signer_name": signer_name,
+        "required": true
+    });
+    if let Some(email) = signer_email {
+        value["signer_email"] = serde_json::json!(email);
+    }
+    value
+}
+
+fn format_units(value: i64) -> String {
+    let digits = value.abs().to_string();
+    let mut out = String::with_capacity(digits.len() + digits.len() / 3);
+    for (idx, ch) in digits.chars().rev().enumerate() {
+        if idx > 0 && idx % 3 == 0 {
+            out.push(',');
+        }
+        out.push(ch);
+    }
+    let rendered: String = out.chars().rev().collect();
+    if value < 0 {
+        format!("-{rendered}")
+    } else {
+        rendered
+    }
+}
+
+fn metadata_string(value: &serde_json::Value, keys: &[&str]) -> Option<String> {
+    keys.iter().find_map(|key| {
+        value.get(*key).and_then(|entry| match entry {
+            serde_json::Value::String(s) if !s.trim().is_empty() => Some(s.clone()),
+            serde_json::Value::Number(number) => Some(number.to_string()),
+            _ => None,
+        })
+    })
+}
+
+fn round_instrument_label(round: &EquityRound) -> String {
+    metadata_string(round.metadata(), &["instrument"])
+        .unwrap_or_else(|| "Equity Securities".to_owned())
+}
+
+fn uses_principal_amount(instrument: &str) -> bool {
+    let normalized = instrument.to_ascii_lowercase();
+    normalized.contains("safe")
+        || normalized.contains("note")
+        || normalized.contains("debt")
+        || normalized.contains("convertible")
+        || normalized.contains("loan")
+}
+
+fn round_purchase_amount(round: &EquityRound) -> Result<String, AppError> {
+    metadata_string(round.metadata(), &["purchase_amount", "amount_authorized"])
+        .or_else(|| round.target_raise_cents().map(doc_generator::format_usd))
+        .ok_or_else(|| {
+            AppError::UnprocessableEntity(
+                "round is missing purchase amount or target_raise_cents for production documents"
+                    .to_owned(),
+            )
+        })
+}
+
+fn round_quantity_or_principal_amount(round: &EquityRound) -> Result<String, AppError> {
+    if let Some(raw) = round
+        .metadata()
+        .get("quantity_or_principal_amount")
+        .and_then(|v| match v {
+            serde_json::Value::String(s) => Some(s.clone()),
+            serde_json::Value::Number(n) => Some(n.to_string()),
+            _ => None,
+        })
+    {
+        return Ok(raw);
+    }
+
+    if let Some(quantity_units) = round
+        .metadata()
+        .get("quantity_units")
+        .and_then(serde_json::Value::as_i64)
+        .filter(|q| *q > 0)
+    {
+        return Ok(format!("{} shares", format_units(quantity_units)));
+    }
+
+    if let Some((raise, price)) = round
+        .target_raise_cents()
+        .and_then(|raise| round.round_price_cents().map(|price| (raise, price)))
+        .filter(|(_, price)| *price > 0)
+    {
+        if raise % price == 0 {
+            return Ok(format!("{} shares", format_units(raise / price)));
+        }
+
+        let shares = (raise as f64) / (price as f64);
+        let mut rendered = format!("{shares:.4}");
+        while rendered.contains('.') && rendered.ends_with('0') {
+            rendered.pop();
+        }
+        if rendered.ends_with('.') {
+            rendered.pop();
+        }
+        return Ok(format!("{rendered} shares"));
+    }
+
+    let instrument = round_instrument_label(round);
+    if uses_principal_amount(&instrument) {
+        return round_purchase_amount(round);
+    }
+
+    Err(AppError::UnprocessableEntity(format!(
+        "round is missing quantity_units or round_price_cents for equity instrument '{}'",
+        instrument
+    )))
+}
+
+fn validate_governance_document_content(
+    store: &EntityStore<'_>,
+    governance_tag: &str,
+    content: &serde_json::Value,
+) -> Result<(), AppError> {
+    let ast = doc_ast::default_doc_ast();
+    let doc_def = ast
+        .documents
+        .iter()
+        .find(|doc| doc.id == governance_tag || doc.path.contains(governance_tag))
+        .ok_or_else(|| {
+            AppError::Internal(format!(
+                "no AST document definition matches governance_tag '{}'",
+                governance_tag
+            ))
+        })?;
+    let entity = store
+        .read_entity("main")
+        .map_err(|e| AppError::Internal(format!("read entity: {e}")))?;
+    let profile = store
+        .read_json::<GovernanceProfile>("main", GOVERNANCE_PROFILE_PATH)
+        .unwrap_or_else(|_| GovernanceProfile::default_for_entity(&entity));
+    let entity_type = match entity.entity_type() {
+        EntityType::CCorp => doc_ast::EntityTypeKey::Corporation,
+        EntityType::Llc => doc_ast::EntityTypeKey::Llc,
+    };
+    let rendered = doc_generator::render_document_from_ast_with_context(
+        doc_def,
+        ast,
+        entity_type,
+        &profile,
+        content,
+    );
+    let warnings = doc_generator::detect_placeholder_warnings_for_text(governance_tag, &rendered);
+    if warnings.is_empty() {
+        Ok(())
+    } else {
+        Err(AppError::UnprocessableEntity(format!(
+            "document '{}' is incomplete for production use: {}",
+            governance_tag,
+            warnings.join("; ")
+        )))
+    }
+}
+
+fn create_governance_document(
+    store: &EntityStore<'_>,
+    entity_id: EntityId,
+    workspace_id: WorkspaceId,
+    document_type: DocumentType,
+    title: String,
+    governance_tag: &str,
+    fields: serde_json::Value,
+    signature_requirements: Vec<serde_json::Value>,
+) -> Result<DocumentId, AppError> {
+    let document_id = DocumentId::new();
+    let mut content = serde_json::json!({ "fields": fields });
+    if !signature_requirements.is_empty() {
+        content["signature_requirements"] = serde_json::Value::Array(signature_requirements);
+    }
+    validate_governance_document_content(store, governance_tag, &content)?;
+    let doc = Document::new(
+        document_id,
+        entity_id,
+        workspace_id,
+        document_type,
+        title,
+        content,
+        Some(governance_tag.to_owned()),
+        None,
+    );
+    store
+        .write_document(
+            "main",
+            &doc,
+            &format!("Generate document {document_type:?} {document_id}"),
+        )
+        .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
+    Ok(document_id)
+}
+
+fn to_packet_items_with_store(store: &EntityStore<'_>, documents: &[String]) -> Vec<PacketItem> {
+    documents
+        .iter()
+        .enumerate()
+        .map(|(idx, doc)| {
+            let title = doc
+                .parse::<DocumentId>()
+                .ok()
+                .and_then(|document_id| store.read_document("main", document_id).ok())
+                .map(|d| d.title().to_owned())
+                .unwrap_or_else(|| doc.rsplit('/').next().unwrap_or(doc).to_owned());
+            PacketItem {
+                item_id: format!("item-{}", idx + 1),
+                title,
+                document_path: doc.clone(),
+                required: true,
+            }
+        })
+        .collect()
 }
 
 fn default_required_signers() -> Vec<String> {
     vec!["officer".to_owned(), "board".to_owned()]
 }
 
-fn to_packet_items(documents: &[String]) -> Vec<PacketItem> {
-    documents
-        .iter()
-        .enumerate()
-        .map(|(idx, doc)| PacketItem {
-            item_id: format!("item-{}", idx + 1),
-            title: doc.rsplit('/').next().unwrap_or(doc).to_owned(),
-            document_path: doc.clone(),
-            required: true,
-        })
-        .collect()
+fn generate_transfer_documents(
+    store: &EntityStore<'_>,
+    workspace_id: WorkspaceId,
+    entity_id: EntityId,
+    transfer: &ShareTransfer,
+) -> Result<Vec<String>, AppError> {
+    let (entity, _profile) = entity_profile_for_docs(store)?;
+    let (transferor_name, transferor_email) =
+        contact_name_email(store, transfer.sender_contact_id());
+    let (transferee_name, transferee_email) = contact_name_email(store, transfer.to_contact_id());
+    let share_class = store
+        .read::<ShareClass>("main", transfer.share_class_id())
+        .ok();
+    let class_label = share_class
+        .as_ref()
+        .map(|c| c.class_code().to_owned())
+        .unwrap_or_else(|| transfer.share_class_id().to_string());
+    let (consideration, per_share) = match transfer.price_per_share_cents() {
+        Some(price) => (
+            doc_generator::format_usd(price.raw() * transfer.share_count().raw()),
+            doc_generator::format_usd(price.raw()),
+        ),
+        None => match transfer.transfer_type() {
+            TransferType::Gift => (
+                "No cash consideration; transfer designated as a gift".to_owned(),
+                "No cash price".to_owned(),
+            ),
+            TransferType::TrustTransfer => (
+                "No cash consideration; transfer into trust".to_owned(),
+                "No cash price".to_owned(),
+            ),
+            TransferType::Estate => (
+                "No cash consideration; transfer pursuant to estate administration".to_owned(),
+                "No cash price".to_owned(),
+            ),
+            TransferType::SecondarySale | TransferType::Other => {
+                return Err(AppError::UnprocessableEntity(
+                    "price_per_share_cents is required for sale transfers and other priced transfers"
+                        .to_owned(),
+                ));
+            }
+        },
+    };
+    let transfer_doc = create_governance_document(
+        store,
+        entity_id,
+        workspace_id,
+        DocumentType::StockTransferAgreement,
+        format!(
+            "Stock Transfer Agreement — {} to {}",
+            transferor_name, transferee_name
+        ),
+        "stock_transfer_agreement",
+        serde_json::json!({
+            "effective_date": chrono::Utc::now().date_naive().to_string(),
+            "entity_legal_name": entity.legal_name(),
+            "transferor_name": transferor_name,
+            "transferee_name": transferee_name,
+            "security_class": class_label,
+            "units_transferred": transfer.share_count().raw().to_string(),
+            "consideration": consideration,
+            "price_per_share": per_share,
+            "closing_date": chrono::Utc::now().date_naive().to_string(),
+            "ledger_reference": transfer.transfer_id().to_string(),
+            "transfer_type": format!("{:?}", transfer.transfer_type()),
+        }),
+        vec![
+            signature_req("Transferor", transferor_name, transferor_email),
+            signature_req("Transferee", transferee_name, transferee_email),
+            signature_req("Company", entity.legal_name().to_owned(), None),
+        ],
+    )?;
+    let consent_doc = create_governance_document(
+        store,
+        entity_id,
+        workspace_id,
+        DocumentType::TransferBoardConsent,
+        format!("Transfer Approval Consent — {}", entity.legal_name()),
+        "transfer_board_consent",
+        serde_json::json!({
+            "effective_date": chrono::Utc::now().date_naive().to_string(),
+            "entity_legal_name": entity.legal_name(),
+            "transferor_name": contact_name_email(store, transfer.sender_contact_id()).0,
+            "transferee_name": contact_name_email(store, transfer.to_contact_id()).0,
+            "units_transferred": transfer.share_count().raw().to_string(),
+            "security_class": share_class.map(|c| c.class_code().to_owned()).unwrap_or_else(|| transfer.share_class_id().to_string()),
+            "consideration": consideration.clone(),
+            "closing_target_date": chrono::Utc::now().date_naive().to_string(),
+        }),
+        vec![signature_req(
+            "Approving Signatory",
+            entity.legal_name().to_owned(),
+            None,
+        )],
+    )?;
+    Ok(vec![transfer_doc.to_string(), consent_doc.to_string()])
+}
+
+fn generate_fundraising_packet_documents(
+    store: &EntityStore<'_>,
+    workspace_id: WorkspaceId,
+    entity_id: EntityId,
+    round: &EquityRound,
+    closing: bool,
+) -> Result<Vec<String>, AppError> {
+    let (entity, _profile) = entity_profile_for_docs(store)?;
+    let (accepted_investor_name, accepted_investor_email, accepted_investor_address) = round
+        .accepted_by_contact_id()
+        .map(|contact_id| contact_details(store, contact_id))
+        .unwrap_or_else(|| (String::new(), None, None));
+    let investor = (!accepted_investor_name.is_empty())
+        .then_some(accepted_investor_name.clone())
+        .or_else(|| metadata_string(round.metadata(), &["investor_name", "subscriber_name"]))
+        .unwrap_or_else(|| "Investor".to_owned());
+    let investor_email = accepted_investor_email.or_else(|| {
+        metadata_string(
+            round.metadata(),
+            &["investor_email", "subscriber_email", "email"],
+        )
+    });
+    let investor_address = accepted_investor_address.or_else(|| {
+        metadata_string(
+            round.metadata(),
+            &["investor_address", "subscriber_address", "mailing_address"],
+        )
+    });
+    let amount = round_purchase_amount(round)?;
+    let quantity_or_principal_amount = round_quantity_or_principal_amount(round)?;
+    let instrument = round_instrument_label(round);
+    if closing {
+        let subscription_doc = create_governance_document(
+            store,
+            entity_id,
+            workspace_id,
+            DocumentType::SubscriptionAgreement,
+            format!("Subscription Agreement — {}", investor),
+            "subscription_agreement",
+            serde_json::json!({
+                "effective_date": chrono::Utc::now().date_naive().to_string(),
+                "entity_legal_name": entity.legal_name(),
+                "subscriber_name": investor,
+                "subscriber_address": investor_address.clone(),
+                "subscriber_email": investor_email.clone(),
+                "security_subscribed_for": instrument,
+                "quantity_or_principal_amount": quantity_or_principal_amount,
+                "purchase_amount": amount,
+                "closing_date": chrono::Utc::now().date_naive().to_string(),
+            }),
+            vec![
+                signature_req("Subscriber", investor.clone(), None),
+                signature_req("Company", entity.legal_name().to_owned(), None),
+            ],
+        )?;
+        let rights_doc = create_governance_document(
+            store,
+            entity_id,
+            workspace_id,
+            DocumentType::InvestorRightsAgreement,
+            format!("Investor Rights Agreement — {}", investor),
+            "investor_rights_agreement",
+            serde_json::json!({
+                "effective_date": chrono::Utc::now().date_naive().to_string(),
+                "entity_legal_name": entity.legal_name(),
+                "investor_name": investor,
+                "investor_address": investor_address,
+            }),
+            vec![
+                signature_req("Investor", investor, investor_email),
+                signature_req("Company", entity.legal_name().to_owned(), None),
+            ],
+        )?;
+        Ok(vec![subscription_doc.to_string(), rights_doc.to_string()])
+    } else {
+        let board_doc = create_governance_document(
+            store,
+            entity_id,
+            workspace_id,
+            DocumentType::FinancingBoardConsent,
+            format!("Board Consent for Financing — {}", round.name()),
+            "financing_board_consent",
+            serde_json::json!({
+                "effective_date": chrono::Utc::now().date_naive().to_string(),
+                "entity_legal_name": entity.legal_name(),
+                "transaction_type": round.name(),
+                "counterparty_name": investor,
+                "amount_authorized": amount,
+                "instrument_name": instrument,
+                "closing_window_start": chrono::Utc::now().date_naive().to_string(),
+                "closing_window_end": chrono::Utc::now().date_naive().to_string(),
+            }),
+            vec![signature_req(
+                "Approving Signatory",
+                entity.legal_name().to_owned(),
+                None,
+            )],
+        )?;
+        let issuance_doc = create_governance_document(
+            store,
+            entity_id,
+            workspace_id,
+            DocumentType::EquityIssuanceApproval,
+            format!("Equity Issuance Approval — {}", round.name()),
+            "equity_issuance_approval",
+            serde_json::json!({
+                "effective_date": chrono::Utc::now().date_naive().to_string(),
+                "entity_legal_name": entity.legal_name(),
+                "recipient_names": investor,
+                "security_type_and_class": instrument,
+                "quantity_or_principal_amount": quantity_or_principal_amount,
+                "purchase_price_or_consideration": amount,
+                "vesting_or_milestone_conditions": "None",
+                "securities_exemption_basis": "Private placement exemption",
+            }),
+            vec![signature_req(
+                "Approving Signatory",
+                entity.legal_name().to_owned(),
+                None,
+            )],
+        )?;
+        Ok(vec![board_doc.to_string(), issuance_doc.to_string()])
+    }
 }
 
 // ── Handlers ─────────────────────────────────────────────────────────
@@ -2456,14 +2910,14 @@ async fn generate_transfer_workflow_docs(
                     "transfer workflow belongs to a different entity".to_owned(),
                 ));
             }
-            store
+            let transfer = store
                 .read::<ShareTransfer>("main", workflow.transfer_id())
                 .map_err(|_| {
                     AppError::NotFound(format!("transfer {} not found", workflow.transfer_id()))
                 })?;
 
             let docs = if req.documents.is_empty() {
-                default_transfer_docs()
+                generate_transfer_documents(&store, workspace_id, entity_id, &transfer)?
             } else {
                 req.documents
             };
@@ -3210,8 +3664,19 @@ async fn generate_fundraising_board_packet(
                 ));
             }
 
+            let round = store
+                .read::<EquityRound>("main", workflow.round_id())
+                .map_err(|_| {
+                    AppError::NotFound(format!("equity round {} not found", workflow.round_id()))
+                })?;
             let docs = if req.documents.is_empty() {
-                default_board_packet_docs()
+                generate_fundraising_packet_documents(
+                    &store,
+                    workspace_id,
+                    entity_id,
+                    &round,
+                    false,
+                )?
             } else {
                 req.documents
             };
@@ -3468,8 +3933,19 @@ async fn generate_fundraising_closing_packet(
                 ));
             }
 
+            let round = store
+                .read::<EquityRound>("main", workflow.round_id())
+                .map_err(|_| {
+                    AppError::NotFound(format!("equity round {} not found", workflow.round_id()))
+                })?;
             let docs = if req.documents.is_empty() {
-                default_closing_packet_docs()
+                generate_fundraising_packet_documents(
+                    &store,
+                    workspace_id,
+                    entity_id,
+                    &round,
+                    true,
+                )?
             } else {
                 req.documents
             };
@@ -3912,7 +4388,12 @@ async fn compile_transfer_workflow_packet(
                 ))
             })?;
             let documents = if workflow.generated_documents().is_empty() {
-                default_transfer_docs()
+                let transfer = store
+                    .read::<ShareTransfer>("main", workflow.transfer_id())
+                    .map_err(|_| {
+                        AppError::NotFound(format!("transfer {} not found", workflow.transfer_id()))
+                    })?;
+                generate_transfer_documents(&store, workspace_id, entity_id, &transfer)?
             } else {
                 workflow.generated_documents().to_vec()
             };
@@ -3922,13 +4403,14 @@ async fn compile_transfer_workflow_packet(
                 intent_id,
                 WorkflowType::Transfer,
                 workflow_id.to_string(),
-                to_packet_items(&documents),
+                to_packet_items_with_store(&store, &documents),
                 if req.required_signers.is_empty() {
                     default_required_signers()
                 } else {
                     req.required_signers
                 },
             );
+            workflow.add_generated_documents(documents.clone());
             workflow.mark_packet_compiled(packet.packet_id(), packet.manifest_hash().to_owned());
 
             let files = vec![
@@ -4013,14 +4495,31 @@ async fn compile_fundraising_workflow_packet(
                 ))
             })?;
 
+            let round = store
+                .read::<EquityRound>("main", workflow.round_id())
+                .map_err(|_| {
+                    AppError::NotFound(format!("equity round {} not found", workflow.round_id()))
+                })?;
             let documents = if is_close {
                 if workflow.closing_packet_documents().is_empty() {
-                    default_closing_packet_docs()
+                    generate_fundraising_packet_documents(
+                        &store,
+                        workspace_id,
+                        entity_id,
+                        &round,
+                        true,
+                    )?
                 } else {
                     workflow.closing_packet_documents().to_vec()
                 }
             } else if workflow.board_packet_documents().is_empty() {
-                default_board_packet_docs()
+                generate_fundraising_packet_documents(
+                    &store,
+                    workspace_id,
+                    entity_id,
+                    &round,
+                    false,
+                )?
             } else {
                 workflow.board_packet_documents().to_vec()
             };
@@ -4031,13 +4530,18 @@ async fn compile_fundraising_workflow_packet(
                 intent_id,
                 WorkflowType::Fundraising,
                 workflow_id.to_string(),
-                to_packet_items(&documents),
+                to_packet_items_with_store(&store, &documents),
                 if req.required_signers.is_empty() {
                     default_required_signers()
                 } else {
                     req.required_signers
                 },
             );
+            if is_close {
+                workflow.add_closing_packet_documents(documents.clone());
+            } else {
+                workflow.add_board_packet_documents(documents.clone());
+            }
             workflow.mark_packet_compiled(packet.packet_id(), packet.manifest_hash().to_owned());
 
             let files = vec![
@@ -5413,17 +5917,17 @@ async fn add_round_security(
             let holder_id = if let Some(hid) = req.holder_id {
                 // Direct holder_id — validate it exists
                 if !holders.iter().any(|h| h.holder_id() == hid) {
-                    return Err(AppError::BadRequest(
-                        "holder_id does not exist".to_owned(),
-                    ));
+                    return Err(AppError::BadRequest("holder_id does not exist".to_owned()));
                 }
                 hid
             } else if let Some(ref email) = req.email {
                 // Look up contact by email, then find linked holder
                 let contacts = read_all::<Contact>(&store)?;
-                let contact = contacts
-                    .iter()
-                    .find(|c| c.email().map(|e| e.eq_ignore_ascii_case(email)).unwrap_or(false));
+                let contact = contacts.iter().find(|c| {
+                    c.email()
+                        .map(|e| e.eq_ignore_ascii_case(email))
+                        .unwrap_or(false)
+                });
 
                 if let Some(contact) = contact {
                     // Find holder linked to this contact
@@ -5473,14 +5977,8 @@ async fn add_round_security(
                     );
                     let hid = new_holder.holder_id();
                     let files = vec![
-                        FileWrite::json(
-                            format!("contacts/{}.json", contact_id),
-                            &contact,
-                        )?,
-                        FileWrite::json(
-                            format!("cap-table/holders/{}.json", hid),
-                            &new_holder,
-                        )?,
+                        FileWrite::json(format!("contacts/{}.json", contact_id), &contact)?,
+                        FileWrite::json(format!("cap-table/holders/{}.json", hid), &new_holder)?,
                     ];
                     store
                         .commit(
@@ -5513,14 +6011,8 @@ async fn add_round_security(
                 );
                 let hid = new_holder.holder_id();
                 let files = vec![
-                    FileWrite::json(
-                        format!("contacts/{}.json", contact_id),
-                        &contact,
-                    )?,
-                    FileWrite::json(
-                        format!("cap-table/holders/{}.json", hid),
-                        &new_holder,
-                    )?,
+                    FileWrite::json(format!("contacts/{}.json", contact_id), &contact)?,
+                    FileWrite::json(format!("cap-table/holders/{}.json", hid), &new_holder)?,
                 ];
                 store
                     .commit(
@@ -5543,9 +6035,8 @@ async fn add_round_security(
 
             // Read pending securities, append, write back
             let pending_path = format!("cap-table/pending_securities/{}.json", round_id);
-            let mut pending: PendingSecuritiesFile = store
-                .read_json("main", &pending_path)
-                .map_err(|e| {
+            let mut pending: PendingSecuritiesFile =
+                store.read_json("main", &pending_path).map_err(|e| {
                     AppError::NotFound(format!("pending securities file not found: {e}"))
                 })?;
             pending.securities.push(security.clone());
@@ -5614,9 +6105,8 @@ async fn issue_staged_round(
 
             // Read pending securities
             let pending_path = format!("cap-table/pending_securities/{}.json", round_id);
-            let pending: PendingSecuritiesFile = store
-                .read_json("main", &pending_path)
-                .map_err(|e| {
+            let pending: PendingSecuritiesFile =
+                store.read_json("main", &pending_path).map_err(|e| {
                     AppError::NotFound(format!("pending securities file not found: {e}"))
                 })?;
             if pending.securities.is_empty() {
@@ -5671,9 +6161,9 @@ async fn issue_staged_round(
             }
 
             // Close the round
-            round.close_from_draft().map_err(|e| {
-                AppError::Internal(format!("failed to close round: {e}"))
-            })?;
+            round
+                .close_from_draft()
+                .map_err(|e| AppError::Internal(format!("failed to close round: {e}")))?;
             files.push(FileWrite::json(
                 format!("cap-table/rounds/{}.json", round.equity_round_id()),
                 &round,
@@ -5741,9 +6231,7 @@ async fn issue_staged_round(
                 if let Some(ref meeting) = new_meeting {
                     files.push(
                         FileWrite::json(Meeting::storage_path(meeting_id), meeting)
-                            .map_err(|e| {
-                                AppError::Internal(format!("serialize meeting: {e}"))
-                            })?,
+                            .map_err(|e| AppError::Internal(format!("serialize meeting: {e}")))?,
                     );
                 }
 
@@ -5763,7 +6251,12 @@ async fn issue_staged_round(
                 )
                 .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
 
-            Ok::<_, AppError>((round, result_positions, board_meeting_id, board_agenda_item_id))
+            Ok::<_, AppError>((
+                round,
+                result_positions,
+                board_meeting_id,
+                board_agenda_item_id,
+            ))
         }
     })
     .await
@@ -5914,12 +6407,54 @@ async fn create_valuation(
             .require_positive()
             .map_err(|e| AppError::BadRequest(e.to_owned()))?;
     }
+    if req.valuation_type == ValuationType::FourOhNineA {
+        if req.fmv_per_share_cents.is_none() {
+            return Err(AppError::BadRequest(
+                "fmv_per_share_cents is required for a 409A valuation report".to_owned(),
+            ));
+        }
+        if req.enterprise_value_cents.is_none() {
+            return Err(AppError::BadRequest(
+                "enterprise_value_cents is required for a 409A valuation report".to_owned(),
+            ));
+        }
+    }
 
     let valuation = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
+            let (entity, _profile) = entity_profile_for_docs(&store)?;
             let valuation_id = ValuationId::new();
+            let report_document_id = if let Some(document_id) = req.report_document_id {
+                Some(document_id)
+            } else if req.valuation_type == ValuationType::FourOhNineA {
+                let provider_name = req
+                    .provider_contact_id
+                    .map(|contact_id| contact_name_email(&store, contact_id).0)
+                    .unwrap_or_else(|| "Independent Valuation Provider".to_owned());
+                Some(create_governance_document(
+                    &store,
+                    entity_id,
+                    workspace_id,
+                    DocumentType::FourOhNineAValuationReport,
+                    format!("409A Valuation Report — {}", entity.legal_name()),
+                    "four_oh_nine_a_valuation_report",
+                    serde_json::json!({
+                        "effective_date": req.effective_date.to_string(),
+                        "entity_legal_name": entity.legal_name(),
+                        "valuation_type": "409A",
+                        "methodology": format!("{:?}", req.methodology),
+                        "provider_name": provider_name,
+                        "fmv_per_share": doc_generator::format_usd(req.fmv_per_share_cents.unwrap_or_default()),
+                        "enterprise_value": doc_generator::format_usd(req.enterprise_value_cents.unwrap_or_default()),
+                        "expiration_date": (req.effective_date + chrono::Duration::days(365)).to_string(),
+                    }),
+                    Vec::new(),
+                )?)
+            } else {
+                None
+            };
             let valuation = Valuation::new(
                 valuation_id,
                 entity_id,
@@ -5931,10 +6466,15 @@ async fn create_valuation(
                 req.hurdle_amount_cents.map(Cents::new),
                 req.methodology,
                 req.provider_contact_id,
-                req.report_document_id,
+                report_document_id,
             );
             store
-                .write::<Valuation>("main", valuation_id, &valuation, &format!("Create valuation {valuation_id}"))
+                .write::<Valuation>(
+                    "main",
+                    valuation_id,
+                    &valuation,
+                    &format!("Create valuation {valuation_id}"),
+                )
                 .map_err(|e| AppError::Internal(format!("commit: {e}")))?;
             Ok::<_, AppError>(valuation)
         }
@@ -6115,7 +6655,10 @@ async fn submit_valuation_for_approval(
                 FileWrite::json(Valuation::storage_path(valuation_id), &valuation)
                     .map_err(|e| AppError::Internal(format!("serialize valuation: {e}")))?,
                 FileWrite::json(
-                    format!("governance/meetings/{}/agenda/{}.json", meeting_id, agenda_item_id),
+                    format!(
+                        "governance/meetings/{}/agenda/{}.json",
+                        meeting_id, agenda_item_id
+                    ),
                     &agenda_item,
                 )
                 .map_err(|e| AppError::Internal(format!("serialize agenda item: {e}")))?,
@@ -6196,7 +6739,12 @@ async fn approve_valuation(
                         .map_err(|e| AppError::Internal(format!("read resolution: {e}")))?;
                     let body = store
                         .read::<GovernanceBody>("main", meeting.body_id())
-                        .map_err(|_| AppError::NotFound(format!("governance body {} not found", meeting.body_id())))?;
+                        .map_err(|_| {
+                            AppError::NotFound(format!(
+                                "governance body {} not found",
+                                meeting.body_id()
+                            ))
+                        })?;
                     if body.entity_id() != entity_id {
                         return Err(AppError::BadRequest(
                             "approval resolution must belong to the same entity".to_owned(),
@@ -6257,11 +6805,7 @@ async fn approve_valuation(
             }
 
             store
-                .commit(
-                    "main",
-                    &format!("Approve valuation {valuation_id}"),
-                    files,
-                )
+                .commit("main", &format!("Approve valuation {valuation_id}"), files)
                 .map_err(|e| AppError::Internal(format!("commit: {e}")))?;
 
             Ok::<_, AppError>(valuation)
@@ -6331,7 +6875,9 @@ async fn create_legacy_share_transfer(
             let share_class = read_all::<ShareClass>(&store)?
                 .into_iter()
                 .find(|sc| sc.share_class_id() == share_class_id)
-                .ok_or_else(|| AppError::BadRequest(format!("share class {} not found", share_class_id)))?;
+                .ok_or_else(|| {
+                    AppError::BadRequest(format!("share class {} not found", share_class_id))
+                })?;
             let transfer_id = TransferId::new();
             let mut transfer = ShareTransfer::new(
                 transfer_id,
@@ -6712,10 +7258,7 @@ pub fn equity_routes() -> Router<AppState> {
         .route("/v1/equity/control-map", get(get_control_map))
         .route("/v1/equity/dilution/preview", get(get_dilution_preview))
         .route("/v1/valuations", post(create_valuation))
-        .route(
-            "/v1/entities/{entity_id}/valuations",
-            get(list_valuations),
-        )
+        .route("/v1/entities/{entity_id}/valuations", get(list_valuations))
         .route(
             "/v1/entities/{entity_id}/current-409a",
             get(get_current_409a),

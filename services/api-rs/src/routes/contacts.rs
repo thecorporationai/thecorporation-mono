@@ -29,6 +29,8 @@ pub struct CreateContactRequest {
     pub name: String,
     #[serde(default)]
     pub email: Option<String>,
+    #[serde(default)]
+    pub mailing_address: Option<String>,
     pub category: ContactCategory,
     #[serde(default)]
     pub notes: Option<String>,
@@ -43,6 +45,7 @@ pub struct ContactResponse {
     pub contact_type: ContactType,
     pub name: String,
     pub email: Option<String>,
+    pub mailing_address: Option<String>,
     pub phone: Option<String>,
     pub category: ContactCategory,
     pub cap_table_access: CapTableAccess,
@@ -60,6 +63,7 @@ fn contact_to_response(c: &Contact) -> ContactResponse {
         contact_type: c.contact_type(),
         name: c.name().to_owned(),
         email: c.email().map(|s| s.to_owned()),
+        mailing_address: c.mailing_address().map(|s| s.to_owned()),
         phone: c.phone().map(|s| s.to_owned()),
         category: c.category(),
         cap_table_access: c.cap_table_access(),
@@ -91,11 +95,15 @@ fn normalize_email(email: &str) -> String {
 fn validate_email(email: &str) -> Result<String, AppError> {
     let normalized = normalize_email(email);
     if normalized.is_empty() || !normalized.contains('@') {
-        return Err(AppError::BadRequest("email must be a valid address".to_owned()));
+        return Err(AppError::BadRequest(
+            "email must be a valid address".to_owned(),
+        ));
     }
     let parts: Vec<&str> = normalized.splitn(2, '@').collect();
     if parts.len() != 2 || parts[0].is_empty() || parts[1].is_empty() || !parts[1].contains('.') {
-        return Err(AppError::BadRequest("email must be a valid address".to_owned()));
+        return Err(AppError::BadRequest(
+            "email must be a valid address".to_owned(),
+        ));
     }
     Ok(normalized)
 }
@@ -120,6 +128,15 @@ async fn create_contact(
     let entity_id = req.entity_id;
     if !auth.allows_entity(entity_id) {
         return Err(AppError::Forbidden("entity access denied".to_owned()));
+    }
+    if req
+        .mailing_address
+        .as_deref()
+        .is_some_and(|s| s.trim().is_empty())
+    {
+        return Err(AppError::BadRequest(
+            "mailing_address cannot be empty".to_owned(),
+        ));
     }
     let normalized_email = req.email.as_deref().map(validate_email).transpose()?;
 
@@ -154,6 +171,11 @@ async fn create_contact(
                 normalized_email,
                 req.category,
             );
+            if let Some(mailing_address) = req.mailing_address
+                && !mailing_address.trim().is_empty()
+            {
+                contact.set_mailing_address(Some(mailing_address));
+            }
             if let Some(notes) = req.notes
                 && !notes.trim().is_empty()
             {
@@ -271,6 +293,8 @@ pub struct UpdateContactRequest {
     #[serde(default)]
     pub email: Option<String>,
     #[serde(default)]
+    pub mailing_address: Option<String>,
+    #[serde(default)]
     pub phone: Option<String>,
     #[serde(default)]
     pub notes: Option<String>,
@@ -310,6 +334,15 @@ async fn update_contact(
     if req.email.as_deref().is_some_and(|s| s.trim().is_empty()) {
         return Err(AppError::BadRequest("email cannot be empty".to_owned()));
     }
+    if req
+        .mailing_address
+        .as_deref()
+        .is_some_and(|s| s.trim().is_empty())
+    {
+        return Err(AppError::BadRequest(
+            "mailing_address cannot be empty".to_owned(),
+        ));
+    }
     let normalized_email = req.email.as_deref().map(validate_email).transpose()?;
 
     let contact = tokio::task::spawn_blocking({
@@ -328,9 +361,9 @@ async fn update_contact(
                     if existing_id == contact_id {
                         continue;
                     }
-                    let existing = store
-                        .read::<Contact>("main", existing_id)
-                        .map_err(|e| AppError::Internal(format!("read contact {existing_id}: {e}")))?;
+                    let existing = store.read::<Contact>("main", existing_id).map_err(|e| {
+                        AppError::Internal(format!("read contact {existing_id}: {e}"))
+                    })?;
                     if existing
                         .email()
                         .is_some_and(|email| normalize_email(email) == new_email)
@@ -347,6 +380,9 @@ async fn update_contact(
             }
             if let Some(email) = normalized_email {
                 contact.set_email(Some(email));
+            }
+            if let Some(mailing_address) = req.mailing_address {
+                contact.set_mailing_address(Some(mailing_address));
             }
             if let Some(phone) = req.phone {
                 contact.set_phone(phone);
@@ -385,8 +421,10 @@ pub struct ContactProfileResponse {
     pub contact_id: ContactId,
     pub name: String,
     pub email: Option<String>,
+    pub mailing_address: Option<String>,
     pub phone: Option<String>,
     pub category: ContactCategory,
+    pub notes: Option<String>,
     pub entities: Vec<EntityId>,
 }
 
@@ -430,8 +468,10 @@ async fn get_contact_profile(
         contact_id: contact.contact_id(),
         name: contact.name().to_owned(),
         email: contact.email().map(|s| s.to_owned()),
+        mailing_address: contact.mailing_address().map(|s| s.to_owned()),
         phone: contact.phone().map(|s| s.to_owned()),
         category: contact.category(),
+        notes: contact.notes().map(|s| s.to_owned()),
         entities: vec![contact.entity_id()],
     }))
 }

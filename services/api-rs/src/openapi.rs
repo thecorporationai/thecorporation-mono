@@ -3,8 +3,8 @@
 //! Composes per-module `OpenApi` structs into a single spec.
 //! Served at `GET /v1/openapi.json`.
 
-use utoipa::openapi::security::{Http, HttpAuthScheme, SecurityScheme};
 use utoipa::OpenApi;
+use utoipa::openapi::security::{Http, HttpAuthScheme, SecurityScheme};
 
 use crate::routes;
 

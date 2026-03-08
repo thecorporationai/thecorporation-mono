@@ -1,10 +1,16 @@
 {
   "name": "@thecorporation/server-win32-x64-msvc",
-  "version": "0.1.0",
+  "version": "26.3.8",
   "description": "Windows x64 binary for the Corporation API server",
-  "os": ["win32"],
-  "cpu": ["x64"],
-  "files": ["bin/"],
+  "os": [
+    "win32"
+  ],
+  "cpu": [
+    "x64"
+  ],
+  "files": [
+    "bin/"
+  ],
   "publishConfig": {
     "access": "public"
   },

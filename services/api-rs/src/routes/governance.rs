@@ -35,8 +35,13 @@ use crate::domain::governance::{
     meeting::Meeting,
     mode::{GovernanceMode, GovernanceModeState},
     mode_history::GovernanceModeChangeEvent,
-    policy_engine::{PolicyDecision, PolicyEvaluationContext, canonicalize_intent_type, evaluate_full},
-    profile::{GOVERNANCE_PROFILE_PATH, GovernanceProfile},
+    policy_engine::{
+        PolicyDecision, PolicyEvaluationContext, canonicalize_intent_type, evaluate_full,
+    },
+    profile::{
+        CompanyAddress, DirectorInfo, DocumentOptions, FiscalYearEnd, FounderInfo,
+        GOVERNANCE_PROFILE_PATH, GovernanceProfile, OfficerInfo, StockDetails,
+    },
     resolution::Resolution,
     seat::GovernanceSeat,
     trigger::{GovernanceTriggerEvent, GovernanceTriggerSource, GovernanceTriggerType},
@@ -210,6 +215,20 @@ pub struct UpdateGovernanceProfileRequest {
     pub principal_title: Option<String>,
     #[serde(default)]
     pub incomplete_profile: Option<bool>,
+    #[serde(default)]
+    pub company_address: Option<CompanyAddress>,
+    #[serde(default)]
+    pub founders: Option<Vec<FounderInfo>>,
+    #[serde(default)]
+    pub directors: Option<Vec<DirectorInfo>>,
+    #[serde(default)]
+    pub officers: Option<Vec<OfficerInfo>>,
+    #[serde(default)]
+    pub stock_details: Option<StockDetails>,
+    #[serde(default)]
+    pub fiscal_year_end: Option<FiscalYearEnd>,
+    #[serde(default)]
+    pub document_options: Option<DocumentOptions>,
 }
 
 #[derive(Deserialize, utoipa::ToSchema)]
@@ -723,6 +742,27 @@ async fn update_governance_profile(
                 req.principal_title,
                 req.incomplete_profile,
             );
+            if let Some(company_address) = req.company_address {
+                profile.set_company_address(company_address);
+            }
+            if let Some(founders) = req.founders {
+                profile.set_founders(founders);
+            }
+            if let Some(directors) = req.directors {
+                profile.set_directors(directors);
+            }
+            if let Some(officers) = req.officers {
+                profile.set_officers(officers);
+            }
+            if let Some(stock_details) = req.stock_details {
+                profile.set_stock_details(stock_details);
+            }
+            if let Some(fiscal_year_end) = req.fiscal_year_end {
+                profile.set_fiscal_year_end(fiscal_year_end);
+            }
+            if let Some(document_options) = req.document_options {
+                profile.set_document_options(document_options);
+            }
             profile.validate().map_err(AppError::UnprocessableEntity)?;
             store
                 .write_json(
@@ -776,6 +816,12 @@ async fn generate_governance_doc_bundle(
                     .map_err(|e| {
                         AppError::Internal(format!("render governance doc bundle: {e:#}"))
                     })?;
+            if !rendered.manifest.warnings.is_empty() {
+                return Err(AppError::UnprocessableEntity(format!(
+                    "governance profile is incomplete for production document generation: {}",
+                    rendered.manifest.warnings.join("; ")
+                )));
+            }
 
             let bundle_id = rendered.manifest.bundle_id;
             let manifest_path = bundle_manifest_path(bundle_id);
@@ -1548,7 +1594,9 @@ async fn create_governance_body(
             for existing_id in body_ids {
                 let existing = store
                     .read::<GovernanceBody>("main", existing_id)
-                    .map_err(|e| AppError::Internal(format!("read governance body {existing_id}: {e}")))?;
+                    .map_err(|e| {
+                        AppError::Internal(format!("read governance body {existing_id}: {e}"))
+                    })?;
                 if existing.entity_id() == entity_id
                     && existing.body_type() == req.body_type
                     && existing.status() == BodyStatus::Active
@@ -2244,13 +2292,17 @@ async fn create_seat(
                 AppError::NotFound(format!("governance body {} not found", body_id))
             })?;
             if body.entity_id() != entity_id {
-                return Err(AppError::BadRequest("governance body does not belong to entity".to_owned()));
+                return Err(AppError::BadRequest(
+                    "governance body does not belong to entity".to_owned(),
+                ));
             }
-            let holder = store.read::<Contact>("main", req.holder_id).map_err(|_| {
-                AppError::NotFound(format!("contact {} not found", req.holder_id))
-            })?;
+            let holder = store
+                .read::<Contact>("main", req.holder_id)
+                .map_err(|_| AppError::NotFound(format!("contact {} not found", req.holder_id)))?;
             if holder.entity_id() != entity_id {
-                return Err(AppError::BadRequest("seat holder must belong to the same entity".to_owned()));
+                return Err(AppError::BadRequest(
+                    "seat holder must belong to the same entity".to_owned(),
+                ));
             }
 
             let seat_id = GovernanceSeatId::new();
@@ -2317,7 +2369,9 @@ async fn list_seats(
                 AppError::NotFound(format!("governance body {} not found", body_id))
             })?;
             if body.entity_id() != entity_id {
-                return Err(AppError::BadRequest("governance body does not belong to entity".to_owned()));
+                return Err(AppError::BadRequest(
+                    "governance body does not belong to entity".to_owned(),
+                ));
             }
             let ids = store
                 .list_ids::<GovernanceSeat>("main")
@@ -2511,7 +2565,9 @@ async fn list_meetings(
                 AppError::NotFound(format!("governance body {} not found", body_id))
             })?;
             if body.entity_id() != entity_id {
-                return Err(AppError::BadRequest("governance body does not belong to entity".to_owned()));
+                return Err(AppError::BadRequest(
+                    "governance body does not belong to entity".to_owned(),
+                ));
             }
             let ids = store
                 .list_ids::<Meeting>("main")
@@ -3232,9 +3288,13 @@ async fn list_resolutions(
                 .map_err(|_| AppError::NotFound(format!("meeting {} not found", meeting_id)))?;
             let body = store
                 .read::<GovernanceBody>("main", meeting.body_id())
-                .map_err(|_| AppError::NotFound(format!("governance body {} not found", meeting.body_id())))?;
+                .map_err(|_| {
+                    AppError::NotFound(format!("governance body {} not found", meeting.body_id()))
+                })?;
             if body.entity_id() != entity_id {
-                return Err(AppError::BadRequest("meeting does not belong to entity".to_owned()));
+                return Err(AppError::BadRequest(
+                    "meeting does not belong to entity".to_owned(),
+                ));
             }
             let ids = store
                 .list_resolution_ids("main", meeting_id)

@@ -69,7 +69,9 @@ async fn post_json(app: &Router, path: &str, body: Value, token: &str) -> (Statu
         .uri(path)
         .header("content-type", "application/json")
         .header("authorization", format!("Bearer {token}"))
-        .body(Body::from(serde_json::to_vec(&body).expect("serialize body")))
+        .body(Body::from(
+            serde_json::to_vec(&body).expect("serialize body"),
+        ))
         .expect("build request");
     let response = app.clone().oneshot(req).await.expect("oneshot");
     let status = response.status();
@@ -178,7 +180,11 @@ async fn create_entity(app: &Router) -> (String, String) {
         &token,
     )
     .await;
-    assert_eq!(status, StatusCode::OK, "create governance body failed: {gb}");
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "create governance body failed: {gb}"
+    );
     let body_id = gb["body_id"].as_str().expect("body_id").to_owned();
 
     // Create seats
@@ -226,7 +232,10 @@ async fn get_governance_info(
     .await;
     assert_eq!(status, StatusCode::OK, "list bodies failed: {bodies}");
     let bodies_arr = bodies.as_array().expect("bodies array");
-    assert!(!bodies_arr.is_empty(), "expected at least one governance body");
+    assert!(
+        !bodies_arr.is_empty(),
+        "expected at least one governance body"
+    );
     let body_id = bodies_arr[0]["body_id"]
         .as_str()
         .expect("body_id")
@@ -306,7 +315,11 @@ async fn run_board_approval(
         token,
     )
     .await;
-    assert_eq!(status, StatusCode::OK, "compute resolution failed: {resolution}");
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "compute resolution failed: {resolution}"
+    );
     assert_eq!(resolution["passed"], true);
     let resolution_id = resolution["resolution_id"]
         .as_str()
@@ -360,7 +373,11 @@ async fn create_409a_with_board_approval() {
         &token,
     )
     .await;
-    assert_eq!(status, StatusCode::OK, "create valuation failed: {valuation}");
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "create valuation failed: {valuation}"
+    );
     assert_eq!(valuation["status"], "draft");
     assert_eq!(valuation["expiration_date"], "2027-01-15");
     let valuation_id = valuation["valuation_id"].as_str().expect("valuation_id");
@@ -373,10 +390,16 @@ async fn create_409a_with_board_approval() {
         &token,
     )
     .await;
-    assert_eq!(status, StatusCode::OK, "submit for approval failed: {submitted}");
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "submit for approval failed: {submitted}"
+    );
     assert_eq!(submitted["status"], "pending_approval");
     let meeting_id = submitted["meeting_id"].as_str().expect("meeting_id");
-    let agenda_item_id = submitted["agenda_item_id"].as_str().expect("agenda_item_id");
+    let agenda_item_id = submitted["agenda_item_id"]
+        .as_str()
+        .expect("agenda_item_id");
 
     // 3. Run board approval lifecycle
     let resolution_id = run_board_approval(
@@ -398,7 +421,11 @@ async fn create_409a_with_board_approval() {
         &token,
     )
     .await;
-    assert_eq!(status, StatusCode::OK, "approve valuation failed: {approved}");
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "approve valuation failed: {approved}"
+    );
     assert_eq!(approved["status"], "approved");
     assert_eq!(approved["board_approval_resolution_id"], resolution_id);
 
@@ -450,7 +477,11 @@ async fn submit_adds_to_existing_meeting() {
         &token,
     )
     .await;
-    assert_eq!(status, StatusCode::OK, "create valuation failed: {valuation}");
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "create valuation failed: {valuation}"
+    );
     let valuation_id = valuation["valuation_id"].as_str().expect("valuation_id");
 
     let (status, submitted) = post_json(
@@ -510,8 +541,15 @@ async fn approve_supersedes_previous() {
             token,
         )
         .await;
-        assert_eq!(status, StatusCode::OK, "create valuation failed: {valuation}");
-        let valuation_id = valuation["valuation_id"].as_str().expect("valuation_id").to_owned();
+        assert_eq!(
+            status,
+            StatusCode::OK,
+            "create valuation failed: {valuation}"
+        );
+        let valuation_id = valuation["valuation_id"]
+            .as_str()
+            .expect("valuation_id")
+            .to_owned();
 
         let (status, submitted) = post_json(
             app,
@@ -521,8 +559,14 @@ async fn approve_supersedes_previous() {
         )
         .await;
         assert_eq!(status, StatusCode::OK, "submit failed: {submitted}");
-        let meeting_id = submitted["meeting_id"].as_str().expect("meeting_id").to_owned();
-        let agenda_item_id = submitted["agenda_item_id"].as_str().expect("agenda_item_id").to_owned();
+        let meeting_id = submitted["meeting_id"]
+            .as_str()
+            .expect("meeting_id")
+            .to_owned();
+        let agenda_item_id = submitted["agenda_item_id"]
+            .as_str()
+            .expect("agenda_item_id")
+            .to_owned();
 
         let resolution_id = run_board_approval(
             app,
@@ -550,13 +594,23 @@ async fn approve_supersedes_previous() {
 
     // 1. Create and approve first 409A
     let first_id = create_and_approve_409a(
-        &app, &entity_id, &token, &seat_ids, &holder_ids, "2026-01-01",
+        &app,
+        &entity_id,
+        &token,
+        &seat_ids,
+        &holder_ids,
+        "2026-01-01",
     )
     .await;
 
     // 2. Create and approve second 409A
     let second_id = create_and_approve_409a(
-        &app, &entity_id, &token, &seat_ids, &holder_ids, "2026-06-01",
+        &app,
+        &entity_id,
+        &token,
+        &seat_ids,
+        &holder_ids,
+        "2026-06-01",
     )
     .await;
 
@@ -567,7 +621,11 @@ async fn approve_supersedes_previous() {
         &token,
     )
     .await;
-    assert_eq!(status, StatusCode::OK, "list valuations failed: {valuations}");
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "list valuations failed: {valuations}"
+    );
     let valuations_arr = valuations.as_array().expect("valuations array");
     assert_eq!(valuations_arr.len(), 2);
 

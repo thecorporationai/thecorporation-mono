@@ -661,6 +661,7 @@ pub struct DigestSummary {
 pub struct DigestTriggerResponse {
     pub triggered: bool,
     pub digest_count: usize,
+    pub message: String,
 }
 
 #[utoipa::path(
@@ -687,6 +688,7 @@ async fn trigger_digests(RequireAdmin(_auth): RequireAdmin) -> Json<DigestTrigge
     Json(DigestTriggerResponse {
         triggered: true,
         digest_count: 0,
+        message: "Digest generation is not configured in this environment yet, so the trigger was accepted but no digests were produced.".to_owned(),
     })
 }
 

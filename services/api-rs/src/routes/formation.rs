@@ -10,7 +10,9 @@ use axum::{
     response::IntoResponse,
     routing::{get, post},
 };
+use chrono::Datelike;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 use super::AppState;
 use crate::auth::{RequireFormationCreate, RequireFormationRead, RequireFormationSign};
@@ -24,8 +26,8 @@ use crate::domain::formation::{
     types::*,
 };
 use crate::domain::governance::{
-    doc_ast,
-    profile::{GOVERNANCE_PROFILE_PATH, GovernanceProfile},
+    doc_ast, doc_generator,
+    profile::{CompanyAddress, GOVERNANCE_PROFILE_PATH, GovernanceProfile},
     typst_renderer,
 };
 use crate::domain::ids::{ContractId, DocumentId, EntityId, SignatureId, WorkspaceId};
@@ -320,6 +322,44 @@ fn open_formation_store<'a>(
             other => crate::domain::formation::error::FormationError::Validation(other.to_string()),
         }
     })
+}
+
+fn resolve_document_entity_id(
+    layout: &crate::store::RepoLayout,
+    workspace_id: WorkspaceId,
+    requested_entity_id: EntityId,
+    allowed_entity_ids: Option<&[EntityId]>,
+    document_id: DocumentId,
+) -> Result<EntityId, AppError> {
+    let entity_is_allowed = |entity_id: EntityId| match allowed_entity_ids {
+        Some(ids) => ids.contains(&entity_id),
+        None => true,
+    };
+
+    let has_document = |entity_id: EntityId| {
+        EntityStore::open(layout, workspace_id, entity_id)
+            .ok()
+            .and_then(|store| store.read_document("main", document_id).ok())
+            .is_some()
+    };
+
+    if entity_is_allowed(requested_entity_id) && has_document(requested_entity_id) {
+        return Ok(requested_entity_id);
+    }
+
+    for entity_id in layout.list_entity_ids(workspace_id) {
+        if entity_id == requested_entity_id || !entity_is_allowed(entity_id) {
+            continue;
+        }
+        if has_document(entity_id) {
+            return Ok(entity_id);
+        }
+    }
+
+    Err(AppError::NotFound(format!(
+        "document {} not found",
+        document_id
+    )))
 }
 
 // ── Handlers ────────────────────────────────────────────────────────────
@@ -1447,6 +1487,12 @@ pub struct SigningResolveResponse {
     pub document_title: String,
     pub document_status: String,
     pub signatures: Vec<SignatureSummary>,
+    /// Public PDF preview URL for the signing page.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pdf_url: Option<String>,
+    /// Plain-text preview fallback when a PDF is unavailable.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub preview_text: Option<String>,
     /// Contract details when the document references a contract.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub contract: Option<SigningContractDetails>,
@@ -1459,15 +1505,554 @@ pub struct SigningResolveResponse {
 #[derive(Serialize, utoipa::ToSchema)]
 pub struct SigningContractDetails {
     pub template_type: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub template_label: Option<String>,
     pub counterparty_name: String,
     pub effective_date: String,
     pub parameters: serde_json::Value,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rendered_text: Option<String>,
 }
 
 /// Query param for signing token.
 #[derive(Deserialize, utoipa::IntoParams)]
 pub struct SigningTokenQuery {
     pub token: String,
+}
+
+fn fmt_bool(v: bool) -> &'static str {
+    if v { "Yes" } else { "No" }
+}
+
+fn fmt_param_label(key: &str) -> String {
+    key.replace('_', " ")
+        .split_whitespace()
+        .map(|part| {
+            let mut chars = part.chars();
+            match chars.next() {
+                Some(first) => first.to_ascii_uppercase().to_string() + chars.as_str(),
+                None => String::new(),
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn template_label(template_type: ContractTemplateType, parameters: &Value) -> String {
+    if matches!(
+        template_type,
+        ContractTemplateType::SafeAgreement | ContractTemplateType::Custom
+    ) && parameters
+        .get("contract_type")
+        .and_then(Value::as_str)
+        .is_some_and(|s| s.eq_ignore_ascii_case("safe agreement"))
+    {
+        return "SAFE Agreement".to_owned();
+    }
+    match template_type {
+        ContractTemplateType::ConsultingAgreement => "Consulting Agreement".to_owned(),
+        ContractTemplateType::EmploymentOffer => "Employment Offer Letter".to_owned(),
+        ContractTemplateType::ContractorAgreement => {
+            "Independent Contractor Services Agreement".to_owned()
+        }
+        ContractTemplateType::Nda => "Mutual Non-Disclosure Agreement".to_owned(),
+        ContractTemplateType::SafeAgreement => "SAFE Agreement".to_owned(),
+        ContractTemplateType::Custom => "Custom Agreement".to_owned(),
+    }
+}
+
+fn param_string<'a>(parameters: &'a Value, keys: &[&str]) -> Option<&'a str> {
+    keys.iter()
+        .find_map(|key| parameters.get(*key).and_then(Value::as_str))
+}
+
+fn param_bool(parameters: &Value, keys: &[&str]) -> Option<bool> {
+    keys.iter()
+        .find_map(|key| parameters.get(*key).and_then(Value::as_bool))
+}
+
+fn param_rendered(parameters: &Value, keys: &[&str]) -> Option<String> {
+    keys.iter().find_map(|key| {
+        parameters.get(*key).and_then(|value| match value {
+            Value::String(v) => Some(v.clone()),
+            Value::Bool(v) => Some(if *v { "Yes" } else { "No" }.to_owned()),
+            Value::Number(v) => Some(v.to_string()),
+            _ => None,
+        })
+    })
+}
+
+fn signature_requirement(role: &str, signer_name: &str) -> Value {
+    serde_json::json!({
+        "role": role,
+        "signer_name": signer_name,
+        "required": true
+    })
+}
+
+fn company_legal_name(store: &EntityStore<'_>) -> String {
+    store
+        .read_entity("main")
+        .ok()
+        .map(|entity| entity.legal_name().to_owned())
+        .unwrap_or_else(|| "Company".to_owned())
+}
+
+fn format_profile_company_address(address: &CompanyAddress) -> String {
+    let mut parts = vec![address.street.clone(), address.city.clone()];
+    if let Some(county) = &address.county {
+        parts.push(county.clone());
+    }
+    parts.push(address.state.clone());
+    parts.push(address.zip.clone());
+    parts.join(", ")
+}
+
+fn company_governing_law(store: &EntityStore<'_>) -> String {
+    store
+        .read_entity("main")
+        .ok()
+        .map(|entity| entity.jurisdiction().to_string())
+        .unwrap_or_else(|| "Delaware".to_owned())
+}
+
+fn company_notice_address(store: &EntityStore<'_>) -> Option<String> {
+    store
+        .read_json::<GovernanceProfile>("main", GOVERNANCE_PROFILE_PATH)
+        .ok()
+        .and_then(|profile| {
+            profile
+                .company_address()
+                .map(format_profile_company_address)
+                .or_else(|| profile.registered_agent_address().map(ToOwned::to_owned))
+        })
+        .or_else(|| {
+            store
+                .read_entity("main")
+                .ok()
+                .and_then(|entity| entity.registered_agent_address().map(ToOwned::to_owned))
+        })
+}
+
+fn required_param_rendered(
+    parameters: &Value,
+    keys: &[&str],
+    label: &str,
+) -> Result<String, String> {
+    param_rendered(parameters, keys)
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| format!("{label} is required for a production-grade document"))
+}
+
+fn validate_governance_document_content(
+    store: &EntityStore<'_>,
+    governance_tag: &str,
+    content: &Value,
+) -> Result<(), AppError> {
+    let ast = doc_ast::default_doc_ast();
+    let doc_def = find_ast_document_definition(ast, governance_tag).ok_or_else(|| {
+        AppError::NotFound(format!(
+            "no AST document definition matches governance_tag '{}'",
+            governance_tag
+        ))
+    })?;
+    let entity = store
+        .read_entity("main")
+        .map_err(|e| AppError::Internal(format!("read entity: {e}")))?;
+    let profile = store
+        .read_json::<GovernanceProfile>("main", GOVERNANCE_PROFILE_PATH)
+        .unwrap_or_else(|_| GovernanceProfile::default_for_entity(&entity));
+    let rendered = doc_generator::render_document_from_ast_with_context(
+        doc_def,
+        ast,
+        entity_type_key(entity.entity_type()),
+        &profile,
+        content,
+    );
+    let warnings = doc_generator::detect_placeholder_warnings_for_text(governance_tag, &rendered);
+    if warnings.is_empty() {
+        Ok(())
+    } else {
+        Err(AppError::UnprocessableEntity(format!(
+            "document '{}' is incomplete for production use: {}",
+            governance_tag,
+            warnings.join("; ")
+        )))
+    }
+}
+
+fn app_error_detail(error: AppError) -> String {
+    match error {
+        AppError::BadRequest(msg)
+        | AppError::Unauthorized(msg)
+        | AppError::Forbidden(msg)
+        | AppError::NotFound(msg)
+        | AppError::Conflict(msg)
+        | AppError::UnprocessableEntity(msg)
+        | AppError::NotImplemented(msg)
+        | AppError::ServiceUnavailable(msg)
+        | AppError::Internal(msg) => msg,
+        AppError::RateLimited {
+            limit,
+            window_seconds,
+        } => format!("rate limited: limit={limit}, window_seconds={window_seconds}"),
+    }
+}
+
+fn contract_document_binding(
+    store: &EntityStore<'_>,
+    contract: &Contract,
+) -> Result<(DocumentType, Option<String>, Value), String> {
+    let entity_legal_name = company_legal_name(store);
+    let governing_law = company_governing_law(store);
+    let company_notice_address = company_notice_address(store);
+    let effective_date = contract.effective_date().to_string();
+    let counterparty_name = contract.counterparty_name().to_owned();
+    let parameters = contract.parameters();
+
+    match contract.template_type() {
+        ContractTemplateType::ConsultingAgreement => Ok((
+            DocumentType::ConsultingAgreement,
+            Some("consulting_agreement".to_owned()),
+            serde_json::json!({
+                "fields": {
+                    "entity_legal_name": entity_legal_name,
+                    "effective_date": effective_date,
+                    "consultant_name": counterparty_name,
+                    "services_description": param_rendered(parameters, &["services_description", "services", "scope_of_services", "scope"]).unwrap_or_else(|| "Strategic, business, and advisory consulting services requested by the Company from time to time.".to_owned()),
+                    "start_date": param_rendered(parameters, &["start_date"]).unwrap_or_else(|| contract.effective_date().to_string()),
+                    "term_description": param_rendered(parameters, &["term_description", "term", "term_length"]).unwrap_or_else(|| "The agreement continues until terminated in accordance with its terms.".to_owned()),
+                    "compensation_terms": param_rendered(parameters, &["compensation_terms", "compensation", "fee", "retainer", "rate"]).unwrap_or_else(|| "Consultant will be compensated as set forth in an applicable statement of work, fee schedule, or invoice accepted by the Company.".to_owned()),
+                    "expense_policy": param_rendered(parameters, &["expense_policy", "expenses", "expense_reimbursement"]).unwrap_or_else(|| "The Company will reimburse pre-approved, reasonable out-of-pocket business expenses supported by customary documentation.".to_owned()),
+                    "payment_terms": param_rendered(parameters, &["payment_terms"]).unwrap_or_else(|| "Undisputed invoices are due within thirty (30) days after receipt.".to_owned()),
+                    "termination_notice_days": param_rendered(parameters, &["termination_notice_days", "notice_days"]).unwrap_or_else(|| "14".to_owned()),
+                    "governing_law": param_rendered(parameters, &["governing_law"]).unwrap_or_else(|| governing_law.clone())
+                },
+                "signature_requirements": [
+                    signature_requirement("Company", &entity_legal_name),
+                    signature_requirement("Consultant", &counterparty_name)
+                ]
+            }),
+        )),
+        ContractTemplateType::EmploymentOffer => Ok((
+            DocumentType::EmploymentOfferLetter,
+            Some("employment_offer_letter".to_owned()),
+            serde_json::json!({
+                "fields": {
+                    "entity_legal_name": entity_legal_name,
+                    "effective_date": effective_date,
+                    "candidate_name": counterparty_name,
+                    "position_title": param_rendered(parameters, &["position_title", "job_title", "title"]).unwrap_or_else(|| "Employee".to_owned()),
+                    "reporting_manager": param_rendered(parameters, &["reporting_manager", "reports_to", "manager"]).unwrap_or_else(|| "the Chief Executive Officer or such other manager as the Company may designate".to_owned()),
+                    "work_location": param_rendered(parameters, &["work_location", "location"]).unwrap_or_else(|| "the Company's principal office, remotely, or such other location as reasonably required".to_owned()),
+                    "start_date": param_rendered(parameters, &["start_date"]).unwrap_or_else(|| contract.effective_date().to_string()),
+                    "classification": param_rendered(parameters, &["classification", "exempt_status"]).unwrap_or_else(|| "at-will exempt employee".to_owned()),
+                    "base_salary": required_param_rendered(parameters, &["base_salary", "annual_salary", "salary"], "base_salary")?,
+                    "bonus_terms": param_rendered(parameters, &["bonus_terms", "bonus_target", "target_bonus"]).unwrap_or_else(|| "Eligibility for any bonus program will be determined under Company plans adopted from time to time and is not guaranteed.".to_owned()),
+                    "equity_terms": param_rendered(parameters, &["equity_terms", "equity_award", "equity", "option_grant"]).unwrap_or_else(|| "Any equity award will be subject to separate board approval and definitive equity documents.".to_owned()),
+                    "benefits_summary": param_rendered(parameters, &["benefits_summary", "benefits"]).unwrap_or_else(|| "Participation in employee benefit plans made available to similarly situated employees, subject to plan terms and Company policies.".to_owned()),
+                    "offer_expiration_date": param_rendered(parameters, &["offer_expiration_date", "expiration_date"]).unwrap_or_else(|| contract.effective_date().to_string()),
+                    "governing_law": param_rendered(parameters, &["governing_law"]).unwrap_or_else(|| governing_law.clone())
+                },
+                "signature_requirements": [
+                    signature_requirement("Company", &entity_legal_name),
+                    signature_requirement("Candidate", &counterparty_name)
+                ]
+            }),
+        )),
+        ContractTemplateType::ContractorAgreement => Ok((
+            DocumentType::ContractorServicesAgreement,
+            Some("contractor_services_agreement".to_owned()),
+            serde_json::json!({
+                "fields": {
+                    "entity_legal_name": entity_legal_name,
+                    "effective_date": effective_date,
+                    "contractor_name": counterparty_name,
+                    "services_description": param_rendered(parameters, &["services_description", "services", "scope_of_services", "scope"]).unwrap_or_else(|| "Independent contractor services requested by the Company from time to time.".to_owned()),
+                    "start_date": param_rendered(parameters, &["start_date"]).unwrap_or_else(|| contract.effective_date().to_string()),
+                    "term_description": param_rendered(parameters, &["term_description", "term", "term_length"]).unwrap_or_else(|| "The engagement continues until completed or earlier terminated in accordance with this agreement.".to_owned()),
+                    "compensation_terms": param_rendered(parameters, &["compensation_terms", "compensation", "fee", "retainer", "rate"]).unwrap_or_else(|| "Contractor will be paid the fees set forth in the applicable scope, schedule, or invoice accepted by the Company.".to_owned()),
+                    "expense_policy": param_rendered(parameters, &["expense_policy", "expenses", "expense_reimbursement"]).unwrap_or_else(|| "The Company will reimburse only reasonable pre-approved expenses supported by customary documentation.".to_owned()),
+                    "payment_terms": param_rendered(parameters, &["payment_terms"]).unwrap_or_else(|| "Undisputed invoices are due within thirty (30) days after receipt.".to_owned()),
+                    "termination_notice_days": param_rendered(parameters, &["termination_notice_days", "notice_days"]).unwrap_or_else(|| "14".to_owned()),
+                    "governing_law": param_rendered(parameters, &["governing_law"]).unwrap_or_else(|| governing_law.clone())
+                },
+                "signature_requirements": [
+                    signature_requirement("Company", &entity_legal_name),
+                    signature_requirement("Contractor", &counterparty_name)
+                ]
+            }),
+        )),
+        ContractTemplateType::Nda => Ok((
+            DocumentType::MutualNondisclosureAgreement,
+            Some("mutual_nondisclosure_agreement".to_owned()),
+            serde_json::json!({
+                "fields": {
+                    "entity_legal_name": entity_legal_name,
+                    "effective_date": effective_date,
+                    "counterparty_name": counterparty_name,
+                    "purpose": param_rendered(parameters, &["purpose"]).unwrap_or_else(|| "evaluating and discussing a potential business relationship".to_owned()),
+                    "term_years": param_rendered(parameters, &["term_years", "term"]).unwrap_or_else(|| "2".to_owned()),
+                    "confidentiality_period_years": param_rendered(parameters, &["confidentiality_period_years", "survival_years"]).unwrap_or_else(|| "3".to_owned()),
+                    "return_materials_days": param_rendered(parameters, &["return_materials_days"]).unwrap_or_else(|| "10".to_owned()),
+                    "governing_law": param_rendered(parameters, &["governing_law"]).unwrap_or_else(|| governing_law.clone())
+                },
+                "signature_requirements": [
+                    signature_requirement("Company", &entity_legal_name),
+                    signature_requirement("Counterparty", &counterparty_name)
+                ]
+            }),
+        )),
+        ContractTemplateType::SafeAgreement => Ok((
+            DocumentType::SafeAgreement,
+            Some("safe_agreement".to_owned()),
+            serde_json::json!({
+                "fields": {
+                    "entity_legal_name": entity_legal_name,
+                    "effective_date": effective_date,
+                    "investor_name": counterparty_name,
+                    "purchase_amount": required_param_rendered(parameters, &["investment_amount", "investment_amount_display"], "purchase_amount")?,
+                    "safe_type": parameters.get("safe_type").and_then(Value::as_str).unwrap_or("post-money"),
+                    "valuation_cap": required_param_rendered(parameters, &["valuation_cap", "valuation_cap_display"], "valuation_cap")?,
+                    "discount_rate": parameters.get("discount_rate").and_then(Value::as_str).unwrap_or("None"),
+                    "pro_rata_rights": parameters.get("pro_rata_rights").and_then(Value::as_bool).map(|v| if v { "Yes" } else { "No" }).unwrap_or("No"),
+                    "governing_law": parameters.get("governing_law").and_then(Value::as_str).unwrap_or(&governing_law),
+                    "company_notice_address": param_string(parameters, &["company_notice_address"])
+                        .map(ToOwned::to_owned)
+                        .or_else(|| company_notice_address.clone())
+                        .ok_or_else(|| "company_notice_address is required for a production-grade SAFE".to_owned())?,
+                    "investor_notice_address": required_param_rendered(parameters, &["investor_notice_address"], "investor_notice_address")?,
+                },
+                "signature_requirements": [
+                    signature_requirement("Company", &entity_legal_name),
+                    signature_requirement("Investor", &counterparty_name)
+                ]
+            }),
+        )),
+        ContractTemplateType::Custom => Ok((
+            DocumentType::Contract,
+            None,
+            serde_json::json!({ "contract_id": contract.contract_id().to_string() }),
+        )),
+    }
+}
+
+fn is_safe_contract(contract: &Contract) -> bool {
+    contract.template_type() == ContractTemplateType::SafeAgreement
+        || contract.template_type() == ContractTemplateType::Custom
+            && contract
+                .parameters()
+                .get("contract_type")
+                .and_then(Value::as_str)
+                .is_some_and(|s| s.eq_ignore_ascii_case("safe agreement"))
+}
+
+fn render_generic_contract_preview(contract: &Contract, entity_name: &str) -> String {
+    let tpl = template_label(contract.template_type(), contract.parameters());
+    let mut out = format!(
+        "{tpl}\n\nThis {tpl} is entered into as of {}.\n\nBETWEEN:\n\n  (1) {} (\"Company\")\n\n  (2) {} (\"Counterparty\")\n\n",
+        contract.effective_date(),
+        entity_name,
+        contract.counterparty_name()
+    );
+
+    if let Some(obj) = contract.parameters().as_object()
+        && !obj.is_empty()
+    {
+        out.push_str("TERMS:\n\n");
+        for (key, value) in obj {
+            let rendered = match value {
+                Value::Bool(v) => fmt_bool(*v).to_owned(),
+                Value::String(v) => v.clone(),
+                _ => value.to_string(),
+            };
+            out.push_str(&format!("  {}: {}\n", fmt_param_label(key), rendered));
+        }
+        out.push('\n');
+    }
+
+    out.push_str(
+        "This agreement is subject to the terms and conditions stated below. By signing, each party agrees to be bound by it.\n",
+    );
+    out
+}
+
+fn render_safe_contract_text(contract: &Contract, entity_name: &str) -> String {
+    let params = contract.parameters();
+    let investment_amount = param_string(
+        params,
+        &[
+            "investment_amount",
+            "investment_amount_display",
+            "principal_amount",
+            "principal_amount_display",
+        ],
+    )
+    .unwrap_or("the Purchase Amount");
+    let valuation_cap = param_string(params, &["valuation_cap", "valuation_cap_display"])
+        .unwrap_or("the Valuation Cap");
+    let discount_rate = param_string(params, &["discount_rate", "discount"]);
+    let safe_type = param_string(params, &["safe_type"]).unwrap_or("post-money");
+    let pro_rata_rights = param_bool(params, &["pro_rata_rights"]).unwrap_or(false);
+    let governing_law = param_string(params, &["governing_law"]).unwrap_or("Delaware");
+    let company_notice = param_string(params, &["company_notice_address"]).unwrap_or(entity_name);
+    let investor_notice =
+        param_string(params, &["investor_notice_address"]).unwrap_or(contract.counterparty_name());
+    let signed_year = contract.effective_date().year();
+
+    let mut out = String::new();
+    out.push_str("SAFE\n");
+    out.push_str("(Simple Agreement for Future Equity)\n\n");
+    out.push_str(&format!(
+        "This SAFE is made as of {} by and between {} (the \"Company\") and {} (the \"Investor\"). The Investor pays {} to the Company on the date of this SAFE as the purchase amount.\n\n",
+        contract.effective_date(),
+        entity_name,
+        contract.counterparty_name(),
+        investment_amount
+    ));
+    out.push_str("1. Triggering Events and Conversion.\n");
+    out.push_str(&format!(
+        "Upon the closing of an Equity Financing, this SAFE will automatically convert into the class of capital stock sold in that financing or into a shadow series intended to preserve the economic terms of this SAFE. The conversion price will be determined using the most favorable price resulting from the valuation cap of {}",
+        valuation_cap
+    ));
+    if let Some(discount_rate) = discount_rate {
+        out.push_str(&format!(" and the discount rate of {}", discount_rate));
+    }
+    out.push_str(&format!(
+        ", consistent with a {} SAFE structure. The definitive financing documents may include customary mechanics needed to implement that conversion.\n\n",
+        safe_type
+    ));
+    out.push_str("2. Liquidity Event.\n");
+    out.push_str("If a Change of Control, merger, asset sale, public listing, or other liquidity event occurs before conversion of this SAFE, the Investor will be entitled, immediately prior to closing, to receive either cash equal to the purchase amount or the amount payable as if this SAFE had converted into the number of shares implied by the valuation cap mechanics, whichever yields the greater economic result under the transaction documents.\n\n");
+    out.push_str("3. Dissolution Event.\n");
+    out.push_str("If the Company dissolves, winds up, or commences a general assignment for the benefit of creditors before this SAFE converts, the Investor will receive payment of the purchase amount, subject to the rights of creditors and any senior preferred stock liquidation preferences that are expressly senior to this SAFE.\n\n");
+    out.push_str("4. Pro Rata Participation.\n");
+    out.push_str(&format!(
+        "Investor pro rata participation rights: {}. If granted, the Investor may participate in future equity financings on a pro rata basis pursuant to the terms of the applicable financing documents and any side letter issued by the Company.\n\n",
+        fmt_bool(pro_rata_rights)
+    ));
+    out.push_str("5. Company Representations.\n");
+    out.push_str("The Company represents that it is duly organized, validly existing, and has authority to enter into and perform this SAFE; that execution and delivery of this SAFE have been duly authorized; and that this SAFE constitutes a binding obligation of the Company, enforceable in accordance with its terms except as limited by bankruptcy, insolvency, reorganization, moratorium, and similar laws and by general principles of equity.\n\n");
+    out.push_str("6. Investor Representations.\n");
+    out.push_str("The Investor represents that it is acquiring this SAFE for investment for its own account and not with a view to distribution in violation of applicable securities laws; that it has sufficient knowledge and experience to evaluate the investment; and that it is able to bear the economic risk of a complete loss.\n\n");
+    out.push_str("7. Nature of the Instrument.\n");
+    out.push_str("This SAFE is not debt and bears no interest. It has no maturity date. Until conversion, the Investor has no voting rights, dividend rights, or rights as a stockholder of the Company, except as expressly stated in this SAFE or required by law.\n\n");
+    out.push_str("8. Transfers; Amendments; Notices.\n");
+    out.push_str("The Investor may not transfer this SAFE except to an affiliate, estate planning vehicle, or with the Company’s prior written consent, and any permitted transferee takes subject to this SAFE. Any amendment, waiver, or modification must be in writing and signed by the Company and either the Investor or the holders of a majority-in-interest of substantially similar SAFEs, as applicable. Notices to the Company may be sent to ");
+    out.push_str(company_notice);
+    out.push_str("; notices to the Investor may be sent to ");
+    out.push_str(investor_notice);
+    out.push_str(".\n\n");
+    out.push_str(&format!(
+        "9. Governing Law; Counterparts; Electronic Signatures.\nThis SAFE is governed by the laws of {} without regard to conflicts principles. It may be executed in counterparts, including by electronic signature, each of which is deemed an original and all of which together form one instrument.\n\n",
+        governing_law
+    ));
+    out.push_str(&format!(
+        "IN WITNESS WHEREOF, the parties have executed this SAFE as of {}.\n\nCOMPANY:\n{}\n\nBy: __________________________\nName: ________________________\nTitle: _________________________\nDate: _________________________\n\nINVESTOR:\n{}\n\nBy: __________________________\nName: ________________________\nTitle: _________________________\nDate: _________________________\n",
+        signed_year,
+        entity_name,
+        contract.counterparty_name()
+    ));
+    out
+}
+
+fn render_signing_preview_text(contract: &Contract, entity_name: &str) -> String {
+    if is_safe_contract(contract) {
+        return render_safe_contract_text(contract, entity_name);
+    }
+    render_generic_contract_preview(contract, entity_name)
+}
+
+fn escape_typst_text(input: &str) -> String {
+    let mut out = String::with_capacity(input.len());
+    for ch in input.chars() {
+        match ch {
+            '#' | '*' | '_' | '<' | '>' | '@' | '$' | '`' | '\\' => {
+                out.push('\\');
+                out.push(ch);
+            }
+            _ => out.push(ch),
+        }
+    }
+    out
+}
+
+fn render_text_preview_pdf(title: &str, body_text: &str) -> Result<Vec<u8>, AppError> {
+    let mut typst_source = String::from(
+        "#set page(paper: \"us-letter\", margin: (top: 1in, bottom: 1in, left: 1in, right: 1in), numbering: \"1\")\n#set text(font: \"New Computer Modern\", size: 10.5pt)\n#set par(justify: true, leading: 0.7em)\n",
+    );
+    typst_source.push_str(&format!("= {}\n\n", escape_typst_text(title)));
+    for para in body_text.split("\n\n") {
+        let trimmed = para.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        let rendered = trimmed
+            .lines()
+            .map(escape_typst_text)
+            .collect::<Vec<_>>()
+            .join(" \\\n");
+        typst_source.push_str(&rendered);
+        typst_source.push_str("\n\n");
+    }
+    typst_renderer::render_source_pdf(&typst_source)
+        .map_err(|e| AppError::Internal(format!("PDF rendering failed: {e}")))
+}
+
+fn entity_type_key(entity_type: EntityType) -> doc_ast::EntityTypeKey {
+    match entity_type {
+        EntityType::CCorp => doc_ast::EntityTypeKey::Corporation,
+        EntityType::Llc => doc_ast::EntityTypeKey::Llc,
+    }
+}
+
+fn find_ast_document_definition<'a>(
+    ast: &'a doc_ast::GovernanceDocAst,
+    governance_tag: &str,
+) -> Option<&'a doc_ast::DocumentDefinition> {
+    ast.documents
+        .iter()
+        .find(|d| d.id == governance_tag || d.path.contains(governance_tag))
+}
+
+fn render_governance_document_markdown(
+    store: &EntityStore<'_>,
+    doc: &Document,
+) -> Result<Option<String>, AppError> {
+    let Some(governance_tag) = doc.governance_tag() else {
+        return Ok(None);
+    };
+
+    let ast = doc_ast::default_doc_ast();
+    let entity = store
+        .read_entity("main")
+        .map_err(|e| AppError::Internal(format!("read entity: {e}")))?;
+    let profile: GovernanceProfile =
+        match store.read_json::<GovernanceProfile>("main", GOVERNANCE_PROFILE_PATH) {
+            Ok(p) => p,
+            Err(_) => GovernanceProfile::default_for_entity(&entity),
+        };
+    let Some(doc_def) = find_ast_document_definition(ast, governance_tag) else {
+        return Ok(None);
+    };
+
+    let rendered = doc_generator::render_document_from_ast_with_context(
+        doc_def,
+        ast,
+        entity_type_key(entity.entity_type()),
+        &profile,
+        doc.content(),
+    );
+    let warnings = doc_generator::detect_placeholder_warnings_for_text(governance_tag, &rendered);
+    if warnings.is_empty() {
+        Ok(Some(rendered))
+    } else {
+        Err(AppError::UnprocessableEntity(format!(
+            "document '{}' is incomplete for production use: {}",
+            governance_tag,
+            warnings.join("; ")
+        )))
+    }
 }
 
 #[derive(Serialize, utoipa::ToSchema)]
@@ -1494,7 +2079,18 @@ async fn generate_contract(
 ) -> Result<Json<ContractResponse>, AppError> {
     let workspace_id = auth.workspace_id();
     let entity_id = req.entity_id;
-    if req.template_type == ContractTemplateType::Custom {
+    let is_legacy_safe = req.template_type == ContractTemplateType::Custom
+        && req
+            .parameters
+            .get("contract_type")
+            .and_then(Value::as_str)
+            .is_some_and(|s| s.eq_ignore_ascii_case("safe agreement"));
+    let template_type = if is_legacy_safe {
+        ContractTemplateType::SafeAgreement
+    } else {
+        req.template_type
+    };
+    if template_type == ContractTemplateType::Custom {
         let has_payload = req
             .parameters
             .as_object()
@@ -1516,13 +2112,31 @@ async fn generate_contract(
             let contract = Contract::new(
                 contract_id,
                 entity_id,
-                req.template_type,
+                template_type,
                 req.counterparty_name,
                 req.effective_date,
                 req.parameters,
                 document_id,
             );
 
+            // Persist a Document so the contract appears in the documents list.
+            let title = format!(
+                "{} — {}",
+                template_label(contract.template_type(), contract.parameters()),
+                contract.counterparty_name()
+            );
+            let (document_type, governance_tag, content) =
+                contract_document_binding(&store, &contract)
+                    .map_err(crate::domain::formation::error::FormationError::Validation)?;
+            if let Some(governance_tag) = governance_tag.as_deref() {
+                validate_governance_document_content(&store, governance_tag, &content).map_err(
+                    |error| {
+                        crate::domain::formation::error::FormationError::Validation(
+                            app_error_detail(error),
+                        )
+                    },
+                )?;
+            }
             let path = format!("contracts/{}.json", contract_id);
             store
                 .write_json(
@@ -1536,25 +2150,22 @@ async fn generate_contract(
                         "commit error: {e}"
                     ))
                 })?;
-
-            // Persist a Document so the contract appears in the documents list.
-            let title = format!(
-                "{:?} — {}",
-                contract.template_type(),
-                contract.counterparty_name()
-            );
             let doc = Document::new(
                 document_id,
                 entity_id,
                 workspace_id,
-                DocumentType::Contract,
+                document_type,
                 title,
-                serde_json::json!({ "contract_id": contract_id.to_string() }),
-                None,
+                content,
+                governance_tag,
                 None,
             );
             store
-                .write_document("main", &doc, &format!("Add document for contract {contract_id}"))
+                .write_document(
+                    "main",
+                    &doc,
+                    &format!("Add document for contract {contract_id}"),
+                )
                 .map_err(|e| {
                     crate::domain::formation::error::FormationError::Validation(format!(
                         "commit error: {e}"
@@ -1599,36 +2210,45 @@ async fn get_signing_link(
     Query(query): Query<super::EntityIdQuery>,
 ) -> Result<Json<SigningLinkResponse>, AppError> {
     let workspace_id = auth.workspace_id();
-    let entity_id = query.entity_id;
+    let requested_entity_id = query.entity_id;
+    let allowed_entity_ids = auth.entity_ids().map(|ids| ids.to_vec());
 
     // Generate a signing token — only the hash is stored at rest
     let raw_token = format!("sig_{}", uuid::Uuid::new_v4().simple());
     let token_hash = hash_signing_token(&raw_token);
     let expires_at = (chrono::Utc::now() + chrono::Duration::hours(72)).to_rfc3339();
 
-    let signing_token = SigningToken {
-        token_hash: token_hash.clone(),
-        workspace_id,
-        entity_id,
-        document_id,
-        expires_at,
-    };
-
     // Verify document exists and persist the signing token (hashed)
     tokio::task::spawn_blocking({
         let layout = state.layout.clone();
-        let signing_token = signing_token;
         let token_hash = token_hash.clone();
+        let expires_at = expires_at.clone();
         move || {
-            let store = open_formation_store(&layout, workspace_id, entity_id)?;
-            store
-                .read_document("main", document_id)
-                .map_err(|_| AppError::NotFound(format!("document {} not found", document_id)))?;
+            let resolved_entity_id = resolve_document_entity_id(
+                &layout,
+                workspace_id,
+                requested_entity_id,
+                allowed_entity_ids.as_deref(),
+                document_id,
+            )?;
+            let store = open_formation_store(&layout, workspace_id, resolved_entity_id)?;
+            let signing_token = SigningToken {
+                token_hash: token_hash.clone(),
+                workspace_id,
+                entity_id: resolved_entity_id,
+                document_id,
+                expires_at,
+            };
 
             // Persist signing token keyed by hash (raw token never stored)
             let path = format!("signing-tokens/{}.json", token_hash);
             store
-                .write_json("main", &path, &signing_token, &format!("Create signing token for document {document_id}"))
+                .write_json(
+                    "main",
+                    &path,
+                    &signing_token,
+                    &format!("Create signing token for document {document_id}"),
+                )
                 .map_err(|e| {
                     crate::domain::formation::error::FormationError::Validation(format!(
                         "commit error: {e}"
@@ -1696,10 +2316,7 @@ async fn get_document_pdf(
             let entity = store
                 .read_entity("main")
                 .map_err(|e| AppError::Internal(format!("read entity: {e}")))?;
-            let entity_type = match entity.entity_type() {
-                EntityType::CCorp => doc_ast::EntityTypeKey::Corporation,
-                EntityType::Llc => doc_ast::EntityTypeKey::Llc,
-            };
+            let entity_type = entity_type_key(entity.entity_type());
 
             // Find matching AST document definition via governance_tag
             let governance_tag = doc.governance_tag().ok_or_else(|| {
@@ -1709,23 +2326,21 @@ async fn get_document_pdf(
                 ))
             })?;
 
-            let doc_def = ast
-                .documents
-                .iter()
-                .find(|d| d.id == governance_tag || d.path.contains(governance_tag))
-                .ok_or_else(|| {
-                    AppError::NotFound(format!(
-                        "no AST document definition matches governance_tag '{}'",
-                        governance_tag
-                    ))
-                })?;
+            let doc_def = find_ast_document_definition(ast, governance_tag).ok_or_else(|| {
+                AppError::NotFound(format!(
+                    "no AST document definition matches governance_tag '{}'",
+                    governance_tag
+                ))
+            })?;
+            validate_governance_document_content(&store, governance_tag, doc.content())?;
 
             // Render PDF
-            let pdf = typst_renderer::render_pdf(
+            let pdf = typst_renderer::render_pdf_with_context(
                 doc_def,
                 ast,
                 entity_type,
                 &profile,
+                doc.content(),
                 doc.signatures(),
             )
             .map_err(|e| AppError::Internal(format!("PDF rendering failed: {e}")))?;
@@ -1810,9 +2425,7 @@ async fn preview_document_pdf(
                 .iter()
                 .find(|d| d.id == lookup_id)
                 .ok_or_else(|| {
-                    AppError::NotFound(format!(
-                        "no AST document definition matches id '{doc_id}'"
-                    ))
+                    AppError::NotFound(format!("no AST document definition matches id '{doc_id}'"))
                 })?;
 
             // Validate scope
@@ -2298,9 +2911,9 @@ async fn create_pending_formation(
         let legal_name = req.legal_name;
         let jurisdiction = jurisdiction.clone();
         move || {
-            if workspace_has_legal_name(&layout, workspace_id, &legal_name, None)
-                .map_err(|e| crate::domain::formation::error::FormationError::Validation(format!("{e:?}")))?
-            {
+            if workspace_has_legal_name(&layout, workspace_id, &legal_name, None).map_err(|e| {
+                crate::domain::formation::error::FormationError::Validation(format!("{e:?}"))
+            })? {
                 return Err(crate::domain::formation::error::FormationError::Validation(
                     format!("entity legal name already exists in workspace: {legal_name}"),
                 ));
@@ -2494,7 +3107,9 @@ async fn resolve_signing_link(
         move || {
             let st = resolve_signing_token(&layout, &token)?;
             if st.document_id != document_id {
-                return Err(AppError::BadRequest("token does not match document".to_owned()));
+                return Err(AppError::BadRequest(
+                    "token does not match document".to_owned(),
+                ));
             }
 
             let store = open_formation_store(&layout, st.workspace_id, st.entity_id)?;
@@ -2518,6 +3133,7 @@ async fn resolve_signing_link(
                 .read_entity("main")
                 .ok()
                 .map(|e| e.legal_name().to_owned());
+            let preview_text = render_governance_document_markdown(&store, &doc)?;
 
             // If document references a contract, load contract details
             let contract = doc
@@ -2526,15 +3142,21 @@ async fn resolve_signing_link(
                 .and_then(|v| v.as_str())
                 .and_then(|cid| {
                     let path = format!("contracts/{cid}.json");
-                    store
-                        .read_json::<Contract>("main", &path)
-                        .ok()
+                    store.read_json::<Contract>("main", &path).ok()
                 })
-                .map(|c| SigningContractDetails {
-                    template_type: format!("{:?}", c.template_type()),
-                    counterparty_name: c.counterparty_name().to_owned(),
-                    effective_date: c.effective_date().to_string(),
-                    parameters: c.parameters().clone(),
+                .map(|c| {
+                    let rendered_text = render_signing_preview_text(
+                        &c,
+                        entity_name.as_deref().unwrap_or("Company"),
+                    );
+                    SigningContractDetails {
+                        template_type: format!("{:?}", c.template_type()),
+                        template_label: Some(template_label(c.template_type(), c.parameters())),
+                        counterparty_name: c.counterparty_name().to_owned(),
+                        effective_date: c.effective_date().to_string(),
+                        parameters: c.parameters().clone(),
+                        rendered_text: Some(rendered_text),
+                    }
                 });
 
             Ok(SigningResolveResponse {
@@ -2543,6 +3165,9 @@ async fn resolve_signing_link(
                 document_title: doc.title().to_owned(),
                 document_status: format!("{:?}", doc.status()),
                 signatures,
+                pdf_url: Some(format!("/api/human/sign/{document_id}/pdf?token={token}")),
+                preview_text: preview_text
+                    .or_else(|| contract.as_ref().and_then(|c| c.rendered_text.clone())),
                 contract,
                 entity_name,
             })
@@ -2552,6 +3177,78 @@ async fn resolve_signing_link(
     .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
 
     Ok(Json(result))
+}
+
+#[utoipa::path(
+    get,
+    path = "/v1/human/sign/{document_id}/pdf",
+    tag = "signing",
+    params(
+        ("document_id" = DocumentId, Path, description = "Document ID"),
+        ("token" = String, Query, description = "Signing token"),
+    ),
+    responses(
+        (status = 200, description = "PDF preview for signing", content_type = "application/pdf"),
+        (status = 404, description = "Invalid token or document not found"),
+    ),
+)]
+async fn get_signing_pdf(
+    State(state): State<AppState>,
+    Path(document_id): Path<DocumentId>,
+    Query(query): Query<SigningTokenQuery>,
+) -> Result<impl IntoResponse, AppError> {
+    let token = query.token;
+
+    let pdf_bytes = tokio::task::spawn_blocking({
+        let layout = state.layout.clone();
+        move || {
+            let st = resolve_signing_token(&layout, &token)?;
+            if st.document_id != document_id {
+                return Err(AppError::BadRequest("token does not match document".to_owned()));
+            }
+
+            let store = open_formation_store(&layout, st.workspace_id, st.entity_id)?;
+            let doc = store
+                .read_document("main", document_id)
+                .map_err(|_| AppError::NotFound(format!("document {} not found", document_id)))?;
+            let entity_name = store
+                .read_entity("main")
+                .map_err(|e| AppError::Internal(format!("read entity: {e}")))?
+                .legal_name()
+                .to_owned();
+
+            let body_text = render_governance_document_markdown(&store, &doc)?.unwrap_or_else(|| {
+                doc.content()
+                    .get("contract_id")
+                    .and_then(|v| v.as_str())
+                    .and_then(|cid| {
+                        let path = format!("contracts/{cid}.json");
+                        store.read_json::<Contract>("main", &path).ok()
+                    })
+                    .map(|c| render_signing_preview_text(&c, &entity_name))
+                    .unwrap_or_else(|| {
+                        format!(
+                            "{}\n\nThis document is available for signature, but no contract preview text is stored for it.",
+                            doc.title()
+                        )
+                    })
+            });
+
+            render_text_preview_pdf(doc.title(), &body_text)
+        }
+    })
+    .await
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+
+    let disposition = format!("inline; filename=\"{document_id}.pdf\"");
+    Ok((
+        StatusCode::OK,
+        [
+            (header::CONTENT_TYPE, "application/pdf".to_owned()),
+            (header::CONTENT_DISPOSITION, disposition),
+        ],
+        pdf_bytes,
+    ))
 }
 
 #[utoipa::path(
@@ -2598,7 +3295,9 @@ async fn submit_signing(
         move || {
             let st = resolve_signing_token(&layout, &token)?;
             if st.document_id != document_id {
-                return Err(AppError::BadRequest("token does not match document".to_owned()));
+                return Err(AppError::BadRequest(
+                    "token does not match document".to_owned(),
+                ));
             }
 
             let store = open_formation_store(&layout, st.workspace_id, st.entity_id)?;
@@ -2616,12 +3315,15 @@ async fn submit_signing(
                 ip_address: None,
             };
 
-            doc.sign(sig_request).map_err(|e| {
-                AppError::BadRequest(format!("signing failed: {e}"))
-            })?;
+            doc.sign(sig_request)
+                .map_err(|e| AppError::BadRequest(format!("signing failed: {e}")))?;
 
             store
-                .write_document("main", &doc, &format!("Sign document {document_id} (human UI)"))
+                .write_document(
+                    "main",
+                    &doc,
+                    &format!("Sign document {document_id} (human UI)"),
+                )
                 .map_err(|e| {
                     crate::domain::formation::error::FormationError::Validation(format!(
                         "commit error: {e}"
@@ -2656,10 +3358,7 @@ pub fn formation_routes() -> Router<AppState> {
         )
         // Staged formation flow
         .route("/v1/formations/pending", post(create_pending_formation))
-        .route(
-            "/v1/formations/{entity_id}/founders",
-            post(add_founder),
-        )
+        .route("/v1/formations/{entity_id}/founders", post(add_founder))
         .route(
             "/v1/formations/{entity_id}/finalize",
             post(finalize_pending_formation),
@@ -2713,7 +3412,11 @@ pub fn formation_routes() -> Router<AppState> {
         // Signing links
         .route("/v1/sign/{document_id}", get(get_signing_link))
         // Public signing endpoints (token-authenticated, no API key)
-        .route("/v1/human/sign/{document_id}/resolve", get(resolve_signing_link))
+        .route(
+            "/v1/human/sign/{document_id}/resolve",
+            get(resolve_signing_link),
+        )
+        .route("/v1/human/sign/{document_id}/pdf", get(get_signing_pdf))
         .route("/v1/human/sign/{document_id}/submit", post(submit_signing))
         // Entity lifecycle
         .route("/v1/entities", get(list_entities))
@@ -2751,6 +3454,7 @@ pub fn formation_routes() -> Router<AppState> {
         generate_contract,
         get_signing_link,
         resolve_signing_link,
+        get_signing_pdf,
         submit_signing,
         get_document_pdf,
         preview_document_pdf,

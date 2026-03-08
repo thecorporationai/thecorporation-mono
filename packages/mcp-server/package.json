@@ -1,6 +1,6 @@
 {
   "name": "@thecorporation/mcp-server",
-  "version": "0.1.0",
+  "version": "26.3.8",
   "description": "MCP server for agent-native corporate operations",
   "type": "module",
   "main": "./dist/index.js",
@@ -13,7 +13,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.12.0",
-    "@thecorporation/corp-tools": "0.1.0",
+    "@thecorporation/corp-tools": "26.3.8",
     "zod": "^3.24.0"
   },
   "devDependencies": {

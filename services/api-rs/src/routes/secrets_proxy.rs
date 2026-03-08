@@ -150,6 +150,11 @@ pub fn secrets_routes() -> Router<AppState> {
 #[derive(utoipa::OpenApi)]
 #[openapi(
     paths(resolve_token, interpolate_template),
-    components(schemas(ResolveRequest, ResolveResponse, InterpolateRequest, InterpolateResponse)),
+    components(schemas(
+        ResolveRequest,
+        ResolveResponse,
+        InterpolateRequest,
+        InterpolateResponse
+    ))
 )]
 pub struct SecretsProxyApi;

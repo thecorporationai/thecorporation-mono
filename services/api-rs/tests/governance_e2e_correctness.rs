@@ -67,7 +67,9 @@ async fn post_json(app: &Router, path: &str, body: Value, token: &str) -> (Statu
         .uri(path)
         .header("content-type", "application/json")
         .header("authorization", format!("Bearer {token}"))
-        .body(Body::from(serde_json::to_vec(&body).expect("serialize body")))
+        .body(Body::from(
+            serde_json::to_vec(&body).expect("serialize body"),
+        ))
         .expect("build request");
     let response = app.clone().oneshot(req).await.expect("oneshot");
     let status = response.status();

@@ -9,7 +9,19 @@ use std::ops::{Add, Sub};
 // ── ShareCount ─────────────────────────────────────────────────────────
 
 /// A count of shares. Distinct from `Cents` to prevent cross-type arithmetic.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    utoipa::ToSchema,
+)]
 #[schema(value_type = i64)]
 #[serde(transparent)]
 pub struct ShareCount(i64);

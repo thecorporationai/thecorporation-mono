@@ -20,12 +20,11 @@ export async function documentsSigningLinkCommand(docId: string, opts: { entityI
   const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
   try {
     const result = await client.getSigningLink(docId, eid);
-    printSuccess(`Signing link: ${result.signing_url}`);
-    if (result.token) {
-      console.log(`  Token: ${result.token}`);
-      console.log(`  Share this URL with the signer:`);
-      console.log(`  https://humans.thecorporation.ai/sign/${docId}?token=${result.token}`);
-    }
+    const shareUrl = result.token
+      ? `https://humans.thecorporation.ai/sign/${docId}?token=${result.token}`
+      : result.signing_url ?? `https://humans.thecorporation.ai/sign/${docId}`;
+    printSuccess("Signing link generated.");
+    console.log(shareUrl);
   } catch (err) { printError(`Failed to get signing link: ${err}`); process.exit(1); }
 }
 

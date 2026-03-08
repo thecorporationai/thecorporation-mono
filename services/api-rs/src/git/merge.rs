@@ -946,7 +946,11 @@ mod tests {
         // The squash commit should have exactly one parent (target HEAD).
         let git = repo.inner();
         let commit = git.find_commit(new_oid).unwrap();
-        assert_eq!(commit.parent_count(), 1, "squash commit must have single parent");
+        assert_eq!(
+            commit.parent_count(),
+            1,
+            "squash commit must have single parent"
+        );
 
         // Both files should exist on main.
         assert!(repo.path_exists("main", "a.json").unwrap());
@@ -1064,7 +1068,11 @@ mod tests {
 
         let git = repo.inner();
         let commit = git.find_commit(new_oid).unwrap();
-        assert_eq!(commit.parent_count(), 2, "regular merge must have two parents");
+        assert_eq!(
+            commit.parent_count(),
+            2,
+            "regular merge must have two parents"
+        );
     }
 
     #[test]

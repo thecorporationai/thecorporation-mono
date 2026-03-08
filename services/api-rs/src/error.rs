@@ -74,9 +74,7 @@ impl IntoResponse for AppError {
                 )
                     .into_response();
             }
-            Self::NotImplemented(msg) => {
-                (StatusCode::NOT_IMPLEMENTED, "not_implemented", msg)
-            }
+            Self::NotImplemented(msg) => (StatusCode::NOT_IMPLEMENTED, "not_implemented", msg),
             Self::ServiceUnavailable(msg) => {
                 (StatusCode::SERVICE_UNAVAILABLE, "service_unavailable", msg)
             }

@@ -267,46 +267,87 @@ impl<'de> Deserialize<'de> for LaneCheck {
 
         match raw.op.as_str() {
             "eq" | "neq" => {
-                let field: BoolField = serde_json::from_value(serde_json::Value::String(raw.field.clone()))
-                    .map_err(|_| serde::de::Error::custom(format!(
-                        "op '{}' requires a bool field, got '{}'", raw.op, raw.field
-                    )))?;
-                let value: LaneScalarValue = serde_json::from_value(raw.value)
-                    .map_err(serde::de::Error::custom)?;
+                let field: BoolField = serde_json::from_value(serde_json::Value::String(
+                    raw.field.clone(),
+                ))
+                .map_err(|_| {
+                    serde::de::Error::custom(format!(
+                        "op '{}' requires a bool field, got '{}'",
+                        raw.op, raw.field
+                    ))
+                })?;
+                let value: LaneScalarValue =
+                    serde_json::from_value(raw.value).map_err(serde::de::Error::custom)?;
                 if raw.op == "eq" {
-                    Ok(LaneCheck::Eq { field, value, message: raw.message })
+                    Ok(LaneCheck::Eq {
+                        field,
+                        value,
+                        message: raw.message,
+                    })
                 } else {
-                    Ok(LaneCheck::Neq { field, value, message: raw.message })
+                    Ok(LaneCheck::Neq {
+                        field,
+                        value,
+                        message: raw.message,
+                    })
                 }
             }
             "lte" | "gte" => {
-                let field: NumericField = serde_json::from_value(serde_json::Value::String(raw.field.clone()))
-                    .map_err(|_| serde::de::Error::custom(format!(
-                        "op '{}' requires a numeric field, got '{}'", raw.op, raw.field
-                    )))?;
+                let field: NumericField = serde_json::from_value(serde_json::Value::String(
+                    raw.field.clone(),
+                ))
+                .map_err(|_| {
+                    serde::de::Error::custom(format!(
+                        "op '{}' requires a numeric field, got '{}'",
+                        raw.op, raw.field
+                    ))
+                })?;
                 let value: f64 = raw.value.as_f64().ok_or_else(|| {
                     serde::de::Error::custom(format!("op '{}' requires a numeric value", raw.op))
                 })?;
                 if raw.op == "lte" {
-                    Ok(LaneCheck::Lte { field, value, message: raw.message })
+                    Ok(LaneCheck::Lte {
+                        field,
+                        value,
+                        message: raw.message,
+                    })
                 } else {
-                    Ok(LaneCheck::Gte { field, value, message: raw.message })
+                    Ok(LaneCheck::Gte {
+                        field,
+                        value,
+                        message: raw.message,
+                    })
                 }
             }
             "contains_none" | "contains_any" => {
-                let field: StringListField = serde_json::from_value(serde_json::Value::String(raw.field.clone()))
-                    .map_err(|_| serde::de::Error::custom(format!(
-                        "op '{}' requires a string list field, got '{}'", raw.op, raw.field
-                    )))?;
-                let value: Vec<String> = serde_json::from_value(raw.value)
-                    .map_err(serde::de::Error::custom)?;
+                let field: StringListField = serde_json::from_value(serde_json::Value::String(
+                    raw.field.clone(),
+                ))
+                .map_err(|_| {
+                    serde::de::Error::custom(format!(
+                        "op '{}' requires a string list field, got '{}'",
+                        raw.op, raw.field
+                    ))
+                })?;
+                let value: Vec<String> =
+                    serde_json::from_value(raw.value).map_err(serde::de::Error::custom)?;
                 if raw.op == "contains_none" {
-                    Ok(LaneCheck::ContainsNone { field, value, message: raw.message })
+                    Ok(LaneCheck::ContainsNone {
+                        field,
+                        value,
+                        message: raw.message,
+                    })
                 } else {
-                    Ok(LaneCheck::ContainsAny { field, value, message: raw.message })
+                    Ok(LaneCheck::ContainsAny {
+                        field,
+                        value,
+                        message: raw.message,
+                    })
                 }
             }
-            other => Err(serde::de::Error::custom(format!("unknown lane check op: '{other}'"))),
+            other => Err(serde::de::Error::custom(format!(
+                "unknown lane check op: '{other}'"
+            ))),
         }
     }
 }
@@ -448,14 +489,16 @@ mod tests {
     fn parses_and_validates_default_ast() {
         let ast = default_governance_ast();
         assert_eq!(ast.version, "0.1.0");
-        assert!(ast
-            .rules
-            .tier_defaults
-            .contains_key(&GovernanceCapability::NewContract));
-        assert!(ast
-            .rules
-            .non_delegable
-            .contains(&GovernanceCapability::IssueEquity));
+        assert!(
+            ast.rules
+                .tier_defaults
+                .contains_key(&GovernanceCapability::NewContract)
+        );
+        assert!(
+            ast.rules
+                .non_delegable
+                .contains(&GovernanceCapability::IssueEquity)
+        );
         // Validation runs during load — reaching here means no invariant violations.
     }
 
@@ -469,7 +512,9 @@ mod tests {
         );
         let errors = ast.validate();
         assert!(
-            errors.iter().any(|e| e.contains("non_delegable") && e.contains("issue_equity")),
+            errors
+                .iter()
+                .any(|e| e.contains("non_delegable") && e.contains("issue_equity")),
             "expected non-delegable tier mismatch error, got: {errors:?}"
         );
     }

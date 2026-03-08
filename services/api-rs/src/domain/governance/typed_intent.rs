@@ -141,10 +141,7 @@ fn get_optional_context_number(value: &Value, key: &str) -> Option<f64> {
 }
 
 fn has_context_field(value: &Value, key: &str) -> bool {
-    value
-        .get("context")
-        .and_then(|ctx| ctx.get(key))
-        .is_some()
+    value.get("context").and_then(|ctx| ctx.get(key)).is_some()
 }
 
 fn parse_modifications(value: &Value) -> Vec<String> {
@@ -182,7 +179,10 @@ mod tests {
         let metadata = json!({});
         let typed = TypedIntent::parse("  pay_recurring_obligation  ", &metadata);
         assert_eq!(typed.canonical_intent_type(), "pay_recurring_obligation");
-        assert_eq!(typed.capability(), Some(GovernanceCapability::PayRecurringObligation));
+        assert_eq!(
+            typed.capability(),
+            Some(GovernanceCapability::PayRecurringObligation)
+        );
     }
 
     #[test]
@@ -191,10 +191,7 @@ mod tests {
             "templateApproved": "yes",
             "context": { "priceIncreasePercent": "10" }
         });
-        let typed = TypedIntent::parse(
-            "execute_standard_form_agreement",
-            &metadata,
-        );
+        let typed = TypedIntent::parse("execute_standard_form_agreement", &metadata);
         assert!(!typed.metadata().decode_issues.is_empty());
     }
 }

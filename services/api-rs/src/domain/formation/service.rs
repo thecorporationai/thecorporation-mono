@@ -10,8 +10,15 @@ use crate::domain::formation::{
     content::*, document::Document, entity::Entity, filing::Filing, tax_profile::TaxProfile,
     types::*,
 };
+use crate::domain::governance::profile::{
+    CompanyAddress, DirectorInfo, DocumentOptions, FiscalYearEnd, FounderInfo,
+    GOVERNANCE_PROFILE_PATH, GovernanceProfile, OfficerInfo, StockDetails,
+    VestingSchedule as GovernanceVestingSchedule,
+};
+use crate::domain::governance::{doc_ast, doc_generator};
 use crate::domain::ids::*;
 use crate::git::commit::FileWrite;
+use chrono::{DateTime, Utc};
 
 use super::error::FormationError;
 
@@ -39,6 +46,14 @@ pub struct CapTableSetupResult {
     pub legal_entity_id: LegalEntityId,
     pub instrument_id: InstrumentId,
     pub holders: Vec<HolderSummary>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct FormationProfileOverrides {
+    pub formation_date: Option<DateTime<Utc>>,
+    pub fiscal_year_end: Option<FiscalYearEnd>,
+    pub document_options: Option<DocumentOptions>,
+    pub company_address: Option<CompanyAddress>,
 }
 
 fn member_role_label(role: Option<MemberRole>, entity_type: EntityType) -> String {
@@ -70,6 +85,36 @@ pub fn create_entity(
     authorized_shares: Option<i64>,
     par_value: Option<&str>,
 ) -> Result<FormationResult, FormationError> {
+    create_entity_with_profile_overrides(
+        layout,
+        workspace_id,
+        legal_name,
+        entity_type,
+        jurisdiction,
+        registered_agent_name,
+        registered_agent_address,
+        members,
+        authorized_shares,
+        par_value,
+        FormationProfileOverrides::default(),
+    )
+}
+
+/// Create a new entity with explicit governance profile overrides.
+#[allow(clippy::too_many_arguments)]
+pub fn create_entity_with_profile_overrides(
+    layout: &crate::store::RepoLayout,
+    workspace_id: WorkspaceId,
+    legal_name: String,
+    entity_type: EntityType,
+    jurisdiction: Jurisdiction,
+    registered_agent_name: Option<String>,
+    registered_agent_address: Option<String>,
+    members: &[MemberInput],
+    authorized_shares: Option<i64>,
+    par_value: Option<&str>,
+    profile_overrides: FormationProfileOverrides,
+) -> Result<FormationResult, FormationError> {
     // Validate members
     if members.is_empty() {
         return Err(FormationError::Validation(
@@ -78,18 +123,6 @@ pub fn create_entity(
     }
 
     let entity_id = EntityId::new();
-
-    // Generate formation documents first (borrows only).
-    let doc_specs = generate_formation_documents(
-        entity_type,
-        &legal_name,
-        &jurisdiction,
-        registered_agent_name.as_deref().unwrap_or(""),
-        registered_agent_address.as_deref().unwrap_or(""),
-        members,
-        authorized_shares,
-        par_value,
-    );
 
     // Create filing record (borrows jurisdiction).
     let filing_type = match entity_type {
@@ -142,22 +175,24 @@ pub fn create_entity(
         registered_agent_name,
         registered_agent_address,
     )?;
+    if let Some(formation_date) = profile_overrides.formation_date.as_ref().cloned() {
+        entity.set_formation_date(formation_date);
+    }
+    let governance_profile = build_governance_profile(
+        &entity,
+        members,
+        authorized_shares,
+        par_value,
+        None,
+        Some(&profile_overrides),
+    );
+    governance_profile
+        .validate()
+        .map_err(FormationError::Validation)?;
 
     // Create Document records
-    let mut documents = Vec::new();
-    for (doc_type, title, governance_tag, content) in doc_specs {
-        let doc = Document::new(
-            DocumentId::new(),
-            entity_id,
-            workspace_id,
-            doc_type,
-            title,
-            content,
-            governance_tag,
-            None, // no supersedes
-        );
-        documents.push(doc);
-    }
+    let documents =
+        generate_ast_formation_documents(&entity, workspace_id, members, &governance_profile)?;
 
     let document_ids: Vec<DocumentId> = documents.iter().map(|d| d.document_id()).collect();
 
@@ -173,6 +208,10 @@ pub fn create_entity(
     );
     files.push(
         FileWrite::json("tax/profile.json", &tax_profile)
+            .map_err(|e| FormationError::Storage(e.to_string()))?,
+    );
+    files.push(
+        FileWrite::json(GOVERNANCE_PROFILE_PATH, &governance_profile)
             .map_err(|e| FormationError::Storage(e.to_string()))?,
     );
     for doc in &documents {
@@ -256,6 +295,485 @@ fn investor_type_to_holder_type(it: InvestorType) -> HolderType {
     }
 }
 
+fn format_member_mailing_address(address: &Address) -> String {
+    let mut parts = vec![address.street.clone()];
+    if let Some(street2) = &address.street2
+        && !street2.trim().is_empty()
+    {
+        parts.push(street2.clone());
+    }
+    parts.push(address.city.clone());
+    parts.push(address.state.clone());
+    parts.push(address.zip.clone());
+    parts.join(", ")
+}
+
+fn to_company_address(address: &Address) -> CompanyAddress {
+    CompanyAddress {
+        street: match &address.street2 {
+            Some(street2) if !street2.trim().is_empty() => {
+                format!("{}, {}", address.street, street2)
+            }
+            _ => address.street.clone(),
+        },
+        city: address.city.clone(),
+        county: None,
+        state: address.state.clone(),
+        zip: address.zip.clone(),
+    }
+}
+
+fn officer_title_label(title: OfficerTitle) -> String {
+    match title {
+        OfficerTitle::Ceo => "Chief Executive Officer".to_owned(),
+        OfficerTitle::Cfo => "Chief Financial Officer".to_owned(),
+        OfficerTitle::Secretary => "Secretary".to_owned(),
+        OfficerTitle::President => "President".to_owned(),
+        OfficerTitle::Vp => "Vice President".to_owned(),
+        OfficerTitle::Other => "Officer".to_owned(),
+    }
+}
+
+fn default_authorized_units(entity_type: EntityType, authorized_shares: Option<i64>) -> i64 {
+    match entity_type {
+        EntityType::CCorp => authorized_shares.unwrap_or(10_000_000),
+        EntityType::Llc => authorized_shares.unwrap_or(10_000),
+    }
+}
+
+fn derived_member_units(
+    entity_type: EntityType,
+    member: &MemberInput,
+    authorized_shares: Option<i64>,
+) -> Option<u64> {
+    let units = match entity_type {
+        EntityType::Llc => member.membership_units.unwrap_or_else(|| {
+            let pct = member.ownership_pct.unwrap_or(0.0);
+            let total = default_authorized_units(entity_type, authorized_shares);
+            ((pct / 100.0) * total as f64).round() as i64
+        }),
+        EntityType::CCorp => member
+            .shares_purchased
+            .or(member.share_count)
+            .unwrap_or_else(|| {
+                let pct = member.ownership_pct.unwrap_or(0.0);
+                let total = default_authorized_units(entity_type, authorized_shares) as f64 * 0.8;
+                ((pct / 100.0) * total).round() as i64
+            }),
+    };
+    (units > 0).then_some(units as u64)
+}
+
+fn parse_par_value_units(par_value: Option<&str>) -> Option<u64> {
+    let raw = par_value.unwrap_or("0.0001").trim();
+    let value = raw.parse::<f64>().ok()?;
+    (value > 0.0).then_some((value * 10_000.0).round() as u64)
+}
+
+fn shared_company_address(members: &[MemberInput]) -> Option<CompanyAddress> {
+    let mut addresses = members
+        .iter()
+        .filter(|member| member.investor_type != InvestorType::Agent)
+        .filter_map(|member| member.address.as_ref())
+        .map(to_company_address);
+    let first = addresses.next()?;
+    if addresses.all(|address| {
+        address.street == first.street
+            && address.city == first.city
+            && address.state == first.state
+            && address.zip == first.zip
+    }) {
+        Some(first)
+    } else {
+        None
+    }
+}
+
+fn default_document_options() -> DocumentOptions {
+    DocumentOptions {
+        dating_format: "blank_line".to_owned(),
+        transfer_restrictions: true,
+        right_of_first_refusal: true,
+        s_corp_election: false,
+    }
+}
+
+fn format_par_value_units(units: u64) -> String {
+    if units == 0 {
+        return "0".to_owned();
+    }
+    let whole = units / 10_000;
+    let fractional = units % 10_000;
+    if fractional == 0 {
+        whole.to_string()
+    } else {
+        let rendered = format!("{}.{:04}", whole, fractional);
+        rendered.trim_end_matches('0').to_owned()
+    }
+}
+
+fn build_governance_profile(
+    entity: &Entity,
+    members: &[MemberInput],
+    authorized_shares: Option<i64>,
+    par_value: Option<&str>,
+    base_profile: Option<GovernanceProfile>,
+    overrides: Option<&FormationProfileOverrides>,
+) -> GovernanceProfile {
+    let non_agent_members: Vec<&MemberInput> = members
+        .iter()
+        .filter(|member| member.investor_type != InvestorType::Agent)
+        .collect();
+    let mut profile = base_profile.unwrap_or_else(|| GovernanceProfile::default_for_entity(entity));
+
+    let incorporator = non_agent_members
+        .iter()
+        .find(|member| member.is_incorporator == Some(true))
+        .copied()
+        .or_else(|| non_agent_members.first().copied());
+    let mut directors: Vec<DirectorInfo> = non_agent_members
+        .iter()
+        .filter(|member| matches!(member.role, Some(MemberRole::Director | MemberRole::Chair)))
+        .filter_map(|member| {
+            Some(DirectorInfo {
+                name: member.name.clone(),
+                address: member.address.as_ref().map(to_company_address),
+            })
+        })
+        .collect();
+    if directors.is_empty() && non_agent_members.len() == 1 {
+        let founder = non_agent_members[0];
+        directors.push(DirectorInfo {
+            name: founder.name.clone(),
+            address: founder.address.as_ref().map(to_company_address),
+        });
+    }
+
+    let officers: Vec<OfficerInfo> = non_agent_members
+        .iter()
+        .filter_map(|member| {
+            member.officer_title.map(|title| OfficerInfo {
+                name: member.name.clone(),
+                title: officer_title_label(title),
+            })
+        })
+        .collect();
+    let founders: Vec<FounderInfo> = non_agent_members
+        .iter()
+        .map(|member| FounderInfo {
+            name: member.name.clone(),
+            shares: derived_member_units(entity.entity_type(), member, authorized_shares),
+            vesting: member
+                .vesting
+                .as_ref()
+                .map(|vesting| GovernanceVestingSchedule {
+                    total_months: vesting.total_months as u32,
+                    cliff_months: vesting.cliff_months as u32,
+                    acceleration_on_termination: vesting
+                        .acceleration
+                        .as_deref()
+                        .is_some_and(|value| value.eq_ignore_ascii_case("single_trigger")),
+                }),
+            ip_contribution: member.ip_description.clone(),
+            email: member.email.clone(),
+            address: member.address.as_ref().map(to_company_address),
+        })
+        .collect();
+
+    let board_size = (!directors.is_empty()).then_some(directors.len() as u32);
+    let principal = non_agent_members
+        .iter()
+        .find(|member| matches!(member.role, Some(MemberRole::Manager)))
+        .copied()
+        .or_else(|| (non_agent_members.len() == 1).then_some(non_agent_members[0]));
+    let principal_title = principal.and_then(|member| match member.role {
+        Some(MemberRole::Manager) => Some("Manager".to_owned()),
+        Some(MemberRole::Member) if entity.entity_type() == EntityType::Llc => {
+            Some("Managing Member".to_owned())
+        }
+        _ => member.officer_title.map(officer_title_label),
+    });
+    let adopted_by = match entity.entity_type() {
+        EntityType::CCorp if !directors.is_empty() => "Board of Directors".to_owned(),
+        EntityType::CCorp => "Incorporator".to_owned(),
+        EntityType::Llc => "Members".to_owned(),
+    };
+    let effective_date = overrides
+        .and_then(|config| config.formation_date.map(|value| value.date_naive()))
+        .or_else(|| entity.formation_date().map(|value| value.date_naive()))
+        .unwrap_or(profile.effective_date());
+    profile.update(
+        entity.legal_name().to_owned(),
+        entity.jurisdiction().to_string(),
+        effective_date,
+        adopted_by,
+        profile.last_reviewed(),
+        profile.next_mandatory_review(),
+        entity
+            .registered_agent_name()
+            .map(ToOwned::to_owned)
+            .or_else(|| profile.registered_agent_name().map(ToOwned::to_owned)),
+        entity
+            .registered_agent_address()
+            .map(ToOwned::to_owned)
+            .or_else(|| profile.registered_agent_address().map(ToOwned::to_owned)),
+        board_size.or(profile.board_size()),
+        incorporator
+            .map(|member| member.name.clone())
+            .or_else(|| profile.incorporator_name().map(ToOwned::to_owned)),
+        incorporator
+            .and_then(|member| member.address.as_ref())
+            .map(format_member_mailing_address)
+            .or_else(|| profile.incorporator_address().map(ToOwned::to_owned)),
+        principal
+            .map(|member| member.name.clone())
+            .or_else(|| profile.principal_name().map(ToOwned::to_owned)),
+        principal_title.or_else(|| profile.principal_title().map(ToOwned::to_owned)),
+        Some(profile.incomplete_profile()),
+    );
+    if let Some(address) = overrides
+        .and_then(|config| config.company_address.clone())
+        .or_else(|| shared_company_address(members))
+    {
+        profile.set_company_address(address);
+    }
+    if !founders.is_empty() {
+        profile.set_founders(founders);
+    }
+    if !directors.is_empty() {
+        profile.set_directors(directors);
+    }
+    if !officers.is_empty() {
+        profile.set_officers(officers);
+    }
+    if entity.entity_type() == EntityType::CCorp {
+        let existing_stock = profile.stock_details().cloned();
+        profile.set_stock_details(StockDetails {
+            authorized_shares: authorized_shares
+                .map(|value| value as u64)
+                .or_else(|| {
+                    existing_stock
+                        .as_ref()
+                        .map(|details| details.authorized_shares)
+                })
+                .unwrap_or(
+                    default_authorized_units(entity.entity_type(), authorized_shares) as u64,
+                ),
+            par_value_cents: parse_par_value_units(par_value)
+                .or_else(|| {
+                    existing_stock
+                        .as_ref()
+                        .map(|details| details.par_value_cents)
+                })
+                .unwrap_or(1),
+            share_class: "Common Stock".to_owned(),
+        });
+    }
+    profile.set_fiscal_year_end(
+        overrides
+            .and_then(|config| config.fiscal_year_end.clone())
+            .or_else(|| profile.fiscal_year_end().cloned())
+            .unwrap_or(FiscalYearEnd { month: 12, day: 31 }),
+    );
+    profile.set_document_options(
+        overrides
+            .and_then(|config| config.document_options.clone())
+            .or_else(|| profile.document_options().cloned())
+            .unwrap_or_else(default_document_options),
+    );
+
+    profile
+}
+
+fn formation_document_bindings(entity_type: EntityType) -> Vec<(&'static str, DocumentType)> {
+    match entity_type {
+        EntityType::CCorp => vec![
+            (
+                "certificate_of_incorporation",
+                DocumentType::ArticlesOfIncorporation,
+            ),
+            ("bylaws", DocumentType::Bylaws),
+            ("incorporator_action", DocumentType::IncorporatorAction),
+            ("initial_board_consent", DocumentType::InitialBoardConsent),
+        ],
+        EntityType::Llc => vec![
+            (
+                "articles_of_organization",
+                DocumentType::ArticlesOfOrganization,
+            ),
+            ("operating_agreement", DocumentType::OperatingAgreement),
+            (
+                "initial_written_consent",
+                DocumentType::InitialWrittenConsent,
+            ),
+        ],
+    }
+}
+
+fn formation_signature_requirements(
+    entity_type: EntityType,
+    governance_tag: &str,
+    members: &[MemberInput],
+) -> Vec<serde_json::Value> {
+    let non_agent_members: Vec<&MemberInput> = members
+        .iter()
+        .filter(|member| member.investor_type != InvestorType::Agent)
+        .collect();
+    let incorporator = non_agent_members
+        .iter()
+        .find(|member| member.is_incorporator == Some(true))
+        .copied()
+        .or_else(|| non_agent_members.first().copied());
+    let directors: Vec<&MemberInput> = non_agent_members
+        .iter()
+        .copied()
+        .filter(|member| matches!(member.role, Some(MemberRole::Director | MemberRole::Chair)))
+        .collect();
+    let director_signers: Vec<&MemberInput> =
+        if directors.is_empty() && non_agent_members.len() == 1 {
+            vec![non_agent_members[0]]
+        } else {
+            directors
+        };
+
+    match (entity_type, governance_tag) {
+        (EntityType::CCorp, "certificate_of_incorporation")
+        | (EntityType::CCorp, "incorporator_action") => incorporator
+            .map(|member| {
+                vec![sig_req_to_json(&SignatureRequirement {
+                    role: "Incorporator".to_owned(),
+                    signer_name: member.name.clone(),
+                    signer_email: member.email.clone(),
+                    required: true,
+                })]
+            })
+            .unwrap_or_default(),
+        (EntityType::CCorp, "bylaws") | (EntityType::CCorp, "initial_board_consent") => {
+            director_signers
+                .into_iter()
+                .map(|member| {
+                    sig_req_to_json(&SignatureRequirement {
+                        role: "Director".to_owned(),
+                        signer_name: member.name.clone(),
+                        signer_email: member.email.clone(),
+                        required: true,
+                    })
+                })
+                .collect()
+        }
+        (EntityType::Llc, "articles_of_organization") => incorporator
+            .map(|member| {
+                vec![sig_req_to_json(&SignatureRequirement {
+                    role: "Organizer".to_owned(),
+                    signer_name: member.name.clone(),
+                    signer_email: member.email.clone(),
+                    required: true,
+                })]
+            })
+            .unwrap_or_default(),
+        (EntityType::Llc, "operating_agreement") | (EntityType::Llc, "initial_written_consent") => {
+            non_agent_members
+                .into_iter()
+                .map(|member| {
+                    let role = match member.investor_type {
+                        InvestorType::Entity => "Officer".to_owned(),
+                        _ => match member.role {
+                            Some(MemberRole::Manager) => "Manager".to_owned(),
+                            _ => "Member".to_owned(),
+                        },
+                    };
+                    sig_req_to_json(&SignatureRequirement {
+                        role,
+                        signer_name: member.name.clone(),
+                        signer_email: member.email.clone(),
+                        required: true,
+                    })
+                })
+                .collect()
+        }
+        _ => Vec::new(),
+    }
+}
+
+fn validate_ast_document(
+    entity_type: EntityType,
+    governance_tag: &str,
+    profile: &GovernanceProfile,
+    content: &serde_json::Value,
+) -> Result<(), FormationError> {
+    let ast = doc_ast::default_doc_ast();
+    let doc_def = ast
+        .documents
+        .iter()
+        .find(|doc| doc.id == governance_tag)
+        .ok_or_else(|| {
+            FormationError::Validation(format!(
+                "no AST document definition matches governance_tag '{}'",
+                governance_tag
+            ))
+        })?;
+    let rendered = doc_generator::render_document_from_ast_with_context(
+        doc_def,
+        ast,
+        match entity_type {
+            EntityType::CCorp => doc_ast::EntityTypeKey::Corporation,
+            EntityType::Llc => doc_ast::EntityTypeKey::Llc,
+        },
+        profile,
+        content,
+    );
+    let warnings = doc_generator::detect_placeholder_warnings_for_text(governance_tag, &rendered);
+    if warnings.is_empty() {
+        Ok(())
+    } else {
+        Err(FormationError::Validation(format!(
+            "document '{}' is incomplete for production use: {}",
+            governance_tag,
+            warnings.join("; ")
+        )))
+    }
+}
+
+fn generate_ast_formation_documents(
+    entity: &Entity,
+    workspace_id: WorkspaceId,
+    members: &[MemberInput],
+    profile: &GovernanceProfile,
+) -> Result<Vec<Document>, FormationError> {
+    let ast = doc_ast::default_doc_ast();
+    let mut documents = Vec::new();
+    for (governance_tag, document_type) in formation_document_bindings(entity.entity_type()) {
+        let doc_def = ast
+            .documents
+            .iter()
+            .find(|doc| doc.id == governance_tag)
+            .ok_or_else(|| {
+                FormationError::Validation(format!(
+                    "no AST document definition matches governance_tag '{}'",
+                    governance_tag
+                ))
+            })?;
+        let mut content = serde_json::json!({});
+        let signature_requirements =
+            formation_signature_requirements(entity.entity_type(), governance_tag, members);
+        if !signature_requirements.is_empty() {
+            content["signature_requirements"] = serde_json::Value::Array(signature_requirements);
+        }
+        validate_ast_document(entity.entity_type(), governance_tag, profile, &content)?;
+        documents.push(Document::new(
+            DocumentId::new(),
+            entity.entity_id(),
+            workspace_id,
+            document_type,
+            format!("{} — {}", doc_def.title, entity.legal_name()),
+            content,
+            Some(governance_tag.to_owned()),
+            None,
+        ));
+    }
+    Ok(documents)
+}
+
 /// Set up the cap table for a newly formed entity.
 ///
 /// Creates contacts, an equity legal entity, an instrument, holders, and
@@ -294,6 +812,10 @@ pub fn setup_cap_table(
             m.email.clone(),
             member_role_to_contact_category(m.role),
         );
+        let mut contact = contact;
+        if let Some(address) = &m.address {
+            contact.set_mailing_address(Some(format_member_mailing_address(address)));
+        }
         contacts.push(contact);
     }
 
@@ -320,7 +842,12 @@ pub fn setup_cap_table(
             } else {
                 Some(10_000) // default LLC units
             };
-            (InstrumentKind::MembershipUnit, "UNITS".to_owned(), auth, None)
+            (
+                InstrumentKind::MembershipUnit,
+                "UNITS".to_owned(),
+                auth,
+                None,
+            )
         }
         EntityType::CCorp => {
             let shares = authorized_shares.unwrap_or(10_000_000);
@@ -375,14 +902,12 @@ pub fn setup_cap_table(
                 })
             }
             EntityType::CCorp => {
-                m.shares_purchased
-                    .or(m.share_count)
-                    .unwrap_or_else(|| {
-                        let pct = m.ownership_pct.unwrap_or(0.0);
-                        let total = auth_units.unwrap_or(10_000_000);
-                        // Reserve 20% for future issuances (standard practice)
-                        ((pct / 100.0) * (total as f64 * 0.8)).round() as i64
-                    })
+                m.shares_purchased.or(m.share_count).unwrap_or_else(|| {
+                    let pct = m.ownership_pct.unwrap_or(0.0);
+                    let total = auth_units.unwrap_or(10_000_000);
+                    // Reserve 20% for future issuances (standard practice)
+                    ((pct / 100.0) * (total as f64 * 0.8)).round() as i64
+                })
             }
         };
 
@@ -438,8 +963,7 @@ pub fn setup_cap_table(
     for contact in &contacts {
         let path = format!("contacts/{}.json", contact.contact_id());
         files.push(
-            FileWrite::json(path, contact)
-                .map_err(|e| FormationError::Storage(e.to_string()))?,
+            FileWrite::json(path, contact).map_err(|e| FormationError::Storage(e.to_string()))?,
         );
     }
 
@@ -465,8 +989,7 @@ pub fn setup_cap_table(
     for holder in &holders {
         let path = format!("cap-table/holders/{}.json", holder.holder_id());
         files.push(
-            FileWrite::json(path, holder)
-                .map_err(|e| FormationError::Storage(e.to_string()))?,
+            FileWrite::json(path, holder).map_err(|e| FormationError::Storage(e.to_string()))?,
         );
     }
 
@@ -474,8 +997,7 @@ pub fn setup_cap_table(
     for position in &positions {
         let path = format!("cap-table/positions/{}.json", position.position_id());
         files.push(
-            FileWrite::json(path, position)
-                .map_err(|e| FormationError::Storage(e.to_string()))?,
+            FileWrite::json(path, position).map_err(|e| FormationError::Storage(e.to_string()))?,
         );
     }
 
@@ -641,6 +1163,8 @@ pub fn finalize_formation(
         authorized_shares,
         par_value,
     );
+    let governance_profile =
+        build_governance_profile(&entity, &members, authorized_shares, par_value);
 
     // Create filing record
     let filing_type = match entity.entity_type() {
@@ -710,6 +1234,10 @@ pub fn finalize_formation(
         FileWrite::json("tax/profile.json", &tax_profile)
             .map_err(|e| FormationError::Storage(e.to_string()))?,
     );
+    files.push(
+        FileWrite::json(GOVERNANCE_PROFILE_PATH, &governance_profile)
+            .map_err(|e| FormationError::Storage(e.to_string()))?,
+    );
     for doc in &documents {
         let path = format!("formation/{}.json", doc.document_id());
         files.push(FileWrite::json(path, doc).map_err(|e| FormationError::Storage(e.to_string()))?);
@@ -764,6 +1292,57 @@ mod tests {
     use super::*;
     use crate::store::RepoLayout;
     use tempfile::TempDir;
+
+    fn delaware_address() -> Address {
+        Address {
+            street: "123 Main St".to_string(),
+            street2: None,
+            city: "Dover".to_string(),
+            state: "DE".to_string(),
+            zip: "19901".to_string(),
+        }
+    }
+
+    fn set_registered_agent_profile(
+        layout: &RepoLayout,
+        workspace_id: WorkspaceId,
+        entity_id: EntityId,
+        registered_agent_name: &str,
+        registered_agent_address: &str,
+    ) {
+        let repo_path = layout.entity_repo_path(workspace_id, entity_id);
+        let repo = crate::git::repo::CorpRepo::open(&repo_path)
+            .expect("entity repo should exist when updating governance profile");
+        let mut profile: GovernanceProfile = repo
+            .read_json("main", GOVERNANCE_PROFILE_PATH)
+            .expect("governance profile should exist");
+        profile.update(
+            profile.legal_name().to_owned(),
+            profile.jurisdiction().to_owned(),
+            profile.effective_date(),
+            profile.adopted_by().to_owned(),
+            profile.last_reviewed(),
+            profile.next_mandatory_review(),
+            Some(registered_agent_name.to_owned()),
+            Some(registered_agent_address.to_owned()),
+            profile.board_size(),
+            profile.incorporator_name().map(ToOwned::to_owned),
+            profile.incorporator_address().map(ToOwned::to_owned),
+            profile.principal_name().map(ToOwned::to_owned),
+            profile.principal_title().map(ToOwned::to_owned),
+            Some(profile.incomplete_profile()),
+        );
+        let file = FileWrite::json(GOVERNANCE_PROFILE_PATH, &profile)
+            .expect("governance profile should serialize");
+        crate::git::commit::commit_files(
+            &repo,
+            "main",
+            "Set registered agent details",
+            &[file],
+            None,
+        )
+        .expect("registered agent update should commit");
+    }
 
     fn alice() -> MemberInput {
         MemberInput {
@@ -903,6 +1482,8 @@ mod tests {
 
         let mut alice = alice();
         alice.role = Some(MemberRole::Director);
+        alice.is_incorporator = Some(true);
+        alice.address = Some(delaware_address());
 
         let result = create_entity(
             &layout,
@@ -1013,8 +1594,8 @@ mod tests {
             "Store Test LLC".to_string(),
             EntityType::Llc,
             Jurisdiction::new("Wyoming").unwrap(),
-            None,
-            None,
+            Some("Wyoming Registered Agent LLC".to_string()),
+            Some("123 Capitol Ave, Cheyenne, WY 82001".to_string()),
             &[alice()],
             None,
             None,
@@ -1094,33 +1675,25 @@ mod tests {
         let entity_id = entity.entity_id();
 
         // Step 2: Add founders
-        let members = add_pending_member(
-            &layout,
-            workspace_id,
-            entity_id,
-            alice(),
-        )
-        .expect("add first member should succeed");
+        let members = add_pending_member(&layout, workspace_id, entity_id, alice())
+            .expect("add first member should succeed");
         assert_eq!(members.len(), 1);
 
-        let members = add_pending_member(
+        let members = add_pending_member(&layout, workspace_id, entity_id, bob())
+            .expect("add second member should succeed");
+        assert_eq!(members.len(), 2);
+        set_registered_agent_profile(
             &layout,
             workspace_id,
             entity_id,
-            bob(),
-        )
-        .expect("add second member should succeed");
-        assert_eq!(members.len(), 2);
+            "Wyoming Registered Agent LLC",
+            "123 Capitol Ave, Cheyenne, WY 82001",
+        );
 
         // Step 3: Finalize
-        let (formation, cap_table) = finalize_formation(
-            &layout,
-            workspace_id,
-            entity_id,
-            None,
-            None,
-        )
-        .expect("finalize_formation should succeed");
+        let (formation, cap_table) =
+            finalize_formation(&layout, workspace_id, entity_id, None, None)
+                .expect("finalize_formation should succeed");
 
         assert_eq!(
             formation.entity.formation_status(),
@@ -1145,16 +1718,15 @@ mod tests {
         )
         .unwrap();
 
-        let result = finalize_formation(
-            &layout,
-            workspace_id,
-            entity.entity_id(),
-            None,
-            None,
-        );
+        let result = finalize_formation(&layout, workspace_id, entity.entity_id(), None, None);
 
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("at least one member"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("at least one member")
+        );
     }
 
     #[test]
@@ -1174,6 +1746,13 @@ mod tests {
         let entity_id = entity.entity_id();
 
         add_pending_member(&layout, workspace_id, entity_id, alice()).unwrap();
+        set_registered_agent_profile(
+            &layout,
+            workspace_id,
+            entity_id,
+            "Wyoming Registered Agent LLC",
+            "123 Capitol Ave, Cheyenne, WY 82001",
+        );
         finalize_formation(&layout, workspace_id, entity_id, None, None).unwrap();
 
         // Should reject adding members after finalization

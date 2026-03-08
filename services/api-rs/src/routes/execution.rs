@@ -25,9 +25,8 @@ use crate::domain::formation::types::FormationStatus;
 use crate::domain::governance::delegation_schedule::{CURRENT_SCHEDULE_PATH, DelegationSchedule};
 use crate::domain::governance::incident::IncidentSeverity;
 use crate::domain::governance::policy_engine::{
-    PolicyDecision, PolicyEvaluationContext, amount_from_metadata_cents,
-    canonicalize_intent_type, evaluate_full_with_override,
-    mapped_tier_requires_manual_artifacts,
+    PolicyDecision, PolicyEvaluationContext, amount_from_metadata_cents, canonicalize_intent_type,
+    evaluate_full_with_override, mapped_tier_requires_manual_artifacts,
 };
 use crate::domain::governance::trigger::{GovernanceTriggerSource, GovernanceTriggerType};
 use crate::domain::ids::{

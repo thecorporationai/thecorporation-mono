@@ -13,6 +13,7 @@ pub enum ContractTemplateType {
     EmploymentOffer,
     ContractorAgreement,
     Nda,
+    SafeAgreement,
     Custom,
 }
 

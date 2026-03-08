@@ -501,16 +501,14 @@ impl GovernanceDocAst {
 
 // ── AST loader ───────────────────────────────────────────────────────
 
-const DOC_AST_JSON: &str =
-    include_str!("../../../../../governance/ast/governance-ast.json");
+const DOC_AST_JSON: &str = include_str!("../../../../../governance/ast/governance-ast.json");
 
 static DOC_AST: OnceLock<GovernanceDocAst> = OnceLock::new();
 
 pub fn default_doc_ast() -> &'static GovernanceDocAst {
     DOC_AST.get_or_init(|| {
-        let ast: GovernanceDocAst = serde_json::from_str(DOC_AST_JSON).expect(
-            "governance AST JSON is invalid; fix governance/ast/governance-ast.json",
-        );
+        let ast: GovernanceDocAst = serde_json::from_str(DOC_AST_JSON)
+            .expect("governance AST JSON is invalid; fix governance/ast/governance-ast.json");
         let errors = ast.validate();
         if !errors.is_empty() {
             panic!(

@@ -10,7 +10,9 @@ use uuid::Uuid;
 /// Generate a newtype wrapper around `Uuid` with Display, FromStr, Serialize, etc.
 macro_rules! define_id {
     ($name:ident) => {
-        #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, utoipa::ToSchema)]
+        #[derive(
+            Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, utoipa::ToSchema,
+        )]
         #[schema(value_type = uuid::Uuid, format = "uuid")]
         #[serde(transparent)]
         pub struct $name(Uuid);

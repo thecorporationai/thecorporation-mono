@@ -15,6 +15,8 @@ pub struct Contact {
     contact_type: ContactType,
     name: String,
     email: Option<String>,
+    #[serde(default)]
+    mailing_address: Option<String>,
     phone: Option<String>,
     category: ContactCategory,
     cap_table_access: CapTableAccess,
@@ -40,6 +42,7 @@ impl Contact {
             contact_type,
             name,
             email,
+            mailing_address: None,
             phone: None,
             category,
             cap_table_access: CapTableAccess::None_,
@@ -69,6 +72,10 @@ impl Contact {
         self.email = email;
     }
 
+    pub fn set_mailing_address(&mut self, mailing_address: Option<String>) {
+        self.mailing_address = mailing_address;
+    }
+
     pub fn set_notes(&mut self, notes: String) {
         self.notes = Some(notes);
     }
@@ -95,6 +102,9 @@ impl Contact {
     }
     pub fn email(&self) -> Option<&str> {
         self.email.as_deref()
+    }
+    pub fn mailing_address(&self) -> Option<&str> {
+        self.mailing_address.as_deref()
     }
     pub fn phone(&self) -> Option<&str> {
         self.phone.as_deref()
@@ -139,6 +149,7 @@ mod tests {
         assert_eq!(c.cap_table_access(), CapTableAccess::None_);
         assert_eq!(c.name(), "Jane Doe");
         assert_eq!(c.email(), Some("jane@example.com"));
+        assert!(c.mailing_address().is_none());
         assert!(c.phone().is_none());
         assert!(c.notes().is_none());
     }
@@ -163,8 +174,13 @@ mod tests {
     fn set_phone_and_notes() {
         let mut c = make_contact();
         c.set_phone("555-1234".to_owned());
+        c.set_mailing_address(Some("1 Main St, San Francisco, CA 94105".to_owned()));
         c.set_notes("VIP contact".to_owned());
         assert_eq!(c.phone(), Some("555-1234"));
+        assert_eq!(
+            c.mailing_address(),
+            Some("1 Main St, San Francisco, CA 94105")
+        );
         assert_eq!(c.notes(), Some("VIP contact"));
     }
 
@@ -181,6 +197,7 @@ mod tests {
         assert_eq!(parsed.entity_id(), c.entity_id());
         assert_eq!(parsed.name(), c.name());
         assert_eq!(parsed.email(), c.email());
+        assert_eq!(parsed.mailing_address(), c.mailing_address());
         assert_eq!(parsed.phone(), c.phone());
         assert_eq!(parsed.category(), c.category());
         assert_eq!(parsed.cap_table_access(), CapTableAccess::Summary);

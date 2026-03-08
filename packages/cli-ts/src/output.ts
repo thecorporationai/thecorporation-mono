@@ -319,6 +319,7 @@ export function printBillingPanel(status: ApiRecord, plans: ApiRecord[]): void {
   const plan = s(status.plan ?? status.tier) || "free";
   const subStatus = s(status.status) || "active";
   const periodEnd = s(status.current_period_end);
+  const explanation = s(status.status_explanation);
 
   console.log(chalk.green("─".repeat(50)));
   console.log(chalk.green.bold("  Billing Status"));
@@ -326,6 +327,7 @@ export function printBillingPanel(status: ApiRecord, plans: ApiRecord[]): void {
   console.log(`  ${chalk.bold("Plan:")} ${plan}`);
   console.log(`  ${chalk.bold("Status:")} ${subStatus}`);
   if (periodEnd) console.log(`  ${chalk.bold("Current Period End:")} ${periodEnd}`);
+  if (explanation) console.log(`  ${chalk.bold("Explanation:")} ${explanation}`);
   console.log(chalk.dim("  Manage:  corp billing portal"));
   console.log(chalk.dim("  Upgrade: corp billing upgrade --plan <plan>"));
   console.log(chalk.green("─".repeat(50)));

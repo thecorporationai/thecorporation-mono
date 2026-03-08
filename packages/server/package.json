@@ -1,6 +1,6 @@
 {
   "name": "@thecorporation/server",
-  "version": "0.1.0",
+  "version": "26.3.8",
   "description": "Pre-built binaries for the Corporation API server",
   "type": "module",
   "main": "./dist/index.js",
@@ -24,11 +24,11 @@
     "access": "public"
   },
   "optionalDependencies": {
-    "@thecorporation/server-linux-x64-gnu": "0.1.0",
-    "@thecorporation/server-linux-arm64-gnu": "0.1.0",
-    "@thecorporation/server-darwin-x64": "0.1.0",
-    "@thecorporation/server-darwin-arm64": "0.1.0",
-    "@thecorporation/server-win32-x64-msvc": "0.1.0"
+    "@thecorporation/server-linux-x64-gnu": "26.3.8",
+    "@thecorporation/server-linux-arm64-gnu": "26.3.8",
+    "@thecorporation/server-darwin-x64": "26.3.8",
+    "@thecorporation/server-darwin-arm64": "26.3.8",
+    "@thecorporation/server-win32-x64-msvc": "26.3.8"
   },
   "devDependencies": {
     "tsup": "^8.4.0",

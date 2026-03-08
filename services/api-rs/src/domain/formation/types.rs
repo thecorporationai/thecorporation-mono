@@ -34,10 +34,7 @@ impl<'de> Deserialize<'de> for EntityType {
         match s.as_str() {
             "c_corp" | "corporation" | "ccorp" => Ok(EntityType::CCorp),
             "llc" => Ok(EntityType::Llc),
-            other => Err(serde::de::Error::unknown_variant(
-                other,
-                &["c_corp", "llc"],
-            )),
+            other => Err(serde::de::Error::unknown_variant(other, &["c_corp", "llc"])),
         }
     }
 }
@@ -126,16 +123,48 @@ pub enum DocumentType {
     ArticlesOfOrganization,
     /// Corporate bylaws (C-Corp).
     Bylaws,
+    /// Action of the incorporator appointing the initial board.
+    IncorporatorAction,
+    /// Initial board consent adopting formation resolutions.
+    InitialBoardConsent,
     /// Operating agreement (LLC).
     OperatingAgreement,
+    /// Initial written consent of LLC members.
+    InitialWrittenConsent,
     /// IRS Form SS-4 (EIN application).
     Ss4Application,
     /// Meeting notice.
     MeetingNotice,
     /// Board or member resolution.
     Resolution,
+    /// Consulting services agreement.
+    ConsultingAgreement,
+    /// Employment offer letter.
+    EmploymentOfferLetter,
+    /// Independent contractor services agreement.
+    ContractorServicesAgreement,
+    /// Mutual non-disclosure agreement.
+    MutualNondisclosureAgreement,
     /// SAFE agreement.
     SafeAgreement,
+    /// 409A valuation report.
+    FourOhNineAValuationReport,
+    /// Stock transfer agreement.
+    StockTransferAgreement,
+    /// Transfer approval consent.
+    TransferBoardConsent,
+    /// Board consent for financing transaction.
+    FinancingBoardConsent,
+    /// Equity issuance approval.
+    EquityIssuanceApproval,
+    /// Subscription agreement.
+    SubscriptionAgreement,
+    /// Investor rights agreement.
+    InvestorRightsAgreement,
+    /// Restricted stock purchase agreement.
+    RestrictedStockPurchaseAgreement,
+    /// IP assignment agreement.
+    IpAssignmentAgreement,
     /// Generated contract.
     Contract,
 }

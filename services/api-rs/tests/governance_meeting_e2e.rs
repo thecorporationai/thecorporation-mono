@@ -68,7 +68,9 @@ async fn post_json(app: &Router, path: &str, body: Value, token: &str) -> (Statu
         .uri(path)
         .header("content-type", "application/json")
         .header("authorization", format!("Bearer {token}"))
-        .body(Body::from(serde_json::to_vec(&body).expect("serialize body")))
+        .body(Body::from(
+            serde_json::to_vec(&body).expect("serialize body"),
+        ))
         .expect("build request");
     let response = app.clone().oneshot(req).await.expect("oneshot");
     let status = response.status();
@@ -177,7 +179,11 @@ async fn create_entity(app: &Router) -> (String, String) {
         &token,
     )
     .await;
-    assert_eq!(status, StatusCode::OK, "create governance body failed: {gb}");
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "create governance body failed: {gb}"
+    );
     let body_id = gb["body_id"].as_str().expect("body_id").to_owned();
 
     // Create seats
@@ -226,7 +232,10 @@ async fn get_governance_info(
     .await;
     assert_eq!(status, StatusCode::OK, "list bodies failed: {bodies}");
     let bodies_arr = bodies.as_array().expect("bodies array");
-    assert!(!bodies_arr.is_empty(), "expected at least one governance body");
+    assert!(
+        !bodies_arr.is_empty(),
+        "expected at least one governance body"
+    );
     let body_id = bodies_arr[0]["body_id"]
         .as_str()
         .expect("body_id")
@@ -348,7 +357,11 @@ async fn board_meeting_full_lifecycle() {
         &token,
     )
     .await;
-    assert_eq!(status, StatusCode::OK, "compute resolution failed: {resolution}");
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "compute resolution failed: {resolution}"
+    );
     assert_eq!(resolution["passed"], true);
 
     // 7. Finalize item 1 as Voted
@@ -362,7 +375,11 @@ async fn board_meeting_full_lifecycle() {
         &token,
     )
     .await;
-    assert_eq!(status, StatusCode::OK, "finalize item 1 failed: {finalized}");
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "finalize item 1 failed: {finalized}"
+    );
     assert_eq!(finalized["status"], "voted");
 
     // 8. Finalize item 2 as Tabled
@@ -397,7 +414,11 @@ async fn board_meeting_full_lifecycle() {
         &token,
     )
     .await;
-    assert_eq!(status, StatusCode::OK, "list resolutions failed: {resolutions}");
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "list resolutions failed: {resolutions}"
+    );
     let res_arr = resolutions.as_array().expect("resolutions array");
     assert_eq!(res_arr.len(), 1);
     assert_eq!(res_arr[0]["passed"], true);
