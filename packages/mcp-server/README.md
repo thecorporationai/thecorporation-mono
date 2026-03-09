@@ -39,7 +39,21 @@ claude mcp add thecorporation -- npx -y @thecorporation/mcp-server
 
 ## Authentication
 
-On first run, the server automatically provisions a workspace and saves credentials to `~/.corp/config.json`. To use an existing workspace, set environment variables:
+The MCP server shares credentials with the CLI. Authenticate once, use everywhere.
+
+### Option 1: Authenticate via CLI (recommended)
+
+```bash
+npx @thecorporation/cli setup
+```
+
+This sends a magic link to your email. Click the link, paste the code into the terminal, and your credentials are saved to `~/.corp/config.json`. The MCP server reads this file automatically — no additional configuration needed.
+
+Your workspace is the same whether you access it from the CLI, MCP server, or chat at [humans.thecorporation.ai](https://humans.thecorporation.ai/chat).
+
+### Option 2: Environment variables
+
+Set credentials explicitly in your MCP client config:
 
 ```json
 {
@@ -56,11 +70,31 @@ On first run, the server automatically provisions a workspace and saves credenti
 }
 ```
 
+### Option 3: Self-hosted
+
+Point to your own API server:
+
+```json
+{
+  "mcpServers": {
+    "thecorporation": {
+      "command": "npx",
+      "args": ["-y", "@thecorporation/mcp-server"],
+      "env": {
+        "CORP_API_URL": "http://localhost:8000",
+        "CORP_API_KEY": "sk_...",
+        "CORP_WORKSPACE_ID": "ws_..."
+      }
+    }
+  }
+}
+```
+
 | Env var | Description | Default |
 |---|---|---|
 | `CORP_API_URL` | API base URL | `https://api.thecorporation.ai` |
-| `CORP_API_KEY` | API key | auto-provisioned |
-| `CORP_WORKSPACE_ID` | Workspace ID | auto-provisioned |
+| `CORP_API_KEY` | API key | from `~/.corp/config.json` |
+| `CORP_WORKSPACE_ID` | Workspace ID | from `~/.corp/config.json` |
 
 ## Tools
 

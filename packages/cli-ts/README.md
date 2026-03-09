@@ -15,11 +15,24 @@ npm install -g @thecorporation/cli
 ## Quick Start
 
 ```bash
-corp setup                          # interactive first-run wizard
+corp setup                          # authenticate via magic link
 corp status                         # workspace summary
 corp chat                           # AI assistant with full tool access
 corp form --type llc --name "Acme"  # form a new entity
 ```
+
+## Authentication
+
+`corp setup` authenticates via magic link:
+
+1. Enter your name and email
+2. Check your email for a sign-in link from TheCorporation
+3. Copy the code from the link URL and paste it into the terminal
+4. Credentials are saved to `~/.corp/config.json`
+
+Your workspace is shared across the CLI, [MCP server](https://www.npmjs.com/package/@thecorporation/mcp-server), and [chat](https://humans.thecorporation.ai/chat) — all keyed on your email.
+
+For self-hosted setups (`CORP_API_URL` pointing to your own server), `corp setup` provisions a workspace directly without requiring a magic link.
 
 ## Commands
 
@@ -204,7 +217,7 @@ Inside `corp chat`, these slash commands are available:
 
 ## Configuration
 
-Config is stored at `~/.corp/config.json`. The `corp setup` wizard will populate it, or set values manually:
+Config is stored at `~/.corp/config.json`. `corp setup` populates it via magic link auth. You can also set values manually:
 
 ```bash
 corp config set api_url https://api.thecorporation.ai

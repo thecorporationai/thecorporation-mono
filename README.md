@@ -60,6 +60,16 @@ $ corp agents create --name "Ops Bot" --prompt "Handle recurring operations"
 npx -y @thecorporation/mcp-server
 ```
 
+### Authenticate
+
+All clients share one workspace, keyed on your email. Authenticate once:
+
+```bash
+npx @thecorporation/cli setup
+```
+
+This sends a magic link to your email. Paste the code from the link, and your credentials are saved to `~/.corp/config.json`. The CLI, MCP server, and [chat](https://humans.thecorporation.ai/chat) all use the same workspace.
+
 ### Claude Desktop
 
 Add to your `claude_desktop_config.json`:
@@ -85,8 +95,8 @@ claude mcp add thecorporation -- npx -y @thecorporation/mcp-server
 
 ```bash
 npm install -g @thecorporation/cli
-corp setup
-corp status
+corp setup    # magic link auth
+corp status   # verify connection
 ```
 
 ## Your corporation is a git repo
