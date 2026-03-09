@@ -376,6 +376,27 @@ fn resolve_document_entity_id(
     allowed_entity_ids: Option<&[EntityId]>,
     document_id: DocumentId,
 ) -> Result<EntityId, AppError> {
+    resolve_document_entity_id_inner(layout, workspace_id, requested_entity_id, allowed_entity_ids, document_id, false)
+}
+
+fn resolve_document_entity_id_with_fallback(
+    layout: &crate::store::RepoLayout,
+    workspace_id: WorkspaceId,
+    requested_entity_id: EntityId,
+    allowed_entity_ids: Option<&[EntityId]>,
+    document_id: DocumentId,
+) -> Result<EntityId, AppError> {
+    resolve_document_entity_id_inner(layout, workspace_id, requested_entity_id, allowed_entity_ids, document_id, true)
+}
+
+fn resolve_document_entity_id_inner(
+    layout: &crate::store::RepoLayout,
+    workspace_id: WorkspaceId,
+    requested_entity_id: EntityId,
+    allowed_entity_ids: Option<&[EntityId]>,
+    document_id: DocumentId,
+    fallback_across_entities: bool,
+) -> Result<EntityId, AppError> {
     if let Some(ids) = allowed_entity_ids {
         if !ids.contains(&requested_entity_id) {
             return Err(AppError::NotFound(format!(
@@ -394,22 +415,24 @@ fn resolve_document_entity_id(
         return Ok(requested_entity_id);
     }
 
-    // Fallback: scan all entities in the workspace for the document.
-    for entity_id in layout.list_entity_ids(workspace_id) {
-        if entity_id == requested_entity_id {
-            continue; // already checked
-        }
-        if let Some(ids) = allowed_entity_ids {
-            if !ids.contains(&entity_id) {
+    if fallback_across_entities {
+        // Scan all entities in the workspace for the document.
+        for entity_id in layout.list_entity_ids(workspace_id) {
+            if entity_id == requested_entity_id {
                 continue;
             }
-        }
-        let found = EntityStore::open(layout, workspace_id, entity_id)
-            .ok()
-            .and_then(|store| store.read_document("main", document_id).ok())
-            .is_some();
-        if found {
-            return Ok(entity_id);
+            if let Some(ids) = allowed_entity_ids {
+                if !ids.contains(&entity_id) {
+                    continue;
+                }
+            }
+            let found = EntityStore::open(layout, workspace_id, entity_id)
+                .ok()
+                .and_then(|store| store.read_document("main", document_id).ok())
+                .is_some();
+            if found {
+                return Ok(entity_id);
+            }
         }
     }
 
@@ -2395,7 +2418,7 @@ async fn get_signing_link(
         let token_hash = token_hash.clone();
         let expires_at = expires_at.clone();
         move || {
-            let resolved_entity_id = resolve_document_entity_id(
+            let resolved_entity_id = resolve_document_entity_id_with_fallback(
                 &layout,
                 workspace_id,
                 requested_entity_id,

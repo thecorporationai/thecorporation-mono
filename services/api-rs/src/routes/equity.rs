@@ -6289,6 +6289,10 @@ pub struct CreateValuationRequest {
     pub provider_contact_id: Option<ContactId>,
     #[serde(default)]
     pub report_document_id: Option<DocumentId>,
+    #[serde(default)]
+    pub dlom: Option<String>,
+    #[serde(default)]
+    pub report_date: Option<String>,
 }
 
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
@@ -6449,6 +6453,8 @@ async fn create_valuation(
                         "fmv_per_share": doc_generator::format_usd(req.fmv_per_share_cents.unwrap_or_default()),
                         "enterprise_value": doc_generator::format_usd(req.enterprise_value_cents.unwrap_or_default()),
                         "expiration_date": (req.effective_date + chrono::Duration::days(365)).to_string(),
+                        "dlom": req.dlom.as_deref().unwrap_or("N/A"),
+                        "report_date": req.report_date.as_deref().unwrap_or(&req.effective_date.to_string()),
                     }),
                     Vec::new(),
                 )?)

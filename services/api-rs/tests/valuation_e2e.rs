@@ -381,7 +381,9 @@ async fn create_409a_with_board_approval() {
             "effective_date": "2026-01-15",
             "fmv_per_share_cents": 100,
             "enterprise_value_cents": 5000000_00i64,
-            "methodology": "market"
+            "methodology": "market",
+            "dlom": "25%",
+            "report_date": "2026-01-10"
         }),
         &token,
     )
@@ -487,7 +489,9 @@ async fn submit_adds_to_existing_meeting() {
             "effective_date": "2026-03-01",
             "methodology": "income",
             "fmv_per_share_cents": 150,
-            "enterprise_value_cents": 7500000_00i64
+            "enterprise_value_cents": 7500000_00i64,
+            "dlom": "30%",
+            "report_date": "2026-02-28"
         }),
         &token,
     )
@@ -552,7 +556,9 @@ async fn approve_supersedes_previous() {
                 "effective_date": effective_date,
                 "methodology": "market",
                 "fmv_per_share_cents": 100,
-                "enterprise_value_cents": 5000000_00i64
+                "enterprise_value_cents": 5000000_00i64,
+                "dlom": "25%",
+                "report_date": effective_date
             }),
             token,
         )
