@@ -391,13 +391,32 @@ fn resolve_document_entity_id(
         .is_some();
 
     if has_document {
-        Ok(requested_entity_id)
-    } else {
-        Err(AppError::NotFound(format!(
-            "document {} not found",
-            document_id
-        )))
+        return Ok(requested_entity_id);
     }
+
+    // Fallback: scan all entities in the workspace for the document.
+    for entity_id in layout.list_entity_ids(workspace_id) {
+        if entity_id == requested_entity_id {
+            continue; // already checked
+        }
+        if let Some(ids) = allowed_entity_ids {
+            if !ids.contains(&entity_id) {
+                continue;
+            }
+        }
+        let found = EntityStore::open(layout, workspace_id, entity_id)
+            .ok()
+            .and_then(|store| store.read_document("main", document_id).ok())
+            .is_some();
+        if found {
+            return Ok(entity_id);
+        }
+    }
+
+    Err(AppError::NotFound(format!(
+        "document {} not found",
+        document_id
+    )))
 }
 
 fn parse_formation_date(raw: Option<&str>) -> Result<Option<DateTime<Utc>>, AppError> {
