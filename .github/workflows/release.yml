@@ -153,6 +153,35 @@ jobs:
           echo "NPM_TAG=$NPM_TAG" >> "$GITHUB_OUTPUT"
           echo "Using release version: $VERSION (from tag: $GITHUB_REF_NAME, npm dist-tag: $NPM_TAG)"
 
+      - name: Install dependencies and build TS packages
+        run: |
+          set -euo pipefail
+
+          # file: refs resolve to sibling packages in the repo.
+          # Build corp-tools first (dependency for others)
+          cd packages/corp-tools
+          npm install
+          npm run build
+          cd ../..
+
+          # Build server
+          cd packages/server
+          npm install
+          npm run build
+          cd ../..
+
+          # Build mcp-server
+          cd packages/mcp-server
+          npm install
+          npm run build
+          cd ../..
+
+          # Build cli-ts
+          cd packages/cli-ts
+          npm install
+          npm run build
+          cd ../..
+
       - name: Rewrite versions for publishing
         env:
           VERSION: ${{ steps.version.outputs.VERSION }}
@@ -181,34 +210,6 @@ jobs:
               | bump_section("devDependencies")
             ' "$pkg" > "${pkg}.tmp" && mv "${pkg}.tmp" "$pkg"
           done
-
-      - name: Install dependencies and build TS packages
-        run: |
-          set -euo pipefail
-
-          # Build corp-tools first (dependency for others)
-          cd packages/corp-tools
-          npm install
-          npm run build
-          cd ../..
-
-          # Build server
-          cd packages/server
-          npm install
-          npm run build
-          cd ../..
-
-          # Build mcp-server
-          cd packages/mcp-server
-          npm install
-          npm run build
-          cd ../..
-
-          # Build cli-ts
-          cd packages/cli-ts
-          npm install
-          npm run build
-          cd ../..
 
       - name: Publish to npm
         env:
