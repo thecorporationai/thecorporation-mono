@@ -236,17 +236,17 @@ thecorporation-mono/
 
 ## Comparison
 
-| | TheCorporation | Stripe Atlas | Doola |
+| | TheCorporation | Pulley | Bizee |
 |---|---|---|---|
 | **Data ownership** | git repo (yours) | their database | their database |
 | **Version control** | every commit | — | — |
 | **Agent / MCP access** | 36 MCP tools | — | — |
 | **Open source** | yes | — | — |
 | **Self-hostable** | yes | — | — |
-| **Data portability** | `git clone` | PDF only | export request |
+| **Data portability** | `git clone` | CSV export | PDF export |
 | **Agent workers** | git-configured | — | — |
-| **Price** | Free / $299/yr | $500 once | $297/yr |
-| **Cap table** | yes | — | — |
+| **Price** | Free / $299/yr | $399/yr | $299/yr |
+| **Cap table** | yes | yes | — |
 | **Ongoing compliance** | yes | — | yes |
 | **CLI / API** | yes | — | — |
 

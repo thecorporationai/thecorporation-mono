@@ -3524,14 +3524,33 @@ async fn written_consent(
                 0,             // No notice days
             );
 
-            let path = format!("governance/meetings/{}/meeting.json", meeting_id);
-            store
-                .write_json(
-                    "main",
-                    &path,
+            // Create an agenda item from the description so there is
+            // something to vote on in the written-consent flow.
+            let item_id = AgendaItemId::new();
+            let item = AgendaItem::new(
+                item_id,
+                meeting_id,
+                1, // first (and only) agenda item
+                req.description.clone(),
+                Some(req.description),
+                AgendaItemType::Resolution,
+            );
+
+            let files = vec![
+                FileWrite::json(
+                    format!("governance/meetings/{}/meeting.json", meeting_id),
                     &meeting,
-                    &format!("Written consent {meeting_id}"),
                 )
+                .map_err(|e| AppError::Internal(format!("serialize meeting: {e}")))?,
+                FileWrite::json(
+                    format!("governance/meetings/{}/agenda/{}.json", meeting_id, item_id),
+                    &item,
+                )
+                .map_err(|e| AppError::Internal(format!("serialize agenda item: {e}")))?,
+            ];
+
+            store
+                .commit("main", &format!("Written consent {meeting_id}"), files)
                 .map_err(|e| AppError::Internal(format!("commit: {e}")))?;
 
             Ok::<_, AppError>(meeting)

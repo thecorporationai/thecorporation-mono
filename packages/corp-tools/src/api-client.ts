@@ -284,7 +284,7 @@ export class CorpAPIClient {
     return this.get(`/v1/sign/${documentId}`, { entity_id: entityId }) as Promise<ApiRecord>;
   }
   async validatePreviewPdf(entityId: string, documentId: string): Promise<ApiRecord> {
-    const resp = await this.request("GET", "/v1/documents/preview/pdf", undefined, { entity_id: entityId, document_id: documentId });
+    const resp = await this.request("GET", "/v1/documents/preview/pdf/validate", undefined, { entity_id: entityId, document_id: documentId });
     await this.throwIfError(resp);
     return { entity_id: entityId, document_id: documentId };
   }

@@ -2562,6 +2562,71 @@ pub struct PreviewDocumentQuery {
     pub document_id: String,
 }
 
+/// Validate that a document definition exists and applies to the entity type.
+/// Does NOT render the PDF — returns instantly.
+fn validate_preview_document(
+    layout: &crate::store::RepoLayout,
+    workspace_id: WorkspaceId,
+    entity_id: EntityId,
+    doc_id: &str,
+) -> Result<(), AppError> {
+    let store = open_formation_store(layout, workspace_id, entity_id)?;
+    let entity = store
+        .read_entity("main")
+        .map_err(|e| AppError::Internal(format!("read entity: {e}")))?;
+    let entity_type = match entity.entity_type() {
+        EntityType::CCorp => doc_ast::EntityTypeKey::Corporation,
+        EntityType::Llc => doc_ast::EntityTypeKey::Llc,
+    };
+    let ast = doc_ast::default_doc_ast();
+    let doc_def = ast
+        .documents
+        .iter()
+        .find(|d| d.id == doc_id)
+        .ok_or_else(|| {
+            AppError::NotFound(format!(
+                "no AST document definition matches id '{doc_id}'"
+            ))
+        })?;
+    if !doc_def.entity_scope.matches(entity_type) {
+        return Err(AppError::UnprocessableEntity(format!(
+            "document '{doc_id}' does not apply to entity type {entity_type:?}"
+        )));
+    }
+    Ok(())
+}
+
+#[utoipa::path(
+    get,
+    path = "/v1/documents/preview/pdf/validate",
+    tag = "formation",
+    params(PreviewDocumentQuery),
+    responses(
+        (status = 200, description = "Document definition is valid"),
+        (status = 404, description = "Document definition not found"),
+        (status = 422, description = "Document does not apply to entity type"),
+    ),
+)]
+/// Validate a document definition without rendering. Returns instantly.
+async fn validate_preview_document_pdf(
+    RequireFormationRead(auth): RequireFormationRead,
+    State(state): State<AppState>,
+    Query(query): Query<PreviewDocumentQuery>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let workspace_id = auth.workspace_id();
+    let entity_id = query.entity_id;
+    let doc_id = query.document_id;
+
+    tokio::task::spawn_blocking({
+        let layout = state.layout.clone();
+        move || validate_preview_document(&layout, workspace_id, entity_id, &doc_id)
+    })
+    .await
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+
+    Ok(Json(serde_json::json!({ "valid": true })))
+}
+
 #[utoipa::path(
     get,
     path = "/v1/documents/preview/pdf",
@@ -2590,8 +2655,6 @@ async fn preview_document_pdf(
             let doc_id = doc_id.clone();
             move || {
                 let store = open_formation_store(&layout, workspace_id, entity_id)?;
-
-                // Load entity to determine type
                 let entity = store
                     .read_entity("main")
                     .map_err(|e| AppError::Internal(format!("read entity: {e}")))?;
@@ -2599,15 +2662,11 @@ async fn preview_document_pdf(
                     EntityType::CCorp => doc_ast::EntityTypeKey::Corporation,
                     EntityType::Llc => doc_ast::EntityTypeKey::Llc,
                 };
-
-                // Load profile (or default from entity)
                 let profile: GovernanceProfile =
                     match store.read_json::<GovernanceProfile>("main", GOVERNANCE_PROFILE_PATH) {
                         Ok(p) => p,
                         Err(_) => GovernanceProfile::default_for_entity(&entity),
                     };
-
-                // Load AST and find the document definition
                 let ast = doc_ast::default_doc_ast();
                 let doc_def = ast
                     .documents
@@ -2618,18 +2677,13 @@ async fn preview_document_pdf(
                             "no AST document definition matches id '{doc_id}'"
                         ))
                     })?;
-
-                // Validate scope
                 if !doc_def.entity_scope.matches(entity_type) {
                     return Err(AppError::UnprocessableEntity(format!(
                         "document '{doc_id}' does not apply to entity type {entity_type:?}"
                     )));
                 }
-
-                // Render PDF with empty signatures (preview)
                 let pdf = typst_renderer::render_pdf(doc_def, ast, entity_type, &profile, &[])
                     .map_err(|e| AppError::Internal(format!("PDF rendering failed: {e}")))?;
-
                 Ok::<_, AppError>(pdf)
             }
         }),
@@ -3623,6 +3677,7 @@ pub fn formation_routes() -> Router<AppState> {
             post(confirm_ein),
         )
         .route("/v1/documents/preview/pdf", get(preview_document_pdf))
+        .route("/v1/documents/preview/pdf/validate", get(validate_preview_document_pdf))
         .route("/v1/documents/{document_id}", get(get_document))
         .route("/v1/documents/{document_id}/sign", post(sign_document))
         .route("/v1/documents/{document_id}/pdf", get(get_document_pdf))
