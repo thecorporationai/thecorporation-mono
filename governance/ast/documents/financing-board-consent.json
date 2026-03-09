@@ -1,0 +1,110 @@
+{
+  "id": "financing_board_consent",
+  "category": "transactions",
+  "entity_scope": "both",
+  "path": "transactions/board-consent.md",
+  "title": "Board Consent for Financing Transaction",
+  "preamble": "Approving resolutions for a financing or equity issuance transaction.",
+  "metadata_fields": [
+    {
+      "key": "entity_legal_name",
+      "label": "Entity Name"
+    },
+    {
+      "key": "effective_date",
+      "label": "Effective Date",
+      "placeholder": "YYYY-MM-DD"
+    }
+  ],
+  "content": [
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "UNANIMOUS WRITTEN CONSENT"
+    },
+    {
+      "type": "paragraph",
+      "text": "As of `{{effective_date}}`, the governing authority of **{{entity_legal_name}}** (the \"Company\") adopts the following resolutions relating to the financing transaction described below."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "Recitals"
+    },
+    {
+      "type": "paragraph",
+      "text": "WHEREAS, the Board has reviewed the proposed financing transaction and has determined that it is in the best interest of the Company and its stockholders; and"
+    },
+    {
+      "type": "paragraph",
+      "text": "WHEREAS, the Board desires to authorize the officers to negotiate and execute the definitive agreements for the transaction."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "Transaction Summary"
+    },
+    {
+      "type": "paragraph",
+      "text": "Transaction Type: `{{transaction_type}}`"
+    },
+    {
+      "type": "paragraph",
+      "text": "Counterparty / Investor: `{{counterparty_name}}`"
+    },
+    {
+      "type": "paragraph",
+      "text": "Amount Authorized: `{{amount_authorized}}`"
+    },
+    {
+      "type": "paragraph",
+      "text": "Instrument(s): `{{instrument_name}}`"
+    },
+    {
+      "type": "paragraph",
+      "text": "Closing Window: `{{closing_window_start}}` to `{{closing_window_end}}`"
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "Resolutions"
+    },
+    {
+      "type": "paragraph",
+      "text": "**RESOLVED**, that the financing transaction described above is approved substantially on the terms presented to the Board, together with such non-material revisions as an authorized officer or manager may approve in good faith."
+    },
+    {
+      "type": "paragraph",
+      "text": "**RESOLVED**, that any appropriate officer, manager, or authorized person is authorized and directed to negotiate, finalize, execute, and deliver the definitive agreements, certificates, notices, and ancillary documents necessary or advisable to consummate the approved transaction."
+    },
+    {
+      "type": "paragraph",
+      "text": "**RESOLVED**, that any director having an interest in the transaction has disclosed such interest pursuant to DGCL § 144 (or the applicable statute for the entity type), and the transaction is approved by a sufficient number of disinterested directors (or Members)."
+    },
+    {
+      "type": "paragraph",
+      "text": "**RESOLVED**, that the officers are authorized to take all ancillary actions, including securities filings, bank account changes, and capitalization record updates, as necessary to effectuate the transaction."
+    },
+    {
+      "type": "paragraph",
+      "text": "**RESOLVED**, that all actions previously taken by the officers consistent with the foregoing resolutions are hereby ratified and approved in all respects."
+    },
+    {
+      "type": "paragraph",
+      "text": "**RESOLVED**, that each officer is hereby authorized to take all actions and execute all documents as may be necessary or desirable to carry out the intent and accomplish the purposes of the foregoing resolutions."
+    },
+    {
+      "type": "signature_block",
+      "role": "Director / Approving Authority",
+      "fields": [
+        "name",
+        "title",
+        "date"
+      ]
+    },
+    {
+      "type": "note",
+      "text": "If the entity has multiple directors or approving authorities, each must sign a separate signature block or counterpart."
+    }
+  ]
+}

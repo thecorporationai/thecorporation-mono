@@ -1,0 +1,112 @@
+{
+  "id": "four_oh_nine_a_valuation_report",
+  "category": "transactions",
+  "entity_scope": "corporation",
+  "path": "transactions/409a-valuation-report.md",
+  "title": "409A Valuation Report",
+  "preamble": "Board-use summary of the current 409A valuation and supporting fair market value conclusion.",
+  "metadata_fields": [
+    {
+      "key": "entity_legal_name",
+      "label": "Company Name"
+    },
+    {
+      "key": "effective_date",
+      "label": "Effective Date",
+      "placeholder": "YYYY-MM-DD"
+    }
+  ],
+  "content": [
+    {
+      "type": "paragraph",
+      "text": "This 409A valuation report summarizes the fair market value analysis prepared for **{{entity_legal_name}}** as of `{{effective_date}}` for internal equity pricing, board approval, and recordkeeping purposes."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "1. Purpose"
+    },
+    {
+      "type": "paragraph",
+      "text": "This valuation was performed for the purpose of determining the fair market value of the Company's Common Stock for equity compensation grants in compliance with Section 409A of the Internal Revenue Code."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "2. Safe Harbor Reference"
+    },
+    {
+      "type": "paragraph",
+      "text": "This valuation was performed by a qualified independent appraiser within the meaning of Treasury Regulation § 1.409A-1(b)(5)(iv)(B), providing a rebuttable presumption of reasonableness."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "3. Valuation Summary"
+    },
+    {
+      "type": "paragraph",
+      "text": "**Valuation Provider:** `{{provider_name}}`"
+    },
+    {
+      "type": "paragraph",
+      "text": "**Methodology:** `{{methodology}}`"
+    },
+    {
+      "type": "paragraph",
+      "text": "**As-of Date:** `{{effective_date}}`"
+    },
+    {
+      "type": "paragraph",
+      "text": "**Fair Market Value Per Share:** `{{fmv_per_share}}`"
+    },
+    {
+      "type": "paragraph",
+      "text": "**Enterprise Value:** `{{enterprise_value}}`"
+    },
+    {
+      "type": "paragraph",
+      "text": "**Discount for Lack of Marketability:** `{{dlom}}`"
+    },
+    {
+      "type": "paragraph",
+      "text": "**Report Date:** `{{report_date}}`"
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "4. Validity"
+    },
+    {
+      "type": "paragraph",
+      "text": "This valuation is valid for twelve (12) months from the valuation date, unless a material event occurs (financing, acquisition, significant revenue change, or other event) that would reasonably be expected to affect the fair market value of the Company's equity."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "5. Board Acceptance"
+    },
+    {
+      "type": "paragraph",
+      "text": "**RESOLVED**, that the Board accepts the 409A valuation report dated `{{report_date}}` and adopts the fair market value of `{{fmv_per_share}}` per share for equity grants made on or after `{{effective_date}}`."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "6. Standard Disclaimer"
+    },
+    {
+      "type": "paragraph",
+      "text": "The valuation provider provides no guarantee of the conclusions reached. Valuations involve estimates and judgments that are inherently uncertain. Actual results may differ from estimated values. Past results are not indicative of future performance. The Company and its Board should consider all relevant factors in their determination of fair market value."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "7. Record Retention"
+    },
+    {
+      "type": "paragraph",
+      "text": "Retain this report and all supporting documentation for at least seven (7) years per IRS record retention requirements (IRC § 6501). This includes the engagement letter, management representations, valuation models, comparable company analyses, and Board resolutions accepting the valuation."
+    }
+  ]
+}

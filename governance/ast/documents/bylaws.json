@@ -1,0 +1,270 @@
+{
+  "id": "bylaws",
+  "category": "corporation",
+  "entity_scope": "corporation",
+  "path": "corporation/bylaws.md",
+  "title": "Bylaws",
+  "preamble": "Bylaws of {{legal_name}}, a Delaware corporation.",
+  "metadata_fields": [
+    {
+      "key": "legal_name",
+      "label": "Corporation Name"
+    },
+    {
+      "key": "effective_date",
+      "label": "Effective Date",
+      "placeholder": "YYYY-MM-DD"
+    }
+  ],
+  "content": [
+    {
+      "type": "paragraph",
+      "text": "These Bylaws are adopted by the initial Board of Directors of **{{legal_name}}** (the \"Corporation\"), a Delaware corporation, pursuant to the Incorporator Action dated `{{effective_date}}`."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "Article I -- Definitions"
+    },
+    {
+      "type": "paragraph",
+      "text": "**Section 1.1 Definitions.** As used in these Bylaws, the following terms have the meanings set forth below:"
+    },
+    {
+      "type": "unordered_list",
+      "items": [
+        "\"Agent Operator\" means an AI-based system designated by the Board to manage day-to-day operations of the Corporation within delegated authority.",
+        "\"Delegation Schedule\" means the Agent Delegation Schedule adopted by reference in these Bylaws, as amended from time to time.",
+        "\"Standing Instructions\" means recurring authority modifications issued by the CEO to the Agent Operator within the adjustment envelope of the Delegation Schedule.",
+        "\"Tier 1\" means actions the Agent Operator may take autonomously without per-instance approval, subject to spending limits and lane conditions.",
+        "\"Tier 2\" means actions requiring explicit approval from the CEO or Board before the Agent Operator may execute.",
+        "\"Tier 3\" means non-delegable actions that must be taken by the Board, stockholders, or officers and may never be performed by the Agent Operator.",
+        "\"Principal\" or \"CEO\" means the Chief Executive Officer of the Corporation, or such other person designated by the Board to supervise the Agent Operator.",
+        "\"Autonomy Lanes\" means the pre-approved categories of Tier 1 action defined in the Delegation Schedule."
+      ]
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "Article II -- Offices"
+    },
+    {
+      "type": "paragraph",
+      "text": "**Section 2.1 Registered Office.** The registered office of the Corporation shall be at `{{registered_agent_address}}`, and the name of the registered agent at such address is `{{registered_agent_name}}`."
+    },
+    {
+      "type": "paragraph",
+      "text": "**Section 2.2 Other Offices.** The Corporation may also have offices at such other places as the Board of Directors may from time to time determine. The principal business office of the Corporation shall be at `{{company_address}}`."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "Article III -- Stockholders"
+    },
+    {
+      "type": "paragraph",
+      "text": "**Section 3.1 Annual Meeting.** The annual meeting of stockholders shall be held at such date, time and place as shall be designated by the Board of Directors."
+    },
+    {
+      "type": "paragraph",
+      "text": "**Section 3.2 Special Meetings.** Special meetings of stockholders may be called by the Board of Directors, the Chairperson of the Board, or the Chief Executive Officer."
+    },
+    {
+      "type": "paragraph",
+      "text": "**Section 3.3 Notice of Meetings.** Written notice of each meeting of stockholders shall be given not less than ten (10) nor more than sixty (60) days before the date of the meeting to each stockholder entitled to vote at such meeting."
+    },
+    {
+      "type": "paragraph",
+      "text": "**Section 3.4 Quorum.** The holders of a majority of the shares of stock entitled to vote, present in person or represented by proxy, shall constitute a quorum for the transaction of business at all meetings of the stockholders."
+    },
+    {
+      "type": "paragraph",
+      "text": "**Section 3.5 Voting.** Directors shall be elected by a plurality of the votes cast. All other matters shall be decided by the affirmative vote of a majority of the votes cast at a meeting at which a quorum is present, unless otherwise required by law, the Certificate of Incorporation, or these Bylaws."
+    },
+    {
+      "type": "paragraph",
+      "text": "**Section 3.6 Action Without Meeting.** No action required or permitted to be taken by stockholders may be taken by written consent without a meeting, as provided in the Certificate of Incorporation."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "Article IV -- Board of Directors"
+    },
+    {
+      "type": "paragraph",
+      "text": "**Section 4.1 General Powers.** The business and affairs of the Corporation shall be managed by or under the direction of the Board of Directors."
+    },
+    {
+      "type": "paragraph",
+      "text": "**Section 4.2 Number and Qualification.** The Board of Directors shall consist of `{{board_size}}` director(s). Directors need not be stockholders."
+    },
+    {
+      "type": "paragraph",
+      "text": "**Section 4.3 Election and Term.** Directors shall be elected at each annual meeting of the stockholders. Each director shall hold office until such director's successor is elected and qualified or until such director's earlier resignation, removal or death."
+    },
+    {
+      "type": "paragraph",
+      "text": "**Section 4.4 Quorum.** A majority of the total number of directors shall constitute a quorum for the transaction of business."
+    },
+    {
+      "type": "paragraph",
+      "text": "**Section 4.5 Regular Meetings.** Regular meetings of the Board of Directors may be held at such times and places as shall be determined from time to time by resolution of the Board of Directors. No additional notice shall be required for regular meetings held at times fixed by Board resolution."
+    },
+    {
+      "type": "paragraph",
+      "text": "**Section 4.6 Special Meetings.** Special meetings of the Board of Directors may be called by the Chairperson of the Board, the Chief Executive Officer, or any two directors. Notice of each special meeting shall be given to each director at least forty-eight (48) hours before the meeting by email, written notice, or other electronic means."
+    },
+    {
+      "type": "paragraph",
+      "text": "**Section 4.7 Waiver of Notice.** Attendance of a director at a meeting shall constitute a waiver of notice of such meeting, except where a director attends for the express purpose of objecting at the beginning of the meeting to the transaction of any business because the meeting was not lawfully called or convened."
+    },
+    {
+      "type": "paragraph",
+      "text": "**Section 4.8 Action Without Meeting.** Any action required or permitted to be taken at any meeting of the Board of Directors or of any committee thereof may be taken without a meeting if all members of the Board or committee consent thereto in writing."
+    },
+    {
+      "type": "paragraph",
+      "text": "**Section 4.9 Vacancies.** Any vacancy on the Board of Directors may be filled by a majority of the remaining directors, even if less than a quorum."
+    },
+    {
+      "type": "paragraph",
+      "text": "**Section 4.10 Compensation.** Directors may receive such compensation for their services as directors as shall be fixed from time to time by resolution of the Board of Directors. The receipt of compensation as a director shall not preclude any director from serving the Corporation in any other capacity and receiving compensation therefor."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "Article V -- Officers"
+    },
+    {
+      "type": "paragraph",
+      "text": "**Section 5.1 Officers.** The officers of the Corporation shall include a Chief Executive Officer, a Secretary, and a Chief Financial Officer. The Board of Directors may also appoint such other officers as it deems necessary."
+    },
+    {
+      "type": "paragraph",
+      "text": "**Section 5.2 Election and Term.** Officers shall be elected by the Board of Directors and shall hold office until their successors are elected and qualified or until their earlier resignation, removal or death."
+    },
+    {
+      "type": "paragraph",
+      "text": "**Section 5.3 Chief Executive Officer.** The Chief Executive Officer shall be the principal executive officer of the Corporation and shall have general supervision of the business and affairs of the Corporation, subject to the direction of the Board of Directors."
+    },
+    {
+      "type": "paragraph",
+      "text": "**Section 5.4 Secretary.** The Secretary shall keep the minutes of the meetings of the stockholders and the Board of Directors, shall give notice of meetings, and shall have custody of the corporate seal."
+    },
+    {
+      "type": "paragraph",
+      "text": "**Section 5.5 Chief Financial Officer.** The Chief Financial Officer shall be responsible for the financial affairs of the Corporation, including maintaining the books of account and financial records."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "Article VI -- Agent Operator"
+    },
+    {
+      "type": "paragraph",
+      "text": "**Section 6.1 Designation.** The Board of Directors may designate one or more Agent Operators to manage the day-to-day operations of the Corporation within the scope of authority set forth in the Agent Delegation Schedule."
+    },
+    {
+      "type": "paragraph",
+      "text": "**Section 6.2 Agent Delegation Schedule.** The Agent Delegation Schedule, as adopted and amended by the Board, is incorporated by reference and defines the authority tiers, spending limits, autonomy lanes, approval mechanics, and constraints governing the Agent Operator."
+    },
+    {
+      "type": "paragraph",
+      "text": "**Section 6.3 Authority Limitations.** The Agent Operator may act only within the scope of authority expressly delegated. The Board or CEO may suspend or revoke Agent authority at any time without notice or cause."
+    },
+    {
+      "type": "paragraph",
+      "text": "**Section 6.4 Escalation Triggers.** The Agent Operator must escalate to Tier 2 whenever: (a) the action is irreversible or difficult to reverse; (b) the action involves a legal obligation not previously approved; (c) the Agent lacks sufficient information to assess risk; (d) the action could expose the Corporation to liability beyond normal operations; (e) a third party requests something outside established patterns; (f) the Agent's confidence is below a reasonable threshold; (g) applicable law requires natural person involvement; or (h) conflicting instructions are not resolvable by precedence rules."
+    },
+    {
+      "type": "paragraph",
+      "text": "**Section 6.5 Self-Governance Constraints.** The Agent Operator may not under any circumstances: (a) modify its own authority, tiers, or spending limits; (b) override, ignore, or delay a CEO directive; (c) represent itself as a natural person; (d) fabricate records, signatures, receipts, or execution status; (e) take Tier 3 actions; (f) authorize transactions benefiting the Agent or its provider; (g) modify, delete, backdate, or reorder audit entries; (h) create credentials or accounts beyond authorized scope; (i) vote, consent, or exercise Board or stockholder rights; or (j) sign documents requiring officer or director signature under the DGCL."
+    },
+    {
+      "type": "paragraph",
+      "text": "**Section 6.6 Authority Certificate.** The Corporation may issue a certificate of Agent authority for third-party reliance, specifying the applicable autonomy lane, transaction class, and any conditions or limitations. Such certificate shall be signed by the CEO or an authorized officer."
+    },
+    {
+      "type": "paragraph",
+      "text": "**Section 6.7 Safe Harbor.** The Corporation shall not pursue claims against the Agent Operator or its provider for actions taken within delegated authority as set forth in the Agent Delegation Schedule, provided the Board acted in good faith in adopting and maintaining the Delegation Schedule. This safe harbor does not apply to: (a) fraud, willful misconduct, or gross negligence; (b) actions outside delegated authority; (c) Tier 3 (non-delegable) actions; (d) fabrication of records or communications; (e) self-dealing or conflicts of interest; or (f) failure to maintain an audit trail."
+    },
+    {
+      "type": "paragraph",
+      "text": "**Section 6.8 Provider Obligations.** The Corporation shall require, in its service agreement with the Agent Operator's provider, that the provider shall not: (a) use entity data for training or secondary purposes without written consent; (b) expand Agent authority without the Corporation's written approval; or (c) fail to support immediate suspension of Agent operations upon the Corporation's request."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "Article VII -- Stock"
+    },
+    {
+      "type": "paragraph",
+      "text": "**Section 7.1 Certificates.** Shares of stock may be certificated or uncertificated, as determined by the Board of Directors."
+    },
+    {
+      "type": "paragraph",
+      "text": "**Section 7.2 Transfer Restrictions.** No stockholder shall transfer, sell, assign, pledge, hypothecate, or otherwise dispose of any shares of stock of the Corporation without the prior written consent of the Board of Directors, unless the Board determines otherwise."
+    },
+    {
+      "type": "paragraph",
+      "text": "**Section 7.3 Right of First Refusal.** The Corporation shall have a right of first refusal with respect to any proposed transfer of shares. Before any stockholder may transfer shares, the stockholder shall first offer such shares to the Corporation on the same terms and conditions as the proposed transfer."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "Article VIII -- Indemnification"
+    },
+    {
+      "type": "paragraph",
+      "text": "**Section 8.1 Right to Indemnification.** The Corporation shall indemnify each person who was or is a party or is threatened to be made a party to any action, suit or proceeding by reason of the fact that he or she is or was a director, officer, or Agent Operator of the Corporation, to the fullest extent authorized by the Delaware General Corporation Law."
+    },
+    {
+      "type": "paragraph",
+      "text": "**Section 8.2 Advancement of Expenses.** Expenses (including attorneys' fees) incurred by a director or officer in defending any action, suit or proceeding shall be paid by the Corporation in advance of the final disposition of such action, suit or proceeding upon receipt of an undertaking by or on behalf of such director or officer to repay such amount if it shall ultimately be determined that such person is not entitled to be indemnified."
+    },
+    {
+      "type": "paragraph",
+      "text": "**Section 8.3 Insurance.** The Corporation may purchase and maintain insurance on behalf of any person who is or was a director, officer, employee, or agent of the Corporation against any liability asserted against such person in any such capacity, whether or not the Corporation would have the power to indemnify such person against such liability."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "Article IX -- Fiscal Year"
+    },
+    {
+      "type": "paragraph",
+      "text": "The fiscal year of the Corporation shall end on `{{fiscal_year_end}}`, unless changed by resolution of the Board of Directors."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "Article X -- Forum Selection"
+    },
+    {
+      "type": "paragraph",
+      "text": "**Section 10.1 Delaware Forum.** Unless the Corporation consents in writing to the selection of an alternative forum, the Court of Chancery of the State of Delaware (or, if the Court of Chancery does not have jurisdiction, the federal district court for the District of Delaware) shall be the sole and exclusive forum for (i) any derivative action or proceeding brought on behalf of the Corporation, (ii) any action asserting a claim of breach of fiduciary duty, (iii) any action arising pursuant to the DGCL, the Certificate of Incorporation, or these Bylaws, or (iv) any action asserting a claim governed by the internal affairs doctrine."
+    },
+    {
+      "type": "paragraph",
+      "text": "**Section 10.2 Federal Forum for Securities Act Claims.** Unless the Corporation consents in writing to the selection of an alternative forum, the federal district courts of the United States of America shall be the exclusive forum for the resolution of any complaint asserting a cause of action arising under the Securities Act of 1933, as amended."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "Article XI -- Amendments"
+    },
+    {
+      "type": "paragraph",
+      "text": "These Bylaws may be amended or repealed by the Board of Directors or by the stockholders."
+    },
+    {
+      "type": "signature_block",
+      "role": "Secretary",
+      "fields": [
+        "name",
+        "title",
+        "date"
+      ]
+    }
+  ]
+}

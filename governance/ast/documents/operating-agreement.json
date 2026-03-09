@@ -1,0 +1,293 @@
+{
+  "id": "operating_agreement",
+  "category": "llc",
+  "entity_scope": "llc",
+  "path": "llc/operating-agreement.md",
+  "title": "Operating Agreement",
+  "preamble": "Operating Agreement of {{legal_name}}, a Wyoming limited liability company.",
+  "metadata_fields": [
+    {
+      "key": "legal_name",
+      "label": "LLC Name"
+    },
+    {
+      "key": "effective_date",
+      "label": "Effective Date",
+      "placeholder": "YYYY-MM-DD"
+    }
+  ],
+  "content": [
+    {
+      "type": "paragraph",
+      "text": "This Operating Agreement (this \"Agreement\") of **{{legal_name}}** (the \"Company\"), a Wyoming limited liability company, is entered into effective as of `{{effective_date}}`, by the Members listed in Exhibit A."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "Section 1 -- Formation and Name"
+    },
+    {
+      "type": "paragraph",
+      "text": "**1.1** The Company has been formed as a Wyoming limited liability company by the filing of Articles of Organization with the Wyoming Secretary of State pursuant to the Wyoming Limited Liability Company Act (W.S. § 17-29-101 et seq.) (the \"Act\")."
+    },
+    {
+      "type": "paragraph",
+      "text": "**1.2** The name of the Company is **{{legal_name}}**."
+    },
+    {
+      "type": "paragraph",
+      "text": "**1.3** The Wyoming DAO LLC Supplement (W.S. §17-31-101 et seq.) reflects Wyoming's legislative policy supporting algorithmically managed entities. While this Company is not formed under the DAO Supplement, this policy context informs the legal receptiveness to the agent authority framework adopted herein."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "Section 2 -- Purpose and Powers"
+    },
+    {
+      "type": "paragraph",
+      "text": "The Company is formed for any lawful purpose permitted under the Act."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "Section 3 -- Members and Interests"
+    },
+    {
+      "type": "paragraph",
+      "text": "**3.1 Members.** The Members, their capital contributions, and their percentage interests are set forth in Exhibit A."
+    },
+    {
+      "type": "paragraph",
+      "text": "**3.2 Member Representations.** Each Member represents and warrants that: (a) such Member has the authority to enter into this Agreement; (b) the execution of this Agreement does not conflict with any other agreement to which such Member is a party; and (c) this Agreement constitutes a binding obligation of such Member, enforceable in accordance with its terms."
+    },
+    {
+      "type": "paragraph",
+      "text": "**3.3 Preemptive Rights.** Members shall have no preemptive rights to subscribe for additional membership interests issued by the Company, unless otherwise approved by the Manager with the consent of the Members."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "Section 4 -- Management"
+    },
+    {
+      "type": "paragraph",
+      "text": "**4.1 Manager-Managed.** The Company shall be manager-managed. The initial Manager is `{{principal_name}}`."
+    },
+    {
+      "type": "paragraph",
+      "text": "**4.2 Authority of Manager.** The Manager shall have full authority to manage the business and affairs of the Company, subject to the limitations set forth in this Agreement and the Act."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "Section 5 -- Agent Operator"
+    },
+    {
+      "type": "paragraph",
+      "text": "**5.1 Designation.** The Manager may designate one or more Agent Operators to manage the day-to-day operations of the Company within the scope of authority set forth in the Agent Delegation Schedule."
+    },
+    {
+      "type": "paragraph",
+      "text": "**5.2 Agent Delegation Schedule.** The Agent Delegation Schedule, as adopted and amended by the Manager with Member approval where required, is incorporated by reference and defines the authority tiers, spending limits, autonomy lanes, approval mechanics, and constraints governing the Agent Operator."
+    },
+    {
+      "type": "paragraph",
+      "text": "**5.3 Non-Waivable Provisions.** Pursuant to W.S. § 17-29-110(c), the following provisions of the Act may not be waived or modified by this Agreement:"
+    },
+    {
+      "type": "ordered_list",
+      "items": [
+        "The power of a person to dissociate as a member under W.S. § 17-29-602(5)(b).",
+        "The right of a court to expel a member under W.S. § 17-29-602(5)(c).",
+        "The requirement to wind up the company's activities under W.S. § 17-29-702.",
+        "The right of a member to approve a merger, conversion, or domestication under W.S. § 17-29-1014(c).",
+        "The obligation of good faith and fair dealing under W.S. § 17-29-409(d), though the Agreement may prescribe the standards by which the performance of the obligation is to be measured if the standards are not manifestly unreasonable.",
+        "The requirement that the operating agreement not unreasonably restrict a right to information or access to records under W.S. § 17-29-410.",
+        "The power of a court to decree dissolution in circumstances specified in W.S. § 17-29-701(a)(iv) and (v).",
+        "The variation of the requirement in W.S. § 17-29-301(a) after formation of a statement of authority.",
+        "The restriction on distributions under W.S. § 17-29-405.",
+        "The requirement that the operating agreement not vary the right to maintain an action under W.S. § 17-29-901 through § 17-29-905.",
+        "The requirement that the operating agreement not vary the power of a court under W.S. § 17-29-204.",
+        "The restriction that an operating agreement not relieve or exonerate a person from liability for conduct involving bad faith, willful misconduct, or reckless indifference under W.S. § 17-29-110(c)(xiii).",
+        "The requirement that the operating agreement not restrict rights of third parties under the Act under W.S. § 17-29-110(c)(xiv)."
+      ]
+    },
+    {
+      "type": "paragraph",
+      "text": "**5.4 Authority Limitations.** The Agent Operator may act only within the scope of authority expressly delegated. The Manager may suspend or revoke Agent authority at any time without notice or cause."
+    },
+    {
+      "type": "paragraph",
+      "text": "**5.5 Escalation Triggers.** The Agent Operator must escalate to Tier 2 whenever: (a) the action is irreversible or difficult to reverse; (b) the action involves a legal obligation not previously approved; (c) the Agent lacks sufficient information to assess risk; (d) the action could expose the Company to liability beyond normal operations; (e) a third party requests something outside established patterns; (f) the Agent's confidence is below a reasonable threshold; (g) applicable law requires natural person involvement; or (h) conflicting instructions are not resolvable by precedence rules."
+    },
+    {
+      "type": "paragraph",
+      "text": "**5.6 Self-Governance Constraints.** The Agent Operator may not under any circumstances: (a) modify its own authority, tiers, or spending limits; (b) override, ignore, or delay a Principal directive; (c) represent itself as a natural person; (d) fabricate records, signatures, receipts, or execution status; (e) take Tier 3 actions; (f) authorize transactions benefiting the Agent or its provider; (g) modify, delete, backdate, or reorder audit entries; or (h) create credentials or accounts beyond authorized scope."
+    },
+    {
+      "type": "paragraph",
+      "text": "**5.7 Authority Certificate.** The Company may issue a certificate of Agent authority for third-party reliance, specifying the applicable autonomy lane, transaction class, and any conditions or limitations. Such certificate shall be signed by the Principal."
+    },
+    {
+      "type": "paragraph",
+      "text": "**5.8 Safe Harbor.** The Company shall not pursue claims against the Agent Operator or its provider for actions taken within delegated authority as set forth in the Agent Delegation Schedule, provided the Manager acted in good faith in adopting and maintaining the Delegation Schedule."
+    },
+    {
+      "type": "paragraph",
+      "text": "**5.9 Safe Harbor Exclusions.** The safe harbor in Section 5.8 does not apply to: (a) fraud, willful misconduct, or gross negligence; (b) actions outside delegated authority; (c) Tier 3 (non-delegable) actions; (d) fabrication of records or communications; (e) self-dealing or conflicts of interest; (f) failure to maintain an audit trail; or (g) violation of non-waivable provisions under W.S. § 17-29-110(c)."
+    },
+    {
+      "type": "paragraph",
+      "text": "**5.10 Provider Obligations.** The Company shall require, in its service agreement with the Agent Operator's provider, that the provider shall not: (a) use entity data for training or secondary purposes without written consent; (b) expand Agent authority without the Company's written approval; or (c) fail to support immediate suspension of Agent operations upon the Company's request."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "Section 6 -- Capital Accounts, Allocations, and Distributions"
+    },
+    {
+      "type": "paragraph",
+      "text": "**6.1 Capital Accounts.** The Company shall maintain a capital account for each Member in accordance with Treasury Regulation § 1.704-1(b)(2)(iv). Each Member's capital account shall be (a) increased by the amount of money and fair market value of property contributed by such Member, and by allocations of Net Profits to such Member; and (b) decreased by the amount of money and fair market value of property distributed to such Member, and by allocations of Net Losses to such Member. Upon liquidation, distributions shall be made in accordance with positive capital account balances after all adjustments for the taxable year of liquidation."
+    },
+    {
+      "type": "paragraph",
+      "text": "**6.2 Definitions.** \"Net Profits\" and \"Net Losses\" mean, for each fiscal year, the Company's taxable income or loss as determined under Section 703(a) of the Internal Revenue Code, with the adjustments required by Treasury Regulation § 1.704-1(b)(2)(iv)(g)."
+    },
+    {
+      "type": "paragraph",
+      "text": "**6.3 Allocations.** Except as provided in Section 6.4, Net Profits and Net Losses shall be allocated to the Members pro rata in accordance with their respective Percentage Interests."
+    },
+    {
+      "type": "paragraph",
+      "text": "**6.4 Regulatory Allocations.** The following regulatory allocations shall be made in the order set forth below and shall take priority over allocations under Section 6.3:"
+    },
+    {
+      "type": "ordered_list",
+      "items": [
+        "**Qualified Income Offset.** If any Member unexpectedly receives an adjustment, allocation, or distribution described in Treasury Regulation § 1.704-1(b)(2)(ii)(d)(4), (5), or (6), items of income and gain shall be allocated to such Member in an amount and manner sufficient to eliminate the deficit balance in such Member's capital account as quickly as possible.",
+        "**Minimum Gain Chargeback.** If there is a net decrease in Company minimum gain during any fiscal year, each Member shall be allocated items of income and gain for such year as required by Treasury Regulation § 1.704-2(f).",
+        "**Partner Nonrecourse Debt Minimum Gain Chargeback.** If there is a net decrease in partner nonrecourse debt minimum gain attributable to a partner nonrecourse debt during any fiscal year, each Member shall be allocated items of income and gain for such year as required by Treasury Regulation § 1.704-2(i)(4).",
+        "**Gross Income Allocation.** Each Member shall be allocated items of Company income and gain to the extent of, and in proportion to, such Member's share of any deficit capital account balance.",
+        "**Section 704(c) Allocations.** In accordance with Section 704(c) of the Code and Treasury Regulation § 1.704-1(b)(4)(i), income, gain, loss, and deduction with respect to any contributed property shall be allocated among the Members so as to take account of any variation between the adjusted basis and fair market value of such property at the time of contribution.",
+        "**Ordering Rules.** Regulatory allocations under this Section 6.4 shall be taken into account first, before allocations under Section 6.3."
+      ]
+    },
+    {
+      "type": "paragraph",
+      "text": "**6.5 Tax Distributions.** The Company shall make mandatory quarterly distributions to each Member in amounts sufficient for each Member to pay estimated federal and state income taxes on income allocated to such Member at the highest applicable marginal rate for individuals (or, if higher, the rate applicable to such Member's tax status). Tax distributions shall have priority over discretionary distributions under Section 6.6."
+    },
+    {
+      "type": "paragraph",
+      "text": "**6.6 Other Distributions.** Distributions other than tax distributions shall be made at such times and in such amounts as determined by the Manager, in proportion to the Members' Percentage Interests, subject to applicable legal restrictions on distributions under W.S. § 17-29-405."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "Section 7 -- Tax Matters"
+    },
+    {
+      "type": "paragraph",
+      "text": "**7.1 Tax Classification.** The Company shall be classified as a partnership (or disregarded entity if single-member) for federal income tax purposes unless the Members elect otherwise."
+    },
+    {
+      "type": "paragraph",
+      "text": "**7.2 Fiscal Year.** The fiscal year of the Company shall end on `{{fiscal_year_end}}`."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "Section 8 -- Transfer of Interests"
+    },
+    {
+      "type": "paragraph",
+      "text": "**8.1 Transfer Restrictions.** No Member may transfer, sell, assign, pledge, or otherwise dispose of all or any part of such Member's interest without the prior written consent of a majority in interest of the other Members."
+    },
+    {
+      "type": "paragraph",
+      "text": "**8.2 Valuation.** In the event of any permitted transfer, the fair market value of the interest shall be determined by mutual agreement of the transferor and transferee, or if they cannot agree, by an independent appraiser selected by the Manager. The cost of the appraisal shall be shared equally by the transferor and transferee."
+    },
+    {
+      "type": "paragraph",
+      "text": "**8.3 Involuntary Transfers.** Upon the death, disability, divorce, or bankruptcy of a Member, the Company shall have the right to purchase the affected Member's interest at fair market value as determined under Section 8.2. Any transfer to an estate, successor, or other involuntary transferee shall be subject to this Agreement."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "Section 9 -- Indemnification"
+    },
+    {
+      "type": "paragraph",
+      "text": "The Company shall indemnify each Manager, Member, and Agent Operator to the fullest extent permitted by the Act."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "Section 10 -- Dissolution"
+    },
+    {
+      "type": "paragraph",
+      "text": "The Company shall be dissolved upon the occurrence of any event specified in the Act, or upon the written consent of all Members."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "Section 11 -- Amendments"
+    },
+    {
+      "type": "paragraph",
+      "text": "This Agreement may be amended only by the written consent of all Members."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "Section 12 -- Governing Law and Dispute Resolution"
+    },
+    {
+      "type": "paragraph",
+      "text": "This Agreement shall be governed by and construed in accordance with the laws of the State of Wyoming. Any dispute arising under this Agreement shall first be submitted to mediation for a period of thirty (30) days. If mediation is unsuccessful, disputes shall be resolved in the Chancery Court of the State of Wyoming, or if such court lacks jurisdiction, the District Courts of the State of Wyoming."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "Section 13 -- General Provisions"
+    },
+    {
+      "type": "paragraph",
+      "text": "**13.1 Entire Agreement.** This Agreement constitutes the entire agreement among the Members with respect to the subject matter hereof and supersedes all prior negotiations, representations, or agreements."
+    },
+    {
+      "type": "paragraph",
+      "text": "**13.2 Severability.** If any provision of this Agreement is held invalid, illegal, or unenforceable, the remaining provisions shall remain in full force and effect."
+    },
+    {
+      "type": "paragraph",
+      "text": "**13.3 Waiver.** The failure of any Member to enforce any provision of this Agreement shall not constitute a waiver of such provision or the right to enforce it at a later time."
+    },
+    {
+      "type": "paragraph",
+      "text": "**13.4 Notices.** All notices required or permitted under this Agreement shall be in writing and shall be delivered personally, sent by nationally recognized overnight courier, or sent by email to the addresses set forth in Exhibit A. Notice shall be deemed received upon personal delivery, one business day after deposit with an overnight courier, or upon confirmed electronic delivery."
+    },
+    {
+      "type": "paragraph",
+      "text": "**13.5 Counterparts.** This Agreement may be executed in counterparts, each of which shall be deemed an original, and all of which together shall constitute one and the same instrument. Electronic signatures shall have the same force and effect as original signatures."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "Exhibit A -- Members"
+    },
+    {
+      "type": "paragraph",
+      "text": "`{{founders_table}}`"
+    },
+    {
+      "type": "signature_block",
+      "role": "Member / Manager",
+      "fields": [
+        "name",
+        "title",
+        "date"
+      ]
+    }
+  ]
+}

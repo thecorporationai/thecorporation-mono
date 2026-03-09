@@ -1,0 +1,132 @@
+{
+  "id": "mutual_nondisclosure_agreement",
+  "category": "transactions",
+  "entity_scope": "both",
+  "path": "transactions/mutual-nondisclosure-agreement.md",
+  "title": "Mutual Non-Disclosure Agreement",
+  "preamble": "Agreement governing the exchange and protection of confidential information.",
+  "metadata_fields": [
+    {
+      "key": "entity_legal_name",
+      "label": "Company Name"
+    },
+    {
+      "key": "effective_date",
+      "label": "Effective Date",
+      "placeholder": "YYYY-MM-DD"
+    }
+  ],
+  "content": [
+    {
+      "type": "paragraph",
+      "text": "This Mutual Non-Disclosure Agreement (this \"Agreement\") is entered into as of `{{effective_date}}` by and between **{{entity_legal_name}}** and `{{counterparty_name}}` (each, a \"Party\" and together, the \"Parties\")."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "1. Purpose"
+    },
+    {
+      "type": "paragraph",
+      "text": "The Parties wish to evaluate and discuss `{{purpose}}` (the \"Purpose\") and, in connection therewith, may disclose certain confidential or proprietary information to one another."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "2. Confidential Information"
+    },
+    {
+      "type": "paragraph",
+      "text": "\"Confidential Information\" means all information disclosed by a Party (the \"Disclosing Party\") to the other Party (the \"Receiving Party\") in connection with the Purpose, whether written, oral, or visual, that is marked as confidential or, if disclosed orally, identified as confidential within thirty (30) days of disclosure. \"Representatives\" means a Party's directors, officers, employees, agents, advisors, and contractors who have a need to know and are bound by confidentiality obligations at least as protective as this Agreement."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "3. Exclusions"
+    },
+    {
+      "type": "paragraph",
+      "text": "Confidential Information does not include information that: (a) is or becomes publicly available without breach of this Agreement; (b) was known to the Receiving Party prior to disclosure, as demonstrated by written records; (c) is independently developed by the Receiving Party without use of the Disclosing Party's Confidential Information; (d) is received from a third party without restriction and without breach of any duty; or (e) is required to be disclosed by law, regulation, or court order."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "4. Obligations"
+    },
+    {
+      "type": "paragraph",
+      "text": "Each Receiving Party shall: (a) use Confidential Information solely for the Purpose; (b) not disclose Confidential Information except to its Representatives; (c) protect Confidential Information with at least the same degree of care as it protects its own confidential information, but no less than reasonable care."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "5. Compelled Disclosure"
+    },
+    {
+      "type": "paragraph",
+      "text": "If the Receiving Party is compelled by law, court order, subpoena, or regulatory demand to disclose Confidential Information, it shall: (a) provide prompt notice to the Disclosing Party (to the extent legally permitted); (b) cooperate with the Disclosing Party's efforts to obtain a protective order; and (c) disclose only the minimum information required."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "6. Return and Destruction"
+    },
+    {
+      "type": "paragraph",
+      "text": "Upon termination of this Agreement or the Disclosing Party's written request, the Receiving Party shall promptly return or destroy all Confidential Information and materials within `{{return_materials_days}}` days and provide written certification of destruction. The Receiving Party may retain copies in routine backup systems and as required by law, subject to ongoing confidentiality obligations."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "7. No License; No Obligation"
+    },
+    {
+      "type": "paragraph",
+      "text": "No license under any intellectual property right is granted by disclosure of Confidential Information. This Agreement does not obligate either Party to enter into any transaction, relationship, or further agreement."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "8. Remedies"
+    },
+    {
+      "type": "paragraph",
+      "text": "Each Party acknowledges that unauthorized use or disclosure of Confidential Information may cause irreparable harm for which monetary damages would be inadequate. Accordingly, in addition to (and not in lieu of) monetary damages, the Disclosing Party shall be entitled to seek injunctive relief."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "9. Term and Survival"
+    },
+    {
+      "type": "paragraph",
+      "text": "This Agreement shall remain in effect for a disclosure period of `{{term_years}}` years from the date hereof. The confidentiality obligations shall survive for `{{confidentiality_period_years}}` years after disclosure of Confidential Information, except that obligations with respect to trade secrets shall survive for so long as such information remains a trade secret under applicable law."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "10. General Provisions"
+    },
+    {
+      "type": "paragraph",
+      "text": "This Agreement is governed by the laws of `{{governing_law}}`, without regard to conflicts of laws principles. Neither Party may assign this Agreement without the other Party's prior written consent. If any provision is held invalid, the remaining provisions remain in full force. This Agreement constitutes the entire agreement on its subject matter. The failure to enforce any provision shall not constitute a waiver. This Agreement may be executed in counterparts and by electronic signature."
+    },
+    {
+      "type": "signature_block",
+      "role": "Company",
+      "fields": [
+        "name",
+        "title",
+        "date"
+      ]
+    },
+    {
+      "type": "signature_block",
+      "role": "Counterparty",
+      "fields": [
+        "name",
+        "date"
+      ]
+    }
+  ]
+}

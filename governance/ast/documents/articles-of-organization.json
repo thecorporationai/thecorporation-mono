@@ -1,0 +1,105 @@
+{
+  "id": "articles_of_organization",
+  "category": "llc",
+  "entity_scope": "llc",
+  "path": "llc/articles-of-organization.md",
+  "title": "Articles of Organization",
+  "preamble": "Filed with the Wyoming Secretary of State. This document establishes the LLC under the Wyoming Limited Liability Company Act.",
+  "metadata_fields": [
+    {
+      "key": "legal_name",
+      "label": "LLC Name"
+    },
+    {
+      "key": "effective_date",
+      "label": "Date of Organization",
+      "placeholder": "YYYY-MM-DD"
+    }
+  ],
+  "content": [
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "ARTICLE I -- Name"
+    },
+    {
+      "type": "paragraph",
+      "text": "The name of the limited liability company is **{{legal_name}}** (the \"Company\")."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "ARTICLE II -- Registered Agent"
+    },
+    {
+      "type": "paragraph",
+      "text": "The name and address of the registered agent in the State of Wyoming is:\n\nName: `{{registered_agent_name}}`\nAddress: `{{registered_agent_address}}`"
+    },
+    {
+      "type": "paragraph",
+      "text": "The registered agent named above has consented to serve in such capacity."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "ARTICLE III -- Management"
+    },
+    {
+      "type": "paragraph",
+      "text": "The Company shall be **manager-managed**. The initial manager is `{{principal_name}}`."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "ARTICLE IV -- Purpose"
+    },
+    {
+      "type": "paragraph",
+      "text": "The Company is organized for any lawful purpose permitted under the Wyoming Limited Liability Company Act."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "ARTICLE V -- Duration"
+    },
+    {
+      "type": "paragraph",
+      "text": "The Company shall have perpetual duration."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "ARTICLE VI -- Series LLC Disclaimer"
+    },
+    {
+      "type": "paragraph",
+      "text": "This Company is not formed as a series LLC under W.S. § 17-29-211."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "ARTICLE VII -- Agent Operator"
+    },
+    {
+      "type": "paragraph",
+      "text": "The Manager is authorized to designate one or more Agent Operators to manage day-to-day operations of the Company within the scope of the Agent Delegation Schedule adopted by reference in the Operating Agreement. The authority of Agent Operators shall be governed by the Operating Agreement and the Agent Delegation Schedule."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "ARTICLE VIII -- Filing Fee"
+    },
+    {
+      "type": "note",
+      "text": "The filing fee for Articles of Organization with the Wyoming Secretary of State is $100."
+    },
+    {
+      "type": "signature_block",
+      "role": "Organizer",
+      "fields": [
+        "name",
+        "date"
+      ]
+    }
+  ]
+}

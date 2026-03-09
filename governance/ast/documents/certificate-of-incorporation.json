@@ -1,0 +1,157 @@
+{
+  "id": "certificate_of_incorporation",
+  "category": "corporation",
+  "entity_scope": "corporation",
+  "path": "corporation/certificate-of-incorporation.md",
+  "title": "Certificate of Incorporation",
+  "preamble": "Filed with the Delaware Secretary of State, Division of Corporations. This document establishes the corporation under the Delaware General Corporation Law.",
+  "metadata_fields": [
+    {
+      "key": "legal_name",
+      "label": "Corporation Name"
+    },
+    {
+      "key": "effective_date",
+      "label": "Date of Incorporation",
+      "placeholder": "YYYY-MM-DD"
+    }
+  ],
+  "content": [
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "FIRST: Name"
+    },
+    {
+      "type": "paragraph",
+      "text": "The name of the corporation is **{{legal_name}}** (the \"Corporation\")."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "SECOND: Registered Office and Agent"
+    },
+    {
+      "type": "paragraph",
+      "text": "The address of the registered office of the Corporation in the State of Delaware is `{{registered_agent_address}}`. The name of the registered agent at such address is `{{registered_agent_name}}`."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "THIRD: Purpose"
+    },
+    {
+      "type": "paragraph",
+      "text": "The purpose of the Corporation is to engage in any lawful act or activity for which corporations may be organized under the General Corporation Law of Delaware."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "FOURTH: Authorized Capital Stock"
+    },
+    {
+      "type": "paragraph",
+      "text": "The total number of shares of stock which the Corporation shall have authority to issue is `{{authorized_shares}}` shares of Common Stock, par value $`{{par_value}}` per share."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "FIFTH: Incorporator"
+    },
+    {
+      "type": "paragraph",
+      "text": "The name and mailing address of the incorporator are:\n\nName: `{{incorporator_name}}`\nAddress: `{{incorporator_address}}`"
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "SIXTH: Board of Directors"
+    },
+    {
+      "type": "paragraph",
+      "text": "The business and affairs of the Corporation shall be managed by or under the direction of the Board of Directors. The number of directors shall be fixed from time to time by resolution of the Board of Directors. The initial number of directors is `{{board_size}}`."
+    },
+    {
+      "type": "paragraph",
+      "text": "Elections of directors need not be by written ballot unless the Bylaws of the Corporation shall so provide."
+    },
+    {
+      "type": "paragraph",
+      "text": "The Board of Directors shall not be classified. Each director shall be elected annually and shall hold office until such director's successor is elected and qualified or until such director's earlier resignation, removal or death."
+    },
+    {
+      "type": "paragraph",
+      "text": "There shall be no cumulative voting in the election of directors."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "SEVENTH: Limitation of Liability"
+    },
+    {
+      "type": "paragraph",
+      "text": "To the fullest extent permitted by the Delaware General Corporation Law, as it now exists or as it may hereafter be amended, a director of the Corporation shall not be personally liable to the Corporation or its stockholders for monetary damages for breach of fiduciary duty as a director."
+    },
+    {
+      "type": "paragraph",
+      "text": "To the fullest extent permitted by the Delaware General Corporation Law, as amended by the 2022 amendment effective August 1, 2022, an officer of the Corporation shall not be personally liable to the Corporation or its stockholders for monetary damages for breach of fiduciary duty as an officer. This provision applies only to acts or omissions occurring on or after August 1, 2022."
+    },
+    {
+      "type": "note",
+      "text": "Officer exculpation is authorized by DGCL §102(b)(7) as amended effective August 1, 2022. This provision does not eliminate liability for (i) breach of the duty of loyalty, (ii) acts or omissions not in good faith or involving intentional misconduct or a knowing violation of law, or (iii) any transaction from which the officer derived an improper personal benefit."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "EIGHTH: Indemnification"
+    },
+    {
+      "type": "paragraph",
+      "text": "The Corporation shall indemnify its directors and officers to the fullest extent permitted by the Delaware General Corporation Law, as it now exists or as it may hereafter be amended. The procedures, conditions, and limitations governing indemnification shall be set forth in the Bylaws."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "NINTH: Severability"
+    },
+    {
+      "type": "paragraph",
+      "text": "If any provision of this Certificate of Incorporation is held invalid, illegal, or unenforceable, the remaining provisions shall remain in full force and effect."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "TENTH: Action by Written Consent of Stockholders"
+    },
+    {
+      "type": "paragraph",
+      "text": "No action required or permitted to be taken by the stockholders of the Corporation may be taken by written consent without a meeting. All actions of stockholders must be taken at a duly called annual or special meeting of stockholders."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "ELEVENTH: Amendment"
+    },
+    {
+      "type": "paragraph",
+      "text": "The Corporation reserves the right to amend, alter, change or repeal any provision contained in this Certificate of Incorporation, in the manner now or hereafter prescribed by statute, and all rights conferred upon stockholders herein are granted subject to this reservation."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "TWELFTH: Agent Operator Authority"
+    },
+    {
+      "type": "paragraph",
+      "text": "The Board of Directors is authorized to designate one or more Agent Operators (as defined in the Bylaws) to act on behalf of the Corporation within the scope of authority delegated by the Board through the Agent Delegation Schedule adopted by reference in the Bylaws. The designation, scope, and constraints of Agent Operator authority shall be governed by the Bylaws and the Agent Delegation Schedule."
+    },
+    {
+      "type": "signature_block",
+      "role": "Incorporator",
+      "fields": [
+        "name",
+        "date"
+      ]
+    }
+  ]
+}

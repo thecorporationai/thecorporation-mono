@@ -68,6 +68,7 @@ pub enum EscalationCondition {
     TemplateApprovedFalse,
     RestrictedModificationsPresent,
     IsReversibleFalse,
+    AgentAssessment,
 }
 
 // ── Typed lane field enums ────────────────────────────────────────────
@@ -183,6 +184,8 @@ pub struct EscalationRule {
     #[serde(default)]
     pub applies: Vec<GovernanceCapability>,
     pub condition: Option<EscalationCondition>,
+    #[serde(default)]
+    pub assessment: Option<String>,
     pub escalate_to: AstAuthorityTier,
     pub reason: String,
 }
@@ -488,7 +491,7 @@ mod tests {
     #[test]
     fn parses_and_validates_default_ast() {
         let ast = default_governance_ast();
-        assert_eq!(ast.version, "0.1.0");
+        assert_eq!(ast.version, "1.0.0");
         assert!(
             ast.rules
                 .tier_defaults

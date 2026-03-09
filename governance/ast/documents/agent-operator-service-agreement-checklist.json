@@ -1,0 +1,167 @@
+{
+  "id": "agent_operator_service_agreement_checklist",
+  "category": "common",
+  "entity_scope": "common",
+  "path": "common/agent-operator-service-agreement-checklist.md",
+  "title": "Agent Operator Service Agreement Checklist",
+  "preamble": "Minimum required terms for the service agreement between the entity and the Agent Operator provider. This checklist is a governance tool, not a contract.",
+  "metadata_fields": [
+    {
+      "key": "last_reviewed",
+      "label": "Last reviewed",
+      "placeholder": "YYYY-MM-DD"
+    }
+  ],
+  "content": [
+    {
+      "type": "paragraph",
+      "text": "Use this checklist to confirm that the executed Agent Operator service agreement includes the minimum governance, security, audit, and data-handling protections required by the Entity."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "1. Data use and confidentiality"
+    },
+    {
+      "type": "table",
+      "headers": [
+        "Requirement",
+        "Status"
+      ],
+      "rows": [
+        [
+          "Provider may not use Entity data for training, benchmarking, or secondary purposes without explicit written Entity consent.",
+          "Required"
+        ],
+        [
+          "Entity data must remain within systems and jurisdictions authorized by the Entity.",
+          "Required"
+        ],
+        [
+          "Provider must maintain commercially reasonable confidentiality, access control, and retention protections.",
+          "Required"
+        ],
+        [
+          "Provider must notify the Entity of any security incident affecting Entity data within 24 hours of discovery.",
+          "Required"
+        ]
+      ]
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "2. Data return and deletion"
+    },
+    {
+      "type": "table",
+      "headers": [
+        "Requirement",
+        "Status"
+      ],
+      "rows": [
+        [
+          "Provider returns Entity data and operational artifacts in portable form within 7 days after termination or replacement.",
+          "Required"
+        ],
+        [
+          "Provider deletes remaining Entity data within 30 days, subject only to legally required retention.",
+          "Required"
+        ],
+        [
+          "Provider supplies written deletion certification on request.",
+          "Required"
+        ]
+      ]
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "3. Security and operational controls"
+    },
+    {
+      "type": "table",
+      "headers": [
+        "Requirement",
+        "Status"
+      ],
+      "rows": [
+        [
+          "Provider supports scoped credential provisioning, rotation, and revocation.",
+          "Required"
+        ],
+        [
+          "Provider maintains audit logs of access to Entity data and systems.",
+          "Required"
+        ],
+        [
+          "Provider supports immediate suspension of Agent operations upon Entity request.",
+          "Required"
+        ],
+        [
+          "Provider maintains a recognized security controls program (for example, SOC 2 Type II or equivalent).",
+          "Recommended"
+        ]
+      ]
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "4. Audit, liability, and change control"
+    },
+    {
+      "type": "table",
+      "headers": [
+        "Requirement",
+        "Status"
+      ],
+      "rows": [
+        [
+          "Entity has reasonable audit or diligence rights regarding Provider compliance.",
+          "Required"
+        ],
+        [
+          "Provider liability carve-outs cover fraud, willful misconduct, gross negligence, and unauthorized data use.",
+          "Required"
+        ],
+        [
+          "Agreement includes a reasonable liability cap for ordinary operational errors only.",
+          "Recommended"
+        ],
+        [
+          "Provider must provide advance notice of material system or model changes affecting controls, security, or delegation scope.",
+          "Required"
+        ]
+      ]
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "5. Termination and governing law"
+    },
+    {
+      "type": "table",
+      "headers": [
+        "Requirement",
+        "Status"
+      ],
+      "rows": [
+        [
+          "Entity may terminate for convenience on 30 days notice and immediately for material breach or material security incident.",
+          "Required"
+        ],
+        [
+          "Post-termination data return, deletion, confidentiality, and cooperation obligations survive termination.",
+          "Required"
+        ],
+        [
+          "Governing law aligns with the Entity's governing documents or another expressly approved jurisdiction.",
+          "Required"
+        ]
+      ]
+    },
+    {
+      "type": "paragraph",
+      "text": "**Last reviewed**: `{{last_reviewed}}`"
+    }
+  ]
+}

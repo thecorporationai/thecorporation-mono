@@ -1,0 +1,122 @@
+{
+  "id": "equity_issuance_approval",
+  "category": "transactions",
+  "entity_scope": "both",
+  "path": "transactions/equity-issuance-approval.md",
+  "title": "Equity Issuance Approval",
+  "preamble": "Approval resolution for issuing equity interests on defined terms.",
+  "metadata_fields": [
+    {
+      "key": "entity_legal_name",
+      "label": "Entity Name"
+    },
+    {
+      "key": "effective_date",
+      "label": "Effective Date",
+      "placeholder": "YYYY-MM-DD"
+    }
+  ],
+  "content": [
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "UNANIMOUS WRITTEN CONSENT"
+    },
+    {
+      "type": "paragraph",
+      "text": "As of `{{effective_date}}`, the approving authority of **{{entity_legal_name}}** (the \"Company\") authorizes the issuance of the securities described below."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "Recitals"
+    },
+    {
+      "type": "paragraph",
+      "text": "WHEREAS, the Board has reviewed the proposed equity issuance and has determined that it is in the best interest of the Company."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "Issuance Terms"
+    },
+    {
+      "type": "paragraph",
+      "text": "Recipient(s): `{{recipient_names}}`"
+    },
+    {
+      "type": "paragraph",
+      "text": "Security Type and Class: `{{security_type_and_class}}`"
+    },
+    {
+      "type": "paragraph",
+      "text": "Quantity / Principal Amount: `{{quantity_or_principal_amount}}`"
+    },
+    {
+      "type": "paragraph",
+      "text": "Purchase Price / Consideration: `{{purchase_price_or_consideration}}`"
+    },
+    {
+      "type": "paragraph",
+      "text": "Vesting / Milestone Conditions: `{{vesting_or_milestone_conditions}}`"
+    },
+    {
+      "type": "paragraph",
+      "text": "Securities Exemption Basis: `{{securities_exemption_basis}}`"
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "Resolutions"
+    },
+    {
+      "type": "paragraph",
+      "text": "**RESOLVED**, that the Board hereby determines that the consideration to be received for the securities is adequate pursuant to DGCL § 152 (or the applicable statute), and upon payment of such consideration the securities shall be fully paid and nonassessable."
+    },
+    {
+      "type": "paragraph",
+      "text": "**RESOLVED**, that for any option or restricted stock grant, the Board has determined the fair market value per share pursuant to a Section 409A valuation, and the exercise price or grant price shall be no less than such fair market value."
+    },
+    {
+      "type": "paragraph",
+      "text": "**RESOLVED**, that the issuance is exempt from registration under the Securities Act of 1933 pursuant to Section 4(a)(2) and Rule 506(b) of Regulation D, and applicable state blue sky exemptions, and that the officers are authorized to make all necessary filings."
+    },
+    {
+      "type": "paragraph",
+      "text": "**RESOLVED**, that certificates or book-entry records shall bear the standard Securities Act restrictive legend."
+    },
+    {
+      "type": "paragraph",
+      "text": "**RESOLVED**, that the issuance is made pursuant to the Company's equity incentive plan (if applicable), and the Board confirms that sufficient shares remain available under the plan's authorized pool."
+    },
+    {
+      "type": "paragraph",
+      "text": "**RESOLVED**, that the officers are authorized to execute all definitive documents, collect consideration, and make all related filings and record updates."
+    },
+    {
+      "type": "paragraph",
+      "text": "**RESOLVED**, that all actions previously taken by the officers consistent with the foregoing resolutions are hereby ratified and approved."
+    },
+    {
+      "type": "paragraph",
+      "text": "**RESOLVED**, that each officer is authorized to take all actions necessary to effectuate the foregoing resolutions."
+    },
+    {
+      "type": "note",
+      "text": "Cap table impact and dilution analysis should be reviewed by the Board prior to adoption of these resolutions."
+    },
+    {
+      "type": "signature_block",
+      "role": "Director / Approving Authority",
+      "fields": [
+        "name",
+        "title",
+        "date"
+      ]
+    },
+    {
+      "type": "note",
+      "text": "If the entity has multiple directors, each must sign a separate signature block or counterpart."
+    }
+  ]
+}

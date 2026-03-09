@@ -1,0 +1,180 @@
+{
+  "id": "investor_rights_agreement",
+  "category": "transactions",
+  "entity_scope": "both",
+  "path": "transactions/investor-rights-agreement.md",
+  "title": "Investor Rights Agreement",
+  "preamble": "Agreement granting an investor specified information, notice, and participation rights.",
+  "metadata_fields": [
+    {
+      "key": "entity_legal_name",
+      "label": "Company Name"
+    },
+    {
+      "key": "effective_date",
+      "label": "Effective Date",
+      "placeholder": "YYYY-MM-DD"
+    }
+  ],
+  "content": [
+    {
+      "type": "paragraph",
+      "text": "This Investor Rights Agreement (this \"Agreement\") is made as of `{{effective_date}}` by and between **{{entity_legal_name}}** (the \"Company\") and `{{investor_name}}` (the \"Investor\")."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "1. Definitions"
+    },
+    {
+      "type": "paragraph",
+      "text": "\"Major Investor\" means any Investor holding at least `{{major_investor_threshold}}` of the Company's outstanding equity. \"Registrable Securities\" means shares of Common Stock issuable upon conversion of Preferred Stock held by Investors. \"Required Holders\" means the holders of a majority of the Registrable Securities. \"New Securities\" means any equity securities of the Company, excluding employee equity plan issuances, strategic partnership issuances, debt conversion, and dividends."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "2. Registration Rights"
+    },
+    {
+      "type": "paragraph",
+      "text": "**2.1 Demand Registration.** Upon written request of the Initiating Holders (holders of at least `{{demand_threshold}}` of the Registrable Securities), the Company shall file a registration statement covering the Registrable Securities, subject to a maximum of two (2) demand registrations and a minimum aggregate offering amount, and blackout periods."
+    },
+    {
+      "type": "paragraph",
+      "text": "**2.2 Piggyback Registration.** If the Company proposes to register any securities, the Company shall give notice to the holders of Registrable Securities and include their shares in the registration, subject to pro rata cutback."
+    },
+    {
+      "type": "paragraph",
+      "text": "**2.3 S-3 Registration.** Once the Company is eligible to use Form S-3, holders may request unlimited S-3 registrations above a minimum aggregate offering amount of $1,000,000."
+    },
+    {
+      "type": "paragraph",
+      "text": "**2.4 Expenses.** The Company shall pay all registration expenses, except underwriting discounts and commissions."
+    },
+    {
+      "type": "paragraph",
+      "text": "**2.5 Indemnification.** The Company and each selling holder shall provide mutual indemnification for material misstatements or omissions in registration statements."
+    },
+    {
+      "type": "paragraph",
+      "text": "**2.6 Lock-Up.** Each holder agrees to a lock-up of one hundred eighty (180) days following the Company's IPO, per the underwriter's request."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "3. Information Rights"
+    },
+    {
+      "type": "paragraph",
+      "text": "The Company shall provide: (a) annual audited financial statements within 120 days of fiscal year end; (b) quarterly unaudited financial statements within 45 days of quarter end; (c) monthly management reporting package; and (d) annual budget and business plan. Major Investors shall have the right to inspect the Company's books and records upon reasonable notice during normal business hours. Information rights terminate upon IPO."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "4. Pro Rata Rights"
+    },
+    {
+      "type": "paragraph",
+      "text": "Major Investors shall have a right of first refusal to participate pro rata in any issuance of New Securities. The Company shall provide written notice of the proposed issuance with material terms, and each Major Investor shall have fifteen (15) days to exercise the right, with closing within fifteen (15) days thereafter."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "5. Board Rights"
+    },
+    {
+      "type": "paragraph",
+      "text": "`{{board_rights_terms}}`"
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "6. Protective Provisions"
+    },
+    {
+      "type": "paragraph",
+      "text": "So long as any Preferred Stock remains outstanding, the Company shall not, without the consent of the Required Holders: (a) amend the charter or bylaws in a manner adverse to the Preferred Stock; (b) create any new class of equity senior to or on parity with the Preferred Stock; (c) declare or pay dividends; (d) redeem or repurchase any equity (except pursuant to employee agreements); (e) increase authorized shares; (f) effect a dissolution, merger, or asset sale; (g) incur indebtedness above `{{debt_threshold}}`; (h) effect a change of control; or (i) enter into related-party transactions outside the ordinary course. Protective provisions terminate upon IPO."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "7. Additional Covenants"
+    },
+    {
+      "type": "paragraph",
+      "text": "The Company shall: (a) maintain D&O insurance; (b) require CIIAAs from all employees and contractors; (c) maintain corporate existence and comply with all material laws; (d) maintain adequate financial controls; and (e) comply with all tax obligations."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "8. Termination"
+    },
+    {
+      "type": "paragraph",
+      "text": "Registration rights survive IPO. Information rights, protective provisions, and pro rata rights terminate upon IPO or when an Investor falls below the Major Investor threshold."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "9. Amendment"
+    },
+    {
+      "type": "paragraph",
+      "text": "This Agreement may be amended by the Company and the Required Holders. No amendment adverse to a particular class shall be effective without the consent of a majority of the holders of that class."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "General Provisions"
+    },
+    {
+      "type": "paragraph",
+      "text": "**Governing Law.** This Agreement shall be governed by and construed in accordance with the laws of `{{governing_law}}`, without regard to conflicts of laws principles."
+    },
+    {
+      "type": "paragraph",
+      "text": "**Dispute Resolution.** Any dispute arising under this Agreement shall first be submitted to mediation for a period of thirty (30) days. If mediation is unsuccessful, disputes shall be resolved by binding arbitration or litigation in the courts of the governing jurisdiction. The prevailing party shall be entitled to reasonable attorney's fees and costs."
+    },
+    {
+      "type": "paragraph",
+      "text": "**Severability.** If any provision of this Agreement is held invalid, illegal, or unenforceable, the remaining provisions shall remain in full force and effect."
+    },
+    {
+      "type": "paragraph",
+      "text": "**Entire Agreement.** This Agreement constitutes the entire agreement between the parties with respect to the subject matter hereof and supersedes all prior negotiations, representations, or agreements."
+    },
+    {
+      "type": "paragraph",
+      "text": "**Notices.** All notices required or permitted under this Agreement shall be in writing and shall be delivered personally, sent by nationally recognized overnight courier, or sent by email. Notice shall be deemed received upon personal delivery, one business day after deposit with an overnight courier, or upon confirmed electronic delivery."
+    },
+    {
+      "type": "paragraph",
+      "text": "**Waiver.** The failure of any party to enforce any provision shall not constitute a waiver of such provision or the right to enforce it at a later time."
+    },
+    {
+      "type": "paragraph",
+      "text": "**Counterparts.** This Agreement may be executed in counterparts, each of which shall be deemed an original, and all of which together shall constitute one and the same instrument. Electronic signatures shall have the same force and effect as original signatures."
+    },
+    {
+      "type": "paragraph",
+      "text": "**Assignment.** Neither party may assign this Agreement without the prior written consent of the other party, except in connection with a merger or sale of all or substantially all assets."
+    },
+    {
+      "type": "signature_block",
+      "role": "Investor",
+      "fields": [
+        "name",
+        "date"
+      ]
+    },
+    {
+      "type": "signature_block",
+      "role": "Company",
+      "fields": [
+        "name",
+        "title",
+        "date"
+      ]
+    }
+  ]
+}

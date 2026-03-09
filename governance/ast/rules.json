@@ -1,0 +1,466 @@
+{
+  "tier_defaults": {
+    "maintain_books_records": 1,
+    "prepare_compliance_docs": 1,
+    "pay_recurring_obligation": 1,
+    "authorize_expenditure": 1,
+    "routine_correspondence": 1,
+    "information_gathering": 1,
+    "compliance_deadline_tracking": 1,
+    "execute_standard_form_agreement": 1,
+    "internal_account_transfer": 1,
+    "payroll_execution": 1,
+    "tax_payment_per_filing": 1,
+    "registered_agent_renewal": 1,
+    "financial_commitment_above_limits": 2,
+    "new_contract": 2,
+    "material_amendment": 2,
+    "hire_employee": 2,
+    "engage_contractor": 2,
+    "tax_election": 2,
+    "accounting_method_change": 2,
+    "equity_communication": 2,
+    "bank_account_open_close": 2,
+    "ambiguous_novel_action": 2,
+    "legal_claim_response": 2,
+    "franchise_tax_method_choice": 2,
+    "amend_charter": 3,
+    "amend_governance_docs": 3,
+    "issue_equity": 3,
+    "modify_agent_framework": 3,
+    "dissolve_entity": 3,
+    "merge_consolidate": 3,
+    "sell_substantially_all_assets": 3,
+    "personal_guarantee": 3,
+    "remove_replace_agent": 3,
+    "initiate_settle_litigation": 3,
+    "declare_dividends": 3,
+    "admit_new_members": 3,
+    "equity.round.accept": 3,
+    "equity.round.execute_conversion": 3,
+    "equity.transfer.prepare": 3,
+    "equity.transfer.execute": 3,
+    "equity.fundraising.prepare": 3,
+    "equity.fundraising.accept": 3,
+    "equity.fundraising.close": 3
+  },
+  "non_delegable": [
+    "amend_charter",
+    "amend_governance_docs",
+    "issue_equity",
+    "modify_agent_framework",
+    "dissolve_entity",
+    "merge_consolidate",
+    "sell_substantially_all_assets",
+    "personal_guarantee",
+    "remove_replace_agent",
+    "initiate_settle_litigation",
+    "declare_dividends",
+    "admit_new_members"
+  ],
+  "escalation": [
+    {
+      "id": "template-not-approved",
+      "applies": [
+        "execute_standard_form_agreement"
+      ],
+      "condition": "template_approved_false",
+      "escalate_to": 2,
+      "reason": "Agreement not using approved template"
+    },
+    {
+      "id": "template-modified-beyond-lane",
+      "applies": [
+        "execute_standard_form_agreement"
+      ],
+      "condition": "restricted_modifications_present",
+      "escalate_to": 2,
+      "reason": "Agreement template modified in restricted areas"
+    },
+    {
+      "id": "irreversible-action",
+      "condition": "is_reversible_false",
+      "escalate_to": 2,
+      "reason": "Action is irreversible"
+    },
+    {
+      "id": "agent-irreversible",
+      "condition": "agent_assessment",
+      "assessment": "irreversible-action",
+      "escalate_to": 2,
+      "reason": "Agent assesses action is irreversible or difficult to reverse"
+    },
+    {
+      "id": "agent-unapproved-obligation",
+      "condition": "agent_assessment",
+      "assessment": "unapproved-obligation",
+      "escalate_to": 2,
+      "reason": "Agent assesses action involves unapproved legal obligation"
+    },
+    {
+      "id": "agent-insufficient-info",
+      "condition": "agent_assessment",
+      "assessment": "insufficient-risk-info",
+      "escalate_to": 2,
+      "reason": "Agent assesses insufficient information to evaluate risk"
+    },
+    {
+      "id": "agent-material-liability",
+      "condition": "agent_assessment",
+      "assessment": "material-liability",
+      "escalate_to": 2,
+      "reason": "Agent assesses potential material liability beyond normal operations"
+    },
+    {
+      "id": "agent-low-confidence",
+      "condition": "agent_assessment",
+      "assessment": "low-confidence",
+      "escalate_to": 2,
+      "reason": "Agent confidence below reasonable threshold"
+    }
+  ],
+  "lane_conditions": [
+    {
+      "lane_id": "lane-3.1-nda",
+      "capability": "execute_standard_form_agreement",
+      "checks": [
+        {
+          "field": "templateApproved",
+          "op": "eq",
+          "value": true,
+          "message": "Template not approved by Board/Principal"
+        },
+        {
+          "field": "modifications",
+          "op": "contains_none",
+          "value": [
+            "indemnification",
+            "governing_law"
+          ],
+          "message": "Restricted NDA modifications present"
+        }
+      ]
+    },
+    {
+      "lane_id": "lane-3.1-saas",
+      "capability": "execute_standard_form_agreement",
+      "checks": [
+        {
+          "field": "modifications",
+          "op": "contains_none",
+          "value": [
+            "exclusivity"
+          ],
+          "message": "Exclusivity clause not permitted in SaaS lane"
+        },
+        {
+          "field": "modifications",
+          "op": "contains_none",
+          "value": [
+            "ip_assignment"
+          ],
+          "message": "IP assignment clause not permitted in SaaS lane"
+        }
+      ]
+    },
+    {
+      "lane_id": "lane-3.1-vendor-po",
+      "capability": "execute_standard_form_agreement",
+      "checks": []
+    },
+    {
+      "lane_id": "lane-3.2-1099",
+      "capability": "engage_contractor",
+      "checks": [
+        {
+          "field": "modifications",
+          "op": "contains_none",
+          "value": [
+            "exclusivity",
+            "non_compete",
+            "equity_compensation"
+          ],
+          "message": "Exclusivity, non-compete, or equity compensation not permitted for contractor engagement"
+        }
+      ]
+    },
+    {
+      "lane_id": "lane-3.2-renewal",
+      "capability": "engage_contractor",
+      "checks": [
+        {
+          "field": "context.rateIncreasePercent",
+          "op": "lte",
+          "value": 5,
+          "message": "Rate increase exceeds 5% limit for renewal lane"
+        }
+      ]
+    },
+    {
+      "lane_id": "lane-3.3-renewal",
+      "capability": "pay_recurring_obligation",
+      "checks": [
+        {
+          "field": "context.priceIncreasePercent",
+          "op": "lte",
+          "value": 10,
+          "message": "Price increase exceeds 10% limit for renewal lane"
+        }
+      ]
+    },
+    {
+      "lane_id": "lane-3.3-admin",
+      "capability": "routine_correspondence",
+      "checks": [
+        {
+          "field": "modifications",
+          "op": "contains_none",
+          "value": [
+            "economics",
+            "scope",
+            "legal_terms"
+          ],
+          "message": "Admin update lane does not allow changes to economics, scope, or legal terms"
+        }
+      ]
+    },
+    {
+      "lane_id": "lane-3.3-insurance",
+      "capability": "pay_recurring_obligation",
+      "checks": [
+        {
+          "field": "context.premiumIncreasePercent",
+          "op": "lte",
+          "value": 15,
+          "message": "Premium increase exceeds 15% limit for insurance lane"
+        }
+      ]
+    },
+    {
+      "lane_id": "lane-3.4-transfer",
+      "capability": "internal_account_transfer",
+      "checks": []
+    },
+    {
+      "lane_id": "lane-3.4-payroll",
+      "capability": "payroll_execution",
+      "checks": []
+    },
+    {
+      "lane_id": "lane-3.4-tax",
+      "capability": "tax_payment_per_filing",
+      "checks": []
+    }
+  ],
+  "approval": {
+    "expiry_days": 30,
+    "silence_is_approval": false
+  },
+  "mode": {
+    "principal_unavailable_requires_reversible_tier1": true,
+    "incident_lockdown_blocks_all": true
+  },
+  "reauth": {
+    "reduced_limits_at_days": 30,
+    "reduced_limits_percent": 50,
+    "full_suspension_at_days": 90
+  },
+  "escalation_triggers": [
+    {
+      "id": "irreversible-action",
+      "text": "Action is irreversible or difficult to reverse",
+      "minimum_tier": 2
+    },
+    {
+      "id": "unapproved-obligation",
+      "text": "Action involves a legal obligation not previously approved",
+      "minimum_tier": 2
+    },
+    {
+      "id": "insufficient-risk-info",
+      "text": "Agent lacks sufficient information to assess risk",
+      "minimum_tier": 2
+    },
+    {
+      "id": "material-liability",
+      "text": "Action could expose entity to liability beyond normal operations",
+      "minimum_tier": 2
+    },
+    {
+      "id": "outside-pattern",
+      "text": "Third party requests something outside established patterns",
+      "minimum_tier": 2
+    },
+    {
+      "id": "low-confidence",
+      "text": "Agent confidence below reasonable threshold",
+      "minimum_tier": 2
+    },
+    {
+      "id": "natural-person-required",
+      "text": "Applicable law requires natural person involvement",
+      "minimum_tier": 2
+    },
+    {
+      "id": "conflicting-instructions",
+      "text": "Conflicting instructions not resolvable by precedence rules",
+      "minimum_tier": 2
+    }
+  ],
+  "self_governance_constraints": [
+    {
+      "id": "no-self-modify",
+      "text": "Modify its own authority, tiers, or spending limits",
+      "scope": "all"
+    },
+    {
+      "id": "no-override-principal",
+      "text": "Override, ignore, or delay a Principal/CEO directive",
+      "scope": "all"
+    },
+    {
+      "id": "no-impersonate",
+      "text": "Represent itself as a natural person",
+      "scope": "all"
+    },
+    {
+      "id": "no-fabricate",
+      "text": "Fabricate records, signatures, receipts, or execution status",
+      "scope": "all"
+    },
+    {
+      "id": "no-tier3",
+      "text": "Take Tier 3 actions under any circumstances",
+      "scope": "all"
+    },
+    {
+      "id": "no-self-dealing",
+      "text": "Authorize transactions benefiting Agent or provider",
+      "scope": "all"
+    },
+    {
+      "id": "no-audit-tamper",
+      "text": "Modify, delete, backdate, or reorder audit entries",
+      "scope": "all"
+    },
+    {
+      "id": "no-credential-expand",
+      "text": "Create credentials or accounts beyond authorized scope",
+      "scope": "all"
+    },
+    {
+      "id": "no-vote-consent",
+      "text": "Vote, consent, or exercise Board/stockholder rights",
+      "scope": "corporation"
+    },
+    {
+      "id": "no-officer-sign",
+      "text": "Sign documents requiring officer/director signature under DGCL",
+      "scope": "corporation"
+    }
+  ],
+  "non_waivable_provisions": [
+    {
+      "id": "nw-dissociate",
+      "statute": "W.S. § 17-29-602(5)(b)",
+      "text": "The power of a person to dissociate as a member"
+    },
+    {
+      "id": "nw-expulsion",
+      "statute": "W.S. § 17-29-602(5)(c)",
+      "text": "The right of a court to expel a member"
+    },
+    {
+      "id": "nw-winding-up",
+      "statute": "W.S. § 17-29-702",
+      "text": "The requirement to wind up the company's activities"
+    },
+    {
+      "id": "nw-merger-approval",
+      "statute": "W.S. § 17-29-1014(c)",
+      "text": "The right of a member to approve a merger, conversion, or domestication"
+    },
+    {
+      "id": "nw-good-faith",
+      "statute": "W.S. § 17-29-409(d)",
+      "text": "The obligation of good faith and fair dealing (standards may be prescribed if not manifestly unreasonable)"
+    },
+    {
+      "id": "nw-information",
+      "statute": "W.S. § 17-29-410",
+      "text": "The requirement not to unreasonably restrict a right to information or access to records"
+    },
+    {
+      "id": "nw-dissolution",
+      "statute": "W.S. § 17-29-701(a)(iv)-(v)",
+      "text": "The power of a court to decree dissolution in specified circumstances"
+    },
+    {
+      "id": "nw-statement-authority",
+      "statute": "W.S. § 17-29-301(a)",
+      "text": "The requirement after formation of a statement of authority"
+    },
+    {
+      "id": "nw-distributions",
+      "statute": "W.S. § 17-29-405",
+      "text": "The restriction on distributions"
+    },
+    {
+      "id": "nw-derivative-actions",
+      "statute": "W.S. § 17-29-901 through § 17-29-905",
+      "text": "The right to maintain a derivative action"
+    },
+    {
+      "id": "nw-court-power",
+      "statute": "W.S. § 17-29-204",
+      "text": "The power of a court to issue orders"
+    },
+    {
+      "id": "nw-bad-faith",
+      "statute": "W.S. § 17-29-110(c)(xiii)",
+      "text": "The restriction that an operating agreement not relieve or exonerate from liability for bad faith, willful misconduct, or reckless indifference"
+    },
+    {
+      "id": "nw-third-party-rights",
+      "statute": "W.S. § 17-29-110(c)(xiv)",
+      "text": "The restriction that an operating agreement not restrict rights of third parties under the Act"
+    }
+  ],
+  "safe_harbor_exclusions": [
+    {
+      "id": "sh-fraud",
+      "text": "Fraud, willful misconduct, or gross negligence",
+      "scope": "all"
+    },
+    {
+      "id": "sh-ultra-vires",
+      "text": "Actions outside delegated authority",
+      "scope": "all"
+    },
+    {
+      "id": "sh-tier3",
+      "text": "Tier 3 (non-delegable) actions",
+      "scope": "all"
+    },
+    {
+      "id": "sh-fabrication",
+      "text": "Fabrication of records or communications",
+      "scope": "all"
+    },
+    {
+      "id": "sh-self-dealing",
+      "text": "Self-dealing or conflicts of interest",
+      "scope": "all"
+    },
+    {
+      "id": "sh-audit-failure",
+      "text": "Failure to maintain audit trail",
+      "scope": "all"
+    },
+    {
+      "id": "sh-nw-violation",
+      "text": "Violation of non-waivable provisions under W.S. § 17-29-110(c)",
+      "scope": "llc"
+    }
+  ]
+}

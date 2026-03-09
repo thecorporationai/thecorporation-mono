@@ -1,0 +1,99 @@
+{
+  "id": "initial_written_consent",
+  "category": "llc",
+  "entity_scope": "llc",
+  "path": "llc/initial-written-consent.md",
+  "title": "Initial Written Consent of Members",
+  "metadata_fields": [
+    {
+      "key": "legal_name",
+      "label": "LLC Name"
+    },
+    {
+      "key": "effective_date",
+      "label": "Effective Date",
+      "placeholder": "YYYY-MM-DD"
+    }
+  ],
+  "content": [
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "UNANIMOUS WRITTEN CONSENT OF THE MEMBERS"
+    },
+    {
+      "type": "paragraph",
+      "text": "The undersigned, being all of the Members of **{{legal_name}}**, a Wyoming limited liability company (the \"Company\"), hereby take the following actions by written consent without a meeting, pursuant to the Operating Agreement:"
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "Recitals"
+    },
+    {
+      "type": "paragraph",
+      "text": "WHEREAS, the Articles of Organization of the Company have been filed with the Wyoming Secretary of State; and"
+    },
+    {
+      "type": "paragraph",
+      "text": "WHEREAS, the undersigned are all of the Members of the Company and desire to authorize the initial organizational actions set forth below."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "Resolutions"
+    },
+    {
+      "type": "paragraph",
+      "text": "**RESOLVED**, that the Operating Agreement of the Company, in the form attached hereto, has been duly executed by all Members and is hereby adopted and approved."
+    },
+    {
+      "type": "paragraph",
+      "text": "**RESOLVED**, that `{{principal_name}}` is hereby appointed as the Manager of the Company."
+    },
+    {
+      "type": "paragraph",
+      "text": "**RESOLVED**, that the Agent Delegation Schedule attached hereto is hereby adopted and incorporated by reference into the Operating Agreement as provided in Section 5 thereof."
+    },
+    {
+      "type": "paragraph",
+      "text": "**RESOLVED**, that the fiscal year of the Company shall end on `{{fiscal_year_end}}`."
+    },
+    {
+      "type": "paragraph",
+      "text": "**RESOLVED**, that the Manager is authorized to open a bank account in the name of the Company and to designate signatories."
+    },
+    {
+      "type": "paragraph",
+      "text": "**RESOLVED**, that the Manager is authorized to apply for an Employer Identification Number from the IRS."
+    },
+    {
+      "type": "paragraph",
+      "text": "**RESOLVED**, that the Manager is authorized to obtain general liability, cyber liability, and errors and omissions insurance coverage in such amounts and on such terms as the Manager determines to be appropriate for the Company's business activities."
+    },
+    {
+      "type": "paragraph",
+      "text": "**RESOLVED**, that the Manager is authorized to take all actions necessary to register the Company for state tax obligations, including sales tax, workers' compensation, or other state obligations as required by the Company's business activities and applicable law."
+    },
+    {
+      "type": "paragraph",
+      "text": "**RESOLVED**, that all actions previously taken by the Members and Manager consistent with the foregoing resolutions are hereby ratified and approved in all respects."
+    },
+    {
+      "type": "paragraph",
+      "text": "**RESOLVED**, that the Manager is authorized to take all actions and execute all documents necessary to carry out the foregoing resolutions."
+    },
+    {
+      "type": "signature_block",
+      "role": "Member",
+      "fields": [
+        "name",
+        "date"
+      ]
+    },
+    {
+      "type": "note",
+      "text": "If the Company has multiple Members, each Member must sign a separate signature block or counterpart."
+    }
+  ]
+}

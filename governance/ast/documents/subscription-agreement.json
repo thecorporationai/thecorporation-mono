@@ -1,0 +1,151 @@
+{
+  "id": "subscription_agreement",
+  "category": "transactions",
+  "entity_scope": "both",
+  "path": "transactions/subscription-agreement.md",
+  "title": "Subscription Agreement",
+  "preamble": "Agreement pursuant to which an investor subscribes for company securities.",
+  "metadata_fields": [
+    {
+      "key": "entity_legal_name",
+      "label": "Company Name"
+    },
+    {
+      "key": "effective_date",
+      "label": "Effective Date",
+      "placeholder": "YYYY-MM-DD"
+    }
+  ],
+  "content": [
+    {
+      "type": "paragraph",
+      "text": "This Subscription Agreement (this \"Agreement\") is entered into as of `{{effective_date}}` by and between **{{entity_legal_name}}** (the \"Company\") and `{{subscriber_name}}` (the \"Subscriber\")."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "1. Subscription"
+    },
+    {
+      "type": "paragraph",
+      "text": "The Subscriber hereby subscribes for `{{security_subscribed_for}}` in the amount of `{{quantity_or_principal_amount}}` for aggregate consideration of `{{purchase_amount}}`, to be issued on or about `{{closing_date}}`. Payment shall be made by wire transfer or check."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "2. Accredited Investor Representations"
+    },
+    {
+      "type": "paragraph",
+      "text": "The Subscriber represents and warrants that the Subscriber is an \"accredited investor\" as defined in Rule 501 of Regulation D under the Securities Act of 1933, by meeting one or more of the following criteria: (a) individual income exceeding $200,000 (or $300,000 joint with spouse) in each of the two most recent years with a reasonable expectation of the same in the current year; (b) individual net worth (or joint with spouse) exceeding $1,000,000, excluding the value of the primary residence; or (c) an entity in which all equity owners are accredited investors. The Subscriber understands that the Company is relying on these representations for securities law exemptions."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "3. Risk Acknowledgments"
+    },
+    {
+      "type": "paragraph",
+      "text": "The Subscriber acknowledges that: (a) the investment is speculative and involves a high degree of risk; (b) there are no guarantees of return; (c) there is limited or no liquidity and no public market for the securities; (d) the Subscriber may lose the entire investment; and (e) the securities are subject to restrictions on transfer."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "4. Investment Representations"
+    },
+    {
+      "type": "paragraph",
+      "text": "The Subscriber represents that: (a) the Subscriber is acquiring the securities for investment for the Subscriber's own account, not with a view to distribution; (b) the Subscriber understands the securities are restricted and have not been registered; (c) the Subscriber is aware of Rule 144 and its limitations; (d) the Subscriber has had access to information about the Company and the opportunity to ask questions; and (e) the Subscriber has not relied on any projections or forward-looking statements of the Company."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "5. Company Representations"
+    },
+    {
+      "type": "paragraph",
+      "text": "The Company represents that: (a) it is duly organized, validly existing, and in good standing; (b) it has authority to execute this Agreement and issue the securities; (c) the execution does not conflict with any material agreement; (d) upon issuance, the securities will be validly issued, fully paid, and non-assessable; (e) the capitalization of the Company is as set forth on Schedule A; (f) there has been no material adverse change since the last financials provided; and (g) the Company is in material compliance with applicable laws."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "6. Transfer Restrictions"
+    },
+    {
+      "type": "paragraph",
+      "text": "The securities may not be transferred except in compliance with applicable securities laws and the Company's governing documents. Certificates or book-entry records shall bear the standard restrictive legends."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "7. Anti-Money Laundering"
+    },
+    {
+      "type": "paragraph",
+      "text": "The Subscriber represents that: (a) the funds used for this subscription are not derived from illegal activity; (b) the Subscriber is not on the OFAC Specially Designated Nationals list or any other sanctions list; and (c) the Subscriber is in compliance with the Bank Secrecy Act and applicable anti-money laundering laws."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "8. Indemnification"
+    },
+    {
+      "type": "paragraph",
+      "text": "The Subscriber shall indemnify and hold harmless the Company from any losses arising from any breach of the Subscriber's representations and warranties in this Agreement."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "General Provisions"
+    },
+    {
+      "type": "paragraph",
+      "text": "**Governing Law.** This Agreement shall be governed by and construed in accordance with the laws of `{{governing_law}}`, without regard to conflicts of laws principles."
+    },
+    {
+      "type": "paragraph",
+      "text": "**Dispute Resolution.** Any dispute arising under this Agreement shall first be submitted to mediation for a period of thirty (30) days. If mediation is unsuccessful, disputes shall be resolved by binding arbitration or litigation in the courts of the governing jurisdiction. The prevailing party shall be entitled to reasonable attorney's fees and costs."
+    },
+    {
+      "type": "paragraph",
+      "text": "**Severability.** If any provision of this Agreement is held invalid, illegal, or unenforceable, the remaining provisions shall remain in full force and effect."
+    },
+    {
+      "type": "paragraph",
+      "text": "**Entire Agreement.** This Agreement constitutes the entire agreement between the parties with respect to the subject matter hereof and supersedes all prior negotiations, representations, or agreements."
+    },
+    {
+      "type": "paragraph",
+      "text": "**Notices.** All notices required or permitted under this Agreement shall be in writing and shall be delivered personally, sent by nationally recognized overnight courier, or sent by email. Notice shall be deemed received upon personal delivery, one business day after deposit with an overnight courier, or upon confirmed electronic delivery."
+    },
+    {
+      "type": "paragraph",
+      "text": "**Waiver.** The failure of any party to enforce any provision shall not constitute a waiver of such provision or the right to enforce it at a later time."
+    },
+    {
+      "type": "paragraph",
+      "text": "**Counterparts.** This Agreement may be executed in counterparts, each of which shall be deemed an original, and all of which together shall constitute one and the same instrument. Electronic signatures shall have the same force and effect as original signatures."
+    },
+    {
+      "type": "paragraph",
+      "text": "**Assignment.** Neither party may assign this Agreement without the prior written consent of the other party, except in connection with a merger or sale of all or substantially all assets."
+    },
+    {
+      "type": "signature_block",
+      "role": "Subscriber",
+      "fields": [
+        "name",
+        "date"
+      ]
+    },
+    {
+      "type": "signature_block",
+      "role": "Company",
+      "fields": [
+        "name",
+        "title",
+        "date"
+      ]
+    }
+  ]
+}

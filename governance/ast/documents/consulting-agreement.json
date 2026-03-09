@@ -1,0 +1,189 @@
+{
+  "id": "consulting_agreement",
+  "category": "transactions",
+  "entity_scope": "both",
+  "path": "transactions/consulting-agreement.md",
+  "title": "Consulting Agreement",
+  "preamble": "Professional services agreement between the Company and a consultant.",
+  "metadata_fields": [
+    {
+      "key": "entity_legal_name",
+      "label": "Company Name"
+    },
+    {
+      "key": "effective_date",
+      "label": "Effective Date",
+      "placeholder": "YYYY-MM-DD"
+    }
+  ],
+  "content": [
+    {
+      "type": "paragraph",
+      "text": "This Consulting Agreement (this \"Agreement\") is entered into as of `{{effective_date}}` by and between **{{entity_legal_name}}** (the \"Company\") and `{{consultant_name}}` (the \"Consultant\")."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "1. Engagement"
+    },
+    {
+      "type": "paragraph",
+      "text": "The Company retains the Consultant to perform the services described in Exhibit A (the \"Services\"). The engagement will commence on `{{start_date}}` and continue as follows: `{{term_description}}`. The term may be extended by mutual written agreement."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "2. Compensation"
+    },
+    {
+      "type": "paragraph",
+      "text": "**Fees.** `{{compensation_terms}}`"
+    },
+    {
+      "type": "paragraph",
+      "text": "**Invoicing and Payment.** The Consultant shall submit monthly invoices. Payment shall be due within thirty (30) days of receipt of a proper invoice (net-30)."
+    },
+    {
+      "type": "paragraph",
+      "text": "**Expenses.** The Company shall reimburse the Consultant for reasonable, pre-approved, documented expenses incurred in performing the Services, within applicable spending limits."
+    },
+    {
+      "type": "paragraph",
+      "text": "No other compensation, benefits, or reimbursement shall be due to the Consultant except as expressly stated in this Agreement."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "3. Independent Contractor"
+    },
+    {
+      "type": "paragraph",
+      "text": "The Consultant is an independent contractor and not an employee, partner, joint venturer, fiduciary, or agent of the Company, except as expressly authorized in writing. The Consultant shall not be entitled to any employee benefits. The Consultant shall provide its own tools, equipment, and workspace. The Consultant may determine its own schedule and may serve multiple clients. The Consultant is solely responsible for all taxes, including self-employment taxes (Form W-9, 1099 reporting). The Consultant has no authority to bind the Company except as expressly authorized."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "4. Confidentiality"
+    },
+    {
+      "type": "paragraph",
+      "text": "The Consultant shall hold all non-public Company information in strict confidence, use it solely for the benefit of the Company, and not disclose it except as authorized in writing. If the Consultant has executed a separate CIIAA, the confidentiality provisions of that agreement shall apply and supplement this Section."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "5. Intellectual Property"
+    },
+    {
+      "type": "paragraph",
+      "text": "The Consultant hereby assigns to the Company all right, title, and interest in all Work Product (deliverables, reports, software, materials, inventions, and other work product) created within the scope of the Services. To the extent any Work Product qualifies as a \"work made for hire\" under the Copyright Act, it shall be treated as such. Prior work and third-party materials used by the Consultant shall be identified in Exhibit B."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "6. Representations"
+    },
+    {
+      "type": "paragraph",
+      "text": "**Consultant represents that:** (a) the Consultant has the authority to enter into this Agreement; (b) the Services will not conflict with any other obligation; (c) the Consultant will comply with all applicable laws; (d) the Work Product will be original and will not infringe any third party's intellectual property rights."
+    },
+    {
+      "type": "paragraph",
+      "text": "**Company represents that:** (a) it has the authority to enter into this Agreement; and (b) it will pay the Consultant timely in accordance with this Agreement."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "7. Indemnification"
+    },
+    {
+      "type": "paragraph",
+      "text": "Each party shall indemnify and hold harmless the other party from third-party claims arising from breach of representations and warranties. The Consultant shall indemnify the Company from claims of intellectual property infringement by the Work Product. The Company shall indemnify the Consultant from claims arising from the Company's use of the Work Product beyond the scope of the Services."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "8. Limitation of Liability"
+    },
+    {
+      "type": "paragraph",
+      "text": "Each party's aggregate liability under this Agreement shall not exceed the fees paid or payable under this Agreement. This limitation shall not apply to: intellectual property indemnification obligations, confidentiality breaches, or willful misconduct."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "9. Termination"
+    },
+    {
+      "type": "paragraph",
+      "text": "Either party may terminate this Agreement for convenience on fourteen (14) days' written notice. Either party may terminate immediately for material breach if the breach is not cured within ten (10) days of notice. Upon termination: (a) the Company shall pay for Services properly performed through the effective date of termination; (b) the Consultant shall deliver all Work Product and return all Company materials; and (c) the Consultant shall cooperate in transition activities."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "General Provisions"
+    },
+    {
+      "type": "paragraph",
+      "text": "**Governing Law.** This Agreement shall be governed by and construed in accordance with the laws of `{{governing_law}}`, without regard to conflicts of laws principles."
+    },
+    {
+      "type": "paragraph",
+      "text": "**Dispute Resolution.** Any dispute arising under this Agreement shall first be submitted to mediation for a period of thirty (30) days. If mediation is unsuccessful, disputes shall be resolved by binding arbitration or litigation in the courts of the governing jurisdiction. The prevailing party shall be entitled to reasonable attorney's fees and costs."
+    },
+    {
+      "type": "paragraph",
+      "text": "**Severability.** If any provision of this Agreement is held invalid, illegal, or unenforceable, the remaining provisions shall remain in full force and effect."
+    },
+    {
+      "type": "paragraph",
+      "text": "**Entire Agreement.** This Agreement constitutes the entire agreement between the parties with respect to the subject matter hereof and supersedes all prior negotiations, representations, or agreements."
+    },
+    {
+      "type": "paragraph",
+      "text": "**Notices.** All notices required or permitted under this Agreement shall be in writing and shall be delivered personally, sent by nationally recognized overnight courier, or sent by email. Notice shall be deemed received upon personal delivery, one business day after deposit with an overnight courier, or upon confirmed electronic delivery."
+    },
+    {
+      "type": "paragraph",
+      "text": "**Waiver.** The failure of any party to enforce any provision shall not constitute a waiver of such provision or the right to enforce it at a later time."
+    },
+    {
+      "type": "paragraph",
+      "text": "**Counterparts.** This Agreement may be executed in counterparts, each of which shall be deemed an original, and all of which together shall constitute one and the same instrument. Electronic signatures shall have the same force and effect as original signatures."
+    },
+    {
+      "type": "paragraph",
+      "text": "**Assignment.** Neither party may assign this Agreement without the prior written consent of the other party, except in connection with a merger or sale of all or substantially all assets."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "Exhibits"
+    },
+    {
+      "type": "paragraph",
+      "text": "**Exhibit A:** Scope of Services."
+    },
+    {
+      "type": "paragraph",
+      "text": "**Exhibit B:** Prior Work and Third-Party Materials (if any)."
+    },
+    {
+      "type": "signature_block",
+      "role": "Company",
+      "fields": [
+        "name",
+        "title",
+        "date"
+      ]
+    },
+    {
+      "type": "signature_block",
+      "role": "Consultant",
+      "fields": [
+        "name",
+        "date"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,74 @@
+{
+  "id": "incorporator_action",
+  "category": "corporation",
+  "entity_scope": "corporation",
+  "path": "corporation/incorporator-action.md",
+  "title": "Action by Written Consent of the Sole Incorporator",
+  "metadata_fields": [
+    {
+      "key": "legal_name",
+      "label": "Corporation Name"
+    },
+    {
+      "key": "effective_date",
+      "label": "Effective Date",
+      "placeholder": "YYYY-MM-DD"
+    }
+  ],
+  "content": [
+    {
+      "type": "paragraph",
+      "text": "The undersigned, being the sole incorporator named in the Certificate of Incorporation of **{{legal_name}}**, a Delaware corporation (the \"Corporation\"), filed with the Delaware Secretary of State on `{{effective_date}}`, acting pursuant to Section 108 of the Delaware General Corporation Law, hereby takes the following actions by written consent:"
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "Recitals"
+    },
+    {
+      "type": "paragraph",
+      "text": "WHEREAS, the Certificate of Incorporation of the Corporation was filed with the Secretary of State of the State of Delaware on `{{effective_date}}`; and"
+    },
+    {
+      "type": "paragraph",
+      "text": "WHEREAS, the undersigned is the sole incorporator named in the Certificate of Incorporation and is authorized to take these actions pursuant to DGCL § 108."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "Resolutions"
+    },
+    {
+      "type": "paragraph",
+      "text": "**RESOLVED**, that the Certificate of Incorporation of the Corporation, as filed with the Secretary of State of the State of Delaware on `{{effective_date}}`, is hereby ratified and approved in all respects."
+    },
+    {
+      "type": "paragraph",
+      "text": "**RESOLVED**, that the following person(s) are hereby appointed to serve as the initial director(s) of the Corporation, each to serve until such director's successor is duly elected and qualified or until such director's earlier resignation, removal or death:"
+    },
+    {
+      "type": "paragraph",
+      "text": "`{{directors_list}}`"
+    },
+    {
+      "type": "paragraph",
+      "text": "**RESOLVED**, that the initial director(s) are hereby authorized to take all actions necessary or desirable to organize the Corporation and to commence business, including adopting bylaws, electing officers, authorizing the issuance of shares, and taking all other actions contemplated by the Certificate of Incorporation."
+    },
+    {
+      "type": "paragraph",
+      "text": "**RESOLVED**, that the officers of the Corporation are authorized to take all actions necessary to effectuate the foregoing resolutions."
+    },
+    {
+      "type": "paragraph",
+      "text": "This written consent shall be filed with the minutes of the proceedings of the Corporation."
+    },
+    {
+      "type": "signature_block",
+      "role": "Sole Incorporator",
+      "fields": [
+        "name",
+        "date"
+      ]
+    }
+  ]
+}

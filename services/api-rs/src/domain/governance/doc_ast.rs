@@ -408,9 +408,9 @@ impl GovernanceDocAst {
         let mut errors = Vec::new();
 
         // 1. Version check.
-        if self.version != "0.1.0" {
+        if self.version != "1.0.0" {
             errors.push(format!(
-                "expected version \"0.1.0\", got \"{}\"",
+                "expected version \"1.0.0\", got \"{}\"",
                 self.version
             ));
         }
@@ -530,7 +530,7 @@ mod tests {
     #[test]
     fn doc_ast_parses_and_validates() {
         let ast = default_doc_ast();
-        assert_eq!(ast.version, "0.1.0");
+        assert_eq!(ast.version, "1.0.0");
         assert!(!ast.documents.is_empty());
     }
 

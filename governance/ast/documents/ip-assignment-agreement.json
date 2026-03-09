@@ -1,0 +1,132 @@
+{
+  "id": "ip_assignment_agreement",
+  "category": "transactions",
+  "entity_scope": "common",
+  "path": "transactions/ip-assignment-agreement.md",
+  "title": "Confidential Information and Inventions Assignment Agreement",
+  "preamble": "Agreement to protect company confidential information and assign inventions and intellectual property.",
+  "metadata_fields": [
+    {
+      "key": "legal_name",
+      "label": "Company Name"
+    },
+    {
+      "key": "effective_date",
+      "label": "Effective Date",
+      "placeholder": "YYYY-MM-DD"
+    }
+  ],
+  "content": [
+    {
+      "type": "paragraph",
+      "text": "This Confidential Information and Inventions Assignment Agreement (this \"Agreement\") is entered into as of `{{effective_date}}` by and between **{{legal_name}}** (the \"Company\") and `{{assignor_name}}` (the \"Assignor\")."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "1. Definitions"
+    },
+    {
+      "type": "paragraph",
+      "text": "\"Confidential Information\" means any non-public information disclosed by the Company, including business plans, financial data, customer lists, technical data, trade secrets, and proprietary information, excluding information that: (a) is or becomes publicly available without breach; (b) was known to the Assignor prior to the Company's disclosure; (c) is independently developed without use of Confidential Information; (d) is received from a third party without restriction; or (e) is required to be disclosed by law or court order. \"Inventions\" means all inventions, works of authorship, developments, software, improvements, processes, know-how, and other intellectual property. \"Prior Inventions\" means inventions listed on Exhibit A. \"Company Materials\" means all documents, equipment, and materials belonging to or provided by the Company."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "2. Confidentiality"
+    },
+    {
+      "type": "paragraph",
+      "text": "The Assignor shall hold all Confidential Information in strict confidence and shall not use or disclose it except as necessary to perform services for the Company or as authorized in writing. The Assignor shall use at least the same degree of care to protect Confidential Information as the Assignor uses to protect its own confidential information, but in no event less than reasonable care. If compelled to disclose Confidential Information by law, the Assignor shall provide prompt notice to the Company and cooperate in seeking a protective order. Upon termination of the Assignor's relationship with the Company, the Assignor shall promptly return or destroy all Company Materials and Confidential Information."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "3. Assignment of Inventions"
+    },
+    {
+      "type": "paragraph",
+      "text": "The Assignor hereby irrevocably assigns to the Company all right, title, and interest in and to any and all Inventions created, conceived, reduced to practice, authored, or developed by the Assignor, alone or with others, within the scope of the Assignor's service relationship with the Company or using the Company's Confidential Information, equipment, supplies, facilities, or trade secret information. To the extent any Inventions qualify as \"works made for hire\" under the Copyright Act (§ 101), they shall be considered works made for hire. To the extent they do not qualify, the Assignor hereby assigns all copyright therein to the Company. The Assignor waives any moral rights to the extent permitted by applicable law."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "4. Prior Inventions"
+    },
+    {
+      "type": "paragraph",
+      "text": "Inventions listed on Exhibit A (Prior Inventions) are excluded from the assignment in Section 3. If no Exhibit A is attached, the Assignor represents that there are no Prior Inventions. If any Prior Invention is incorporated into Company work product, the Assignor hereby grants the Company a non-exclusive, royalty-free, irrevocable, perpetual, worldwide license to use such Prior Invention solely as part of the work product."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "5. State Law Carve-outs"
+    },
+    {
+      "type": "paragraph",
+      "text": "This Agreement does not apply to any Invention for which no equipment, supplies, facility, or trade secret information of the Company was used and which was developed entirely on the Assignor's own time, unless the Invention relates to the Company's business or actual or demonstrably anticipated research or development, or results from any work performed by the Assignor for the Company. The following state statutes, as applicable, limit the scope of assignment: California Labor Code § 2870; Illinois 765 ILCS 1060/2; Washington RCW 49.44.140; Delaware Code Title 19 § 805; Minnesota Statutes § 181.78; and any other applicable state statute limiting assignment of employee inventions."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "6. Cooperation and Power of Attorney"
+    },
+    {
+      "type": "paragraph",
+      "text": "The Assignor shall cooperate with the Company in obtaining and enforcing patents, copyrights, and other intellectual property protections. The Assignor hereby grants the Company an irrevocable power of attorney to execute documents on the Assignor's behalf if the Assignor is unavailable or unwilling to do so, solely for the purpose of perfecting the Company's rights in assigned Inventions."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "7. Non-Solicitation"
+    },
+    {
+      "type": "paragraph",
+      "text": "During the Assignor's engagement with the Company and for twelve (12) months thereafter, the Assignor shall not directly or indirectly solicit for employment any employee or contractor of the Company."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "8. Remedies"
+    },
+    {
+      "type": "paragraph",
+      "text": "The Assignor acknowledges that any breach of this Agreement may cause irreparable harm to the Company and that the Company shall be entitled to seek specific performance and injunctive relief in addition to any other available remedies."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "9. General Provisions"
+    },
+    {
+      "type": "paragraph",
+      "text": "This Agreement is governed by the laws of `{{governing_law}}`, without regard to conflicts of laws principles. The confidentiality and IP assignment obligations shall survive termination of the Assignor's relationship with the Company indefinitely. If any provision is held invalid, the remaining provisions shall remain in full force. This Agreement constitutes the entire agreement on its subject matter. This Agreement may be executed in counterparts and by electronic signature."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "Exhibits"
+    },
+    {
+      "type": "paragraph",
+      "text": "**Exhibit A:** Schedule of Prior Inventions (if any)."
+    },
+    {
+      "type": "signature_block",
+      "role": "Company",
+      "fields": [
+        "name",
+        "title",
+        "date"
+      ]
+    },
+    {
+      "type": "signature_block",
+      "role": "Assignor",
+      "fields": [
+        "name",
+        "date"
+      ]
+    }
+  ]
+}

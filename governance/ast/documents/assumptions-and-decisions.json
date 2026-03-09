@@ -1,0 +1,107 @@
+{
+  "id": "assumptions_and_decisions",
+  "category": "common",
+  "entity_scope": "common",
+  "path": "common/assumptions-and-decisions.md",
+  "title": "Assumptions and Decision Log",
+  "preamble": "Use this decision log to capture the governing factual and legal assumptions applied in the formation set and the entity's operating model.",
+  "metadata_fields": [],
+  "content": [
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "Entity and jurisdiction"
+    },
+    {
+      "type": "conditional",
+      "when_entity": "llc",
+      "content": [
+        {
+          "type": "heading",
+          "level": 3,
+          "text": "LLC path"
+        },
+        {
+          "type": "unordered_list",
+          "items": [
+            "Entity type: Wyoming Limited Liability Company",
+            "Formation state: **Wyoming**",
+            "Governing statute: Wyoming Limited Liability Company Act (W.S. § 17-29-101 et seq.)",
+            "Legislative context: Wyoming DAO LLC Supplement (W.S. § 17-31-101 et seq.)",
+            "Filing authority: Wyoming Secretary of State",
+            "Principal business address: `{{company_address}}`",
+            "Registered agent (must have Wyoming address): `{{registered_agent_name}}`",
+            "Freedom of contract basis: W.S. § 17-29-110"
+          ]
+        }
+      ]
+    },
+    {
+      "type": "conditional",
+      "when_entity": "corporation",
+      "content": [
+        {
+          "type": "heading",
+          "level": 3,
+          "text": "Corporation path"
+        },
+        {
+          "type": "unordered_list",
+          "items": [
+            "Entity type: Delaware C-Corporation",
+            "Formation state: **Delaware**",
+            "Governing statute: Delaware General Corporation Law (DGCL, Title 8, Delaware Code)",
+            "Filing authority: Delaware Division of Corporations",
+            "Principal business address: `{{company_address}}`",
+            "Registered agent (must have Delaware address): `{{registered_agent_name}}`",
+            "Board delegation basis: DGCL § 141(a)",
+            "Director liability elimination: DGCL § 102(b)(7)",
+            "Indemnification: DGCL § 145"
+          ]
+        }
+      ]
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "Ownership and control"
+    },
+    {
+      "type": "unordered_list",
+      "items": [
+        "Founders / owners and legal names: `{{founders_list}}`",
+        "Ownership allocation: `{{founders_table}}`",
+        "Founder vesting baseline: four-year vesting with a one-year cliff unless modified by definitive issuance documents.",
+        "Transfer restrictions baseline: governing document transfer restrictions, rights of first refusal, and approval requirements apply unless expressly waived in writing."
+      ]
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "Tax and accounting"
+    },
+    {
+      "type": "unordered_list",
+      "items": [
+        "EIN status: the Company will obtain and record an EIN promptly following formation and before payroll, tax filings, or account openings requiring an EIN.",
+        "Tax classification election (if LLC): default statutory treatment applies unless changed by a filed election approved by the appropriate authority.",
+        "Fiscal year end: `{{fiscal_year_end}}`",
+        "Accounting method baseline: cash method unless the Company later adopts another method in compliance with tax and accounting requirements."
+      ]
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "Governance choices"
+    },
+    {
+      "type": "unordered_list",
+      "items": [
+        "LLC management model: **Manager-managed** (required for the agent-operated structure).",
+        "Corporation board size and initial directors: `{{board_size}}` directors: `{{directors_list}}`",
+        "Officer roles and appointees: `{{officers_list}}`",
+        "Signature authority matrix: see the Agent Delegation Schedule and the applicable initial written consent or board consent."
+      ]
+    }
+  ]
+}

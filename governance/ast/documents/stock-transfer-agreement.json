@@ -1,0 +1,159 @@
+{
+  "id": "stock_transfer_agreement",
+  "category": "transactions",
+  "entity_scope": "both",
+  "path": "transactions/stock-transfer-agreement.md",
+  "title": "Stock Transfer Agreement",
+  "preamble": "Agreement documenting a transfer of equity interests between an existing holder and a transferee.",
+  "metadata_fields": [
+    {
+      "key": "entity_legal_name",
+      "label": "Issuer Name"
+    },
+    {
+      "key": "effective_date",
+      "label": "Effective Date",
+      "placeholder": "YYYY-MM-DD"
+    }
+  ],
+  "content": [
+    {
+      "type": "paragraph",
+      "text": "This Stock Transfer Agreement (this \"Agreement\") is entered into as of `{{effective_date}}` by and between `{{transferor_name}}` (the \"Transferor\") and `{{transferee_name}}` (the \"Transferee\") with respect to equity interests of **{{entity_legal_name}}** (the \"Company\")."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "1. Transfer"
+    },
+    {
+      "type": "paragraph",
+      "text": "The Transferor agrees to transfer to the Transferee `{{units_transferred}}` units or shares of `{{security_class}}` (the \"Shares\") for aggregate consideration of `{{consideration}}` (`{{price_per_share}}` per share), with a closing date of `{{closing_date}}`."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "2. ROFR Compliance"
+    },
+    {
+      "type": "paragraph",
+      "text": "The Transferor certifies that the right of first refusal procedures under the Company's governing documents have been duly followed and the Company has waived its ROFR, or the ROFR period has expired without exercise. Evidence of the waiver or expiration is attached hereto."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "3. Transferor Representations"
+    },
+    {
+      "type": "paragraph",
+      "text": "The Transferor represents that: (a) the Transferor has good title to the Shares, free and clear of all liens, encumbrances, and pledges other than restrictions under the Company's governing documents and applicable law; (b) the Transferor has the authority to enter into this Agreement; (c) this Agreement is duly authorized and does not conflict with any other agreement; and (d) no broker or finder is entitled to a commission or fee."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "4. Transferee Representations"
+    },
+    {
+      "type": "paragraph",
+      "text": "The Transferee represents that: (a) the Transferee is acquiring the Shares for investment for the Transferee's own account, not with a view to distribution; (b) the Transferee is an accredited investor (if required); (c) the Transferee understands the Shares are restricted securities; (d) the Transferee is aware of Rule 144 and its limitations; (e) the Transferee can bear the economic risk of a complete loss; and (f) the Transferee has had access to information about the Company."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "5. Restrictive Legends"
+    },
+    {
+      "type": "paragraph",
+      "text": "The Shares shall bear the standard Securities Act restrictive legend and the Company's transfer restriction legend."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "6. Tax Matters"
+    },
+    {
+      "type": "paragraph",
+      "text": "Each party is solely responsible for its own tax consequences arising from this transfer. The Company shall withhold any amounts required by law. Neither party has received tax advice from the Company."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "7. Closing Conditions"
+    },
+    {
+      "type": "paragraph",
+      "text": "Closing is conditioned on: (a) Board approval of the transfer; (b) ROFR waived or expired; (c) no legal impediment to closing; and (d) all representations being true and correct at closing."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "8. Company Obligations"
+    },
+    {
+      "type": "paragraph",
+      "text": "Upon closing, the Company shall: (a) update the stock ledger to reflect the transfer; (b) issue a new certificate or DRS statement to the Transferee; and (c) cancel the Transferor's certificate."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "General Provisions"
+    },
+    {
+      "type": "paragraph",
+      "text": "**Governing Law.** This Agreement shall be governed by and construed in accordance with the laws of `{{governing_law}}`, without regard to conflicts of laws principles."
+    },
+    {
+      "type": "paragraph",
+      "text": "**Dispute Resolution.** Any dispute arising under this Agreement shall first be submitted to mediation for a period of thirty (30) days. If mediation is unsuccessful, disputes shall be resolved by binding arbitration or litigation in the courts of the governing jurisdiction. The prevailing party shall be entitled to reasonable attorney's fees and costs."
+    },
+    {
+      "type": "paragraph",
+      "text": "**Severability.** If any provision of this Agreement is held invalid, illegal, or unenforceable, the remaining provisions shall remain in full force and effect."
+    },
+    {
+      "type": "paragraph",
+      "text": "**Entire Agreement.** This Agreement constitutes the entire agreement between the parties with respect to the subject matter hereof and supersedes all prior negotiations, representations, or agreements."
+    },
+    {
+      "type": "paragraph",
+      "text": "**Notices.** All notices required or permitted under this Agreement shall be in writing and shall be delivered personally, sent by nationally recognized overnight courier, or sent by email. Notice shall be deemed received upon personal delivery, one business day after deposit with an overnight courier, or upon confirmed electronic delivery."
+    },
+    {
+      "type": "paragraph",
+      "text": "**Waiver.** The failure of any party to enforce any provision shall not constitute a waiver of such provision or the right to enforce it at a later time."
+    },
+    {
+      "type": "paragraph",
+      "text": "**Counterparts.** This Agreement may be executed in counterparts, each of which shall be deemed an original, and all of which together shall constitute one and the same instrument. Electronic signatures shall have the same force and effect as original signatures."
+    },
+    {
+      "type": "paragraph",
+      "text": "**Assignment.** Neither party may assign this Agreement without the prior written consent of the other party, except in connection with a merger or sale of all or substantially all assets."
+    },
+    {
+      "type": "signature_block",
+      "role": "Transferor",
+      "fields": [
+        "name",
+        "date"
+      ]
+    },
+    {
+      "type": "signature_block",
+      "role": "Transferee",
+      "fields": [
+        "name",
+        "date"
+      ]
+    },
+    {
+      "type": "signature_block",
+      "role": "Company",
+      "fields": [
+        "name",
+        "title",
+        "date"
+      ]
+    }
+  ]
+}

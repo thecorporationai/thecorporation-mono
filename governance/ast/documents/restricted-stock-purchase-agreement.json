@@ -1,0 +1,192 @@
+{
+  "id": "restricted_stock_purchase_agreement",
+  "category": "transactions",
+  "entity_scope": "corporation",
+  "path": "transactions/restricted-stock-purchase-agreement.md",
+  "title": "Restricted Stock Purchase Agreement",
+  "preamble": "Agreement between the Company and a purchaser for the purchase of shares subject to vesting and repurchase rights.",
+  "metadata_fields": [
+    {
+      "key": "legal_name",
+      "label": "Corporation Name"
+    },
+    {
+      "key": "effective_date",
+      "label": "Effective Date",
+      "placeholder": "YYYY-MM-DD"
+    }
+  ],
+  "content": [
+    {
+      "type": "paragraph",
+      "text": "This Restricted Stock Purchase Agreement (this \"Agreement\") is entered into as of `{{effective_date}}` between **{{legal_name}}**, a Delaware corporation (the \"Company\"), and `{{purchaser_name}}` (the \"Purchaser\")."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "1. Purchase and Sale of Shares"
+    },
+    {
+      "type": "paragraph",
+      "text": "The Company agrees to sell to the Purchaser, and the Purchaser agrees to purchase from the Company, `{{purchase_shares}}` shares of Common Stock (the \"Shares\") at a purchase price of $`{{par_value}}` per share, for a total purchase price of $`{{total_purchase_price}}`. The form of consideration is `{{form_of_consideration}}`. Closing shall occur on or about `{{effective_date}}`."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "2. Vesting"
+    },
+    {
+      "type": "paragraph",
+      "text": "**2.1 Schedule.** The Shares shall vest over `{{vesting_months}}` months, with a `{{cliff_months}}`-month cliff, commencing on `{{vesting_commencement_date}}`. After the cliff, Shares shall vest in equal monthly installments."
+    },
+    {
+      "type": "paragraph",
+      "text": "**2.2 Acceleration.** `{{acceleration_terms}}`"
+    },
+    {
+      "type": "paragraph",
+      "text": "**2.3 Termination of Service.** \"Service\" means the Purchaser's continuous relationship with the Company as an employee, director, or consultant. Service terminates upon voluntary resignation, involuntary termination with or without cause, death, or disability."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "3. Company Repurchase Option"
+    },
+    {
+      "type": "paragraph",
+      "text": "If the Purchaser's Service terminates for any reason, the Company shall have the right (but not the obligation) to repurchase any unvested Shares at the lower of the original purchase price per share or the then-current fair market value per share. The Company must exercise this right within ninety (90) days of termination by written notice to the Purchaser, with closing within thirty (30) days thereafter. The repurchase right lapses upon full vesting."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "4. Section 83(b) Election"
+    },
+    {
+      "type": "paragraph",
+      "text": "The Purchaser shall execute and timely file an election under Section 83(b) of the Internal Revenue Code with the Internal Revenue Service within thirty (30) days of the date of this Agreement. A form of Section 83(b) election is attached as Exhibit A. The Company is not responsible for filing or failure to file the election. The Purchaser acknowledges that all tax consequences of the Section 83(b) election are the Purchaser's sole responsibility."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "5. Restrictions on Transfer"
+    },
+    {
+      "type": "paragraph",
+      "text": "**5.1 General Restriction.** The Purchaser may not transfer, sell, assign, pledge, or otherwise dispose of the Shares except as permitted by this Agreement, the Company's governing documents, and applicable securities laws, without the Company's prior written consent."
+    },
+    {
+      "type": "paragraph",
+      "text": "**5.2 Right of First Refusal.** Before any transfer, the Purchaser shall first offer the Shares to the Company on the same terms as the proposed transfer, in accordance with the Company's Bylaws or any applicable stockholder agreement."
+    },
+    {
+      "type": "paragraph",
+      "text": "**5.3 Market Standoff.** The Purchaser agrees not to sell or otherwise transfer any Shares for a period of one hundred eighty (180) days following the effective date of the Company's initial public offering, as requested by the managing underwriter."
+    },
+    {
+      "type": "paragraph",
+      "text": "**5.4 Permitted Transfers.** Transfers to a revocable trust for the benefit of the Purchaser or for estate planning purposes are permitted, provided the transferee agrees to be bound by this Agreement."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "6. Restrictive Legends"
+    },
+    {
+      "type": "paragraph",
+      "text": "Certificates or book-entry records for the Shares shall bear the following legends:"
+    },
+    {
+      "type": "paragraph",
+      "text": "\"THE SHARES REPRESENTED BY THIS CERTIFICATE HAVE NOT BEEN REGISTERED UNDER THE SECURITIES ACT OF 1933, AS AMENDED, OR ANY STATE SECURITIES LAWS AND MAY NOT BE SOLD, TRANSFERRED, OR OTHERWISE DISPOSED OF EXCEPT PURSUANT TO AN EFFECTIVE REGISTRATION STATEMENT OR AN EXEMPTION FROM REGISTRATION UNDER SAID ACT AND APPLICABLE STATE LAWS.\""
+    },
+    {
+      "type": "paragraph",
+      "text": "\"THE SHARES REPRESENTED BY THIS CERTIFICATE ARE SUBJECT TO CERTAIN RESTRICTIONS ON TRANSFER AND A REPURCHASE OPTION IN FAVOR OF THE COMPANY AS SET FORTH IN A RESTRICTED STOCK PURCHASE AGREEMENT.\""
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "7. Investment Representations"
+    },
+    {
+      "type": "paragraph",
+      "text": "The Purchaser represents that: (a) the Purchaser is an accredited investor or has such knowledge and experience in financial and business matters as to be capable of evaluating the merits and risks of the investment; (b) the Purchaser is acquiring the Shares for investment for the Purchaser's own account, not with a view to distribution; (c) the Purchaser understands the Shares are restricted securities; (d) the Purchaser is aware of Rule 144 and its requirements; (e) the Purchaser can bear the economic risk of a complete loss of the investment; (f) the Purchaser has had access to information about the Company and has had the opportunity to ask questions; and (g) the Purchaser has not relied on any tax advice from the Company."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "8. Tax Matters"
+    },
+    {
+      "type": "paragraph",
+      "text": "The Company has not provided the Purchaser with any tax advice. The Purchaser is solely responsible for all tax consequences arising from the purchase of the Shares and any Section 83(b) election. The Company makes no representation regarding the tax treatment of the Shares or the availability or consequences of any tax election."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "9. Exhibits"
+    },
+    {
+      "type": "paragraph",
+      "text": "**Exhibit A:** Form of Section 83(b) Election Letter."
+    },
+    {
+      "type": "paragraph",
+      "text": "**Exhibit B:** Spousal Consent (if applicable)."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "General Provisions"
+    },
+    {
+      "type": "paragraph",
+      "text": "**Governing Law.** This Agreement shall be governed by and construed in accordance with the laws of `{{governing_law}}`, without regard to conflicts of laws principles."
+    },
+    {
+      "type": "paragraph",
+      "text": "**Dispute Resolution.** Any dispute arising under this Agreement shall first be submitted to mediation for a period of thirty (30) days. If mediation is unsuccessful, disputes shall be resolved by binding arbitration or litigation in the courts of the governing jurisdiction. The prevailing party shall be entitled to reasonable attorney's fees and costs."
+    },
+    {
+      "type": "paragraph",
+      "text": "**Severability.** If any provision of this Agreement is held invalid, illegal, or unenforceable, the remaining provisions shall remain in full force and effect."
+    },
+    {
+      "type": "paragraph",
+      "text": "**Entire Agreement.** This Agreement constitutes the entire agreement between the parties with respect to the subject matter hereof and supersedes all prior negotiations, representations, or agreements."
+    },
+    {
+      "type": "paragraph",
+      "text": "**Notices.** All notices required or permitted under this Agreement shall be in writing and shall be delivered personally, sent by nationally recognized overnight courier, or sent by email. Notice shall be deemed received upon personal delivery, one business day after deposit with an overnight courier, or upon confirmed electronic delivery."
+    },
+    {
+      "type": "paragraph",
+      "text": "**Waiver.** The failure of any party to enforce any provision shall not constitute a waiver of such provision or the right to enforce it at a later time."
+    },
+    {
+      "type": "paragraph",
+      "text": "**Counterparts.** This Agreement may be executed in counterparts, each of which shall be deemed an original, and all of which together shall constitute one and the same instrument. Electronic signatures shall have the same force and effect as original signatures."
+    },
+    {
+      "type": "paragraph",
+      "text": "**Assignment.** Neither party may assign this Agreement without the prior written consent of the other party, except in connection with a merger or sale of all or substantially all assets."
+    },
+    {
+      "type": "signature_block",
+      "role": "Company",
+      "fields": [
+        "name",
+        "title",
+        "date"
+      ]
+    },
+    {
+      "type": "signature_block",
+      "role": "Purchaser",
+      "fields": [
+        "name",
+        "date"
+      ]
+    }
+  ]
+}

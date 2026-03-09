@@ -1,0 +1,157 @@
+{
+  "id": "employment_offer_letter",
+  "category": "transactions",
+  "entity_scope": "both",
+  "path": "transactions/employment-offer-letter.md",
+  "title": "Employment Offer Letter",
+  "preamble": "Offer letter setting forth the principal terms of employment.",
+  "metadata_fields": [
+    {
+      "key": "entity_legal_name",
+      "label": "Company Name"
+    },
+    {
+      "key": "effective_date",
+      "label": "Offer Date",
+      "placeholder": "YYYY-MM-DD"
+    }
+  ],
+  "content": [
+    {
+      "type": "paragraph",
+      "text": "`{{effective_date}}`\n\nDear `{{candidate_name}}`,\n\n**{{entity_legal_name}}** (the \"Company\") is pleased to offer you employment on the following terms."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "1. Position and Reporting"
+    },
+    {
+      "type": "paragraph",
+      "text": "**Position:** `{{position_title}}`\n**Department:** `{{department}}`\n**Reporting To:** `{{reporting_manager}}`\n**Start Date:** `{{start_date}}`\n**Location:** `{{work_location}}`"
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "2. At-Will Employment"
+    },
+    {
+      "type": "paragraph",
+      "text": "**Your employment with the Company is at-will. Either you or the Company may terminate the employment relationship at any time, with or without cause or notice. Nothing in this offer letter or any other Company document shall be construed as creating a contract of employment for any specific period.**"
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "3. Compensation"
+    },
+    {
+      "type": "paragraph",
+      "text": "**Base Salary.** `{{base_salary}}`, payable in accordance with the Company's standard payroll schedule."
+    },
+    {
+      "type": "paragraph",
+      "text": "**Bonus.** `{{bonus_terms}}`"
+    },
+    {
+      "type": "paragraph",
+      "text": "**FLSA Classification.** `{{classification}}`"
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "4. Equity"
+    },
+    {
+      "type": "paragraph",
+      "text": "**Grant Type:** `{{equity_grant_type}}`\n**Number of Shares:** `{{equity_shares}}`\n**Vesting Schedule:** Four (4) years with a one (1) year cliff, vesting monthly thereafter.\n**Exercise Price:** Fair market value per the most recent 409A valuation.\n**Grant Date:** The first Board meeting following your start date.\n\nThe equity grant is subject to the terms of the Company's equity incentive plan and a separate grant agreement."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "5. Benefits"
+    },
+    {
+      "type": "paragraph",
+      "text": "`{{benefits_summary}}`\n\nYou will be eligible for health, dental, and vision insurance, 401(k) participation, and paid time off in accordance with Company policy."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "6. Conditions"
+    },
+    {
+      "type": "paragraph",
+      "text": "This offer is contingent on: (a) execution of the Company's Confidential Information and Inventions Assignment Agreement (CIIAA); (b) satisfactory completion of a background check; (c) proof of work authorization (I-9 verification); and (d) any applicable non-compete or non-solicitation agreements."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "7. Confidentiality"
+    },
+    {
+      "type": "paragraph",
+      "text": "You will be required to sign the Company's CIIAA, which will govern your obligations regarding confidential information, invention assignment, and related matters."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "8. Dispute Resolution"
+    },
+    {
+      "type": "paragraph",
+      "text": "`{{dispute_resolution_terms}}`"
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "9. Governing Law"
+    },
+    {
+      "type": "paragraph",
+      "text": "This offer letter is governed by the laws of `{{governing_law}}`, without regard to conflicts of laws principles."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "10. Integration"
+    },
+    {
+      "type": "paragraph",
+      "text": "This offer letter, together with the CIIAA and any equity documentation, supersedes all prior negotiations, representations, or agreements relating to the subject matter hereof."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "11. Acceptance"
+    },
+    {
+      "type": "paragraph",
+      "text": "If you wish to accept this offer, please sign and return this letter by `{{offer_expiration_date}}`."
+    },
+    {
+      "type": "paragraph",
+      "text": "We look forward to working with you."
+    },
+    {
+      "type": "signature_block",
+      "role": "Company",
+      "fields": [
+        "name",
+        "title",
+        "date"
+      ]
+    },
+    {
+      "type": "paragraph",
+      "text": "**ACCEPTED AND AGREED:**"
+    },
+    {
+      "type": "signature_block",
+      "role": "Candidate",
+      "fields": [
+        "name",
+        "date"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,245 @@
+{
+  "id": "signing_and_records_standard",
+  "category": "common",
+  "entity_scope": "common",
+  "path": "common/signing-and-records-standard.md",
+  "title": "Signing and Records Standard",
+  "metadata_fields": [],
+  "content": [
+    {
+      "type": "paragraph",
+      "text": "Adopted by Board Resolution / Principal directive dated `{{effective_date}}`."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "Purpose"
+    },
+    {
+      "type": "paragraph",
+      "text": "Define how governance documents are approved, signed, and archived, including standards for AI agent execution, audit integrity, and incident response."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "Approval workflow"
+    },
+    {
+      "type": "heading",
+      "level": 3,
+      "text": "Human-initiated documents"
+    },
+    {
+      "type": "ordered_list",
+      "items": [
+        "Draft or edit document in Markdown.",
+        "Open pull request with summary of legal/business deltas.",
+        "Obtain approval from authorized decision-makers per the Authority Tier framework.",
+        "Mark document version as \"approved for execution\"."
+      ]
+    },
+    {
+      "type": "heading",
+      "level": 3,
+      "text": "Agent-initiated documents"
+    },
+    {
+      "type": "ordered_list",
+      "items": [
+        "Agent drafts document and classifies the action by Authority Tier.",
+        "**Tier 1**: Agent logs the action, executes, and records the document with an agent execution block.",
+        "**Tier 2**: Agent creates a proposal record. Action is queued until a valid approval artifact is recorded. Silence is not approval.",
+        "**Tier 3**: Agent may prepare the draft but must not execute. Routed to the Principal."
+      ]
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "Signature standards"
+    },
+    {
+      "type": "heading",
+      "level": 3,
+      "text": "Human signatures"
+    },
+    {
+      "type": "unordered_list",
+      "items": [
+        "Preferred format: e-signature packet generated from final Markdown conversion.",
+        "Signature blocks must include printed name, title/capacity, and date.",
+        "Use UTC date format in ISO style: `YYYY-MM-DD`.",
+        "**Natural-person attestation rule.** Where any statute, regulation, government portal, financial institution, or counterparty requires a natural person's signature, only a designated human may sign or attest. The Agent must not sign, attest, or produce any block that could be mistaken for a human signature."
+      ]
+    },
+    {
+      "type": "heading",
+      "level": 3,
+      "text": "Agent execution blocks (internal records)"
+    },
+    {
+      "type": "paragraph",
+      "text": "When the Agent Operator executes an action, the internal audit record must include:"
+    },
+    {
+      "type": "code_block",
+      "lines": [
+        "action_id: [unique identifier]",
+        "executed_by: [Agent Operator identifier and version]",
+        "authority: Tier [1|2] -- [brief authority basis]",
+        "delegation_rule: [reference to Delegation Schedule section/lane]",
+        "policy_rule_id: [specific autonomy lane ID or spending category]",
+        "timestamp: YYYY-MM-DDTHH:MM:SSZ (UTC)",
+        "execution_channel: [API | email | portal | manual-upload | internal-system]",
+        "action_hash: [SHA-256 hash of the action content]",
+        "previous_entry_hash: [SHA-256 hash of the prior audit entry]",
+        "evidence_uri: [reference to source documents or approval artifacts]",
+        "principal_approval: [approval_id reference, or \"Not required -- Tier 1\"]",
+        "reversibility: [reversible | irreversible | partially reversible]"
+      ]
+    },
+    {
+      "type": "note",
+      "text": "Whether an AI system's execution constitutes a valid 'electronic signature' under the E-SIGN Act (15 U.S.C. §7001 et seq.) or UETA is unsettled law. The governance authority cited in the Agent's execution block provides the legal basis for the Agent's capacity to bind the entity, but counterparties may require additional assurance or co-execution by a natural person."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "Audit trail requirements"
+    },
+    {
+      "type": "heading",
+      "level": 3,
+      "text": "Hash-chain integrity"
+    },
+    {
+      "type": "unordered_list",
+      "items": [
+        "Each audit entry includes the SHA-256 hash of the previous entry, creating an append-only hash chain.",
+        "The first entry uses a genesis hash derived from the entity's formation date and EIN.",
+        "**Weekly checkpoint**: compute and store a checkpoint hash in a separate immutable location.",
+        "**Quarterly verification**: verify the full hash chain from genesis to current."
+      ]
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "Retention and access control"
+    },
+    {
+      "type": "data_table",
+      "source": "structured_data.retention_schedule",
+      "columns": [
+        {
+          "key": "label",
+          "header": "Record type"
+        },
+        {
+          "key": "retention_text",
+          "header": "Minimum retention"
+        },
+        {
+          "key": "governing_requirement",
+          "header": "Governing requirement"
+        }
+      ]
+    },
+    {
+      "type": "heading",
+      "level": 3,
+      "text": "Retention statute references"
+    },
+    {
+      "type": "unordered_list",
+      "items": [
+        "IRC §6501: General 3-year assessment period for federal tax returns.",
+        "IRC §6501(e): 6-year extended assessment period for substantial omissions of income.",
+        "Fraud: No statute of limitations for fraudulent returns.",
+        "The 7-year retention practice provides a buffer beyond the standard 3-year and 6-year assessment periods."
+      ]
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "Litigation hold"
+    },
+    {
+      "type": "paragraph",
+      "text": "Upon receipt of notice of actual or threatened litigation, government investigation, or audit, the Agent must immediately implement a litigation hold preserving all potentially relevant records, suspend routine deletion, and notify the Principal. The litigation hold shall remain in effect until lifted by written instruction from the Principal or legal counsel."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "Incident response"
+    },
+    {
+      "type": "heading",
+      "level": 3,
+      "text": "Severity classification"
+    },
+    {
+      "type": "data_table",
+      "source": "structured_data.severity_classification",
+      "columns": [
+        {
+          "key": "label",
+          "header": "Severity"
+        },
+        {
+          "key": "response_sla_text",
+          "header": "Response SLA"
+        },
+        {
+          "key": "description",
+          "header": "Description"
+        }
+      ]
+    },
+    {
+      "type": "heading",
+      "level": 3,
+      "text": "Incident report format"
+    },
+    {
+      "type": "paragraph",
+      "text": "For Critical and High severity incidents, the Agent must produce a structured report within 1 hour containing:"
+    },
+    {
+      "type": "code_block",
+      "lines": [
+        "incident_id: [unique identifier]",
+        "severity: [critical | high]",
+        "trigger_event: [description]",
+        "trigger_timestamp: YYYY-MM-DDTHH:MM:SSZ (UTC)",
+        "detection_timestamp: YYYY-MM-DDTHH:MM:SSZ (UTC)",
+        "sequence_of_events: [ordered narrative]",
+        "systems_affected: [list]",
+        "containment_actions: [actions taken or \"none -- awaiting Principal direction\"]",
+        "current_state: [description]",
+        "current_mode: [Normal | Principal Unavailable | Incident Lockdown]",
+        "root_cause_status: [identified | suspected | unknown | under investigation]",
+        "recommended_remediation: [ordered list of options]",
+        "evidence_preserved: [list of artifacts and locations]",
+        "related_action_ids: [references to audit log entries]"
+      ]
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "Provider exit and transition"
+    },
+    {
+      "type": "paragraph",
+      "text": "Upon Agent Operator replacement or termination:"
+    },
+    {
+      "type": "ordered_list",
+      "items": [
+        "Transfer all records, credentials, pending proposals, and audit logs within **7 days**.",
+        "Provide a complete, verified data export in portable formats.",
+        "Delete all entity data within **30 days** and certify deletion in writing.",
+        "Transfer the hash chain intact with verification.",
+        "Pending Tier 2 proposals transfer as-is; approvals do not transfer."
+      ]
+    }
+  ]
+}

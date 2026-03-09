@@ -1,0 +1,142 @@
+{
+  "id": "stock_issuance_consent",
+  "category": "transactions",
+  "entity_scope": "corporation",
+  "path": "corporation/stock-issuance-consent.md",
+  "title": "Board Consent for Stock Issuance",
+  "preamble": "Unanimous written consent of the Board of Directors authorizing the issuance of shares.",
+  "metadata_fields": [
+    {
+      "key": "legal_name",
+      "label": "Corporation Name"
+    },
+    {
+      "key": "effective_date",
+      "label": "Effective Date",
+      "placeholder": "YYYY-MM-DD"
+    }
+  ],
+  "content": [
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "UNANIMOUS WRITTEN CONSENT OF THE BOARD OF DIRECTORS"
+    },
+    {
+      "type": "paragraph",
+      "text": "The undersigned, being all of the directors of **{{legal_name}}**, a Delaware corporation (the \"Corporation\"), pursuant to Section 141(f) of the Delaware General Corporation Law, hereby adopt the following resolutions by unanimous written consent without a meeting:"
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "Recitals"
+    },
+    {
+      "type": "paragraph",
+      "text": "WHEREAS, the Board has reviewed the proposed issuance of shares described below and has determined that such issuance is in the best interest of the Corporation and its stockholders."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "Issuance Terms"
+    },
+    {
+      "type": "paragraph",
+      "text": "Issuance ID: `{{issuance_id}}`"
+    },
+    {
+      "type": "paragraph",
+      "text": "Recipients: `{{recipient_names}}`"
+    },
+    {
+      "type": "paragraph",
+      "text": "Class: `{{security_type_and_class}}`"
+    },
+    {
+      "type": "paragraph",
+      "text": "Number of Shares: `{{quantity_or_principal_amount}}`"
+    },
+    {
+      "type": "paragraph",
+      "text": "Consideration per Share / Aggregate: `{{purchase_price_or_consideration}}`"
+    },
+    {
+      "type": "paragraph",
+      "text": "Form of Consideration: `{{form_of_consideration}}`"
+    },
+    {
+      "type": "paragraph",
+      "text": "Vesting Terms: `{{vesting_or_milestone_conditions}}`"
+    },
+    {
+      "type": "paragraph",
+      "text": "Securities Exemption: `{{securities_exemption_basis}}`"
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "Resolutions"
+    },
+    {
+      "type": "paragraph",
+      "text": "**RESOLVED**, that the Board has confirmed that the Corporation has sufficient authorized but unissued shares of Common Stock available for the issuance contemplated herein."
+    },
+    {
+      "type": "paragraph",
+      "text": "**RESOLVED**, that the Board hereby determines that the consideration to be received for the shares is adequate pursuant to DGCL § 152 and that, upon payment of such consideration, the shares shall be fully paid and nonassessable."
+    },
+    {
+      "type": "paragraph",
+      "text": "**RESOLVED**, that the issuance of shares described above is hereby approved, and that such issuance is exempt from registration under the Securities Act of 1933, as amended, pursuant to Section 4(a)(2) thereof and Rule 506(b) of Regulation D promulgated thereunder, and applicable state blue sky exemptions."
+    },
+    {
+      "type": "paragraph",
+      "text": "**RESOLVED**, that the officers are authorized to execute stock purchase agreements, restricted stock purchase agreements (if vesting applies), and related documentation on behalf of the Corporation, conditioned on receipt of accredited investor questionnaires and investment representation letters from each recipient."
+    },
+    {
+      "type": "paragraph",
+      "text": "**RESOLVED**, that share certificates or uncertificated share records (per DGCL § 158) shall bear the following restrictive legend: \"THE SHARES REPRESENTED BY THIS CERTIFICATE HAVE NOT BEEN REGISTERED UNDER THE SECURITIES ACT OF 1933, AS AMENDED, OR ANY STATE SECURITIES LAWS AND MAY NOT BE SOLD, TRANSFERRED, OR OTHERWISE DISPOSED OF EXCEPT PURSUANT TO AN EFFECTIVE REGISTRATION STATEMENT OR AN EXEMPTION FROM REGISTRATION UNDER SAID ACT AND APPLICABLE STATE LAWS.\""
+    },
+    {
+      "type": "paragraph",
+      "text": "**RESOLVED**, that the issuance of shares is conditioned on execution of any applicable Stockholder Agreement, Right of First Refusal Agreement, or similar agreement, if the Board has adopted such agreements."
+    },
+    {
+      "type": "paragraph",
+      "text": "**RESOLVED**, that the officers are authorized to make all filings and take all actions necessary to comply with applicable federal and state securities laws, including filing Form D with the SEC and any required state notice filings."
+    },
+    {
+      "type": "paragraph",
+      "text": "**RESOLVED**, that the Agent Operator is directed to update the cap table and stock ledger to reflect this issuance using the Issuance ID above as the reference identifier. The Agent Operator's role is strictly ministerial: it records the Board's decision but exercises no discretion over equity terms, pricing, recipients, or vesting modifications."
+    },
+    {
+      "type": "paragraph",
+      "text": "**RESOLVED**, that all actions previously taken by the officers consistent with the foregoing resolutions are hereby ratified and approved in all respects."
+    },
+    {
+      "type": "paragraph",
+      "text": "**RESOLVED**, that each officer of the Corporation is hereby authorized to take all actions and execute all documents as may be necessary or desirable to carry out the intent and accomplish the purposes of the foregoing resolutions."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "Authority Classification"
+    },
+    {
+      "type": "paragraph",
+      "text": "This stock issuance is a **Tier 3** action. The Agent Operator may have prepared supporting materials and analysis but the authorization and execution are by the Board pursuant to DGCL § 152 and § 157. All equity actions are non-delegable."
+    },
+    {
+      "type": "signature_block",
+      "role": "Director",
+      "fields": [
+        "name",
+        "date"
+      ]
+    },
+    {
+      "type": "note",
+      "text": "If the Corporation has multiple directors, each director must sign a separate signature block or counterpart."
+    }
+  ]
+}

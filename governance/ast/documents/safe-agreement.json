@@ -1,0 +1,131 @@
+{
+  "id": "safe_agreement",
+  "category": "transactions",
+  "entity_scope": "corporation",
+  "path": "transactions/safe-agreement.md",
+  "title": "SAFE Agreement",
+  "preamble": "Simple Agreement for Future Equity between the Company and an investor.",
+  "metadata_fields": [
+    {
+      "key": "entity_legal_name",
+      "label": "Company Name"
+    },
+    {
+      "key": "effective_date",
+      "label": "Effective Date",
+      "placeholder": "YYYY-MM-DD"
+    }
+  ],
+  "content": [
+    {
+      "type": "paragraph",
+      "text": "This SAFE (Simple Agreement for Future Equity) is entered into as of `{{effective_date}}` by and between **{{entity_legal_name}}** (the \"Company\") and `{{investor_name}}` (the \"Investor\"). In exchange for the Investor's payment of `{{purchase_amount}}` (the \"Purchase Amount\"), the Company issues to the Investor this SAFE on the terms set forth below."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "1. Key Terms"
+    },
+    {
+      "type": "paragraph",
+      "text": "This SAFE is a `{{safe_type}}` SAFE. The Post-Money Valuation Cap is `{{valuation_cap}}`. The discount rate is `{{discount_rate}}`. Pro rata participation rights: `{{pro_rata_rights}}`."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "2. Events"
+    },
+    {
+      "type": "heading",
+      "level": 3,
+      "text": "2.1 Equity Financing"
+    },
+    {
+      "type": "paragraph",
+      "text": "Upon the closing of an Equity Financing (a bona fide transaction or series of transactions with the principal purpose of raising capital, pursuant to which the Company issues and sells Preferred Stock), this SAFE will automatically convert into shares of Safe Preferred Stock at the Safe Price or Discount Price, whichever is lower."
+    },
+    {
+      "type": "heading",
+      "level": 3,
+      "text": "2.2 Liquidity Event"
+    },
+    {
+      "type": "paragraph",
+      "text": "If a Liquidity Event (a Change of Control or an Initial Public Offering) occurs before conversion, the Investor will receive the greater of: (a) the Purchase Amount; or (b) the amount payable if this SAFE converted at the Liquidity Price. The Investor may elect conversion into Common Stock at the Liquidity Price."
+    },
+    {
+      "type": "heading",
+      "level": 3,
+      "text": "2.3 Dissolution Event"
+    },
+    {
+      "type": "paragraph",
+      "text": "If a Dissolution Event occurs before conversion, the Investor will receive the Purchase Amount, subject to the rights of creditors and any senior liquidation preferences."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "3. Definitions"
+    },
+    {
+      "type": "paragraph",
+      "text": "\"Capital Stock\" means the capital stock of the Company, including Common Stock and Preferred Stock. \"Change of Control\" means (a) a transaction in which any person acquires more than 50% of the outstanding voting stock, or (b) a sale or transfer of all or substantially all assets. \"Company Capitalization\" means the sum of all shares of Capital Stock issued and outstanding, all outstanding options, and all Converting Securities. \"Discount Price\" means the price per share equal to the price paid per share in the Equity Financing multiplied by the Discount Rate. \"Equity Financing\" means a bona fide transaction raising capital through issuance of Preferred Stock with aggregate proceeds of at least $250,000. \"Liquidity Price\" means the price per share equal to the Post-Money Valuation Cap divided by the Company Capitalization. \"Safe Preferred Stock\" means the shares of a series of Preferred Stock issued in the Equity Financing with identical rights, privileges, preferences, and restrictions as the Standard Preferred Stock, except with a per share liquidation preference and conversion price equal to the Safe Price. \"Safe Price\" means the price per share equal to the Post-Money Valuation Cap divided by the Company Capitalization."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "4. Company Representations"
+    },
+    {
+      "type": "paragraph",
+      "text": "The Company represents that: (a) it is duly organized, validly existing, and in good standing under the laws of its jurisdiction of organization; (b) it has the corporate power and authority to enter into and perform this SAFE; (c) the execution and performance of this SAFE does not conflict with any material agreement; (d) it is in compliance with applicable laws in all material respects; and (e) the capitalization of the Company is as set forth in a capitalization table provided to the Investor."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "5. Investor Representations"
+    },
+    {
+      "type": "paragraph",
+      "text": "The Investor represents that: (a) the Investor is an \"accredited investor\" as defined in Rule 501 of Regulation D; (b) the Investor is acquiring this SAFE for investment for its own account, not with a view to distribution; (c) the Investor understands that this SAFE and the underlying securities are restricted securities that have not been registered under the Securities Act; (d) the Investor has no need for liquidity in this investment and can bear the economic risk of a complete loss; and (e) the Investor has had the opportunity to ask questions and receive answers regarding the Company and the terms of this SAFE."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "6. Miscellaneous"
+    },
+    {
+      "type": "paragraph",
+      "text": "**Nature of Instrument.** This SAFE is not debt, bears no interest, and has no maturity date. Until conversion, the Investor has no voting, dividend, or other stockholder rights except as expressly provided herein or required by law."
+    },
+    {
+      "type": "paragraph",
+      "text": "**Tax Treatment.** The Company and the Investor agree to treat this SAFE as equity for federal and state income tax purposes."
+    },
+    {
+      "type": "paragraph",
+      "text": "**Amendment.** This SAFE may be amended only by a written instrument signed by the Company and the Investor, or by the Company and the holders of a majority of the outstanding SAFEs for certain administrative provisions."
+    },
+    {
+      "type": "paragraph",
+      "text": "**Governing Law.** This SAFE is governed by the laws of `{{governing_law}}`, without regard to conflicts of laws principles. **Notices.** Notices to the Company: `{{company_notice_address}}`. Notices to the Investor: `{{investor_notice_address}}`. **Counterparts.** This SAFE may be executed in counterparts and by electronic signature."
+    },
+    {
+      "type": "signature_block",
+      "role": "Company",
+      "fields": [
+        "name",
+        "title",
+        "date"
+      ]
+    },
+    {
+      "type": "signature_block",
+      "role": "Investor",
+      "fields": [
+        "name",
+        "date"
+      ]
+    }
+  ]
+}

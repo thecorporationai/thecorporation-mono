@@ -1,0 +1,123 @@
+{
+  "id": "initial_board_consent",
+  "category": "corporation",
+  "entity_scope": "corporation",
+  "path": "corporation/initial-board-consent.md",
+  "title": "Initial Action by Directors (Unanimous Written Consent)",
+  "metadata_fields": [
+    {
+      "key": "legal_name",
+      "label": "Corporation Name"
+    },
+    {
+      "key": "effective_date",
+      "label": "Effective Date",
+      "placeholder": "YYYY-MM-DD"
+    }
+  ],
+  "content": [
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "UNANIMOUS WRITTEN CONSENT OF THE BOARD OF DIRECTORS"
+    },
+    {
+      "type": "paragraph",
+      "text": "The undersigned, being all of the directors of **{{legal_name}}**, a Delaware corporation (the \"Corporation\"), pursuant to Section 141(f) of the Delaware General Corporation Law, hereby take the following actions by unanimous written consent without a meeting:"
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "Recitals"
+    },
+    {
+      "type": "paragraph",
+      "text": "WHEREAS, the Certificate of Incorporation was filed with the Secretary of State of the State of Delaware; and"
+    },
+    {
+      "type": "paragraph",
+      "text": "WHEREAS, the undersigned have been appointed as the initial directors of the Corporation pursuant to the Incorporator Action; and"
+    },
+    {
+      "type": "paragraph",
+      "text": "WHEREAS, the Board desires to complete the organization of the Corporation and authorize the initial corporate actions set forth below."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "Resolutions"
+    },
+    {
+      "type": "paragraph",
+      "text": "**RESOLVED**, that the Certificate of Incorporation of the Corporation, as filed with the Secretary of State of the State of Delaware, is hereby ratified and approved in all respects."
+    },
+    {
+      "type": "paragraph",
+      "text": "**RESOLVED**, that the Bylaws attached hereto are hereby adopted as the Bylaws of the Corporation."
+    },
+    {
+      "type": "paragraph",
+      "text": "**RESOLVED**, that the following persons are hereby elected to serve as officers of the Corporation, each to serve at the pleasure of the Board of Directors:"
+    },
+    {
+      "type": "paragraph",
+      "text": "`{{officers_list}}`"
+    },
+    {
+      "type": "paragraph",
+      "text": "**RESOLVED**, that the Corporation is hereby authorized to issue shares of Common Stock to the founders as set forth in the Stock Issuance Consent adopted concurrently herewith, pursuant to Restricted Stock Purchase Agreements in the form approved by the Board, and that such issuance is exempt from registration under the Securities Act of 1933, as amended, pursuant to Section 4(a)(2) thereof and Rule 506(b) of Regulation D promulgated thereunder."
+    },
+    {
+      "type": "paragraph",
+      "text": "**RESOLVED**, that the Agent Delegation Schedule attached hereto is hereby adopted and incorporated by reference into the Bylaws as provided in Article VI thereof."
+    },
+    {
+      "type": "paragraph",
+      "text": "**RESOLVED**, that the fiscal year of the Corporation shall end on `{{fiscal_year_end}}`."
+    },
+    {
+      "type": "paragraph",
+      "text": "**RESOLVED**, that the officers of the Corporation are hereby authorized to open a bank account in the name of the Corporation and to designate signatories for such account."
+    },
+    {
+      "type": "paragraph",
+      "text": "**RESOLVED**, that the officers of the Corporation are hereby authorized to take all actions necessary to qualify the Corporation to do business in any state or jurisdiction where the Corporation's activities require such qualification."
+    },
+    {
+      "type": "paragraph",
+      "text": "**RESOLVED**, that the officers of the Corporation are hereby authorized to apply for an Employer Identification Number (EIN) from the Internal Revenue Service."
+    },
+    {
+      "type": "paragraph",
+      "text": "**RESOLVED**, that the officers are authorized and directed to obtain directors' and officers' liability insurance in such amounts and on such terms as the officers determine to be appropriate."
+    },
+    {
+      "type": "paragraph",
+      "text": "**RESOLVED**, that each founder or other person receiving restricted stock from the Corporation shall be advised of and afforded the opportunity to file a Section 83(b) election with the Internal Revenue Service within thirty (30) days of the grant date, and that the Corporation shall provide a form of Section 83(b) election letter to each such person."
+    },
+    {
+      "type": "paragraph",
+      "text": "**RESOLVED**, that all actions previously taken by the incorporator, directors, and officers of the Corporation consistent with the foregoing resolutions are hereby ratified and approved in all respects."
+    },
+    {
+      "type": "paragraph",
+      "text": "**RESOLVED**, that each officer of the Corporation is hereby authorized to take all actions and execute all documents as may be necessary or desirable to carry out the intent and accomplish the purposes of the foregoing resolutions."
+    },
+    {
+      "type": "paragraph",
+      "text": "This unanimous written consent may be executed in counterparts, each of which shall be deemed an original."
+    },
+    {
+      "type": "signature_block",
+      "role": "Director",
+      "fields": [
+        "name",
+        "date"
+      ]
+    },
+    {
+      "type": "note",
+      "text": "If the Corporation has multiple directors, each director must sign a separate signature block or counterpart."
+    }
+  ]
+}

@@ -1,0 +1,825 @@
+{
+  "autonomy_lanes": [
+    {
+      "id": "lane-3.1-nda",
+      "category": "standard_form_agreements",
+      "label": "NDAs (mutual or receiving)",
+      "tier": 1,
+      "authority_action": "execute",
+      "conditions": [
+        {
+          "field": "template_approved",
+          "op": "eq",
+          "value": true,
+          "label": "Board/Principal-approved template"
+        },
+        {
+          "field": "modifications",
+          "op": "contains_none",
+          "value": [
+            "indemnification",
+            "governing_law"
+          ],
+          "label": "No modifications to indemnification or governing law"
+        },
+        {
+          "field": "term_years",
+          "op": "lte",
+          "value": 2,
+          "label": "Term not beyond 2 years"
+        }
+      ]
+    },
+    {
+      "id": "lane-3.1-saas",
+      "category": "standard_form_agreements",
+      "label": "SaaS / subscription agreements",
+      "tier": 1,
+      "authority_action": "execute",
+      "conditions": [
+        {
+          "field": "annual_cost",
+          "op": "lte_tier1_vendor_limit",
+          "value": true,
+          "label": "Annual cost within Tier 1 vendor limit"
+        },
+        {
+          "field": "cancellable_days",
+          "op": "lte",
+          "value": 60,
+          "label": "Cancellable within 60 days"
+        },
+        {
+          "field": "exclusivity",
+          "op": "eq",
+          "value": false,
+          "label": "No exclusivity clause"
+        },
+        {
+          "field": "ip_assignment",
+          "op": "eq",
+          "value": false,
+          "label": "No IP assignment clause"
+        }
+      ]
+    },
+    {
+      "id": "lane-3.1-vendor-po",
+      "category": "standard_form_agreements",
+      "label": "Vendor / supplier purchase orders",
+      "tier": 1,
+      "authority_action": "execute",
+      "conditions": [
+        {
+          "field": "within_budget",
+          "op": "eq",
+          "value": true,
+          "label": "Within approved budget"
+        },
+        {
+          "field": "payment_terms",
+          "op": "in_range",
+          "value": [
+            30,
+            60
+          ],
+          "label": "Standard payment terms (net 30-60)"
+        },
+        {
+          "field": "volume_commitment_quarters",
+          "op": "lte",
+          "value": 1,
+          "label": "No volume commitments beyond current quarter"
+        }
+      ]
+    },
+    {
+      "id": "lane-3.2-1099",
+      "category": "contractor_engagement",
+      "label": "Independent contractor (1099) engagement",
+      "tier": 1,
+      "authority_action": "execute",
+      "conditions": [
+        {
+          "field": "within_budget",
+          "op": "eq",
+          "value": true,
+          "label": "Within approved budget"
+        },
+        {
+          "field": "standard_template",
+          "op": "eq",
+          "value": true,
+          "label": "Standard contractor agreement template"
+        },
+        {
+          "field": "exclusivity",
+          "op": "eq",
+          "value": false,
+          "label": "No exclusivity"
+        },
+        {
+          "field": "ip_assignment_beyond_work_product",
+          "op": "eq",
+          "value": false,
+          "label": "No IP assignment beyond work product"
+        },
+        {
+          "field": "notice_days",
+          "op": "gte",
+          "value": 14,
+          "label": "Terminable on 14 days notice"
+        }
+      ]
+    },
+    {
+      "id": "lane-3.2-renewal",
+      "category": "contractor_engagement",
+      "label": "Contractor renewal at same or lower rate",
+      "tier": 1,
+      "authority_action": "execute",
+      "conditions": [
+        {
+          "field": "same_contractor",
+          "op": "eq",
+          "value": true,
+          "label": "Same contractor"
+        },
+        {
+          "field": "scope_change",
+          "op": "in",
+          "value": [
+            "same",
+            "reduced"
+          ],
+          "label": "Same or reduced scope"
+        },
+        {
+          "field": "rate_increase_percent",
+          "op": "lte",
+          "value": 5,
+          "label": "Rate increase ≤ 5%"
+        }
+      ]
+    },
+    {
+      "id": "lane-3.3-renewal",
+      "category": "renewals_amendments",
+      "label": "Service renewal at same terms",
+      "tier": 1,
+      "authority_action": "execute",
+      "conditions": [
+        {
+          "field": "same_provider",
+          "op": "eq",
+          "value": true,
+          "label": "Same provider"
+        },
+        {
+          "field": "same_scope",
+          "op": "eq",
+          "value": true,
+          "label": "Same scope"
+        },
+        {
+          "field": "price_increase_percent",
+          "op": "lte",
+          "value": 10,
+          "label": "Price increase ≤ 10% of prior term"
+        }
+      ]
+    },
+    {
+      "id": "lane-3.3-admin",
+      "category": "renewals_amendments",
+      "label": "Address or administrative updates on existing agreements",
+      "tier": 1,
+      "authority_action": "execute",
+      "conditions": [
+        {
+          "field": "changes_economics",
+          "op": "eq",
+          "value": false,
+          "label": "No change to economics"
+        },
+        {
+          "field": "changes_scope",
+          "op": "eq",
+          "value": false,
+          "label": "No change to scope"
+        },
+        {
+          "field": "changes_legal_terms",
+          "op": "eq",
+          "value": false,
+          "label": "No change to legal terms"
+        }
+      ]
+    },
+    {
+      "id": "lane-3.3-insurance",
+      "category": "renewals_amendments",
+      "label": "Insurance policy renewal",
+      "tier": 1,
+      "authority_action": "execute",
+      "conditions": [
+        {
+          "field": "same_coverage",
+          "op": "eq",
+          "value": true,
+          "label": "Same coverage"
+        },
+        {
+          "field": "premium_increase_percent",
+          "op": "lte",
+          "value": 15,
+          "label": "Premium increase ≤ 15%"
+        },
+        {
+          "field": "same_carrier",
+          "op": "eq",
+          "value": true,
+          "label": "Same carrier"
+        }
+      ]
+    },
+    {
+      "id": "lane-3.4-transfer",
+      "category": "treasury_operations",
+      "label": "Internal transfers between Company accounts",
+      "tier": 1,
+      "authority_action": "execute",
+      "conditions": [
+        {
+          "field": "same_entity",
+          "op": "eq",
+          "value": true,
+          "label": "Same entity"
+        },
+        {
+          "field": "same_bank",
+          "op": "eq",
+          "value": true,
+          "label": "Same bank"
+        }
+      ]
+    },
+    {
+      "id": "lane-3.4-payroll",
+      "category": "treasury_operations",
+      "label": "Payroll execution",
+      "tier": 1,
+      "authority_action": "execute",
+      "conditions": [
+        {
+          "field": "within_approved_headcount",
+          "op": "eq",
+          "value": true,
+          "label": "Within approved headcount"
+        },
+        {
+          "field": "within_compensation_schedule",
+          "op": "eq",
+          "value": true,
+          "label": "Within compensation schedule"
+        }
+      ]
+    },
+    {
+      "id": "lane-3.4-tax",
+      "category": "treasury_operations",
+      "label": "Tax payments per approved filing",
+      "tier": 1,
+      "authority_action": "execute",
+      "conditions": [
+        {
+          "field": "matches_filed_return",
+          "op": "eq",
+          "value": true,
+          "label": "Amount matches filed or estimated return"
+        }
+      ]
+    }
+  ],
+  "emergency_modes": [
+    {
+      "id": "normal",
+      "label": "Normal",
+      "tier1_allowed": true,
+      "tier2_allowed": true,
+      "reversible_only": false,
+      "activated_by": "default",
+      "deactivated_by": null
+    },
+    {
+      "id": "principal_unavailable",
+      "label": "Principal Unavailable",
+      "tier1_allowed": true,
+      "tier2_allowed": false,
+      "reversible_only": true,
+      "activated_by": {
+        "condition": "principal_unreachable",
+        "threshold_hours": 24
+      },
+      "deactivated_by": "principal_response"
+    },
+    {
+      "id": "incident_lockdown",
+      "label": "Incident Lockdown",
+      "tier1_allowed": false,
+      "tier2_allowed": false,
+      "reversible_only": false,
+      "activated_by": [
+        "auto_suspension_trigger",
+        "principal_manual"
+      ],
+      "deactivated_by": "principal_written_reactivation"
+    }
+  ],
+  "auto_suspension_triggers": [
+    {
+      "id": "audit_log_failure",
+      "label": "Audit log failure",
+      "description": "Unable to write to append-only log, or gap/inconsistency detected",
+      "severity": "critical",
+      "activates_mode": "incident_lockdown"
+    },
+    {
+      "id": "credential_anomaly",
+      "label": "Credential anomaly",
+      "description": "Unauthorized access, credential compromise, or use outside authorized scope",
+      "severity": "critical",
+      "activates_mode": "incident_lockdown"
+    },
+    {
+      "id": "conflicting_instructions",
+      "label": "Conflicting instructions",
+      "description": "Multiple authorized sources contradict each other, unresolvable by precedence rules",
+      "severity": "critical",
+      "activates_mode": "incident_lockdown"
+    },
+    {
+      "id": "policy_evidence_mismatch",
+      "label": "Policy-evidence mismatch",
+      "description": "Tier 2 action appears executed without valid approval artifact",
+      "severity": "critical",
+      "activates_mode": "incident_lockdown"
+    },
+    {
+      "id": "unauthorized_scope_expansion",
+      "label": "Unauthorized scope expansion",
+      "description": "Agent authority modified outside governance process",
+      "severity": "critical",
+      "activates_mode": "incident_lockdown"
+    },
+    {
+      "id": "external_breach_notification",
+      "label": "External breach notification",
+      "description": "Data breach, security incident, or legal hold notice received",
+      "severity": "critical",
+      "activates_mode": "incident_lockdown"
+    }
+  ],
+  "credential_custody": [
+    {
+      "id": "entity_formation_sos",
+      "label": "Entity formation / SOS portal login",
+      "custodian": "principal",
+      "agent_access": "none"
+    },
+    {
+      "id": "bank_root",
+      "label": "Bank account root credentials",
+      "custodian": "principal",
+      "agent_access": "none"
+    },
+    {
+      "id": "bank_payment",
+      "label": "Bank account payment credentials (scoped)",
+      "custodian": "principal",
+      "agent_access": "scoped",
+      "agent_access_details": {
+        "read": [
+          "balances",
+          "statements"
+        ],
+        "write": [
+          "payments"
+        ],
+        "scope_limit": "tier1_spending_limits"
+      }
+    },
+    {
+      "id": "tax_portal",
+      "label": "Tax filing portal (IRS, state)",
+      "custodian": "principal",
+      "agent_access": "preparation_only",
+      "agent_access_details": {
+        "read": [
+          "forms",
+          "filings"
+        ],
+        "write": [
+          "preparation"
+        ],
+        "scope_limit": "principal_submits"
+      }
+    },
+    {
+      "id": "registered_agent_portal",
+      "label": "Registered agent portal",
+      "custodian": "agent",
+      "agent_access": "operational",
+      "agent_access_details": {
+        "tier1": "renewals",
+        "principal_required": "changes"
+      }
+    },
+    {
+      "id": "accounting_system",
+      "label": "Accounting / bookkeeping system",
+      "custodian": "agent",
+      "agent_access": "full_operational",
+      "agent_access_details": {
+        "principal_role": "admin_owner"
+      }
+    },
+    {
+      "id": "corporate_records",
+      "label": "Corporate records repository",
+      "custodian": "agent",
+      "agent_access": "read_write_within_authority",
+      "agent_access_details": {
+        "principal_role": "admin"
+      }
+    },
+    {
+      "id": "entity_email",
+      "label": "Email / communication (entity)",
+      "custodian": "agent",
+      "agent_access": "operational",
+      "agent_access_details": {
+        "scope": "routine_correspondence_within_authority"
+      }
+    },
+    {
+      "id": "domain_dns_hosting",
+      "label": "Domain / DNS / hosting",
+      "custodian": "principal",
+      "agent_access": "scoped",
+      "agent_access_details": {
+        "scope": "operational_with_principal_provisioned_credentials"
+      }
+    },
+    {
+      "id": "code_repositories",
+      "label": "Code repositories",
+      "custodian": "agent",
+      "agent_access": "per_project_scope",
+      "agent_access_details": {
+        "principal_role": "admin"
+      }
+    },
+    {
+      "id": "api_keys",
+      "label": "API keys for third-party services",
+      "custodian": "principal",
+      "agent_access": "scoped",
+      "agent_access_details": {
+        "scope": "use_within_authorized_scope",
+        "restriction": "cannot_create_new_integrations_without_tier2"
+      }
+    }
+  ],
+  "adjustment_rules": [
+    {
+      "id": "reduce_spending_limit",
+      "action": "reduce",
+      "target": "spending_limit",
+      "requires_board_resolution": false
+    },
+    {
+      "id": "increase_spending_limit",
+      "action": "increase",
+      "target": "spending_limit",
+      "requires_board_resolution": true
+    },
+    {
+      "id": "add_narrow_lane",
+      "action": "add",
+      "target": "autonomy_lane",
+      "scope": "narrower",
+      "requires_board_resolution": false
+    },
+    {
+      "id": "remove_narrow_lane",
+      "action": "remove",
+      "target": "autonomy_lane",
+      "requires_board_resolution": false
+    },
+    {
+      "id": "add_expand_lane",
+      "action": "add",
+      "target": "autonomy_lane",
+      "scope": "expanded",
+      "requires_board_resolution": true
+    },
+    {
+      "id": "decrease_vendor_cap",
+      "action": "decrease",
+      "target": "per_vendor_annual_cap",
+      "requires_board_resolution": false
+    },
+    {
+      "id": "increase_vendor_cap",
+      "action": "increase",
+      "target": "per_vendor_annual_cap",
+      "requires_board_resolution": true
+    },
+    {
+      "id": "tighten_emergency_thresholds",
+      "action": "tighten",
+      "target": "emergency_mode_thresholds",
+      "requires_board_resolution": false
+    },
+    {
+      "id": "relax_emergency_thresholds",
+      "action": "relax",
+      "target": "emergency_mode_thresholds",
+      "requires_board_resolution": true
+    },
+    {
+      "id": "modify_suspension_triggers",
+      "action": "modify",
+      "target": "auto_suspension_triggers",
+      "requires_board_resolution": true
+    },
+    {
+      "id": "modify_negative_consent_cap",
+      "action": "modify",
+      "target": "negative_consent_max_size",
+      "requires_board_resolution": true
+    },
+    {
+      "id": "disable_negative_consent",
+      "action": "disable",
+      "target": "negative_consent",
+      "requires_board_resolution": false
+    },
+    {
+      "id": "enable_negative_consent",
+      "action": "enable",
+      "target": "negative_consent",
+      "requires_board_resolution": true
+    }
+  ],
+  "approval_validity": {
+    "required_elements": [
+      {
+        "id": "explicit_affirmation",
+        "label": "Explicit affirmation",
+        "rule": "unambiguous_approved",
+        "silence_is_approval": false,
+        "inaction_is_approval": false
+      },
+      {
+        "id": "scope_match",
+        "label": "Scope match",
+        "rule": "matches_specific_proposed_action"
+      },
+      {
+        "id": "recorded_artifact",
+        "label": "Recorded artifact",
+        "rule": "durable_record",
+        "valid_channels": [
+          "platform_workflow",
+          "email",
+          "signed_document",
+          "board_resolution"
+        ]
+      },
+      {
+        "id": "timeliness",
+        "label": "Timeliness",
+        "rule": "not_expired",
+        "expiry_days": 30
+      },
+      {
+        "id": "identity_verification",
+        "label": "Identity verification",
+        "rule": "verified_authorized_person_established_channel"
+      }
+    ],
+    "negative_consent": {
+      "enabled_by_default": false,
+      "requires_board_resolution_to_enable": true,
+      "minimum_response_window_hours": 24,
+      "never_available_for": [
+        "equity_actions",
+        "litigation",
+        "governance_amendments",
+        "state_federal_filings",
+        "actions_above_5000_usd",
+        "tier3_actions"
+      ]
+    }
+  },
+  "retention_schedule": [
+    {
+      "id": "financial_records",
+      "label": "Financial records and tax filings",
+      "retention_years": 7,
+      "permanent": false,
+      "governing_requirement": "IRS requirements; state law where longer"
+    },
+    {
+      "id": "governance_executed",
+      "label": "Governance documents (executed)",
+      "retention_years": null,
+      "permanent": true,
+      "governing_requirement": "Entity best practice"
+    },
+    {
+      "id": "audit_log",
+      "label": "Audit log entries",
+      "retention_years": 7,
+      "permanent": false,
+      "governing_requirement": "Matches financial record retention"
+    },
+    {
+      "id": "contracts",
+      "label": "Contracts and agreements",
+      "retention_years": 7,
+      "permanent": false,
+      "retention_from": "expiration_or_termination",
+      "governing_requirement": "Statute of limitations coverage"
+    },
+    {
+      "id": "employment_records",
+      "label": "Employment / contractor records",
+      "retention_years": 7,
+      "permanent": false,
+      "retention_from": "separation",
+      "governing_requirement": "Federal and state requirements"
+    },
+    {
+      "id": "correspondence",
+      "label": "Correspondence (material)",
+      "retention_years": 5,
+      "permanent": false,
+      "governing_requirement": "Entity policy"
+    }
+  ],
+  "severity_classification": [
+    {
+      "id": "critical",
+      "label": "Critical",
+      "response_sla_hours": 0,
+      "auto_lockdown": true,
+      "suspend_affected": true,
+      "examples": [
+        "audit_log_failure",
+        "credential_compromise",
+        "unauthorized_access",
+        "data_breach"
+      ]
+    },
+    {
+      "id": "high",
+      "label": "High",
+      "response_sla_hours": 1,
+      "auto_lockdown": false,
+      "suspend_affected": true,
+      "examples": [
+        "policy_evidence_mismatch",
+        "conflicting_instructions",
+        "failed_filing_deadline"
+      ]
+    },
+    {
+      "id": "medium",
+      "label": "Medium",
+      "response_sla_hours": 24,
+      "auto_lockdown": false,
+      "suspend_affected": false,
+      "examples": [
+        "anomalous_transaction_pattern",
+        "vendor_dispute",
+        "spending_limit_approach"
+      ]
+    },
+    {
+      "id": "low",
+      "label": "Low",
+      "response_sla_hours": null,
+      "auto_lockdown": false,
+      "suspend_affected": false,
+      "include_in_next_monthly_report": true,
+      "examples": [
+        "minor_operational_exceptions",
+        "non_material_variances"
+      ]
+    }
+  ],
+  "report_schedule": [
+    {
+      "id": "tier1_summary",
+      "label": "Tier 1 action summary",
+      "frequency": "monthly",
+      "authority_to_produce": 1,
+      "content_keys": [
+        "autonomous_actions",
+        "spending_totals_by_category",
+        "exceptions_flagged"
+      ]
+    },
+    {
+      "id": "pending_tier2",
+      "label": "Pending Tier 2 proposals",
+      "frequency": "weekly",
+      "authority_to_produce": 1,
+      "content_keys": [
+        "open_proposals",
+        "status",
+        "age",
+        "priority"
+      ]
+    },
+    {
+      "id": "compliance_forecast",
+      "label": "Compliance deadline forecast",
+      "frequency": "monthly",
+      "authority_to_produce": 1,
+      "lookahead_days": 90,
+      "content_keys": [
+        "filing_deadlines",
+        "renewal_dates",
+        "required_actions"
+      ]
+    },
+    {
+      "id": "spending_by_category",
+      "label": "Spending report by category",
+      "frequency": "monthly",
+      "authority_to_produce": 1,
+      "content_keys": [
+        "actual_vs_budget",
+        "variance_analysis"
+      ]
+    },
+    {
+      "id": "audit_integrity",
+      "label": "Audit log integrity report",
+      "frequency": "quarterly",
+      "authority_to_produce": 1,
+      "content_keys": [
+        "hash_chain_verification",
+        "entry_count",
+        "anomalies"
+      ]
+    },
+    {
+      "id": "delegation_effectiveness",
+      "label": "Delegation schedule effectiveness review",
+      "frequency": "quarterly",
+      "authority_to_produce": 1,
+      "authority_to_change": 3,
+      "content_keys": [
+        "proposed_adjustments",
+        "limits",
+        "lanes",
+        "classifications"
+      ]
+    }
+  ],
+  "change_control_rules": [
+    {
+      "id": "minor_version",
+      "label": "Minor version update (patch, bugfix)",
+      "tier": 2,
+      "requires_impact_assessment": false,
+      "requires_governance_amendment": false
+    },
+    {
+      "id": "major_version",
+      "label": "Major version update (new capabilities, changed behavior)",
+      "tier": 2,
+      "requires_impact_assessment": true,
+      "requires_governance_amendment": false
+    },
+    {
+      "id": "provider_change",
+      "label": "Change of Agent provider or underlying model",
+      "tier": 3,
+      "requires_impact_assessment": true,
+      "requires_governance_amendment": false
+    },
+    {
+      "id": "scope_altering",
+      "label": "Change that alters delegation scope, tier behavior, or self-governance constraints",
+      "tier": 3,
+      "requires_impact_assessment": true,
+      "requires_governance_amendment": true
+    }
+  ]
+}

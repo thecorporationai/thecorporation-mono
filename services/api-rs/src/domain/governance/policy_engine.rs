@@ -401,6 +401,7 @@ pub fn supported_escalation_conditions() -> &'static [EscalationCondition] {
         EscalationCondition::TemplateApprovedFalse,
         EscalationCondition::RestrictedModificationsPresent,
         EscalationCondition::IsReversibleFalse,
+        EscalationCondition::AgentAssessment,
     ]
 }
 
@@ -433,6 +434,13 @@ fn escalation_applies(
         }
         Some(EscalationCondition::IsReversibleFalse) => {
             parsed_metadata.is_reversible.is_some_and(|v| !v)
+        }
+        Some(EscalationCondition::AgentAssessment) => {
+            // Agent assessment escalations are evaluated by the agent at
+            // runtime based on its own confidence and context signals.
+            // At the policy-engine level, these always resolve to false
+            // (the agent decides, not the rule engine).
+            false
         }
         None => false,
     }

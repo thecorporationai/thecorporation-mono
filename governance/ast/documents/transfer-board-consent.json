@@ -1,0 +1,101 @@
+{
+  "id": "transfer_board_consent",
+  "category": "transactions",
+  "entity_scope": "both",
+  "path": "transactions/transfer-board-consent.md",
+  "title": "Transfer Approval Consent",
+  "preamble": "Approval resolution for an equity transfer requiring company authorization.",
+  "metadata_fields": [
+    {
+      "key": "entity_legal_name",
+      "label": "Entity Name"
+    },
+    {
+      "key": "effective_date",
+      "label": "Effective Date",
+      "placeholder": "YYYY-MM-DD"
+    }
+  ],
+  "content": [
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "UNANIMOUS WRITTEN CONSENT"
+    },
+    {
+      "type": "paragraph",
+      "text": "As of `{{effective_date}}`, the approving authority of **{{entity_legal_name}}** (the \"Company\") adopts the following resolutions relating to the proposed transfer of equity interests described below."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "Transfer Summary"
+    },
+    {
+      "type": "paragraph",
+      "text": "Transferor: `{{transferor_name}}`"
+    },
+    {
+      "type": "paragraph",
+      "text": "Transferee: `{{transferee_name}}`"
+    },
+    {
+      "type": "paragraph",
+      "text": "Securities: `{{units_transferred}}` units or shares of `{{security_class}}`"
+    },
+    {
+      "type": "paragraph",
+      "text": "Consideration: `{{consideration}}`"
+    },
+    {
+      "type": "paragraph",
+      "text": "Closing Target Date: `{{closing_target_date}}`"
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "Resolutions"
+    },
+    {
+      "type": "paragraph",
+      "text": "**RESOLVED**, that the Company's right of first refusal with respect to the proposed transfer has been duly waived by the Board (or the ROFR procedures have been followed and the ROFR period has expired without exercise)."
+    },
+    {
+      "type": "paragraph",
+      "text": "**RESOLVED**, that the Board has determined that the proposed transfer complies with applicable federal and state securities laws and the transfer restrictions in the Company's governing documents."
+    },
+    {
+      "type": "paragraph",
+      "text": "**RESOLVED**, that the transfer summarized above is approved, subject to the Company's governing documents and compliance with applicable securities laws."
+    },
+    {
+      "type": "paragraph",
+      "text": "**RESOLVED**, that the appropriate officers are authorized and directed to update the stock ledger and capitalization records to reflect the transfer, including: new holder name (`{{transferee_name}}`), certificate or DRS statement details, and applicable restrictive legends."
+    },
+    {
+      "type": "paragraph",
+      "text": "**RESOLVED**, that the officers are authorized to finalize and execute the related transfer instruments and complete all ministerial acts necessary to effect the transfer."
+    },
+    {
+      "type": "paragraph",
+      "text": "**RESOLVED**, that all actions previously taken by the officers consistent with the foregoing resolutions are hereby ratified and approved."
+    },
+    {
+      "type": "paragraph",
+      "text": "**RESOLVED**, that each officer is authorized to take all actions necessary to effectuate the foregoing resolutions."
+    },
+    {
+      "type": "signature_block",
+      "role": "Director / Approving Authority",
+      "fields": [
+        "name",
+        "title",
+        "date"
+      ]
+    },
+    {
+      "type": "note",
+      "text": "If the entity has multiple directors, each must sign a separate signature block or counterpart."
+    }
+  ]
+}

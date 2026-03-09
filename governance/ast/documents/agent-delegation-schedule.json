@@ -1,0 +1,525 @@
+{
+  "id": "agent_delegation_schedule",
+  "category": "common",
+  "entity_scope": "common",
+  "path": "common/agent-delegation-schedule.md",
+  "title": "Agent Delegation Schedule",
+  "preamble": "This is the controlling operational artifact for Agent Operator authority. It is adopted by reference in the Operating Agreement (LLC) and Bylaws (Corporation). The Principal/CEO may amend this schedule within the adjustment envelope (Section 9.1) without Board/Member action. Any amendment that expands delegated authority requires Board/Member resolution. The Agent Operator may not amend this schedule.",
+  "metadata_fields": [
+    {
+      "key": "version",
+      "label": "Version",
+      "default": "1.0"
+    },
+    {
+      "key": "effective_date",
+      "label": "Effective date",
+      "placeholder": "YYYY-MM-DD"
+    },
+    {
+      "key": "adopted_by",
+      "label": "Adopted by",
+      "placeholder": "TBD (Initial Board Consent / Initial Member Consent)"
+    },
+    {
+      "key": "last_reviewed",
+      "label": "Last reviewed",
+      "placeholder": "YYYY-MM-DD"
+    },
+    {
+      "key": "next_mandatory_review",
+      "label": "Next mandatory review",
+      "placeholder": "12 months from effective date"
+    }
+  ],
+  "content": [
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "1. Authority precedence"
+    },
+    {
+      "type": "paragraph",
+      "text": "When instructions or rules conflict, the following precedence applies (highest to lowest):"
+    },
+    {
+      "type": "data_table",
+      "source": "authority_precedence",
+      "columns": [
+        {
+          "key": "rank",
+          "header": "Rank"
+        },
+        {
+          "key": "label",
+          "header": "Source"
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "text": "When the Agent detects a conflict between levels, it must halt, record the conflict, and escalate to the Principal. The Agent must not resolve ambiguity by choosing the interpretation that expands its own authority."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "2. Spending authority"
+    },
+    {
+      "type": "heading",
+      "level": 3,
+      "text": "2.1 Tier 1 limits (Agent autonomous)"
+    },
+    {
+      "type": "data_table",
+      "source": "spending_defaults.categories",
+      "columns": [
+        {
+          "key": "label",
+          "header": "Category"
+        },
+        {
+          "key": "per_transaction_cents",
+          "header": "Per-transaction limit",
+          "format": "usd"
+        },
+        {
+          "key": "monthly_aggregate_cents",
+          "header": "Monthly aggregate limit",
+          "format": "usd"
+        }
+      ]
+    },
+    {
+      "type": "heading",
+      "level": 3,
+      "text": "2.2 Per-vendor annual caps"
+    },
+    {
+      "type": "paragraph",
+      "text": "The Agent may not commit more than **{{spending_defaults.per_vendor_annual_cap}}** in aggregate annual spending to any single vendor without Tier 2 approval, even if individual transactions are within Tier 1 limits."
+    },
+    {
+      "type": "heading",
+      "level": 3,
+      "text": "2.3 Spending escalation"
+    },
+    {
+      "type": "paragraph",
+      "text": "Any expenditure not covered by a category above, or exceeding any limit above, requires Tier 2 approval before commitment."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "3. Autonomy lanes (pre-approved Tier 1 actions)"
+    },
+    {
+      "type": "paragraph",
+      "text": "Autonomy lanes define categories of action the Agent may take without per-instance approval, provided all lane conditions are met. If any condition is not met, the action escalates to Tier 2."
+    },
+    {
+      "type": "data_table",
+      "source": "structured_data.autonomy_lanes",
+      "columns": [
+        {
+          "key": "label",
+          "header": "Lane"
+        },
+        {
+          "key": "conditions_text",
+          "header": "Conditions"
+        },
+        {
+          "key": "authority_text",
+          "header": "Authority"
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "text": "**Not Tier 1 (always Tier 2 or higher):** W-2 employee hiring, exclusive engagements, IP assignment beyond standard work-for-hire, non-compete obligations, equity compensation."
+    },
+    {
+      "type": "paragraph",
+      "text": "**Not Tier 1:** Opening/closing accounts, changing signers, setting up new payment methods, wire transfers to new recipients."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "4. Approval mechanics"
+    },
+    {
+      "type": "heading",
+      "level": 3,
+      "text": "4.1 What counts as approval"
+    },
+    {
+      "type": "paragraph",
+      "text": "A valid Tier 2 approval requires all of the following:"
+    },
+    {
+      "type": "data_table",
+      "source": "structured_data.approval_validity",
+      "columns": [
+        {
+          "key": "label",
+          "header": "Requirement"
+        },
+        {
+          "key": "description",
+          "header": "Detail"
+        }
+      ]
+    },
+    {
+      "type": "heading",
+      "level": 3,
+      "text": "4.2 Approval record schema"
+    },
+    {
+      "type": "paragraph",
+      "text": "Every Tier 2 approval must be recorded with:"
+    },
+    {
+      "type": "code_block",
+      "lines": [
+        "approval_id: [unique identifier]",
+        "action_ref: [reference to the proposed action]",
+        "approver: [name and role of approving person]",
+        "approver_auth_method: [platform login | email with verified sender | signed document | board resolution]",
+        "approver_identity_evidence: [reference to identity verification]",
+        "decision: [approved | rejected | approved with modifications]",
+        "scope: [specific description of what is approved]",
+        "conditions: [any conditions attached to the approval, or \"none\"]",
+        "channel: [platform approval / email / signed document / board resolution]",
+        "timestamp: YYYY-MM-DDTHH:MM:SSZ (UTC)",
+        "expiry: [date after which approval lapses if unexecuted]"
+      ]
+    },
+    {
+      "type": "heading",
+      "level": 3,
+      "text": "4.3 Negative consent (disabled by default)"
+    },
+    {
+      "type": "paragraph",
+      "text": "For defensibility-first operation, negative consent is disabled by default and no-response is never approval."
+    },
+    {
+      "type": "paragraph",
+      "text": "Negative consent may only be enabled by explicit Board/Member resolution that identifies:"
+    },
+    {
+      "type": "ordered_list",
+      "items": [
+        "The exact action categories permitted for negative consent.",
+        "A per-action dollar cap and aggregate cap.",
+        "A minimum response window of 24 hours.",
+        "A mandatory expiration date for the authorization window.",
+        "Additional monitoring and reporting requirements."
+      ]
+    },
+    {
+      "type": "paragraph",
+      "text": "**Negative consent is never available for:** equity actions, litigation, governance amendments, state/federal filings requiring natural-person attestation, actions above **$5,000**, or any Tier 3 action."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "5. Credential authority"
+    },
+    {
+      "type": "heading",
+      "level": 3,
+      "text": "5.1 Credential custody matrix"
+    },
+    {
+      "type": "data_table",
+      "source": "structured_data.credential_custody",
+      "columns": [
+        {
+          "key": "label",
+          "header": "Credential type"
+        },
+        {
+          "key": "custodian",
+          "header": "Custodian"
+        },
+        {
+          "key": "agent_access",
+          "header": "Agent access"
+        }
+      ]
+    },
+    {
+      "type": "heading",
+      "level": 3,
+      "text": "5.2 Credential rules"
+    },
+    {
+      "type": "unordered_list",
+      "items": [
+        "The Principal holds root/admin credentials for all financial and legal accounts.",
+        "The Agent receives scoped credentials provisioned by the Principal.",
+        "The Agent may not create new accounts or credentials without Tier 2 approval.",
+        "The Agent may not share, export, or store credentials outside the entity's authorized systems.",
+        "Credential rotation: the Agent must flag expiring credentials at least 14 days before expiry. The Principal rotates root credentials; the Agent may rotate its own scoped credentials within the same scope."
+      ]
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "6. Emergency control modes"
+    },
+    {
+      "type": "heading",
+      "level": 3,
+      "text": "6.1 Modes"
+    },
+    {
+      "type": "data_table",
+      "source": "structured_data.emergency_modes",
+      "columns": [
+        {
+          "key": "label",
+          "header": "Mode"
+        },
+        {
+          "key": "description",
+          "header": "Description"
+        },
+        {
+          "key": "activated_by_text",
+          "header": "Who can activate"
+        },
+        {
+          "key": "deactivated_by_text",
+          "header": "Who can deactivate"
+        }
+      ]
+    },
+    {
+      "type": "heading",
+      "level": 3,
+      "text": "6.2 Mode rules"
+    },
+    {
+      "type": "unordered_list",
+      "items": [
+        "Only the Principal may change modes manually (except automatic triggers).",
+        "The Agent must prominently display the current mode in every action record and report.",
+        "Mode changes are logged as governance events in the audit trail.",
+        "During Principal Unavailable mode, time-critical legal deadlines (filing deadlines, tax payments against approved returns) remain Tier 1 if they are ministerial and previously approved."
+      ]
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "7. Auto-suspension triggers"
+    },
+    {
+      "type": "paragraph",
+      "text": "The Agent Operator must immediately enter Incident Lockdown mode if any of the following occur:"
+    },
+    {
+      "type": "data_table",
+      "source": "structured_data.auto_suspension_triggers",
+      "columns": [
+        {
+          "key": "label",
+          "header": "Trigger"
+        },
+        {
+          "key": "description",
+          "header": "Description"
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "text": "Upon auto-suspension:"
+    },
+    {
+      "type": "unordered_list",
+      "items": [
+        "The Agent must immediately notify the Principal through all established channels.",
+        "The Agent must preserve the current state and all evidence of the triggering event.",
+        "The Agent must not take corrective action without Principal authorization.",
+        "Only the Principal may lift the lockdown after reviewing the trigger."
+      ]
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "8. Reporting requirements"
+    },
+    {
+      "type": "heading",
+      "level": 3,
+      "text": "8.1 Mandatory reports"
+    },
+    {
+      "type": "data_table",
+      "source": "structured_data.report_schedule",
+      "columns": [
+        {
+          "key": "label",
+          "header": "Report"
+        },
+        {
+          "key": "frequency",
+          "header": "Frequency"
+        },
+        {
+          "key": "content_summary",
+          "header": "Content"
+        }
+      ]
+    },
+    {
+      "type": "heading",
+      "level": 3,
+      "text": "8.2 Incident reports"
+    },
+    {
+      "type": "paragraph",
+      "text": "For any auto-suspension trigger or operational anomaly, the Agent must produce a structured incident report within 1 hour, per the schema defined in the Signing and Records Standard."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "9. Adjustment envelope"
+    },
+    {
+      "type": "heading",
+      "level": 3,
+      "text": "9.1 CEO/Principal adjustment authority"
+    },
+    {
+      "type": "paragraph",
+      "text": "The CEO (Corporation) or Principal (LLC) may modify this Delegation Schedule without Board/Member action **only within the following envelope**:"
+    },
+    {
+      "type": "data_table",
+      "source": "structured_data.adjustment_rules",
+      "columns": [
+        {
+          "key": "description",
+          "header": "Adjustment type"
+        },
+        {
+          "key": "permitted_text",
+          "header": "Permitted without Board/Member action?"
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "text": "All adjustments must be recorded in the amendment history (Section 12) with the date, description, and authorizing person."
+    },
+    {
+      "type": "heading",
+      "level": 3,
+      "text": "9.2 Structural changes requiring governance document amendment"
+    },
+    {
+      "type": "paragraph",
+      "text": "The following changes are outside the scope of this Delegation Schedule and require amendment of the Bylaws (Corporation) or Operating Agreement (LLC):"
+    },
+    {
+      "type": "unordered_list",
+      "items": [
+        "Adding or removing Authority Tiers",
+        "Changing the definition or scope of Tier 3 (non-delegable) actions",
+        "Modifying the Agent's legal status or designation",
+        "Altering the safe harbor or its exclusions",
+        "Changing the precedence hierarchy",
+        "Modifying self-governance constraints"
+      ]
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "10. Provider and model governance"
+    },
+    {
+      "type": "heading",
+      "level": 3,
+      "text": "10.1 Change control"
+    },
+    {
+      "type": "data_table",
+      "source": "structured_data.change_control_rules",
+      "columns": [
+        {
+          "key": "label",
+          "header": "Change type"
+        },
+        {
+          "key": "tier",
+          "header": "Authority tier"
+        },
+        {
+          "key": "notes",
+          "header": "Notes"
+        }
+      ]
+    },
+    {
+      "type": "heading",
+      "level": 3,
+      "text": "10.2 Data and confidentiality"
+    },
+    {
+      "type": "unordered_list",
+      "items": [
+        "The Agent provider may not use entity data for training, benchmarking, or any secondary purpose without explicit Principal written consent.",
+        "Entity data processed by the Agent must remain within systems authorized by the Principal.",
+        "The Agent must flag any provider terms that grant data usage rights and escalate as Tier 2.",
+        "Upon Agent replacement, the provider must delete or return all entity data within 30 days per the service agreement."
+      ]
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "11. Annual re-authorization"
+    },
+    {
+      "type": "paragraph",
+      "text": "This Delegation Schedule must be reviewed and re-authorized by the Principal/CEO/Board at least annually. If not re-authorized within 30 days of the review date:"
+    },
+    {
+      "type": "unordered_list",
+      "items": [
+        "The schedule remains in effect but all Tier 1 spending limits are reduced to 50% of stated values.",
+        "The Agent must escalate the re-authorization as a pending Tier 2 action.",
+        "After 90 days without re-authorization, all Tier 1 autonomous authority is suspended and only Tier 1 record-keeping and reporting continue."
+      ]
+    },
+    {
+      "type": "horizontal_rule"
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "12. Amendment history"
+    },
+    {
+      "type": "table",
+      "headers": [
+        "Date",
+        "Version",
+        "Description",
+        "Authorized by"
+      ],
+      "rows": [
+        [
+          "`{{effective_date}}`",
+          "1.0",
+          "Initial adoption",
+          "`{{adopted_by}}`"
+        ]
+      ]
+    }
+  ]
+}

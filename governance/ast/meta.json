@@ -1,0 +1,151 @@
+{
+  "version": "1.0.0",
+  "disclaimer": {
+    "text": "This software and the documents it generates are for general informational purposes only. The Corporation is not a law firm and does not provide legal, tax, or accounting advice. Use of this document generator does not create an attorney-client or other professional relationship. Generated documents are not a substitute for advice from a licensed attorney, tax advisor, or accountant. You should consult qualified professionals before relying on any generated documents. Documents have not been prepared with your specific circumstances in mind and may not be suitable for your business. Default values and configurations do not constitute recommendations. Documents are provided \"AS IS\" without warranties of any kind, express or implied, including warranties of merchantability, fitness for a particular purpose, title, or noninfringement. By using these documents, you assume all risk and liability. Review all generated documents carefully for accuracy before use. Look for any placeholder text (TBD, YYYY-MM-DD, bracketed text) requiring your attention and modification. This system generates governance documents for AI-operated entities. The legal landscape for AI agent authority is evolving. You should consult with counsel familiar with your jurisdiction's treatment of algorithmic management and AI agent authority.",
+    "must_accept_before_use": true,
+    "key_points": [
+      "not_legal_advice",
+      "no_attorney_client_relationship",
+      "not_substitute_for_counsel",
+      "not_tailored_to_circumstances",
+      "no_endorsement_of_defaults",
+      "as_is_no_warranties",
+      "review_carefully",
+      "user_assumes_risk",
+      "ai_governance_legal_landscape_evolving"
+    ]
+  },
+  "entity_types": {
+    "corporation": {
+      "jurisdiction": "Delaware",
+      "governing_statute": "DGCL",
+      "governing_statute_full": "Delaware General Corporation Law (Title 8, Delaware Code)",
+      "filing_authority": "Delaware Division of Corporations",
+      "governance_body": "Board of Directors",
+      "governing_document": "Bylaws",
+      "charter_document": "Certificate of Incorporation",
+      "approval_authority": "Board of Directors",
+      "human_manager_title": "CEO",
+      "human_manager_role": "Chief Executive Officer"
+    },
+    "llc": {
+      "jurisdiction": "Wyoming",
+      "governing_statute": "Wyoming LLC Act",
+      "governing_statute_full": "Wyoming Limited Liability Company Act (W.S. § 17-29-101 et seq.)",
+      "filing_authority": "Wyoming Secretary of State",
+      "governance_body": "Members",
+      "governing_document": "Operating Agreement",
+      "charter_document": "Articles of Organization",
+      "approval_authority": "Members",
+      "human_manager_title": "Principal",
+      "human_manager_role": "Principal Manager"
+    }
+  },
+  "spending_defaults": {
+    "parameter_set": "conservative_launch",
+    "categories": [
+      {
+        "id": "recurring_obligations",
+        "label": "Recurring obligations (rent, subscriptions, utilities, payroll within approved budget)",
+        "per_transaction_cents": 1000000,
+        "monthly_aggregate_cents": 4000000
+      },
+      {
+        "id": "vendor_payments",
+        "label": "Vendor payments against approved purchase orders",
+        "per_transaction_cents": 750000,
+        "monthly_aggregate_cents": 3000000
+      },
+      {
+        "id": "professional_services",
+        "label": "Professional services (legal, accounting) against approved retainers",
+        "per_transaction_cents": 500000,
+        "monthly_aggregate_cents": 2000000
+      },
+      {
+        "id": "government_filings",
+        "label": "Government filing fees and compliance costs",
+        "per_transaction_cents": 250000,
+        "monthly_aggregate_cents": 1000000
+      },
+      {
+        "id": "office_supplies",
+        "label": "Office supplies and operational consumables",
+        "per_transaction_cents": 50000,
+        "monthly_aggregate_cents": 200000
+      }
+    ],
+    "per_vendor_annual_cap_cents": 5000000
+  },
+  "compliance": {
+    "corporation": {
+      "franchise_tax_deadline": "March 1",
+      "franchise_tax_methods": [
+        {
+          "id": "authorized_shares",
+          "label": "Authorized Shares Method",
+          "minimum_cents": 17500
+        },
+        {
+          "id": "assumed_par_value",
+          "label": "Assumed Par Value Capital Method",
+          "minimum_cents": 40000
+        }
+      ],
+      "annual_report_fee_cents": 5000,
+      "annual_report_deadline": "March 1 (filed concurrently with franchise tax)",
+      "filing_fee_cents": 8900
+    },
+    "llc": {
+      "annual_report_fee_cents": 6000,
+      "annual_report_deadline": "First day of anniversary month",
+      "filing_fee_cents": 10000,
+      "state_income_tax": false,
+      "franchise_tax": false,
+      "name_reservation_fee_cents": 5000,
+      "name_reservation_validity_days": 120
+    }
+  },
+  "authority_precedence": [
+    {
+      "rank": 1,
+      "source": "applicable_law",
+      "label": "Applicable law (DGCL, Wyoming LLC Act, federal law, regulations)"
+    },
+    {
+      "rank": 2,
+      "source": "charter_documents",
+      "label": "Charter documents (Certificate of Incorporation / Articles of Organization)"
+    },
+    {
+      "rank": 3,
+      "source": "internal_governance",
+      "label": "Internal governance (Bylaws / Operating Agreement)"
+    },
+    {
+      "rank": 4,
+      "source": "resolutions",
+      "label": "Board or Member resolutions"
+    },
+    {
+      "rank": 5,
+      "source": "directives",
+      "label": "Principal / CEO directives (specific instructions to the Agent)"
+    },
+    {
+      "rank": 6,
+      "source": "standing_instructions",
+      "label": "Standing Instructions (recurring authority modifications)"
+    },
+    {
+      "rank": 7,
+      "source": "delegation_schedule",
+      "label": "This Delegation Schedule (default autonomy lanes and limits)"
+    },
+    {
+      "rank": 8,
+      "source": "agent_heuristics",
+      "label": "Agent heuristics and judgment (lowest priority -- always overridden by anything above)"
+    }
+  ]
+}

@@ -1,0 +1,163 @@
+{
+  "id": "contractor_services_agreement",
+  "category": "transactions",
+  "entity_scope": "both",
+  "path": "transactions/contractor-services-agreement.md",
+  "title": "Independent Contractor Services Agreement",
+  "preamble": "Services agreement for an independent contractor engagement.",
+  "metadata_fields": [
+    {
+      "key": "entity_legal_name",
+      "label": "Company Name"
+    },
+    {
+      "key": "effective_date",
+      "label": "Effective Date",
+      "placeholder": "YYYY-MM-DD"
+    }
+  ],
+  "content": [
+    {
+      "type": "paragraph",
+      "text": "This Independent Contractor Services Agreement (this \"Agreement\") is entered into as of `{{effective_date}}` by and between **{{entity_legal_name}}** (the \"Company\") and `{{contractor_name}}` (the \"Contractor\")."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "1. Services and Term"
+    },
+    {
+      "type": "paragraph",
+      "text": "The Contractor will provide the services described in Exhibit A (the \"Services\"). The engagement will commence on `{{start_date}}` and continue as follows: `{{term_description}}`."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "2. Compensation"
+    },
+    {
+      "type": "paragraph",
+      "text": "**Fees.** `{{compensation_terms}}`. Compensation is deliverable/milestone-based with acceptance criteria as set forth in Exhibit A."
+    },
+    {
+      "type": "paragraph",
+      "text": "**Payment Terms.** `{{payment_terms}}`"
+    },
+    {
+      "type": "paragraph",
+      "text": "**Expenses.** `{{expense_policy}}`"
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "3. Independent Contractor Relationship"
+    },
+    {
+      "type": "paragraph",
+      "text": "The Contractor is an independent contractor and not an employee, agent, partner, or representative of the Company. The Contractor determines the manner, means, and methods of performing the Services. The Company controls only the result of the work, not how the work is performed. The Contractor provides its own equipment and maintains its own workspace. The Contractor sets its own hours and is free to accept other engagements. The Contractor is not subject to the Company's control over how work is performed."
+    },
+    {
+      "type": "paragraph",
+      "text": "The Contractor is solely responsible for all compensation, taxes (including self-employment tax), withholdings, benefits, insurance, and obligations relating to the Contractor and any personnel. No federal, state, or local income tax or payroll tax of any kind shall be withheld by the Company. The Contractor shall complete Form W-9 and acknowledges that the Company will issue Form 1099 as required."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "4. Confidentiality and Ownership"
+    },
+    {
+      "type": "paragraph",
+      "text": "The Contractor will hold Company confidential information in confidence and use it only to perform the Services. To the fullest extent permitted by law, all deliverables, reports, software, materials, inventions, and other work product created within the scope of the Services will be owned exclusively by the Company, and the Contractor hereby assigns all right, title, and interest therein."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "5. Representations"
+    },
+    {
+      "type": "paragraph",
+      "text": "The Contractor represents that: (a) it has authority to enter into this Agreement; (b) the Services will not conflict with any other obligation; (c) it will comply with all applicable laws; and (d) the work product will be original and non-infringing."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "6. Indemnification"
+    },
+    {
+      "type": "paragraph",
+      "text": "Each party shall indemnify and hold harmless the other from third-party claims arising from breach of representations. The Contractor shall indemnify the Company from claims of IP infringement by the work product."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "7. Limitation of Liability"
+    },
+    {
+      "type": "paragraph",
+      "text": "Each party's aggregate liability shall not exceed the fees paid or payable under this Agreement. This limitation shall not apply to IP indemnification, confidentiality breaches, or willful misconduct."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "8. Termination"
+    },
+    {
+      "type": "paragraph",
+      "text": "Either party may terminate for convenience on `{{termination_notice_days}}` days' prior written notice. Either party may terminate immediately for material breach if not cured within ten (10) days. Upon termination, the Company shall pay for work performed through the termination date. The Contractor shall deliver all work product and return Company materials."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "General Provisions"
+    },
+    {
+      "type": "paragraph",
+      "text": "**Governing Law.** This Agreement shall be governed by and construed in accordance with the laws of `{{governing_law}}`, without regard to conflicts of laws principles."
+    },
+    {
+      "type": "paragraph",
+      "text": "**Dispute Resolution.** Any dispute arising under this Agreement shall first be submitted to mediation for a period of thirty (30) days. If mediation is unsuccessful, disputes shall be resolved by binding arbitration or litigation in the courts of the governing jurisdiction. The prevailing party shall be entitled to reasonable attorney's fees and costs."
+    },
+    {
+      "type": "paragraph",
+      "text": "**Severability.** If any provision of this Agreement is held invalid, illegal, or unenforceable, the remaining provisions shall remain in full force and effect."
+    },
+    {
+      "type": "paragraph",
+      "text": "**Entire Agreement.** This Agreement constitutes the entire agreement between the parties with respect to the subject matter hereof and supersedes all prior negotiations, representations, or agreements."
+    },
+    {
+      "type": "paragraph",
+      "text": "**Notices.** All notices required or permitted under this Agreement shall be in writing and shall be delivered personally, sent by nationally recognized overnight courier, or sent by email. Notice shall be deemed received upon personal delivery, one business day after deposit with an overnight courier, or upon confirmed electronic delivery."
+    },
+    {
+      "type": "paragraph",
+      "text": "**Waiver.** The failure of any party to enforce any provision shall not constitute a waiver of such provision or the right to enforce it at a later time."
+    },
+    {
+      "type": "paragraph",
+      "text": "**Counterparts.** This Agreement may be executed in counterparts, each of which shall be deemed an original, and all of which together shall constitute one and the same instrument. Electronic signatures shall have the same force and effect as original signatures."
+    },
+    {
+      "type": "paragraph",
+      "text": "**Assignment.** Neither party may assign this Agreement without the prior written consent of the other party, except in connection with a merger or sale of all or substantially all assets."
+    },
+    {
+      "type": "signature_block",
+      "role": "Company",
+      "fields": [
+        "name",
+        "title",
+        "date"
+      ]
+    },
+    {
+      "type": "signature_block",
+      "role": "Contractor",
+      "fields": [
+        "name",
+        "date"
+      ]
+    }
+  ]
+}
