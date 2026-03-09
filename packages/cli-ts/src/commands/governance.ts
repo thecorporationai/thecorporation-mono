@@ -115,10 +115,10 @@ export async function governanceConveneCommand(opts: {
 export async function governanceVoteCommand(
   meetingId: string,
   itemId: string,
-  opts: { voter: string; vote: string }
+  opts: { voter: string; vote: string; entityId?: string }
 ): Promise<void> {
   const cfg = requireConfig("api_url", "api_key", "workspace_id");
-  const eid = resolveEntityId(cfg, undefined);
+  const eid = resolveEntityId(cfg, opts.entityId);
   const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
   try {
     const result = await client.castVote(eid, meetingId, itemId, {

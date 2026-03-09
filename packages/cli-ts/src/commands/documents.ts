@@ -2,6 +2,24 @@ import { requireConfig, resolveEntityId } from "../config.js";
 import { CorpAPIClient } from "../api-client.js";
 import { printDocumentsTable, printError, printSuccess, printJson } from "../output.js";
 
+const HUMANS_APP_ORIGIN = "https://humans.thecorporation.ai";
+
+function formatSigningLink(docId: string, result: { token?: unknown; signing_url?: unknown }): string {
+  if (typeof result.token === "string" && result.token.length > 0) {
+    return `${HUMANS_APP_ORIGIN}/sign/${docId}?token=${encodeURIComponent(result.token)}`;
+  }
+  if (typeof result.signing_url === "string" && result.signing_url.length > 0) {
+    if (/^https?:\/\//.test(result.signing_url)) {
+      return result.signing_url;
+    }
+    const normalizedPath = result.signing_url.startsWith("/human/sign/")
+      ? result.signing_url.replace("/human/sign/", "/sign/")
+      : result.signing_url;
+    return `${HUMANS_APP_ORIGIN}${normalizedPath.startsWith("/") ? normalizedPath : `/${normalizedPath}`}`;
+  }
+  return `${HUMANS_APP_ORIGIN}/sign/${docId}`;
+}
+
 export async function documentsListCommand(opts: { entityId?: string; json?: boolean }): Promise<void> {
   const cfg = requireConfig("api_url", "api_key", "workspace_id");
   const eid = resolveEntityId(cfg, opts.entityId);
@@ -20,10 +38,10 @@ export async function documentsSigningLinkCommand(docId: string, opts: { entityI
   const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
   try {
     const result = await client.getSigningLink(docId, eid);
-    const shareUrl = result.token
-      ? `https://humans.thecorporation.ai/sign/${docId}?token=${result.token}`
-      : result.signing_url ?? `https://humans.thecorporation.ai/sign/${docId}`;
-    printSuccess("Signing link generated.");
+    const shareUrl = formatSigningLink(docId, result);
+    if (process.stdout.isTTY) {
+      printSuccess("Signing link generated.");
+    }
     console.log(shareUrl);
   } catch (err) { printError(`Failed to get signing link: ${err}`); process.exit(1); }
 }

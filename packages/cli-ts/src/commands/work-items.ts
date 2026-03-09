@@ -47,13 +47,17 @@ export async function workItemsShowCommand(workItemId: string, opts: { entityId?
 }
 
 export async function workItemsCreateCommand(opts: {
-  entityId?: string; title: string; category: string;
+  entityId?: string; title: string; category?: string;
   description?: string; deadline?: string; asap?: boolean; createdBy?: string;
 }): Promise<void> {
   const cfg = requireConfig("api_url", "api_key", "workspace_id");
   const eid = resolveEntityId(cfg, opts.entityId);
   const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
   try {
+    if (!opts.category) {
+      printError("Missing required option: --category <category>");
+      process.exit(1);
+    }
     const data: Record<string, unknown> = { title: opts.title, category: opts.category };
     if (opts.description) data.description = opts.description;
     if (opts.deadline) data.deadline = opts.deadline;

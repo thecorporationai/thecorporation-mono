@@ -1,25 +1,13 @@
-import { requireConfig, resolveEntityId } from "../config.js";
+import { requireConfig } from "../config.js";
 import { CorpAPIClient } from "../api-client.js";
 import { printEntitiesTable, printError, printSuccess, printJson } from "../output.js";
 import { withSpinner } from "../spinner.js";
 import chalk from "chalk";
 
-function wantsJsonOutput(opts: unknown): boolean {
-  if (opts && typeof opts === "object") {
-    const json = (opts as { json?: unknown }).json;
-    if (typeof json === "boolean") return json;
-    const commandOpts = (opts as { opts?: () => { json?: unknown } }).opts;
-    if (typeof commandOpts === "function") {
-      return Boolean(commandOpts().json);
-    }
-  }
-  return false;
-}
-
 export async function entitiesCommand(opts: { json?: boolean }): Promise<void> {
   const cfg = requireConfig("api_url", "api_key", "workspace_id");
   const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
-  const jsonOutput = wantsJsonOutput(opts);
+  const jsonOutput = Boolean(opts.json);
   try {
     const entities = await withSpinner("Loading", () => client.listEntities(), jsonOutput);
     if (jsonOutput) {
@@ -38,7 +26,7 @@ export async function entitiesCommand(opts: { json?: boolean }): Promise<void> {
 export async function entitiesShowCommand(entityId: string, opts: { json?: boolean }): Promise<void> {
   const cfg = requireConfig("api_url", "api_key", "workspace_id");
   const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
-  const jsonOutput = wantsJsonOutput(opts);
+  const jsonOutput = Boolean(opts.json);
   try {
     const entities = await client.listEntities();
     const entity = entities.find((e) => e.entity_id === entityId);

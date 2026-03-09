@@ -376,35 +376,28 @@ fn resolve_document_entity_id(
     allowed_entity_ids: Option<&[EntityId]>,
     document_id: DocumentId,
 ) -> Result<EntityId, AppError> {
-    let entity_is_allowed = |entity_id: EntityId| match allowed_entity_ids {
-        Some(ids) => ids.contains(&entity_id),
-        None => true,
-    };
-
-    let has_document = |entity_id: EntityId| {
-        EntityStore::open(layout, workspace_id, entity_id)
-            .ok()
-            .and_then(|store| store.read_document("main", document_id).ok())
-            .is_some()
-    };
-
-    if entity_is_allowed(requested_entity_id) && has_document(requested_entity_id) {
-        return Ok(requested_entity_id);
-    }
-
-    for entity_id in layout.list_entity_ids(workspace_id) {
-        if entity_id == requested_entity_id || !entity_is_allowed(entity_id) {
-            continue;
-        }
-        if has_document(entity_id) {
-            return Ok(entity_id);
+    if let Some(ids) = allowed_entity_ids {
+        if !ids.contains(&requested_entity_id) {
+            return Err(AppError::NotFound(format!(
+                "document {} not found",
+                document_id
+            )));
         }
     }
 
-    Err(AppError::NotFound(format!(
-        "document {} not found",
-        document_id
-    )))
+    let has_document = EntityStore::open(layout, workspace_id, requested_entity_id)
+        .ok()
+        .and_then(|store| store.read_document("main", document_id).ok())
+        .is_some();
+
+    if has_document {
+        Ok(requested_entity_id)
+    } else {
+        Err(AppError::NotFound(format!(
+            "document {} not found",
+            document_id
+        )))
+    }
 }
 
 fn parse_formation_date(raw: Option<&str>) -> Result<Option<DateTime<Utc>>, AppError> {
@@ -3691,3 +3684,90 @@ pub fn formation_routes() -> Router<AppState> {
     tags((name = "formation", description = "Entity formation and document management")),
 )]
 pub struct FormationApi;
+
+#[cfg(test)]
+mod tests {
+    use super::resolve_document_entity_id;
+    use crate::domain::formation::{
+        content::{InvestorType, MemberInput, MemberRole},
+        service::{self, FormationProfileOverrides},
+        types::{EntityType, Jurisdiction},
+    };
+    use crate::domain::ids::WorkspaceId;
+    use crate::error::AppError;
+    use crate::store::RepoLayout;
+    use tempfile::TempDir;
+
+    fn founder(name: &str, email: &str) -> MemberInput {
+        MemberInput {
+            name: name.to_owned(),
+            investor_type: InvestorType::NaturalPerson,
+            email: Some(email.to_owned()),
+            agent_id: None,
+            entity_id: None,
+            ownership_pct: Some(100.0),
+            membership_units: None,
+            share_count: None,
+            share_class: None,
+            role: Some(MemberRole::Member),
+            address: None,
+            officer_title: None,
+            shares_purchased: None,
+            vesting: None,
+            ip_description: None,
+            is_incorporator: None,
+        }
+    }
+
+    #[test]
+    fn resolve_document_entity_id_requires_the_requested_entity_to_own_the_document() {
+        let tmp = TempDir::new().expect("temp dir");
+        let layout = RepoLayout::new(tmp.path().to_path_buf());
+        let workspace_id = WorkspaceId::new();
+
+        let owner = service::create_pending_entity_with_profile_overrides(
+            &layout,
+            workspace_id,
+            "Owner LLC".to_owned(),
+            EntityType::Llc,
+            Jurisdiction::new("Wyoming").expect("jurisdiction"),
+            Some("Wyoming Registered Agent LLC".to_owned()),
+            Some("123 Capitol Ave, Cheyenne, WY 82001".to_owned()),
+            FormationProfileOverrides::default(),
+        )
+        .expect("owner entity");
+        service::add_pending_member(
+            &layout,
+            workspace_id,
+            owner.entity_id(),
+            founder("Alice Owner", "alice@example.com"),
+        )
+        .expect("owner founder");
+        let (formation, _) =
+            service::finalize_formation(&layout, workspace_id, owner.entity_id(), None, None)
+                .expect("owner formation");
+        let document_id = formation.document_ids[0];
+
+        let other = service::create_pending_entity_with_profile_overrides(
+            &layout,
+            workspace_id,
+            "Other LLC".to_owned(),
+            EntityType::Llc,
+            Jurisdiction::new("Wyoming").expect("jurisdiction"),
+            Some("Wyoming Registered Agent LLC".to_owned()),
+            Some("456 Frontier Mall Dr, Cheyenne, WY 82009".to_owned()),
+            FormationProfileOverrides::default(),
+        )
+        .expect("other entity");
+
+        let resolved =
+            resolve_document_entity_id(&layout, workspace_id, owner.entity_id(), None, document_id)
+                .expect("document should resolve for owning entity");
+        assert_eq!(resolved, owner.entity_id());
+
+        let err =
+            resolve_document_entity_id(&layout, workspace_id, other.entity_id(), None, document_id)
+                .expect_err("document should not resolve through a different entity");
+        assert!(matches!(err, AppError::NotFound(_)));
+    }
+}

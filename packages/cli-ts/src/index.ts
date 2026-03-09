@@ -1,5 +1,6 @@
 import { Command, Option } from "commander";
 import { createRequire } from "node:module";
+import { inheritOption } from "./command-options.js";
 
 const require = createRequire(import.meta.url);
 const pkg = require("../package.json");
@@ -117,8 +118,12 @@ entitiesCmd
   .option("--json", "Output as JSON")
   .description("Show entity detail")
   .action(async (entityId: string, opts, cmd) => {
+    const parent = cmd.parent!.opts();
     const { entitiesShowCommand } = await import("./commands/entities.js");
-    await entitiesShowCommand(entityId, { ...cmd.opts(), ...opts });
+    await entitiesShowCommand(entityId, {
+      ...opts,
+      json: inheritOption(opts.json, parent.json),
+    });
   });
 entitiesCmd
   .command("convert <entity-id>")
@@ -156,7 +161,11 @@ contactsCmd
   .action(async (contactId: string, opts, cmd) => {
     const parent = cmd.parent!.opts();
     const { contactsShowCommand } = await import("./commands/contacts.js");
-    await contactsShowCommand(contactId, { ...opts, entityId: parent.entityId });
+    await contactsShowCommand(contactId, {
+      ...opts,
+      entityId: parent.entityId,
+      json: inheritOption(opts.json, parent.json),
+    });
   });
 contactsCmd
   .command("add")
@@ -483,9 +492,13 @@ governanceCmd
   .requiredOption("--voter <id>", "Voter contact UUID")
   .addOption(new Option("--vote <value>", "Vote (for, against, abstain, recusal)").choices(["for", "against", "abstain", "recusal"]).makeOptionMandatory())
   .description("Cast a vote on an agenda item")
-  .action(async (meetingId: string, itemId: string, opts) => {
+  .action(async (meetingId: string, itemId: string, opts, cmd) => {
+    const parent = cmd.parent!.opts();
     const { governanceVoteCommand } = await import("./commands/governance.js");
-    await governanceVoteCommand(meetingId, itemId, opts);
+    await governanceVoteCommand(meetingId, itemId, {
+      ...opts,
+      entityId: parent.entityId,
+    });
   });
 governanceCmd
   .command("notice <meeting-id>")
@@ -627,9 +640,13 @@ const agentsCmd = program
     await agentsListCommand(opts);
   });
 agentsCmd.command("show <agent-id>").option("--json", "Output as JSON").description("Show agent detail")
-  .action(async (agentId: string, opts) => {
+  .action(async (agentId: string, opts, cmd) => {
+    const parent = cmd.parent!.opts();
     const { agentsShowCommand } = await import("./commands/agents.js");
-    await agentsShowCommand(agentId, opts);
+    await agentsShowCommand(agentId, {
+      ...opts,
+      json: inheritOption(opts.json, parent.json),
+    });
   });
 agentsCmd.command("create").requiredOption("--name <name>", "Agent name")
   .requiredOption("--prompt <prompt>", "System prompt").option("--model <model>", "Model")
@@ -686,12 +703,16 @@ workItemsCmd
   .action(async (itemId: string, opts, cmd) => {
     const parent = cmd.parent!.opts();
     const { workItemsShowCommand } = await import("./commands/work-items.js");
-    await workItemsShowCommand(itemId, { ...opts, entityId: parent.entityId });
+    await workItemsShowCommand(itemId, {
+      ...opts,
+      entityId: parent.entityId,
+      json: inheritOption(opts.json, parent.json),
+    });
   });
 workItemsCmd
   .command("create")
   .requiredOption("--title <title>", "Work item title")
-  .requiredOption("--category <category>", "Work item category")
+  .option("--category <category>", "Work item category")
   .option("--description <desc>", "Description")
   .option("--deadline <date>", "Deadline (YYYY-MM-DD)")
   .option("--asap", "Mark as ASAP priority")
@@ -700,7 +721,11 @@ workItemsCmd
   .action(async (opts, cmd) => {
     const parent = cmd.parent!.opts();
     const { workItemsCreateCommand } = await import("./commands/work-items.js");
-    await workItemsCreateCommand({ ...opts, entityId: parent.entityId });
+    await workItemsCreateCommand({
+      ...opts,
+      category: inheritOption(opts.category, parent.category),
+      entityId: parent.entityId,
+    });
   });
 workItemsCmd
   .command("claim <item-id>")
