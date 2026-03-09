@@ -126,7 +126,7 @@ describe("CorpAPIClient HTTP methods", () => {
 
   it("listEntities uses correct path", async () => {
     await client.listEntities();
-    expect(capturedRequests[0].url).toBe("http://localhost:8000/v1/workspaces/ws_test/entities");
+    expect(capturedRequests[0].url).toBe("http://localhost:8000/v1/entities");
   });
 
   it("listContacts uses correct path", async () => {
