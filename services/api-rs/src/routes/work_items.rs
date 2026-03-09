@@ -220,7 +220,13 @@ async fn list_work_items(
     let items = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = match EntityStore::open(&layout, workspace_id, entity_id) {
+                Ok(s) => s,
+                Err(crate::git::error::GitStorageError::RepoNotFound(_)) => {
+                    return Ok(Vec::new());
+                }
+                Err(e) => return Err(AppError::Internal(e.to_string())),
+            };
             let ids = store
                 .list_ids::<WorkItem>("main")
                 .map_err(|e| AppError::Internal(format!("list work items: {e}")))?;

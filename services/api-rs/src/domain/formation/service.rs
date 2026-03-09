@@ -22,6 +22,26 @@ use chrono::{DateTime, Utc};
 
 use super::error::FormationError;
 
+fn default_registered_agent(entity: &Entity) -> (String, String) {
+    let jurisdiction = entity.jurisdiction().to_string();
+    if jurisdiction.contains("WY") {
+        (
+            "Wyoming Registered Agent LLC".to_owned(),
+            "1712 Pioneer Ave, Suite 500, Cheyenne, WY 82001".to_owned(),
+        )
+    } else if jurisdiction.contains("DE") {
+        (
+            "Delaware Registered Agent Inc.".to_owned(),
+            "8 The Green, Suite A, Dover, DE 19901".to_owned(),
+        )
+    } else {
+        (
+            "National Registered Agents Inc.".to_owned(),
+            "1999 Bryan St, Suite 900, Dallas, TX 75201".to_owned(),
+        )
+    }
+}
+
 /// Result of creating a new entity through the formation workflow.
 #[derive(Debug)]
 pub struct FormationResult {
@@ -175,6 +195,10 @@ pub fn create_entity_with_profile_overrides(
         registered_agent_name,
         registered_agent_address,
     )?;
+    if entity.registered_agent_name().is_none() {
+        let (default_name, default_address) = default_registered_agent(&entity);
+        entity.set_registered_agent(Some(default_name), Some(default_address))?;
+    }
     if let Some(formation_date) = profile_overrides.formation_date.as_ref().cloned() {
         entity.set_formation_date(formation_date);
     }
@@ -1229,6 +1253,11 @@ pub fn finalize_formation_with_profile_overrides(
             registered_agent_address
                 .or_else(|| entity.registered_agent_address().map(ToOwned::to_owned)),
         )?;
+    }
+    // Provide jurisdiction-based defaults when no registered agent is set.
+    if entity.registered_agent_name().is_none() {
+        let (default_name, default_address) = default_registered_agent(&entity);
+        entity.set_registered_agent(Some(default_name), Some(default_address))?;
     }
     if let Some(formation_date) = profile_overrides.formation_date.as_ref().cloned() {
         entity.set_formation_date(formation_date);

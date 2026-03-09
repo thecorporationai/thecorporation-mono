@@ -53,7 +53,11 @@ impl Meeting {
             location,
             notice_days,
             status: initial_status,
-            quorum_met: QuorumStatus::Unknown,
+            quorum_met: if meeting_type == MeetingType::WrittenConsent {
+                QuorumStatus::Met
+            } else {
+                QuorumStatus::Unknown
+            },
             present_seat_ids: Vec::new(),
             convened_at: if meeting_type == MeetingType::WrittenConsent {
                 Some(Utc::now())

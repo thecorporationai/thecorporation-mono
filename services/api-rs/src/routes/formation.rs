@@ -2583,53 +2583,59 @@ async fn preview_document_pdf(
     let entity_id = query.entity_id;
     let doc_id = query.document_id;
 
-    let pdf_bytes = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let doc_id = doc_id.clone();
-        move || {
-            let store = open_formation_store(&layout, workspace_id, entity_id)?;
+    let pdf_bytes = tokio::time::timeout(
+        std::time::Duration::from_secs(30),
+        tokio::task::spawn_blocking({
+            let layout = state.layout.clone();
+            let doc_id = doc_id.clone();
+            move || {
+                let store = open_formation_store(&layout, workspace_id, entity_id)?;
 
-            // Load entity to determine type
-            let entity = store
-                .read_entity("main")
-                .map_err(|e| AppError::Internal(format!("read entity: {e}")))?;
-            let entity_type = match entity.entity_type() {
-                EntityType::CCorp => doc_ast::EntityTypeKey::Corporation,
-                EntityType::Llc => doc_ast::EntityTypeKey::Llc,
-            };
-
-            // Load profile (or default from entity)
-            let profile: GovernanceProfile =
-                match store.read_json::<GovernanceProfile>("main", GOVERNANCE_PROFILE_PATH) {
-                    Ok(p) => p,
-                    Err(_) => GovernanceProfile::default_for_entity(&entity),
+                // Load entity to determine type
+                let entity = store
+                    .read_entity("main")
+                    .map_err(|e| AppError::Internal(format!("read entity: {e}")))?;
+                let entity_type = match entity.entity_type() {
+                    EntityType::CCorp => doc_ast::EntityTypeKey::Corporation,
+                    EntityType::Llc => doc_ast::EntityTypeKey::Llc,
                 };
 
-            // Load AST and find the document definition
-            let ast = doc_ast::default_doc_ast();
-            let doc_def = ast
-                .documents
-                .iter()
-                .find(|d| d.id == doc_id)
-                .ok_or_else(|| {
-                    AppError::NotFound(format!("no AST document definition matches id '{doc_id}'"))
-                })?;
+                // Load profile (or default from entity)
+                let profile: GovernanceProfile =
+                    match store.read_json::<GovernanceProfile>("main", GOVERNANCE_PROFILE_PATH) {
+                        Ok(p) => p,
+                        Err(_) => GovernanceProfile::default_for_entity(&entity),
+                    };
 
-            // Validate scope
-            if !doc_def.entity_scope.matches(entity_type) {
-                return Err(AppError::UnprocessableEntity(format!(
-                    "document '{doc_id}' does not apply to entity type {entity_type:?}"
-                )));
+                // Load AST and find the document definition
+                let ast = doc_ast::default_doc_ast();
+                let doc_def = ast
+                    .documents
+                    .iter()
+                    .find(|d| d.id == doc_id)
+                    .ok_or_else(|| {
+                        AppError::NotFound(format!(
+                            "no AST document definition matches id '{doc_id}'"
+                        ))
+                    })?;
+
+                // Validate scope
+                if !doc_def.entity_scope.matches(entity_type) {
+                    return Err(AppError::UnprocessableEntity(format!(
+                        "document '{doc_id}' does not apply to entity type {entity_type:?}"
+                    )));
+                }
+
+                // Render PDF with empty signatures (preview)
+                let pdf = typst_renderer::render_pdf(doc_def, ast, entity_type, &profile, &[])
+                    .map_err(|e| AppError::Internal(format!("PDF rendering failed: {e}")))?;
+
+                Ok::<_, AppError>(pdf)
             }
-
-            // Render PDF with empty signatures (preview)
-            let pdf = typst_renderer::render_pdf(doc_def, ast, entity_type, &profile, &[])
-                .map_err(|e| AppError::Internal(format!("PDF rendering failed: {e}")))?;
-
-            Ok::<_, AppError>(pdf)
-        }
-    })
+        }),
+    )
     .await
+    .map_err(|_| AppError::Internal("PDF rendering timed out after 30 seconds".to_owned()))?
     .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
 
     let disposition = format!("inline; filename=\"preview-{doc_id}.pdf\"");
