@@ -1,8 +1,9 @@
 import { requireConfig } from "../config.js";
 import { CorpAPIClient } from "../api-client.js";
-import { printAgentsTable, printError, printSuccess, printJson } from "../output.js";
+import { printAgentsTable, printError, printJson, printWriteResult } from "../output.js";
 import chalk from "chalk";
 import type { ApiRecord } from "../types.js";
+import { readFileSync } from "node:fs";
 
 export async function agentsListCommand(opts: { json?: boolean }): Promise<void> {
   const cfg = requireConfig("api_url", "api_key", "workspace_id");
@@ -40,51 +41,80 @@ export async function agentsShowCommand(agentId: string, opts: { json?: boolean 
   } catch (err) { printError(`Failed to fetch agent: ${err}`); process.exit(1); }
 }
 
-export async function agentsCreateCommand(opts: { name: string; prompt: string; model?: string }): Promise<void> {
+export async function agentsCreateCommand(opts: {
+  name: string;
+  prompt: string;
+  model?: string;
+  json?: boolean;
+}): Promise<void> {
   const cfg = requireConfig("api_url", "api_key", "workspace_id");
   const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
   try {
     const data: ApiRecord = { name: opts.name, system_prompt: opts.prompt };
     if (opts.model) data.model = opts.model;
     const result = await client.createAgent(data);
-    printSuccess(`Agent created: ${result.agent_id ?? result.id ?? "OK"}`);
-    printJson(result);
+    printWriteResult(result, `Agent created: ${result.agent_id ?? result.id ?? "OK"}`, opts.json);
   } catch (err) { printError(`Failed to create agent: ${err}`); process.exit(1); }
 }
 
-export async function agentsPauseCommand(agentId: string): Promise<void> {
+export async function agentsPauseCommand(agentId: string, opts: { json?: boolean }): Promise<void> {
   const cfg = requireConfig("api_url", "api_key", "workspace_id");
   const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
   try {
-    await client.updateAgent(agentId, { status: "paused" });
-    printSuccess(`Agent ${agentId} paused.`);
+    const result = await client.updateAgent(agentId, { status: "paused" });
+    printWriteResult(result, `Agent ${agentId} paused.`, opts.json);
   } catch (err) { printError(`Failed to pause agent: ${err}`); process.exit(1); }
 }
 
-export async function agentsResumeCommand(agentId: string): Promise<void> {
+export async function agentsResumeCommand(agentId: string, opts: { json?: boolean }): Promise<void> {
   const cfg = requireConfig("api_url", "api_key", "workspace_id");
   const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
   try {
-    await client.updateAgent(agentId, { status: "active" });
-    printSuccess(`Agent ${agentId} resumed.`);
+    const result = await client.updateAgent(agentId, { status: "active" });
+    printWriteResult(result, `Agent ${agentId} resumed.`, opts.json);
   } catch (err) { printError(`Failed to resume agent: ${err}`); process.exit(1); }
 }
 
-export async function agentsDeleteCommand(agentId: string): Promise<void> {
+export async function agentsDeleteCommand(agentId: string, opts: { json?: boolean }): Promise<void> {
   const cfg = requireConfig("api_url", "api_key", "workspace_id");
   const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
   try {
-    await client.deleteAgent(agentId);
-    printSuccess(`Agent ${agentId} deleted.`);
+    const result = await client.deleteAgent(agentId);
+    printWriteResult(result, `Agent ${agentId} deleted.`, opts.json);
   } catch (err) { printError(`Failed to delete agent: ${err}`); process.exit(1); }
 }
 
-export async function agentsMessageCommand(agentId: string, opts: { body: string }): Promise<void> {
+function resolveTextInput(
+  inlineText: string | undefined,
+  filePath: string | undefined,
+  label: string,
+  required = false,
+): string | undefined {
+  if (inlineText && filePath) {
+    throw new Error(`Pass either --${label} or --${label}-file, not both.`);
+  }
+  if (filePath) {
+    return readFileSync(filePath, "utf8");
+  }
+  if (inlineText) {
+    return inlineText;
+  }
+  if (required) {
+    throw new Error(`Provide --${label} or --${label}-file.`);
+  }
+  return undefined;
+}
+
+export async function agentsMessageCommand(
+  agentId: string,
+  opts: { body?: string; bodyFile?: string; json?: boolean },
+): Promise<void> {
   const cfg = requireConfig("api_url", "api_key", "workspace_id");
   const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
   try {
-    const result = await client.sendAgentMessage(agentId, opts.body);
-    printSuccess(`Message sent. Execution: ${result.execution_id ?? "OK"}`);
+    const body = resolveTextInput(opts.body, opts.bodyFile, "body", true);
+    const result = await client.sendAgentMessage(agentId, body!);
+    printWriteResult(result, `Message sent. Execution: ${result.execution_id ?? "OK"}`, opts.json);
   } catch (err) { printError(`Failed to send message: ${err}`); process.exit(1); }
 }
 
@@ -101,15 +131,25 @@ export async function agentsExecutionsCommand(agentId: string, _opts: { json?: b
 
 
 export async function agentsSkillCommand(agentId: string, opts: {
-  name: string; description: string; instructions?: string;
+  name: string;
+  description: string;
+  instructions?: string;
+  instructionsFile?: string;
+  json?: boolean;
 }): Promise<void> {
   const cfg = requireConfig("api_url", "api_key", "workspace_id");
   const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
   try {
+    const instructions = resolveTextInput(
+      opts.instructions,
+      opts.instructionsFile,
+      "instructions",
+    );
     const result = await client.addAgentSkill(agentId, {
-      name: opts.name, description: opts.description, parameters: opts.instructions ? { instructions: opts.instructions } : {},
+      name: opts.name,
+      description: opts.description,
+      parameters: instructions ? { instructions } : {},
     });
-    printSuccess(`Skill '${opts.name}' added to agent ${agentId}.`);
-    printJson(result);
+    printWriteResult(result, `Skill '${opts.name}' added to agent ${agentId}.`, opts.json);
   } catch (err) { printError(`Failed to add skill: ${err}`); process.exit(1); }
 }

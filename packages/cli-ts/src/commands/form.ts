@@ -1,9 +1,10 @@
 import { input, select, confirm, number } from "@inquirer/prompts";
 import chalk from "chalk";
 import Table from "cli-table3";
+import { readFileSync } from "node:fs";
 import { requireConfig } from "../config.js";
 import { CorpAPIClient } from "../api-client.js";
-import { printError, printSuccess } from "../output.js";
+import { printDryRun, printError, printJson, printSuccess } from "../output.js";
 import type { ApiRecord } from "../types.js";
 import { EntityType, OfficerTitle } from "@thecorporation/corp-tools";
 
@@ -13,7 +14,7 @@ interface FounderInfo {
   name: string;
   email: string;
   role: string;
-  address?: { street: string; city: string; state: string; zip: string };
+  address?: { street: string; street2?: string; city: string; state: string; zip: string };
   officer_title?: string;
   is_incorporator?: boolean;
   shares_purchased?: number;
@@ -27,11 +28,15 @@ interface FormOptions {
   name?: string;
   jurisdiction?: string;
   member?: string[];
+  memberJson?: string[];
+  membersFile?: string;
   fiscalYearEnd?: string;
   sCorp?: boolean;
   transferRestrictions?: boolean;
   rofr?: boolean;
   address?: string;
+  json?: boolean;
+  dryRun?: boolean;
 }
 
 // ── Helpers ────────────────────────────────────────────────────
@@ -45,6 +50,147 @@ function sectionHeader(title: string): void {
   console.log(chalk.blue("─".repeat(50)));
   console.log(chalk.blue.bold(`  ${title}`));
   console.log(chalk.blue("─".repeat(50)));
+}
+
+function officerTitleLabel(title: string): string {
+  switch (title) {
+    case "ceo":
+      return "CEO";
+    case "cfo":
+      return "CFO";
+    case "cto":
+      return "CTO";
+    case "coo":
+      return "COO";
+    case "vp":
+      return "VP";
+    default:
+      return title.charAt(0).toUpperCase() + title.slice(1);
+  }
+}
+
+function parseBoolean(value: unknown): boolean | undefined {
+  if (typeof value === "boolean") return value;
+  if (typeof value !== "string") return undefined;
+  if (value === "true") return true;
+  if (value === "false") return false;
+  return undefined;
+}
+
+function parseAddressValue(raw: unknown): FounderInfo["address"] {
+  if (!raw) return undefined;
+  if (typeof raw === "string") {
+    const parts = raw.split("|").map((part) => part.trim());
+    if (parts.length === 4) {
+      return { street: parts[0], city: parts[1], state: parts[2], zip: parts[3] };
+    }
+    throw new Error(`Invalid founder address: ${raw}. Expected street|city|state|zip.`);
+  }
+  if (typeof raw === "object" && raw !== null) {
+    const value = raw as Record<string, unknown>;
+    if (
+      typeof value.street === "string" &&
+      typeof value.city === "string" &&
+      typeof value.state === "string" &&
+      typeof value.zip === "string"
+    ) {
+      return {
+        street: value.street,
+        street2: typeof value.street2 === "string" ? value.street2 : undefined,
+        city: value.city,
+        state: value.state,
+        zip: value.zip,
+      };
+    }
+  }
+  throw new Error("Founder address must be an object or street|city|state|zip string.");
+}
+
+function normalizeFounderInfo(input: Record<string, unknown>): FounderInfo {
+  const name = typeof input.name === "string" ? input.name.trim() : "";
+  const email = typeof input.email === "string" ? input.email.trim() : "";
+  const role = typeof input.role === "string" ? input.role.trim() : "";
+  if (!name || !email || !role) {
+    throw new Error("Founder JSON requires non-empty name, email, and role.");
+  }
+
+  const founder: FounderInfo = { name, email, role };
+  const ownershipPct = input.ownership_pct ?? input.pct;
+  if (ownershipPct != null) founder.ownership_pct = Number(ownershipPct);
+  const sharesPurchased = input.shares_purchased ?? input.shares;
+  if (sharesPurchased != null) founder.shares_purchased = Number(sharesPurchased);
+  if (typeof input.officer_title === "string") founder.officer_title = input.officer_title;
+  const incorporator = parseBoolean(input.is_incorporator ?? input.incorporator);
+  if (incorporator !== undefined) founder.is_incorporator = incorporator;
+  if (input.address != null) founder.address = parseAddressValue(input.address);
+  if (typeof input.ip_description === "string") founder.ip_description = input.ip_description;
+  if (input.vesting && typeof input.vesting === "object") {
+    const vesting = input.vesting as Record<string, unknown>;
+    if (vesting.total_months != null && vesting.cliff_months != null) {
+      founder.vesting = {
+        total_months: Number(vesting.total_months),
+        cliff_months: Number(vesting.cliff_months),
+        acceleration:
+          typeof vesting.acceleration === "string" ? vesting.acceleration : undefined,
+      };
+    }
+  }
+  return founder;
+}
+
+function parseLegacyMemberSpec(raw: string): FounderInfo {
+  const parts = raw.split(",").map((p) => p.trim());
+  if (parts.length < 3) {
+    throw new Error(`Invalid member format: ${raw}. Expected: name,email,role[,pct]`);
+  }
+  const founder: FounderInfo = { name: parts[0], email: parts[1], role: parts[2] };
+  if (parts.length >= 4) founder.ownership_pct = parseFloat(parts[3]);
+  return founder;
+}
+
+function parseKeyValueMemberSpec(raw: string): FounderInfo {
+  const parsed: Record<string, unknown> = {};
+  for (const segment of raw.split(",")) {
+    const [key, ...rest] = segment.split("=");
+    if (!key || rest.length === 0) {
+      throw new Error(`Invalid member format: ${raw}. Expected key=value pairs.`);
+    }
+    parsed[key.trim()] = rest.join("=").trim();
+  }
+  return normalizeFounderInfo(parsed);
+}
+
+function parseScriptedFounders(opts: FormOptions): FounderInfo[] {
+  const founders: FounderInfo[] = [];
+  for (const raw of opts.member ?? []) {
+    founders.push(raw.includes("=") ? parseKeyValueMemberSpec(raw) : parseLegacyMemberSpec(raw));
+  }
+  for (const raw of opts.memberJson ?? []) {
+    founders.push(normalizeFounderInfo(JSON.parse(raw) as Record<string, unknown>));
+  }
+  if (opts.membersFile) {
+    const parsed = JSON.parse(readFileSync(opts.membersFile, "utf8")) as unknown;
+    let entries: unknown[];
+    if (Array.isArray(parsed)) {
+      entries = parsed;
+    } else if (
+      typeof parsed === "object" &&
+      parsed !== null &&
+      "members" in parsed &&
+      Array.isArray((parsed as { members?: unknown }).members)
+    ) {
+      entries = (parsed as { members: unknown[] }).members;
+    } else {
+      throw new Error("members file must be a JSON array or {\"members\": [...]}");
+    }
+    for (const entry of entries) {
+      if (typeof entry !== "object" || entry === null || Array.isArray(entry)) {
+        throw new Error("each founder entry must be a JSON object");
+      }
+      founders.push(normalizeFounderInfo(entry as Record<string, unknown>));
+    }
+  }
+  return founders;
 }
 
 async function promptAddress(): Promise<{ street: string; city: string; state: string; zip: string }> {
@@ -124,17 +270,12 @@ async function phasePeople(
 
   // CLI-provided members (scripted mode)
   if (scripted) {
-    for (const m of opts.member!) {
-      const parts = m.split(",").map((p) => p.trim());
-      if (parts.length < 3) {
-        printError(`Invalid member format: ${m}. Expected: name,email,role[,pct]`);
-        process.exit(1);
-      }
-      const f: FounderInfo = { name: parts[0], email: parts[1], role: parts[2] };
-      if (parts.length >= 4) f.ownership_pct = parseFloat(parts[3]);
-      founders.push(f);
+    try {
+      return parseScriptedFounders(opts);
+    } catch (err) {
+      printError(String(err));
+      process.exit(1);
     }
-    return founders;
   }
 
   // Interactive mode
@@ -168,7 +309,7 @@ async function phasePeople(
           message: "  Officer title",
           choices: OfficerTitle.map((t) => ({
             value: t,
-            name: t === "ceo" ? "CEO" : t === "cfo" ? "CFO" : t === "vp" ? "VP" : t.charAt(0).toUpperCase() + t.slice(1),
+            name: officerTitleLabel(t),
           })),
         });
       }
@@ -307,7 +448,11 @@ export async function formCommand(opts: FormOptions): Promise<void> {
     let serverCfg: ApiRecord = {};
     try { serverCfg = await client.getConfig(); } catch { /* ignore */ }
 
-    const scripted = !!(opts.member && opts.member.length > 0);
+    const scripted = Boolean(
+      (opts.member && opts.member.length > 0) ||
+      (opts.memberJson && opts.memberJson.length > 0) ||
+      opts.membersFile,
+    );
 
     // Phase 1: Entity Details
     const { entityType, name, jurisdiction, companyAddress, fiscalYearEnd, sCorpElection } =
@@ -362,7 +507,17 @@ export async function formCommand(opts: FormOptions): Promise<void> {
     };
     if (companyAddress) payload.company_address = companyAddress;
 
+    if (opts.dryRun) {
+      printDryRun("formation.create_with_cap_table", payload);
+      return;
+    }
+
     const result = await client.createFormationWithCapTable(payload);
+
+    if (opts.json) {
+      printJson(result);
+      return;
+    }
 
     // Output results
     printSuccess(`Formation created: ${result.formation_id ?? "OK"}`);
@@ -413,6 +568,8 @@ interface FormCreateOptions {
   transferRestrictions?: boolean;
   rofr?: boolean;
   companyAddress?: string;
+  dryRun?: boolean;
+  json?: boolean;
 }
 
 function parseCsvAddress(raw?: string): { street: string; city: string; state: string; zip: string } | undefined {
@@ -445,7 +602,16 @@ export async function formCreateCommand(opts: FormCreateOptions): Promise<void> 
     const companyAddress = parseCsvAddress(opts.companyAddress);
     if (companyAddress) payload.company_address = companyAddress;
 
+    if (opts.dryRun) {
+      printDryRun("formation.create_pending", payload);
+      return;
+    }
+
     const result = await client.createPendingEntity(payload);
+    if (opts.json) {
+      printJson(result);
+      return;
+    }
     printSuccess(`Pending entity created: ${result.entity_id}`);
     console.log(`  Name: ${result.legal_name}`);
     console.log(`  Type: ${result.entity_type}`);
@@ -466,6 +632,8 @@ interface FormAddFounderOptions {
   officerTitle?: string;
   incorporator?: boolean;
   address?: string;
+  dryRun?: boolean;
+  json?: boolean;
 }
 
 interface FormFinalizeOptions {
@@ -481,6 +649,8 @@ interface FormFinalizeOptions {
   companyAddress?: string;
   incorporatorName?: string;
   incorporatorAddress?: string;
+  dryRun?: boolean;
+  json?: boolean;
 }
 
 export async function formAddFounderCommand(entityId: string, opts: FormAddFounderOptions): Promise<void> {
@@ -499,7 +669,16 @@ export async function formAddFounderCommand(entityId: string, opts: FormAddFound
     const address = parseCsvAddress(opts.address);
     if (address) payload.address = address;
 
+    if (opts.dryRun) {
+      printDryRun("formation.add_founder", { entity_id: entityId, ...payload });
+      return;
+    }
+
     const result = await client.addFounder(entityId, payload);
+    if (opts.json) {
+      printJson(result);
+      return;
+    }
     printSuccess(`Founder added (${result.member_count} total)`);
     const members = (result.members ?? []) as ApiRecord[];
     for (const m of members) {
@@ -539,7 +718,16 @@ export async function formFinalizeCommand(entityId: string, opts: FormFinalizeOp
     if (opts.incorporatorName) payload.incorporator_name = opts.incorporatorName;
     if (opts.incorporatorAddress) payload.incorporator_address = opts.incorporatorAddress;
 
+    if (opts.dryRun) {
+      printDryRun("formation.finalize", { entity_id: entityId, ...payload });
+      return;
+    }
+
     const result = await client.finalizeFormation(entityId, payload);
+    if (opts.json) {
+      printJson(result);
+      return;
+    }
     printSuccess(`Formation finalized: ${result.entity_id}`);
     if (result.legal_entity_id) console.log(`  Legal Entity ID: ${result.legal_entity_id}`);
     if (result.instrument_id) console.log(`  Instrument ID: ${result.instrument_id}`);

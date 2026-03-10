@@ -187,6 +187,8 @@ export interface StartWorkerOptions {
   redisUrl?: string;
   /** Base URL of the API server (default: http://localhost:8000) */
   apiBaseUrl?: string;
+  /** Bearer token for authenticated worker -> API calls */
+  apiBearerToken?: string;
   /** Docker host socket or URL */
   dockerHost?: string;
   /** Root directory for agent workspaces */
@@ -203,8 +205,8 @@ export interface StartWorkerOptions {
  * Start the agent-worker as a child process.
  *
  * Environment variables match `services/agent-worker/src/config.rs`:
- * - REDIS_URL, API_BASE_URL, DOCKER_HOST, WORKSPACE_ROOT,
- *   RUNTIME_IMAGE, MAX_CONCURRENCY, RUST_LOG
+ * - REDIS_URL, API_BASE_URL, API_BEARER_TOKEN, DOCKER_HOST,
+ *   WORKSPACE_ROOT, RUNTIME_IMAGE, MAX_CONCURRENCY, RUST_LOG
  */
 export function startWorker(options: StartWorkerOptions = {}): ChildProcess {
   const binPath = getWorkerBinaryPath();
@@ -219,6 +221,10 @@ export function startWorker(options: StartWorkerOptions = {}): ChildProcess {
 
   if (options.redisUrl !== undefined) env.REDIS_URL = options.redisUrl;
   if (options.apiBaseUrl !== undefined) env.API_BASE_URL = options.apiBaseUrl;
+  if (options.apiBearerToken !== undefined) env.API_BEARER_TOKEN = options.apiBearerToken;
+  if (!env.API_BEARER_TOKEN && env.INTERNAL_WORKER_TOKEN) {
+    env.API_BEARER_TOKEN = env.INTERNAL_WORKER_TOKEN;
+  }
   if (options.dockerHost !== undefined) env.DOCKER_HOST = options.dockerHost;
   if (options.workspaceRoot !== undefined) env.WORKSPACE_ROOT = options.workspaceRoot;
   if (options.runtimeImage !== undefined) env.RUNTIME_IMAGE = options.runtimeImage;

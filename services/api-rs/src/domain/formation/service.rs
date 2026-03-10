@@ -15,7 +15,12 @@ use crate::domain::governance::profile::{
     GOVERNANCE_PROFILE_PATH, GovernanceProfile, OfficerInfo, StockDetails,
     VestingSchedule as GovernanceVestingSchedule,
 };
-use crate::domain::governance::{doc_ast, doc_generator};
+use crate::domain::governance::{
+    body::GovernanceBody,
+    doc_ast, doc_generator,
+    seat::GovernanceSeat,
+    types::{BodyType, QuorumThreshold, SeatRole, VotingMethod, VotingPower},
+};
 use crate::domain::ids::*;
 use crate::git::commit::FileWrite;
 use chrono::{DateTime, Utc};
@@ -351,7 +356,10 @@ fn officer_title_label(title: OfficerTitle) -> String {
     match title {
         OfficerTitle::Ceo => "Chief Executive Officer".to_owned(),
         OfficerTitle::Cfo => "Chief Financial Officer".to_owned(),
+        OfficerTitle::Cto => "Chief Technology Officer".to_owned(),
+        OfficerTitle::Coo => "Chief Operating Officer".to_owned(),
         OfficerTitle::Secretary => "Secretary".to_owned(),
+        OfficerTitle::Treasurer => "Treasurer".to_owned(),
         OfficerTitle::President => "President".to_owned(),
         OfficerTitle::Vp => "Vice President".to_owned(),
         OfficerTitle::Other => "Officer".to_owned(),
@@ -392,6 +400,165 @@ fn parse_par_value_units(par_value: Option<&str>) -> Option<u64> {
     let raw = par_value.unwrap_or("0.0001").trim();
     let value = raw.parse::<f64>().ok()?;
     (value > 0.0).then_some((value * 10_000.0).round() as u64)
+}
+
+fn voting_power_from_units(units: u64, member_name: &str) -> Result<VotingPower, FormationError> {
+    let raw = u32::try_from(units).map_err(|_| {
+        FormationError::Validation(format!(
+            "voting power for member '{member_name}' exceeds the maximum supported value"
+        ))
+    })?;
+    VotingPower::new(raw).map_err(FormationError::Validation)
+}
+
+fn llc_member_vote_voting_power(
+    member: &MemberInput,
+    authorized_shares: Option<i64>,
+) -> Result<Option<VotingPower>, FormationError> {
+    if matches!(
+        member.role,
+        Some(MemberRole::Director | MemberRole::Officer | MemberRole::Manager)
+    ) {
+        return Ok(None);
+    }
+
+    let Some(units) = derived_member_units(EntityType::Llc, member, authorized_shares) else {
+        return Ok(None);
+    };
+
+    voting_power_from_units(units, &member.name).map(Some)
+}
+
+fn corporate_governance_body(entity_id: EntityId) -> Result<GovernanceBody, FormationError> {
+    GovernanceBody::new(
+        GovernanceBodyId::new(),
+        entity_id,
+        BodyType::BoardOfDirectors,
+        "Board of Directors".to_owned(),
+        QuorumThreshold::Majority,
+        VotingMethod::PerCapita,
+    )
+    .map_err(|e| FormationError::Validation(format!("governance body error: {e}")))
+}
+
+fn llc_governance_body(entity_id: EntityId) -> Result<GovernanceBody, FormationError> {
+    GovernanceBody::new(
+        GovernanceBodyId::new(),
+        entity_id,
+        BodyType::LlcMemberVote,
+        "LLC Member Vote".to_owned(),
+        QuorumThreshold::Majority,
+        VotingMethod::PerUnit,
+    )
+    .map_err(|e| FormationError::Validation(format!("governance body error: {e}")))
+}
+
+fn bootstrap_governance_records(
+    entity_id: EntityId,
+    entity_type: EntityType,
+    members: &[&MemberInput],
+    contacts: &[Contact],
+    authorized_shares: Option<i64>,
+) -> Result<(GovernanceBody, Vec<GovernanceSeat>), FormationError> {
+    let pairs: Vec<(&MemberInput, &Contact)> =
+        members.iter().copied().zip(contacts.iter()).collect();
+
+    match entity_type {
+        EntityType::CCorp => {
+            let body = corporate_governance_body(entity_id)?;
+            let mut seat_members: Vec<(&MemberInput, &Contact)> = pairs
+                .iter()
+                .copied()
+                .filter(|(member, _)| {
+                    matches!(member.role, Some(MemberRole::Director | MemberRole::Chair))
+                })
+                .collect();
+            if seat_members.is_empty() {
+                let fallback = pairs
+                    .iter()
+                    .copied()
+                    .find(|(member, _)| {
+                        member.is_incorporator == Some(true)
+                            && member.investor_type == InvestorType::NaturalPerson
+                    })
+                    .or_else(|| {
+                        pairs
+                            .iter()
+                            .copied()
+                            .find(|(member, _)| member.investor_type == InvestorType::NaturalPerson)
+                    })
+                    .or_else(|| pairs.first().copied())
+                    .ok_or_else(|| {
+                        FormationError::Validation(
+                            "at least one eligible member is required for governance bootstrap"
+                                .to_owned(),
+                        )
+                    })?;
+                seat_members.push(fallback);
+            }
+
+            let seats = seat_members
+                .into_iter()
+                .map(|(member, contact)| {
+                    GovernanceSeat::new(
+                        GovernanceSeatId::new(),
+                        body.body_id(),
+                        contact.contact_id(),
+                        if matches!(member.role, Some(MemberRole::Chair)) {
+                            SeatRole::Chair
+                        } else {
+                            SeatRole::Member
+                        },
+                        None,
+                        None,
+                        Some(VotingPower::new(1).expect("1 is valid voting power")),
+                    )
+                    .map_err(|e| FormationError::Validation(format!("governance seat error: {e}")))
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+
+            Ok((body, seats))
+        }
+        EntityType::Llc => {
+            let body = llc_governance_body(entity_id)?;
+            let seat_members = pairs
+                .into_iter()
+                .filter_map(|(member, contact)| {
+                    match llc_member_vote_voting_power(member, authorized_shares) {
+                        Ok(Some(voting_power)) => Some(Ok((member, contact, voting_power))),
+                        Ok(None) => None,
+                        Err(err) => Some(Err(err)),
+                    }
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            if seat_members.is_empty() {
+                return Err(FormationError::Validation(
+                    "at least one eligible member is required for governance bootstrap".to_owned(),
+                ));
+            }
+            let seats = seat_members
+                .into_iter()
+                .map(|(member, contact, voting_power)| {
+                    GovernanceSeat::new(
+                        GovernanceSeatId::new(),
+                        body.body_id(),
+                        contact.contact_id(),
+                        if matches!(member.role, Some(MemberRole::Chair)) {
+                            SeatRole::Chair
+                        } else {
+                            SeatRole::Member
+                        },
+                        None,
+                        None,
+                        Some(voting_power),
+                    )
+                    .map_err(|e| FormationError::Validation(format!("governance seat error: {e}")))
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+
+            Ok((body, seats))
+        }
+    }
 }
 
 fn shared_company_address(members: &[MemberInput]) -> Option<CompanyAddress> {
@@ -812,8 +979,8 @@ fn generate_ast_formation_documents(
 
 /// Set up the cap table for a newly formed entity.
 ///
-/// Creates contacts, an equity legal entity, an instrument, holders, and
-/// initial positions in one atomic git commit.
+/// Creates contacts, an equity legal entity, an instrument, initial positions,
+/// and default governance records in one atomic git commit.
 #[allow(clippy::too_many_arguments)]
 pub fn setup_cap_table(
     layout: &crate::store::RepoLayout,
@@ -988,6 +1155,14 @@ pub fn setup_cap_table(
         });
     }
 
+    let (governance_body, governance_seats) = bootstrap_governance_records(
+        entity_id,
+        entity_type,
+        &non_agent_members,
+        &contacts,
+        authorized_shares,
+    )?;
+
     // 5. Write all records in a single atomic commit
     let repo_path = layout.entity_repo_path(workspace_id, entity_id);
     let repo = crate::git::repo::CorpRepo::open(&repo_path)
@@ -1037,10 +1212,26 @@ pub fn setup_cap_table(
         );
     }
 
+    // Governance body
+    files.push(
+        FileWrite::json(
+            format!("governance/bodies/{}.json", governance_body.body_id()),
+            &governance_body,
+        )
+        .map_err(|e| FormationError::Storage(e.to_string()))?,
+    );
+
+    // Governance seats
+    for seat in &governance_seats {
+        let path = format!("governance/seats/{}.json", seat.seat_id());
+        files
+            .push(FileWrite::json(path, seat).map_err(|e| FormationError::Storage(e.to_string()))?);
+    }
+
     crate::git::commit::commit_files(
         &repo,
         "main",
-        "Initialize cap table with founding members",
+        "Initialize cap table and governance with founding members",
         &files,
         None,
     )
@@ -1301,10 +1492,8 @@ pub fn finalize_formation_with_profile_overrides(
     // This allows setting incorporator details at finalize time when
     // the founder was added without an address.
     if incorporator_name_override.is_some() || incorporator_address_override.is_some() {
-        governance_profile.patch_incorporator(
-            incorporator_name_override,
-            incorporator_address_override,
-        );
+        governance_profile
+            .patch_incorporator(incorporator_name_override, incorporator_address_override);
     }
     governance_profile
         .validate()
@@ -1422,6 +1611,11 @@ pub fn finalize_formation_with_profile_overrides(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::domain::governance::{
+        body::GovernanceBody,
+        seat::GovernanceSeat,
+        types::{BodyType, QuorumThreshold, VotingMethod},
+    };
     use crate::store::RepoLayout;
     use tempfile::TempDir;
 
@@ -1496,6 +1690,34 @@ mod tests {
             ip_description: None,
             is_incorporator: None,
         }
+    }
+
+    fn governance_bodies(repo: &crate::git::repo::CorpRepo) -> Vec<GovernanceBody> {
+        let entries = repo
+            .list_dir("main", "governance/bodies")
+            .expect("governance bodies directory should exist");
+        entries
+            .into_iter()
+            .filter(|(_, is_dir)| !*is_dir)
+            .map(|(name, _)| {
+                repo.read_json("main", &format!("governance/bodies/{name}"))
+                    .unwrap()
+            })
+            .collect()
+    }
+
+    fn governance_seats(repo: &crate::git::repo::CorpRepo) -> Vec<GovernanceSeat> {
+        let entries = repo
+            .list_dir("main", "governance/seats")
+            .expect("governance seats directory should exist");
+        entries
+            .into_iter()
+            .filter(|(_, is_dir)| !*is_dir)
+            .map(|(name, _)| {
+                repo.read_json("main", &format!("governance/seats/{name}"))
+                    .unwrap()
+            })
+            .collect()
     }
 
     #[test]
@@ -1888,5 +2110,159 @@ mod tests {
             formation.entity.registered_agent_name(),
             Some("Wyoming Registered Agent LLC")
         );
+    }
+
+    #[test]
+    fn staged_llc_preserves_explicit_jurisdiction_and_bootstraps_member_governance() {
+        let tmp = TempDir::new().unwrap();
+        let layout = RepoLayout::new(tmp.path().to_path_buf());
+        let workspace_id = WorkspaceId::new();
+
+        for jurisdiction in ["US-TX", "US-DE"] {
+            let entity = create_pending_entity(
+                &layout,
+                workspace_id,
+                format!("Jurisdiction {jurisdiction} LLC"),
+                EntityType::Llc,
+                Jurisdiction::new(jurisdiction).unwrap(),
+            )
+            .unwrap();
+            let entity_id = entity.entity_id();
+
+            add_pending_member(&layout, workspace_id, entity_id, alice()).unwrap();
+            add_pending_member(&layout, workspace_id, entity_id, bob()).unwrap();
+
+            let (formation, _) =
+                finalize_formation(&layout, workspace_id, entity_id, None, None).unwrap();
+            assert_eq!(formation.entity.jurisdiction().as_str(), jurisdiction);
+
+            let repo =
+                crate::git::repo::CorpRepo::open(&layout.entity_repo_path(workspace_id, entity_id))
+                    .unwrap();
+            let bodies = governance_bodies(&repo);
+            assert_eq!(bodies.len(), 1);
+            assert_eq!(bodies[0].body_type(), BodyType::LlcMemberVote);
+            assert_eq!(bodies[0].quorum_rule(), QuorumThreshold::Majority);
+            assert_eq!(bodies[0].voting_method(), VotingMethod::PerUnit);
+
+            let seats = governance_seats(&repo);
+            assert_eq!(seats.len(), 1);
+            assert_eq!(seats[0].voting_power().raw(), 400);
+        }
+    }
+
+    #[test]
+    fn staged_llc_member_vote_excludes_managers_and_zero_unit_founders() {
+        let entity_id = EntityId::new();
+        let workspace_id = WorkspaceId::new();
+
+        let mut zero_unit_member = bob();
+        zero_unit_member.name = "Charlie Zero".to_string();
+        zero_unit_member.email = Some("charlie@example.com".to_string());
+        zero_unit_member.membership_units = None;
+        zero_unit_member.ownership_pct = Some(0.0);
+
+        let members = vec![alice(), bob(), zero_unit_member];
+        let member_refs: Vec<&MemberInput> = members.iter().collect();
+        let contacts: Vec<Contact> = members
+            .iter()
+            .map(|member| {
+                Contact::new(
+                    ContactId::new(),
+                    entity_id,
+                    workspace_id,
+                    investor_type_to_contact_type(member.investor_type),
+                    member.name.clone(),
+                    member.email.clone(),
+                    member_role_to_contact_category(member.role),
+                )
+            })
+            .collect();
+
+        let (_, seats) =
+            bootstrap_governance_records(entity_id, EntityType::Llc, &member_refs, &contacts, None)
+                .unwrap();
+        assert_eq!(seats.len(), 1);
+        assert_eq!(seats[0].voting_power().raw(), 400);
+    }
+
+    #[test]
+    fn staged_corporation_bootstraps_board_and_applies_incorporator_overrides() {
+        let tmp = TempDir::new().unwrap();
+        let layout = RepoLayout::new(tmp.path().to_path_buf());
+        let workspace_id = WorkspaceId::new();
+
+        let entity = create_pending_entity(
+            &layout,
+            workspace_id,
+            "Board Bootstrap Corp".to_string(),
+            EntityType::CCorp,
+            Jurisdiction::new("US-DE").unwrap(),
+        )
+        .unwrap();
+        let entity_id = entity.entity_id();
+
+        let mut founder = alice();
+        founder.role = Some(MemberRole::Officer);
+        founder.officer_title = Some(OfficerTitle::Cto);
+        founder.is_incorporator = Some(true);
+        founder.address = None;
+        founder.share_count = Some(6_000_000);
+        founder.shares_purchased = Some(6_000_000);
+        add_pending_member(&layout, workspace_id, entity_id, founder).unwrap();
+
+        let (formation, _) = finalize_formation_with_profile_overrides(
+            &layout,
+            workspace_id,
+            entity_id,
+            Some(10_000_000),
+            Some("0.0001"),
+            None,
+            None,
+            Some("Taylor Incorporator".to_string()),
+            Some("1 Incorporator Way, Wilmington, DE 19801".to_string()),
+            FormationProfileOverrides {
+                company_address: Some(CompanyAddress {
+                    street: "500 Market St".to_string(),
+                    city: "Wilmington".to_string(),
+                    county: None,
+                    state: "DE".to_string(),
+                    zip: "19801".to_string(),
+                }),
+                ..FormationProfileOverrides::default()
+            },
+        )
+        .unwrap();
+
+        assert_eq!(formation.entity.jurisdiction().as_str(), "US-DE");
+        let repo =
+            crate::git::repo::CorpRepo::open(&layout.entity_repo_path(workspace_id, entity_id))
+                .unwrap();
+        let profile: GovernanceProfile = repo
+            .read_json("main", GOVERNANCE_PROFILE_PATH)
+            .expect("governance profile should exist");
+        assert_eq!(profile.incorporator_name(), Some("Taylor Incorporator"));
+        assert_eq!(
+            profile.incorporator_address(),
+            Some("1 Incorporator Way, Wilmington, DE 19801")
+        );
+        assert_eq!(
+            profile
+                .officers()
+                .first()
+                .map(|officer| officer.title.as_str()),
+            Some("Chief Technology Officer")
+        );
+
+        let bodies = governance_bodies(&repo);
+        assert_eq!(bodies.len(), 1);
+        assert_eq!(bodies[0].body_type(), BodyType::BoardOfDirectors);
+        assert_eq!(bodies[0].quorum_rule(), QuorumThreshold::Majority);
+        assert_eq!(bodies[0].voting_method(), VotingMethod::PerCapita);
+
+        let seats = governance_seats(&repo);
+        assert_eq!(seats.len(), 1);
+        assert_eq!(seats[0].body_id(), bodies[0].body_id());
+        assert_eq!(seats[0].voting_power().raw(), 1);
     }
 }

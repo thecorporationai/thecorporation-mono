@@ -380,7 +380,14 @@ fn resolve_document_entity_id(
     allowed_entity_ids: Option<&[EntityId]>,
     document_id: DocumentId,
 ) -> Result<EntityId, AppError> {
-    resolve_document_entity_id_inner(layout, workspace_id, requested_entity_id, allowed_entity_ids, document_id, false)
+    resolve_document_entity_id_inner(
+        layout,
+        workspace_id,
+        requested_entity_id,
+        allowed_entity_ids,
+        document_id,
+        false,
+    )
 }
 
 fn resolve_document_entity_id_with_fallback(
@@ -390,7 +397,14 @@ fn resolve_document_entity_id_with_fallback(
     allowed_entity_ids: Option<&[EntityId]>,
     document_id: DocumentId,
 ) -> Result<EntityId, AppError> {
-    resolve_document_entity_id_inner(layout, workspace_id, requested_entity_id, allowed_entity_ids, document_id, true)
+    resolve_document_entity_id_inner(
+        layout,
+        workspace_id,
+        requested_entity_id,
+        allowed_entity_ids,
+        document_id,
+        true,
+    )
 }
 
 fn resolve_document_entity_id_inner(
@@ -584,6 +598,13 @@ async fn create_formation(
         let par_value = req.par_value;
         let profile_overrides = profile_overrides.clone();
         move || {
+            if workspace_has_legal_name(&layout, workspace_id, &legal_name, None).map_err(|e| {
+                crate::domain::formation::error::FormationError::Validation(format!("{e:?}"))
+            })? {
+                return Err(crate::domain::formation::error::FormationError::Validation(
+                    format!("entity legal name already exists in workspace: {legal_name}"),
+                ));
+            }
             service::create_entity_with_profile_overrides(
                 &layout,
                 workspace_id,
@@ -657,6 +678,13 @@ async fn create_formation_with_cap_table(
         let par_value = req.par_value;
         let profile_overrides = profile_overrides.clone();
         move || {
+            if workspace_has_legal_name(&layout, workspace_id, &legal_name, None).map_err(|e| {
+                crate::domain::formation::error::FormationError::Validation(format!("{e:?}"))
+            })? {
+                return Err(crate::domain::formation::error::FormationError::Validation(
+                    format!("entity legal name already exists in workspace: {legal_name}"),
+                ));
+            }
             // Step 1: Create the entity (formation documents, filing, tax profile)
             let formation = service::create_entity_with_profile_overrides(
                 &layout,
@@ -2588,9 +2616,7 @@ fn validate_preview_document(
         .iter()
         .find(|d| d.id == doc_id)
         .ok_or_else(|| {
-            AppError::NotFound(format!(
-                "no AST document definition matches id '{doc_id}'"
-            ))
+            AppError::NotFound(format!("no AST document definition matches id '{doc_id}'"))
         })?;
     if !doc_def.entity_scope.matches(entity_type) {
         return Err(AppError::UnprocessableEntity(format!(
@@ -3685,7 +3711,10 @@ pub fn formation_routes() -> Router<AppState> {
             post(confirm_ein),
         )
         .route("/v1/documents/preview/pdf", get(preview_document_pdf))
-        .route("/v1/documents/preview/pdf/validate", get(validate_preview_document_pdf))
+        .route(
+            "/v1/documents/preview/pdf/validate",
+            get(validate_preview_document_pdf),
+        )
         .route("/v1/documents/{document_id}", get(get_document))
         .route("/v1/documents/{document_id}/sign", post(sign_document))
         .route("/v1/documents/{document_id}/pdf", get(get_document_pdf))
@@ -3798,7 +3827,7 @@ pub struct FormationApi;
 
 #[cfg(test)]
 mod tests {
-    use super::resolve_document_entity_id;
+    use super::{resolve_document_entity_id, workspace_has_legal_name};
     use crate::domain::formation::{
         content::{InvestorType, MemberInput, MemberRole},
         service::{self, FormationProfileOverrides},
@@ -3880,5 +3909,50 @@ mod tests {
             resolve_document_entity_id(&layout, workspace_id, other.entity_id(), None, document_id)
                 .expect_err("document should not resolve through a different entity");
         assert!(matches!(err, AppError::NotFound(_)));
+    }
+
+    #[test]
+    fn workspace_has_legal_name_detects_existing_entities() {
+        let tmp = TempDir::new().expect("temp dir");
+        let layout = RepoLayout::new(tmp.path().to_path_buf());
+        let workspace_id = WorkspaceId::new();
+
+        let entity = service::create_entity_with_profile_overrides(
+            &layout,
+            workspace_id,
+            "Nexus AI Labs LLC".to_owned(),
+            EntityType::Llc,
+            Jurisdiction::new("US-WY").expect("jurisdiction"),
+            None,
+            None,
+            &[founder("Alice", "alice@example.com")],
+            None,
+            None,
+            FormationProfileOverrides {
+                company_address: Some(crate::domain::governance::profile::CompanyAddress {
+                    street: "1 Market St".to_owned(),
+                    city: "Cheyenne".to_owned(),
+                    county: None,
+                    state: "WY".to_owned(),
+                    zip: "82001".to_owned(),
+                }),
+                ..FormationProfileOverrides::default()
+            },
+        )
+        .expect("entity");
+
+        assert!(
+            workspace_has_legal_name(&layout, workspace_id, "Nexus AI Labs LLC", None)
+                .expect("name lookup")
+        );
+        assert!(
+            !workspace_has_legal_name(
+                &layout,
+                workspace_id,
+                "Nexus AI Labs LLC",
+                Some(entity.entity.entity_id()),
+            )
+            .expect("skip current entity")
+        );
     }
 }

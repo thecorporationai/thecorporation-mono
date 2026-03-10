@@ -1,6 +1,6 @@
 import { requireConfig, resolveEntityId } from "../config.js";
 import { CorpAPIClient } from "../api-client.js";
-import { printWorkItemsTable, printError, printSuccess, printJson } from "../output.js";
+import { printWorkItemsTable, printError, printJson, printWriteResult } from "../output.js";
 import chalk from "chalk";
 
 export async function workItemsListCommand(opts: { entityId?: string; json?: boolean; status?: string; category?: string }): Promise<void> {
@@ -48,7 +48,7 @@ export async function workItemsShowCommand(workItemId: string, opts: { entityId?
 
 export async function workItemsCreateCommand(opts: {
   entityId?: string; title: string; category?: string;
-  description?: string; deadline?: string; asap?: boolean; createdBy?: string;
+  description?: string; deadline?: string; asap?: boolean; createdBy?: string; json?: boolean;
 }): Promise<void> {
   const cfg = requireConfig("api_url", "api_key", "workspace_id");
   const eid = resolveEntityId(cfg, opts.entityId);
@@ -64,12 +64,16 @@ export async function workItemsCreateCommand(opts: {
     if (opts.asap) data.asap = true;
     if (opts.createdBy) data.created_by = opts.createdBy;
     const result = await client.createWorkItem(eid, data);
-    printSuccess(`Work item created: ${result.work_item_id ?? result.id ?? "OK"}`);
+    printWriteResult(
+      result,
+      `Work item created: ${result.work_item_id ?? result.id ?? "OK"}`,
+      opts.json,
+    );
   } catch (err) { printError(`Failed to create work item: ${err}`); process.exit(1); }
 }
 
 export async function workItemsClaimCommand(workItemId: string, opts: {
-  entityId?: string; claimedBy: string; ttl?: number;
+  entityId?: string; claimedBy: string; ttl?: number; json?: boolean;
 }): Promise<void> {
   const cfg = requireConfig("api_url", "api_key", "workspace_id");
   const eid = resolveEntityId(cfg, opts.entityId);
@@ -77,13 +81,13 @@ export async function workItemsClaimCommand(workItemId: string, opts: {
   try {
     const data: Record<string, unknown> = { claimed_by: opts.claimedBy };
     if (opts.ttl != null) data.ttl_seconds = opts.ttl;
-    await client.claimWorkItem(eid, workItemId, data);
-    printSuccess(`Work item ${workItemId} claimed by ${opts.claimedBy}.`);
+    const result = await client.claimWorkItem(eid, workItemId, data);
+    printWriteResult(result, `Work item ${workItemId} claimed by ${opts.claimedBy}.`, opts.json);
   } catch (err) { printError(`Failed to claim work item: ${err}`); process.exit(1); }
 }
 
 export async function workItemsCompleteCommand(workItemId: string, opts: {
-  entityId?: string; completedBy: string; result?: string;
+  entityId?: string; completedBy: string; result?: string; json?: boolean;
 }): Promise<void> {
   const cfg = requireConfig("api_url", "api_key", "workspace_id");
   const eid = resolveEntityId(cfg, opts.entityId);
@@ -91,27 +95,27 @@ export async function workItemsCompleteCommand(workItemId: string, opts: {
   try {
     const data: Record<string, unknown> = { completed_by: opts.completedBy };
     if (opts.result) data.result = opts.result;
-    await client.completeWorkItem(eid, workItemId, data);
-    printSuccess(`Work item ${workItemId} completed.`);
+    const result = await client.completeWorkItem(eid, workItemId, data);
+    printWriteResult(result, `Work item ${workItemId} completed.`, opts.json);
   } catch (err) { printError(`Failed to complete work item: ${err}`); process.exit(1); }
 }
 
-export async function workItemsReleaseCommand(workItemId: string, opts: { entityId?: string }): Promise<void> {
+export async function workItemsReleaseCommand(workItemId: string, opts: { entityId?: string; json?: boolean }): Promise<void> {
   const cfg = requireConfig("api_url", "api_key", "workspace_id");
   const eid = resolveEntityId(cfg, opts.entityId);
   const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
   try {
-    await client.releaseWorkItem(eid, workItemId);
-    printSuccess(`Work item ${workItemId} claim released.`);
+    const result = await client.releaseWorkItem(eid, workItemId);
+    printWriteResult(result, `Work item ${workItemId} claim released.`, opts.json);
   } catch (err) { printError(`Failed to release work item: ${err}`); process.exit(1); }
 }
 
-export async function workItemsCancelCommand(workItemId: string, opts: { entityId?: string }): Promise<void> {
+export async function workItemsCancelCommand(workItemId: string, opts: { entityId?: string; json?: boolean }): Promise<void> {
   const cfg = requireConfig("api_url", "api_key", "workspace_id");
   const eid = resolveEntityId(cfg, opts.entityId);
   const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
   try {
-    await client.cancelWorkItem(eid, workItemId);
-    printSuccess(`Work item ${workItemId} cancelled.`);
+    const result = await client.cancelWorkItem(eid, workItemId);
+    printWriteResult(result, `Work item ${workItemId} cancelled.`, opts.json);
   } catch (err) { printError(`Failed to cancel work item: ${err}`); process.exit(1); }
 }

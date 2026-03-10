@@ -70,7 +70,10 @@ pub struct Address {
 pub enum OfficerTitle {
     Ceo,
     Cfo,
+    Cto,
+    Coo,
     Secretary,
+    Treasurer,
     President,
     Vp,
     Other,

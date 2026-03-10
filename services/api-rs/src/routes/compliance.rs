@@ -65,26 +65,40 @@ fn default_deadline_severity() -> DeadlineSeverity {
 }
 
 fn allowed_tax_document_type(document_type: &str) -> bool {
-    matches!(
+    allowed_tax_document_types().contains(&document_type)
+}
+
+fn allowed_tax_document_types() -> &'static [&'static str] {
+    &[
+        "1120",
+        "1120s",
+        "1065",
+        "franchise_tax",
+        "annual_report",
+        "83b",
+        "form_1120",
+        "form_1120s",
+        "form_1065",
+        "1099_nec",
+        "form_1099_nec",
+        "k1",
+        "form_k1",
+        "941",
+        "form_941",
+        "w2",
+        "form_w2",
+    ]
+}
+
+fn validate_tax_document_type(document_type: &str) -> Result<(), AppError> {
+    if allowed_tax_document_type(document_type) {
+        return Ok(());
+    }
+    Err(AppError::BadRequest(format!(
+        "unsupported tax document type: {}. Allowed values: {}",
         document_type,
-        "1120"
-            | "1120s"
-            | "1065"
-            | "franchise_tax"
-            | "annual_report"
-            | "83b"
-            | "form_1120"
-            | "form_1120s"
-            | "form_1065"
-            | "1099_nec"
-            | "form_1099_nec"
-            | "k1"
-            | "form_k1"
-            | "941"
-            | "form_941"
-            | "w2"
-            | "form_w2"
-    )
+        allowed_tax_document_types().join(", ")
+    )))
 }
 
 fn validate_deadline_recurrence(
@@ -312,12 +326,7 @@ async fn file_tax_document(
 ) -> Result<Json<TaxFilingResponse>, AppError> {
     let workspace_id = auth.workspace_id();
     let entity_id = req.entity_id;
-    if !allowed_tax_document_type(&req.document_type) {
-        return Err(AppError::BadRequest(format!(
-            "unsupported tax document type: {}",
-            req.document_type
-        )));
-    }
+    validate_tax_document_type(&req.document_type)?;
 
     let filing = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
@@ -912,3 +921,22 @@ pub fn compliance_routes() -> Router<AppState> {
     tags((name = "compliance", description = "Compliance checks and monitoring")),
 )]
 pub struct ComplianceApi;
+
+#[cfg(test)]
+mod tests {
+    use super::validate_tax_document_type;
+    use crate::error::AppError;
+
+    #[test]
+    fn invalid_tax_document_type_lists_allowed_values() {
+        let err = validate_tax_document_type("SS-4").expect_err("invalid type should fail");
+        match err {
+            AppError::BadRequest(message) => {
+                assert!(message.contains("unsupported tax document type: SS-4"));
+                assert!(message.contains("1120"));
+                assert!(message.contains("annual_report"));
+            }
+            other => panic!("expected bad request, got {other:?}"),
+        }
+    }
+}

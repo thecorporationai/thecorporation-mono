@@ -8,7 +8,6 @@ use axum::Router;
 use axum::body::Body;
 use axum::http::{Method, Request, StatusCode};
 use axum::routing::get;
-use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use serde_json::{Value, json};
 use std::sync::Arc;
 use tempfile::TempDir;
@@ -787,7 +786,7 @@ async fn test_health() {
 }
 
 #[tokio::test]
-async fn test_public_chat_session_mints_ws_token() {
+async fn test_public_chat_session_is_not_exposed() {
     let tmp = TempDir::new().unwrap();
     let app = build_app(&tmp);
 
@@ -797,31 +796,11 @@ async fn test_public_chat_session_mints_ws_token() {
         json!({ "email": "founder@example.com" }),
     )
     .await;
-    assert_eq!(status, StatusCode::OK, "create chat session: {body}");
-    let ws_token = body["ws_token"].as_str().unwrap_or_default();
-    assert!(
-        ws_token.contains('.'),
-        "ws_token should contain payload.signature"
+    assert_eq!(
+        status,
+        StatusCode::NOT_FOUND,
+        "legacy chat bootstrap must stay disabled: {body}"
     );
-    assert!(body["expires_at"].is_string());
-
-    let mut parts = ws_token.split('.');
-    let payload_b64 = parts.next().unwrap_or_default();
-    let sig_b64 = parts.next().unwrap_or_default();
-    assert!(!payload_b64.is_empty());
-    assert!(!sig_b64.is_empty());
-
-    let payload = URL_SAFE_NO_PAD.decode(payload_b64).expect("decode payload");
-    let payload_json: Value = serde_json::from_slice(&payload).expect("parse payload");
-    assert_eq!(payload_json["email"], "founder@example.com");
-    assert!(payload_json["workspace_id"].is_string());
-    assert!(
-        payload_json["api_key"]
-            .as_str()
-            .unwrap_or_default()
-            .starts_with("sk_")
-    );
-    assert!(payload_json["exp"].is_number());
 }
 
 // ── 2. Formation lifecycle ───────────────────────────────────────────────
@@ -5209,25 +5188,27 @@ async fn test_chat_session_edge_cases() {
     let tmp = TempDir::new().unwrap();
     let app = build_app(&tmp);
 
-    // Missing email → 422
+    // Route should stay removed regardless of request shape.
     let (status, _body) = post_json_no_auth(&app, "/v1/chat/session", json!({})).await;
     assert_eq!(
         status,
-        StatusCode::UNPROCESSABLE_ENTITY,
-        "missing email should be 422"
+        StatusCode::NOT_FOUND,
+        "missing email should still hit a disabled endpoint"
     );
 
-    // Empty email → 400
     let (status, _body) = post_json_no_auth(&app, "/v1/chat/session", json!({ "email": "" })).await;
-    assert_eq!(status, StatusCode::BAD_REQUEST, "empty email should be 400");
+    assert_eq!(
+        status,
+        StatusCode::NOT_FOUND,
+        "empty email should still hit a disabled endpoint"
+    );
 
-    // Email without @ → 400
     let (status, _body) =
         post_json_no_auth(&app, "/v1/chat/session", json!({ "email": "not-an-email" })).await;
     assert_eq!(
         status,
-        StatusCode::BAD_REQUEST,
-        "email without @ should be 400"
+        StatusCode::NOT_FOUND,
+        "invalid email should still hit a disabled endpoint"
     );
 }
 

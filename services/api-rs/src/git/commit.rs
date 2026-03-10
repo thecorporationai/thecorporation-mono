@@ -7,6 +7,8 @@
 use git2::Oid;
 use serde::Serialize;
 use std::collections::HashMap;
+use std::fs::{File, OpenOptions};
+use std::path::PathBuf;
 
 use super::error::GitStorageError;
 use super::repo::CorpRepo;
@@ -49,6 +51,17 @@ impl FileWrite {
 /// trailer. If the context also includes a signer, the commit is
 /// cryptographically signed with an SSH Ed25519 key.
 pub fn commit_files(
+    repo: &CorpRepo,
+    refname: &str,
+    message: &str,
+    files: &[FileWrite],
+    ctx: Option<&CommitContext<'_>>,
+) -> Result<Oid, GitStorageError> {
+    let _lock = RepoWriteLock::acquire(repo)?;
+    commit_files_unlocked(repo, refname, message, files, ctx)
+}
+
+fn commit_files_unlocked(
     repo: &CorpRepo,
     refname: &str,
     message: &str,
@@ -108,6 +121,39 @@ pub fn commit_files(
     );
 
     Ok(commit_oid)
+}
+
+struct RepoWriteLock {
+    file: File,
+}
+
+impl RepoWriteLock {
+    fn acquire(repo: &CorpRepo) -> Result<Self, GitStorageError> {
+        let lock_path = repo_lock_path(repo);
+        let file = OpenOptions::new()
+            .create(true)
+            .read(true)
+            .write(true)
+            .truncate(false)
+            .open(lock_path)?;
+        file.lock()?;
+        Ok(Self { file })
+    }
+}
+
+impl Drop for RepoWriteLock {
+    fn drop(&mut self) {
+        let _ = self.file.unlock();
+    }
+}
+
+fn repo_lock_path(repo: &CorpRepo) -> PathBuf {
+    let name = repo
+        .path()
+        .file_name()
+        .map(|value| value.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "repo".to_owned());
+    repo.path().with_file_name(format!("{name}.lock"))
 }
 
 // ── Internal tree-building machinery ──────────────────────────────────
@@ -218,4 +264,51 @@ fn flush_tree(
 
     let oid = builder.write()?;
     Ok(oid)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::git::repo::CorpRepo;
+    use std::sync::{Arc, Barrier};
+    use tempfile::TempDir;
+
+    #[test]
+    fn concurrent_commits_preserve_all_files() {
+        let tmp = TempDir::new().unwrap();
+        let repo_path = tmp.path().join("concurrent.git");
+        let repo = CorpRepo::init(&repo_path, None).unwrap();
+        let barrier = Arc::new(Barrier::new(6));
+
+        let mut handles = Vec::new();
+        for worker in 0..6 {
+            let repo_path = repo.path().to_path_buf();
+            let barrier = Arc::clone(&barrier);
+            handles.push(std::thread::spawn(move || {
+                let repo = CorpRepo::open(&repo_path).unwrap();
+                barrier.wait();
+                for seq in 0..8 {
+                    let path = format!("parallel/{worker}-{seq}.txt");
+                    let file = FileWrite::raw(path, format!("{worker}:{seq}").into_bytes());
+                    commit_files(&repo, "main", "parallel write", &[file], None).unwrap();
+                }
+            }));
+        }
+
+        for handle in handles {
+            handle.join().unwrap();
+        }
+
+        let repo = CorpRepo::open(&repo_path).unwrap();
+        for worker in 0..6 {
+            for seq in 0..8 {
+                let path = format!("parallel/{worker}-{seq}.txt");
+                let content = repo.read_blob("main", &path).unwrap();
+                assert_eq!(
+                    String::from_utf8(content).unwrap(),
+                    format!("{worker}:{seq}")
+                );
+            }
+        }
+    }
 }

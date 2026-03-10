@@ -184,6 +184,7 @@ export class CorpAPIClient {
   getValuations(entityId: string) { return this.get(`/v1/entities/${entityId}/valuations`) as Promise<ApiRecord[]>; }
   getCurrent409a(entityId: string) { return this.get(`/v1/entities/${entityId}/current-409a`) as Promise<ApiRecord>; }
   createValuation(data: ApiRecord) { return this.post("/v1/valuations", data) as Promise<ApiRecord>; }
+  createInstrument(data: ApiRecord) { return this.post("/v1/equity/instruments", data) as Promise<ApiRecord>; }
   submitValuationForApproval(valuationId: string, entityId: string) {
     return this.post(`/v1/valuations/${valuationId}/submit-for-approval`, { entity_id: entityId }) as Promise<ApiRecord>;
   }

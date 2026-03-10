@@ -1,6 +1,6 @@
 import { requireConfig, resolveEntityId } from "../config.js";
 import { CorpAPIClient } from "../api-client.js";
-import { printDocumentsTable, printError, printSuccess, printJson } from "../output.js";
+import { printDocumentsTable, printError, printSuccess, printJson, printWriteResult } from "../output.js";
 
 const HUMANS_APP_ORIGIN = "https://humans.thecorporation.ai";
 
@@ -47,21 +47,58 @@ export async function documentsSigningLinkCommand(docId: string, opts: { entityI
 }
 
 export async function documentsGenerateCommand(opts: {
-  entityId?: string; template: string; counterparty: string; effectiveDate?: string;
+  entityId?: string;
+  template: string;
+  counterparty: string;
+  effectiveDate?: string;
+  baseSalary?: string;
+  param?: string[];
+  json?: boolean;
 }): Promise<void> {
   const cfg = requireConfig("api_url", "api_key", "workspace_id");
   const eid = resolveEntityId(cfg, opts.entityId);
   const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
   try {
+    const parameters: Record<string, unknown> = {};
+    if (opts.baseSalary) {
+      parameters.base_salary = opts.baseSalary;
+    }
+    for (const raw of opts.param ?? []) {
+      const idx = raw.indexOf("=");
+      if (idx <= 0) {
+        throw new Error(`Invalid --param value: ${raw}. Expected key=value.`);
+      }
+      const key = raw.slice(0, idx).trim();
+      const value = raw.slice(idx + 1).trim();
+      if (!key) {
+        throw new Error(`Invalid --param value: ${raw}. Expected key=value.`);
+      }
+      parameters[key] = coerceParamValue(value);
+    }
+
     const result = await client.generateContract({
       entity_id: eid,
       template_type: opts.template,
       counterparty_name: opts.counterparty,
       effective_date: opts.effectiveDate ?? new Date().toISOString().slice(0, 10),
+      parameters,
     });
-    printSuccess(`Contract generated: ${result.contract_id ?? "OK"}`);
-    printJson(result);
+    printWriteResult(result, `Contract generated: ${result.contract_id ?? "OK"}`, opts.json);
   } catch (err) { printError(`Failed to generate contract: ${err}`); process.exit(1); }
+}
+
+function coerceParamValue(raw: string): unknown {
+  if (raw === "true") return true;
+  if (raw === "false") return false;
+  if (/^-?\d+(\.\d+)?$/.test(raw)) return Number(raw);
+  if ((raw.startsWith("{") && raw.endsWith("}")) || (raw.startsWith("[") && raw.endsWith("]"))) {
+    try {
+      return JSON.parse(raw);
+    } catch {
+      return raw;
+    }
+  }
+  return raw;
 }
 
 export async function documentsPreviewPdfCommand(opts: {

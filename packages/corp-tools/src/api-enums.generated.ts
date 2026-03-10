@@ -58,7 +58,7 @@ export type ContactType = (typeof ContactType)[number];
 export const ContractStatus = ["draft","active","expired","terminated"] as const;
 export type ContractStatus = (typeof ContractStatus)[number];
 
-export const ContractTemplateType = ["consulting_agreement","employment_offer","contractor_agreement","nda","custom"] as const;
+export const ContractTemplateType = ["consulting_agreement","employment_offer","contractor_agreement","nda","safe_agreement","custom"] as const;
 export type ContractTemplateType = (typeof ContractTemplateType)[number];
 
 export const ControlType = ["voting","board","economic","contractual"] as const;
@@ -85,10 +85,10 @@ export type DocumentRequestStatus = (typeof DocumentRequestStatus)[number];
 export const DocumentStatus = ["draft","signed","amended","filed"] as const;
 export type DocumentStatus = (typeof DocumentStatus)[number];
 
-export const DocumentType = ["articles_of_incorporation","articles_of_organization","bylaws","operating_agreement","ss4_application","meeting_notice","resolution","safe_agreement"] as const;
+export const DocumentType = ["articles_of_incorporation","articles_of_organization","bylaws","incorporator_action","initial_board_consent","operating_agreement","initial_written_consent","ss4_application","meeting_notice","resolution","consulting_agreement","employment_offer_letter","contractor_services_agreement","mutual_nondisclosure_agreement","safe_agreement","four_oh_nine_a_valuation_report","stock_transfer_agreement","transfer_board_consent","financing_board_consent","equity_issuance_approval","subscription_agreement","investor_rights_agreement","restricted_stock_purchase_agreement","ip_assignment_agreement","contract"] as const;
 export type DocumentType = (typeof DocumentType)[number];
 
-export const EntityType = ["corporation","llc"] as const;
+export const EntityType = ["c_corp","llc"] as const;
 export type EntityType = (typeof EntityType)[number];
 
 export const EquityRoundStatus = ["draft","open","board_approved","accepted","closed","cancelled"] as const;
@@ -120,6 +120,9 @@ export type GovernanceTriggerType = (typeof GovernanceTriggerType)[number];
 
 export const GoverningDocType = ["bylaws","operating_agreement","shareholder_agreement","other"] as const;
 export type GoverningDocType = (typeof GoverningDocType)[number];
+
+export const GrantType = ["common_stock","preferred_stock","membership_unit","stock_option","iso","nso","rsa","svu"] as const;
+export type GrantType = (typeof GrantType)[number];
 
 export const HolderType = ["individual","organization","fund","nonprofit","trust","other"] as const;
 export type HolderType = (typeof HolderType)[number];
@@ -169,7 +172,7 @@ export type NetworkEgress = (typeof NetworkEgress)[number];
 export const ObligationStatus = ["required","in_progress","fulfilled","waived","expired"] as const;
 export type ObligationStatus = (typeof ObligationStatus)[number];
 
-export const OfficerTitle = ["ceo","cfo","secretary","president","vp","other"] as const;
+export const OfficerTitle = ["ceo","cfo","cto","coo","secretary","treasurer","president","vp","other"] as const;
 export type OfficerTitle = (typeof OfficerTitle)[number];
 
 export const PaymentMethod = ["bank_transfer","card","check","wire","ach"] as const;
@@ -249,6 +252,9 @@ export type VoteValue = (typeof VoteValue)[number];
 
 export const VotingMethod = ["per_capita","per_unit"] as const;
 export type VotingMethod = (typeof VotingMethod)[number];
+
+export const WorkItemStatus = ["open","claimed","completed","cancelled"] as const;
+export type WorkItemStatus = (typeof WorkItemStatus)[number];
 
 export const WorkflowType = ["transfer","fundraising"] as const;
 export type WorkflowType = (typeof WorkflowType)[number];

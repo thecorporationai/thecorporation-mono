@@ -81,7 +81,7 @@ export const GENERATED_TOOL_DEFINITIONS: Record<string, unknown>[] = [
                 "share_count": { "type": "integer" },
                 "share_class": { "type": "string" },
                 "role": { "type": "string", "enum": ["director", "officer", "manager", "member", "chair"] },
-                "officer_title": { "type": "string", "enum": ["ceo", "cfo", "secretary", "president", "vp", "other"] },
+                "officer_title": { "type": "string", "enum": ["ceo", "cfo", "cto", "coo", "secretary", "treasurer", "president", "vp", "other"] },
                 "shares_purchased": { "type": "integer" },
                 "address": {
                   "type": "object",
@@ -111,7 +111,7 @@ export const GENERATED_TOOL_DEFINITIONS: Record<string, unknown>[] = [
           "email": { "type": "string", "description": "add_founder: email address" },
           "role": { "type": "string", "enum": ["director", "officer", "manager", "member", "chair"], "description": "add_founder: role" },
           "ownership_pct": { "type": "number", "description": "add_founder: ownership percentage (e.g. 50 for 50%)" },
-          "officer_title": { "type": "string", "enum": ["ceo", "cfo", "secretary", "president", "vp", "other"], "description": "add_founder: officer title (corp only)" },
+          "officer_title": { "type": "string", "enum": ["ceo", "cfo", "cto", "coo", "secretary", "treasurer", "president", "vp", "other"], "description": "add_founder: officer title (corp only)" },
           "is_incorporator": { "type": "boolean", "description": "add_founder: is sole incorporator (corp only)" },
           "address": {
             "type": "object",

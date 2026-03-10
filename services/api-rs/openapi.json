@@ -882,42 +882,6 @@
         }
       }
     },
-    "/v1/chat/session": {
-      "post": {
-        "tags": [
-          "auth"
-        ],
-        "operationId": "create_chat_session",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ChatSessionRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Chat session created",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ChatSessionResponse"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Invalid email"
-          },
-          "503": {
-            "description": "Chat sessions not configured"
-          }
-        }
-      }
-    },
     "/v1/compliance/escalations/scan": {
       "post": {
         "tags": [
@@ -3011,6 +2975,24 @@
         }
       }
     },
+    "/v1/entities/{entity_id}/share-transfers": {
+      "get": {
+        "tags": [
+          "equity"
+        ],
+        "operationId": "list_legacy_share_transfers",
+        "responses": {
+          "200": {
+            "description": "List of share transfers"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
     "/v1/entities/{entity_id}/spending-limits": {
       "get": {
         "tags": [
@@ -3109,6 +3091,352 @@
           },
           "404": {
             "description": "Entity not found"
+          }
+        }
+      }
+    },
+    "/v1/entities/{entity_id}/work-items": {
+      "get": {
+        "tags": [
+          "work_items"
+        ],
+        "operationId": "list_work_items",
+        "parameters": [
+          {
+            "name": "entity_id",
+            "in": "path",
+            "description": "Entity ID",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/EntityId"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "$ref": "#/components/schemas/WorkItemStatus"
+                }
+              ]
+            }
+          },
+          {
+            "name": "category",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of work items",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/WorkItemResponse"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "work_items"
+        ],
+        "operationId": "create_work_item",
+        "parameters": [
+          {
+            "name": "entity_id",
+            "in": "path",
+            "description": "Entity ID",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/EntityId"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateWorkItemRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Work item created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkItemResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/entities/{entity_id}/work-items/{work_item_id}": {
+      "get": {
+        "tags": [
+          "work_items"
+        ],
+        "operationId": "get_work_item",
+        "parameters": [
+          {
+            "name": "entity_id",
+            "in": "path",
+            "description": "Entity ID",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/EntityId"
+            }
+          },
+          {
+            "name": "work_item_id",
+            "in": "path",
+            "description": "Work Item ID",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/WorkItemId"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Work item details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkItemResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Work item not found"
+          }
+        }
+      }
+    },
+    "/v1/entities/{entity_id}/work-items/{work_item_id}/cancel": {
+      "post": {
+        "tags": [
+          "work_items"
+        ],
+        "operationId": "cancel_work_item",
+        "parameters": [
+          {
+            "name": "entity_id",
+            "in": "path",
+            "description": "Entity ID",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/EntityId"
+            }
+          },
+          {
+            "name": "work_item_id",
+            "in": "path",
+            "description": "Work Item ID",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/WorkItemId"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Work item cancelled",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkItemResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Work item not found"
+          },
+          "422": {
+            "description": "Invalid state transition"
+          }
+        }
+      }
+    },
+    "/v1/entities/{entity_id}/work-items/{work_item_id}/claim": {
+      "post": {
+        "tags": [
+          "work_items"
+        ],
+        "operationId": "claim_work_item",
+        "parameters": [
+          {
+            "name": "entity_id",
+            "in": "path",
+            "description": "Entity ID",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/EntityId"
+            }
+          },
+          {
+            "name": "work_item_id",
+            "in": "path",
+            "description": "Work Item ID",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/WorkItemId"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClaimWorkItemRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Work item claimed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkItemResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Work item not found"
+          },
+          "422": {
+            "description": "Invalid state transition"
+          }
+        }
+      }
+    },
+    "/v1/entities/{entity_id}/work-items/{work_item_id}/complete": {
+      "post": {
+        "tags": [
+          "work_items"
+        ],
+        "operationId": "complete_work_item",
+        "parameters": [
+          {
+            "name": "entity_id",
+            "in": "path",
+            "description": "Entity ID",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/EntityId"
+            }
+          },
+          {
+            "name": "work_item_id",
+            "in": "path",
+            "description": "Work Item ID",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/WorkItemId"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CompleteWorkItemRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Work item completed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkItemResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Work item not found"
+          },
+          "422": {
+            "description": "Invalid state transition"
+          }
+        }
+      }
+    },
+    "/v1/entities/{entity_id}/work-items/{work_item_id}/release": {
+      "post": {
+        "tags": [
+          "work_items"
+        ],
+        "operationId": "release_work_item",
+        "parameters": [
+          {
+            "name": "entity_id",
+            "in": "path",
+            "description": "Entity ID",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/EntityId"
+            }
+          },
+          {
+            "name": "work_item_id",
+            "in": "path",
+            "description": "Work Item ID",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/WorkItemId"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Claim released",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkItemResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Work item not found"
+          },
+          "422": {
+            "description": "Work item is not claimed"
           }
         }
       }
@@ -3902,6 +4230,34 @@
             "description": "Workflow has no compiled packet"
           }
         }
+      }
+    },
+    "/v1/equity/grants": {
+      "post": {
+        "tags": [
+          "equity"
+        ],
+        "operationId": "create_legacy_grant",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateLegacyGrantRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "501": {
+            "description": "Not implemented"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
       }
     },
     "/v1/equity/holders": {
@@ -5436,6 +5792,16 @@
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FinalizePendingFormationRequest"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "description": "Formation finalized with cap table",
@@ -6450,6 +6816,144 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/v1/human/sign/{document_id}/pdf": {
+      "get": {
+        "tags": [
+          "signing"
+        ],
+        "operationId": "get_signing_pdf",
+        "parameters": [
+          {
+            "name": "document_id",
+            "in": "path",
+            "description": "Document ID",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/DocumentId"
+            }
+          },
+          {
+            "name": "token",
+            "in": "query",
+            "description": "Signing token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "PDF preview for signing",
+            "content": {
+              "application/pdf": {}
+            }
+          },
+          "404": {
+            "description": "Invalid token or document not found"
+          }
+        }
+      }
+    },
+    "/v1/human/sign/{document_id}/resolve": {
+      "get": {
+        "tags": [
+          "signing"
+        ],
+        "operationId": "resolve_signing_link",
+        "parameters": [
+          {
+            "name": "document_id",
+            "in": "path",
+            "description": "Document ID",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/DocumentId"
+            }
+          },
+          {
+            "name": "token",
+            "in": "query",
+            "description": "Signing token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Document metadata for signing UI",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SigningResolveResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Invalid token or document not found"
+          }
+        }
+      }
+    },
+    "/v1/human/sign/{document_id}/submit": {
+      "post": {
+        "tags": [
+          "signing"
+        ],
+        "operationId": "submit_signing",
+        "parameters": [
+          {
+            "name": "document_id",
+            "in": "path",
+            "description": "Document ID",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/DocumentId"
+            }
+          },
+          {
+            "name": "token",
+            "in": "query",
+            "description": "Signing token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SignDocumentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Document signed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SignDocumentResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "404": {
+            "description": "Invalid token or document not found"
           }
         }
       }
@@ -8477,6 +8981,34 @@
         }
       }
     },
+    "/v1/share-transfers": {
+      "post": {
+        "tags": [
+          "equity"
+        ],
+        "operationId": "create_legacy_share_transfer",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateLegacyShareTransferRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Transfer created"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
     "/v1/sign/{document_id}": {
       "get": {
         "tags": [
@@ -9471,6 +10003,16 @@
           "name"
         ],
         "properties": {
+          "address": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/Address"
+              }
+            ]
+          },
           "email": {
             "type": [
               "string",
@@ -10759,32 +11301,25 @@
           }
         }
       },
-      "ChatSessionRequest": {
+      "ClaimWorkItemRequest": {
         "type": "object",
         "required": [
-          "email"
+          "claimed_by"
         ],
         "properties": {
-          "email": {
+          "claimed_by": {
             "type": "string"
+          },
+          "ttl_seconds": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
           }
         },
         "additionalProperties": false
-      },
-      "ChatSessionResponse": {
-        "type": "object",
-        "required": [
-          "ws_token",
-          "expires_at"
-        ],
-        "properties": {
-          "expires_at": {
-            "type": "string"
-          },
-          "ws_token": {
-            "type": "string"
-          }
-        }
       },
       "ClassificationId": {
         "type": "string",
@@ -10911,6 +11446,24 @@
             "items": {
               "type": "string"
             }
+          }
+        },
+        "additionalProperties": false
+      },
+      "CompleteWorkItemRequest": {
+        "type": "object",
+        "required": [
+          "completed_by"
+        ],
+        "properties": {
+          "completed_by": {
+            "type": "string"
+          },
+          "result": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "additionalProperties": false
@@ -11120,8 +11673,20 @@
               "$ref": "#/components/schemas/EntityId"
             }
           },
+          "mailing_address": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "name": {
             "type": "string"
+          },
+          "notes": {
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "phone": {
             "type": [
@@ -11167,6 +11732,12 @@
           },
           "entity_id": {
             "$ref": "#/components/schemas/EntityId"
+          },
+          "mailing_address": {
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "name": {
             "type": "string"
@@ -11265,6 +11836,7 @@
           "employment_offer",
           "contractor_agreement",
           "nda",
+          "safe_agreement",
           "custom"
         ]
       },
@@ -11512,6 +12084,16 @@
           "target_type"
         ],
         "properties": {
+          "jurisdiction": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/Jurisdiction"
+              }
+            ]
+          },
           "target_type": {
             "$ref": "#/components/schemas/EntityType"
           }
@@ -11750,8 +12332,20 @@
           "entity_id": {
             "$ref": "#/components/schemas/EntityId"
           },
+          "mailing_address": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "name": {
             "type": "string"
+          },
+          "notes": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "additionalProperties": false
@@ -12309,6 +12903,82 @@
           }
         }
       },
+      "CreateLegacyGrantRequest": {
+        "type": "object",
+        "required": [
+          "entity_id",
+          "grant_type",
+          "shares",
+          "recipient_name"
+        ],
+        "properties": {
+          "entity_id": {
+            "$ref": "#/components/schemas/EntityId"
+          },
+          "grant_type": {
+            "$ref": "#/components/schemas/GrantType"
+          },
+          "recipient_name": {
+            "type": "string"
+          },
+          "shares": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "CreateLegacyShareTransferRequest": {
+        "type": "object",
+        "required": [
+          "entity_id",
+          "share_class_id",
+          "from_holder",
+          "to_holder",
+          "shares",
+          "transfer_type"
+        ],
+        "properties": {
+          "entity_id": {
+            "$ref": "#/components/schemas/EntityId"
+          },
+          "from_holder": {
+            "type": "string"
+          },
+          "governing_doc_type": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/GoverningDocType"
+              }
+            ]
+          },
+          "share_class_id": {
+            "$ref": "#/components/schemas/ShareClassId"
+          },
+          "shares": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "to_holder": {
+            "type": "string"
+          },
+          "transfer_type": {
+            "$ref": "#/components/schemas/TransferType"
+          },
+          "transferee_rights": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/TransfereeRights"
+              }
+            ]
+          }
+        }
+      },
       "CreateLegalEntityRequest": {
         "type": "object",
         "required": [
@@ -12471,8 +13141,30 @@
           "legal_name"
         ],
         "properties": {
+          "company_address": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/Address"
+              }
+            ]
+          },
           "entity_type": {
             "$ref": "#/components/schemas/EntityType"
+          },
+          "fiscal_year_end": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "formation_date": {
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "jurisdiction": {
             "oneOf": [
@@ -12486,6 +13178,36 @@
           },
           "legal_name": {
             "type": "string"
+          },
+          "registered_agent_address": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "registered_agent_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "right_of_first_refusal": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "s_corp_election": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "transfer_restrictions": {
+            "type": [
+              "boolean",
+              "null"
+            ]
           }
         }
       },
@@ -12705,6 +13427,12 @@
           "methodology"
         ],
         "properties": {
+          "dlom": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "effective_date": {
             "type": "string",
             "format": "date"
@@ -12746,6 +13474,12 @@
               }
             ]
           },
+          "report_date": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "report_document_id": {
             "oneOf": [
               {
@@ -12758,6 +13492,45 @@
           },
           "valuation_type": {
             "$ref": "#/components/schemas/ValuationType"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreateWorkItemRequest": {
+        "type": "object",
+        "required": [
+          "title",
+          "category"
+        ],
+        "properties": {
+          "asap": {
+            "type": "boolean"
+          },
+          "category": {
+            "type": "string"
+          },
+          "created_by": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "deadline": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date"
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "metadata": {},
+          "title": {
+            "type": "string"
           }
         },
         "additionalProperties": false
@@ -12987,12 +13760,16 @@
         "type": "object",
         "required": [
           "triggered",
-          "digest_count"
+          "digest_count",
+          "message"
         ],
         "properties": {
           "digest_count": {
             "type": "integer",
             "minimum": 0
+          },
+          "message": {
+            "type": "string"
           },
           "triggered": {
             "type": "boolean"
@@ -13373,11 +14150,28 @@
           "articles_of_incorporation",
           "articles_of_organization",
           "bylaws",
+          "incorporator_action",
+          "initial_board_consent",
           "operating_agreement",
+          "initial_written_consent",
           "ss4_application",
           "meeting_notice",
           "resolution",
-          "safe_agreement"
+          "consulting_agreement",
+          "employment_offer_letter",
+          "contractor_services_agreement",
+          "mutual_nondisclosure_agreement",
+          "safe_agreement",
+          "four_oh_nine_a_valuation_report",
+          "stock_transfer_agreement",
+          "transfer_board_consent",
+          "financing_board_consent",
+          "equity_issuance_approval",
+          "subscription_agreement",
+          "investor_rights_agreement",
+          "restricted_stock_purchase_agreement",
+          "ip_assignment_agreement",
+          "contract"
         ]
       },
       "EntityId": {
@@ -13388,7 +14182,7 @@
         "type": "string",
         "description": "The legal structure of a business entity.",
         "enum": [
-          "corporation",
+          "c_corp",
           "llc"
         ]
       },
@@ -13627,6 +14421,88 @@
           },
           "status": {
             "$ref": "#/components/schemas/AgendaItemStatus"
+          }
+        }
+      },
+      "FinalizePendingFormationRequest": {
+        "type": "object",
+        "properties": {
+          "authorized_shares": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "company_address": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/Address"
+              }
+            ]
+          },
+          "fiscal_year_end": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "formation_date": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "incorporator_address": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "incorporator_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "par_value": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "registered_agent_address": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "registered_agent_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "right_of_first_refusal": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "s_corp_election": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "transfer_restrictions": {
+            "type": [
+              "boolean",
+              "null"
+            ]
           }
         }
       },
@@ -14013,6 +14889,16 @@
           "name"
         ],
         "properties": {
+          "address": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/Address"
+              }
+            ]
+          },
           "email": {
             "type": [
               "string",
@@ -15122,6 +16008,20 @@
           "operating_agreement",
           "shareholder_agreement",
           "other"
+        ]
+      },
+      "GrantType": {
+        "type": "string",
+        "description": "The type of equity grant.",
+        "enum": [
+          "common_stock",
+          "preferred_stock",
+          "membership_unit",
+          "stock_option",
+          "iso",
+          "nso",
+          "rsa",
+          "svu"
         ]
       },
       "HolderId": {
@@ -16468,7 +17368,10 @@
         "enum": [
           "ceo",
           "cfo",
+          "cto",
+          "coo",
           "secretary",
+          "treasurer",
           "president",
           "vp",
           "other"
@@ -18387,11 +19290,46 @@
           }
         }
       },
+      "SigningContractDetails": {
+        "type": "object",
+        "description": "Contract details included in signing resolve response.",
+        "required": [
+          "template_type",
+          "counterparty_name",
+          "effective_date",
+          "parameters"
+        ],
+        "properties": {
+          "counterparty_name": {
+            "type": "string"
+          },
+          "effective_date": {
+            "type": "string"
+          },
+          "parameters": {},
+          "rendered_text": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "template_label": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "template_type": {
+            "type": "string"
+          }
+        }
+      },
       "SigningLinkResponse": {
         "type": "object",
         "required": [
           "document_id",
-          "signing_url"
+          "signing_url",
+          "token"
         ],
         "properties": {
           "document_id": {
@@ -18399,6 +19337,72 @@
           },
           "signing_url": {
             "type": "string"
+          },
+          "token": {
+            "type": "string"
+          }
+        }
+      },
+      "SigningResolveResponse": {
+        "type": "object",
+        "description": "Response for the public resolve endpoint.",
+        "required": [
+          "document_id",
+          "entity_id",
+          "document_title",
+          "document_status",
+          "signatures"
+        ],
+        "properties": {
+          "contract": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/SigningContractDetails",
+                "description": "Contract details when the document references a contract."
+              }
+            ]
+          },
+          "document_id": {
+            "$ref": "#/components/schemas/DocumentId"
+          },
+          "document_status": {
+            "type": "string"
+          },
+          "document_title": {
+            "type": "string"
+          },
+          "entity_id": {
+            "$ref": "#/components/schemas/EntityId"
+          },
+          "entity_name": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Entity legal name for display."
+          },
+          "pdf_url": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Public PDF preview URL for the signing page."
+          },
+          "preview_text": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Plain-text preview fallback when a PDF is unavailable."
+          },
+          "signatures": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SignatureSummary"
+            }
           }
         }
       },
@@ -19082,6 +20086,16 @@
               }
             ]
           },
+          "category": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ContactCategory"
+              }
+            ]
+          },
           "email": {
             "type": [
               "string",
@@ -19090,6 +20104,12 @@
           },
           "entity_id": {
             "$ref": "#/components/schemas/EntityId"
+          },
+          "mailing_address": {
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "name": {
             "type": [
@@ -19134,9 +20154,57 @@
             "format": "int32",
             "minimum": 0
           },
+          "company_address": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/CompanyAddress"
+              }
+            ]
+          },
+          "directors": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/DirectorInfo"
+            }
+          },
+          "document_options": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/DocumentOptions"
+              }
+            ]
+          },
           "effective_date": {
             "type": "string",
             "format": "date"
+          },
+          "fiscal_year_end": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/FiscalYearEnd"
+              }
+            ]
+          },
+          "founders": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/FounderInfo"
+            }
           },
           "incomplete_profile": {
             "type": [
@@ -19170,6 +20238,15 @@
             "type": "string",
             "format": "date"
           },
+          "officers": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/OfficerInfo"
+            }
+          },
           "principal_name": {
             "type": [
               "string",
@@ -19192,6 +20269,16 @@
             "type": [
               "string",
               "null"
+            ]
+          },
+          "stock_details": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/StockDetails"
+              }
             ]
           }
         }
@@ -19474,6 +20561,115 @@
         "enum": [
           "per_capita",
           "per_unit"
+        ]
+      },
+      "WorkItemId": {
+        "type": "string",
+        "format": "uuid"
+      },
+      "WorkItemResponse": {
+        "type": "object",
+        "required": [
+          "work_item_id",
+          "entity_id",
+          "title",
+          "description",
+          "category",
+          "asap",
+          "status",
+          "effective_status",
+          "metadata",
+          "created_at"
+        ],
+        "properties": {
+          "asap": {
+            "type": "boolean"
+          },
+          "category": {
+            "type": "string"
+          },
+          "claim_ttl_seconds": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
+          },
+          "claimed_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "claimed_by": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "completed_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "completed_by": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "created_by": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "deadline": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date"
+          },
+          "description": {
+            "type": "string"
+          },
+          "effective_status": {
+            "$ref": "#/components/schemas/WorkItemStatus"
+          },
+          "entity_id": {
+            "$ref": "#/components/schemas/EntityId"
+          },
+          "metadata": {},
+          "result": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "$ref": "#/components/schemas/WorkItemStatus"
+          },
+          "title": {
+            "type": "string"
+          },
+          "work_item_id": {
+            "$ref": "#/components/schemas/WorkItemId"
+          }
+        }
+      },
+      "WorkItemStatus": {
+        "type": "string",
+        "enum": [
+          "open",
+          "claimed",
+          "completed",
+          "cancelled"
         ]
       },
       "WorkerWorkspaceQuery": {
@@ -19761,6 +20957,11 @@
       }
     }
   },
+  "security": [
+    {
+      "bearer_auth": []
+    }
+  ],
   "tags": [
     {
       "name": "formation",
@@ -19821,6 +21022,10 @@
     {
       "name": "agent_executions",
       "description": "Agent execution queue"
+    },
+    {
+      "name": "work_items",
+      "description": "Long-term work item coordination"
     },
     {
       "name": "equity",

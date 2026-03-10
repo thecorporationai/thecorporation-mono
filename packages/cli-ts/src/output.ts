@@ -28,6 +28,27 @@ export function printJson(data: unknown): void {
   console.log(JSON.stringify(data, null, 2));
 }
 
+export function printDryRun(operation: string, payload: unknown): void {
+  printJson({
+    dry_run: true,
+    operation,
+    payload,
+  });
+}
+
+export function printWriteResult(
+  result: unknown,
+  successMessage: string,
+  jsonOnly?: boolean,
+): void {
+  if (jsonOnly) {
+    printJson(result);
+    return;
+  }
+  printSuccess(successMessage);
+  printJson(result);
+}
+
 // --- Status Panel ---
 
 export function printStatusPanel(data: ApiRecord): void {

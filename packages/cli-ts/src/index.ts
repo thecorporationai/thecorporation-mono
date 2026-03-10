@@ -4,6 +4,25 @@ import { inheritOption } from "./command-options.js";
 
 const require = createRequire(import.meta.url);
 const pkg = require("../package.json");
+const TAX_DOCUMENT_TYPE_CHOICES = [
+  "1120",
+  "1120s",
+  "1065",
+  "franchise_tax",
+  "annual_report",
+  "83b",
+  "form_1120",
+  "form_1120s",
+  "form_1065",
+  "1099_nec",
+  "form_1099_nec",
+  "k1",
+  "form_k1",
+  "941",
+  "form_941",
+  "w2",
+  "form_w2",
+] as const;
 
 const program = new Command();
 program
@@ -27,6 +46,25 @@ program
   .action(async () => {
     const { statusCommand } = await import("./commands/status.js");
     await statusCommand();
+  });
+
+program
+  .command("context")
+  .alias("whoami")
+  .description("Show the active workspace, user, and entity context")
+  .option("--json", "Output as JSON")
+  .action(async (opts) => {
+    const { contextCommand } = await import("./commands/context.js");
+    await contextCommand(opts);
+  });
+
+program
+  .command("schema")
+  .description("Dump the CLI command catalog as JSON")
+  .option("--compact", "Emit compact JSON")
+  .action(async (opts) => {
+    const { schemaCommand } = await import("./commands/schema.js");
+    schemaCommand(program, opts);
   });
 
 // --- config ---
@@ -173,26 +211,40 @@ contactsCmd
   .requiredOption("--email <email>", "Contact email")
   .option("--type <type>", "Contact type (individual, organization)", "individual")
   .option("--category <category>", "Category (employee, contractor, board_member, investor, law_firm, valuation_firm, accounting_firm, officer, founder, member, other)")
+  .option("--address <address>", "Mailing address")
+  .option("--mailing-address <address>", "Alias for --address")
   .option("--phone <phone>", "Phone number")
   .option("--notes <notes>", "Notes")
+  .option("--json", "Output as JSON")
   .description("Add a new contact")
   .action(async (opts, cmd) => {
     const parent = cmd.parent!.opts();
     const { contactsAddCommand } = await import("./commands/contacts.js");
-    await contactsAddCommand({ ...opts, entityId: parent.entityId });
+    await contactsAddCommand({
+      ...opts,
+      entityId: parent.entityId,
+      json: inheritOption(opts.json, parent.json),
+    });
   });
 contactsCmd
   .command("edit <contact-id>")
   .option("--name <name>", "Contact name")
   .option("--email <email>", "Contact email")
   .option("--category <category>", "Contact category")
+  .option("--address <address>", "Mailing address")
+  .option("--mailing-address <address>", "Alias for --address")
   .option("--phone <phone>", "Phone number")
   .option("--notes <notes>", "Notes")
+  .option("--json", "Output as JSON")
   .description("Edit an existing contact")
   .action(async (contactId: string, opts, cmd) => {
     const parent = cmd.parent!.opts();
     const { contactsEditCommand } = await import("./commands/contacts.js");
-    await contactsEditCommand(contactId, { ...opts, entityId: parent.entityId });
+    await contactsEditCommand(contactId, {
+      ...opts,
+      entityId: parent.entityId,
+      json: inheritOption(opts.json, parent.json),
+    });
   });
 
 // --- cap-table ---
@@ -232,11 +284,17 @@ capTableCmd
   .requiredOption("--recipient <name>", "Recipient name")
   .option("--email <email>", "Recipient email (auto-creates contact if needed)")
   .option("--instrument-id <id>", "Instrument ID (auto-detected from cap table if omitted)")
+  .option("--json", "Output as JSON")
+  .option("--dry-run", "Show the request without creating the round")
   .description("Issue an equity grant (creates a round, adds security, and issues it)")
   .action(async (opts, cmd) => {
     const parent = cmd.parent!.opts();
     const { issueEquityCommand } = await import("./commands/cap-table.js");
-    await issueEquityCommand({ ...opts, entityId: parent.entityId });
+    await issueEquityCommand({
+      ...opts,
+      entityId: parent.entityId,
+      json: inheritOption(opts.json, parent.json),
+    });
   });
 capTableCmd
   .command("issue-safe")
@@ -244,11 +302,17 @@ capTableCmd
   .requiredOption("--amount <n>", "Principal amount in cents", parseInt)
   .option("--safe-type <type>", "SAFE type", "post_money")
   .requiredOption("--valuation-cap <n>", "Valuation cap in cents", parseInt)
+  .option("--json", "Output as JSON")
+  .option("--dry-run", "Show the request without creating the round")
   .description("Issue a SAFE note")
   .action(async (opts, cmd) => {
     const parent = cmd.parent!.opts();
     const { issueSafeCommand } = await import("./commands/cap-table.js");
-    await issueSafeCommand({ ...opts, entityId: parent.entityId });
+    await issueSafeCommand({
+      ...opts,
+      entityId: parent.entityId,
+      json: inheritOption(opts.json, parent.json),
+    });
   });
 capTableCmd
   .command("transfer")
@@ -262,33 +326,51 @@ capTableCmd
   .option("--type <type>", "Transfer type (gift, trust_transfer, secondary_sale, estate, other)", "secondary_sale")
   .option("--price-per-share-cents <n>", "Price per share in cents", parseInt)
   .option("--relationship <rel>", "Relationship to holder")
+  .option("--json", "Output as JSON")
+  .option("--dry-run", "Show the request without creating the workflow")
   .description("Create a share transfer workflow")
   .action(async (opts, cmd) => {
     const parent = cmd.parent!.opts();
     const { transferSharesCommand } = await import("./commands/cap-table.js");
-    await transferSharesCommand({ ...opts, entityId: parent.entityId });
+    await transferSharesCommand({
+      ...opts,
+      entityId: parent.entityId,
+      json: inheritOption(opts.json, parent.json),
+    });
   });
 capTableCmd
   .command("distribute")
   .requiredOption("--amount <n>", "Total distribution amount in cents", parseInt)
   .option("--type <type>", "Distribution type (dividend, return, liquidation)", "dividend")
   .requiredOption("--description <desc>", "Distribution description")
+  .option("--json", "Output as JSON")
+  .option("--dry-run", "Show the request without calculating the distribution")
   .description("Calculate a distribution")
   .action(async (opts, cmd) => {
     const parent = cmd.parent!.opts();
     const { distributeCommand } = await import("./commands/cap-table.js");
-    await distributeCommand({ ...opts, entityId: parent.entityId });
+    await distributeCommand({
+      ...opts,
+      entityId: parent.entityId,
+      json: inheritOption(opts.json, parent.json),
+    });
   });
 
 capTableCmd
   .command("start-round")
   .requiredOption("--name <name>", "Round name")
   .requiredOption("--issuer-legal-entity-id <id>", "Issuer legal entity ID")
+  .option("--json", "Output as JSON")
+  .option("--dry-run", "Show the request without creating the round")
   .description("Start a staged equity round")
   .action(async (opts, cmd) => {
     const parent = cmd.parent!.opts();
     const { startRoundCommand } = await import("./commands/cap-table.js");
-    await startRoundCommand({ ...opts, entityId: parent.entityId });
+    await startRoundCommand({
+      ...opts,
+      entityId: parent.entityId,
+      json: inheritOption(opts.json, parent.json),
+    });
   });
 capTableCmd
   .command("add-security")
@@ -300,20 +382,32 @@ capTableCmd
   .option("--email <email>", "Recipient email (to find or create holder)")
   .option("--principal-cents <n>", "Principal amount in cents", parseInt)
   .option("--grant-type <type>", "Grant type")
+  .option("--json", "Output as JSON")
+  .option("--dry-run", "Show the request without adding the security")
   .description("Add a security to a staged equity round")
   .action(async (opts, cmd) => {
     const parent = cmd.parent!.opts();
     const { addSecurityCommand } = await import("./commands/cap-table.js");
-    await addSecurityCommand({ ...opts, entityId: parent.entityId });
+    await addSecurityCommand({
+      ...opts,
+      entityId: parent.entityId,
+      json: inheritOption(opts.json, parent.json),
+    });
   });
 capTableCmd
   .command("issue-round")
+  .option("--json", "Output as JSON")
+  .option("--dry-run", "Show the request without issuing the round")
   .requiredOption("--round-id <id>", "Round ID")
   .description("Issue all securities and close a staged round")
   .action(async (opts, cmd) => {
     const parent = cmd.parent!.opts();
     const { issueRoundCommand } = await import("./commands/cap-table.js");
-    await issueRoundCommand({ ...opts, entityId: parent.entityId });
+    await issueRoundCommand({
+      ...opts,
+      entityId: parent.entityId,
+      json: inheritOption(opts.json, parent.json),
+    });
   });
 capTableCmd
   .command("create-valuation")
@@ -322,28 +416,48 @@ capTableCmd
   .requiredOption("--methodology <method>", "Methodology (income, market, asset, backsolve, hybrid)")
   .option("--fmv <cents>", "FMV per share in cents", parseInt)
   .option("--enterprise-value <cents>", "Enterprise value in cents", parseInt)
+  .option("--json", "Output as JSON")
+  .option("--dry-run", "Show the request without creating the valuation")
   .description("Create a valuation")
   .action(async (opts, cmd) => {
     const parent = cmd.parent!.opts();
     const { createValuationCommand } = await import("./commands/cap-table.js");
-    await createValuationCommand({ ...opts, entityId: parent.entityId });
+    await createValuationCommand({
+      ...opts,
+      entityId: parent.entityId,
+      json: inheritOption(opts.json, parent.json),
+    });
   });
 capTableCmd
   .command("submit-valuation <valuation-id>")
+  .option("--json", "Output as JSON")
+  .option("--dry-run", "Show the request without submitting the valuation")
   .description("Submit a valuation for board approval")
-  .action(async (valuationId: string, _opts, cmd) => {
+  .action(async (valuationId: string, opts, cmd) => {
     const parent = cmd.parent!.opts();
     const { submitValuationCommand } = await import("./commands/cap-table.js");
-    await submitValuationCommand({ valuationId, entityId: parent.entityId });
+    await submitValuationCommand({
+      ...opts,
+      valuationId,
+      entityId: parent.entityId,
+      json: inheritOption(opts.json, parent.json),
+    });
   });
 capTableCmd
   .command("approve-valuation <valuation-id>")
   .option("--resolution-id <id>", "Resolution ID from the board vote")
+  .option("--json", "Output as JSON")
+  .option("--dry-run", "Show the request without approving the valuation")
   .description("Approve a valuation")
   .action(async (valuationId: string, opts, cmd) => {
     const parent = cmd.parent!.opts();
     const { approveValuationCommand } = await import("./commands/cap-table.js");
-    await approveValuationCommand({ ...opts, valuationId, entityId: parent.entityId });
+    await approveValuationCommand({
+      ...opts,
+      valuationId,
+      entityId: parent.entityId,
+      json: inheritOption(opts.json, parent.json),
+    });
   });
 
 // --- finance ---
@@ -434,21 +548,33 @@ governanceCmd
   .requiredOption("--body-type <type>", "Body type (board_of_directors, llc_member_vote)")
   .option("--quorum <rule>", "Quorum rule (majority, supermajority, unanimous)", "majority")
   .option("--voting <method>", "Voting method (per_capita, per_unit)", "per_capita")
+  .option("--json", "Output as JSON")
+  .option("--dry-run", "Show the request without creating the governance body")
   .description("Create a governance body")
   .action(async (opts, cmd) => {
     const parent = cmd.parent!.opts();
     const { governanceCreateBodyCommand } = await import("./commands/governance.js");
-    await governanceCreateBodyCommand({ ...opts, entityId: parent.entityId });
+    await governanceCreateBodyCommand({
+      ...opts,
+      entityId: parent.entityId,
+      json: inheritOption(opts.json, parent.json),
+    });
   });
 governanceCmd
   .command("add-seat <body-id>")
   .requiredOption("--holder <contact-id>", "Contact ID for the seat holder")
   .option("--role <role>", "Seat role (chair, member, officer, observer)", "member")
+  .option("--json", "Output as JSON")
+  .option("--dry-run", "Show the request without adding the seat")
   .description("Add a seat to a governance body")
   .action(async (bodyId: string, opts, cmd) => {
     const parent = cmd.parent!.opts();
     const { governanceAddSeatCommand } = await import("./commands/governance.js");
-    await governanceAddSeatCommand(bodyId, { ...opts, entityId: parent.entityId });
+    await governanceAddSeatCommand(bodyId, {
+      ...opts,
+      entityId: parent.entityId,
+      json: inheritOption(opts.json, parent.json),
+    });
   });
 governanceCmd
   .command("seats <body-id>")
@@ -481,16 +607,40 @@ governanceCmd
   .requiredOption("--title <title>", "Meeting title")
   .requiredOption("--date <date>", "Meeting date (ISO 8601)")
   .option("--agenda <item>", "Agenda item (repeatable)", (v: string, a: string[]) => [...a, v], [] as string[])
+  .option("--json", "Output as JSON")
+  .option("--dry-run", "Show the request without scheduling the meeting")
   .description("Convene a governance meeting")
   .action(async (opts, cmd) => {
     const parent = cmd.parent!.opts();
     const { governanceConveneCommand } = await import("./commands/governance.js");
-    await governanceConveneCommand({ ...opts, meetingType: opts.type, entityId: parent.entityId });
+    await governanceConveneCommand({
+      ...opts,
+      meetingType: opts.type,
+      entityId: parent.entityId,
+      json: inheritOption(opts.json, parent.json),
+    });
+  });
+governanceCmd
+  .command("open <meeting-id>")
+  .requiredOption("--present-seat <id>", "Seat ID present at the meeting (repeatable)", (v: string, a?: string[]) => [...(a ?? []), v])
+  .option("--json", "Output as JSON")
+  .option("--dry-run", "Show the request without opening the meeting")
+  .description("Open a scheduled meeting for voting")
+  .action(async (meetingId: string, opts, cmd) => {
+    const parent = cmd.parent!.opts();
+    const { governanceOpenMeetingCommand } = await import("./commands/governance.js");
+    await governanceOpenMeetingCommand(meetingId, {
+      ...opts,
+      entityId: parent.entityId,
+      json: inheritOption(opts.json, parent.json),
+    });
   });
 governanceCmd
   .command("vote <meeting-id> <item-id>")
   .requiredOption("--voter <id>", "Voter contact UUID")
   .addOption(new Option("--vote <value>", "Vote (for, against, abstain, recusal)").choices(["for", "against", "abstain", "recusal"]).makeOptionMandatory())
+  .option("--json", "Output as JSON")
+  .option("--dry-run", "Show the request without casting the vote")
   .description("Cast a vote on an agenda item")
   .action(async (meetingId: string, itemId: string, opts, cmd) => {
     const parent = cmd.parent!.opts();
@@ -498,31 +648,50 @@ governanceCmd
     await governanceVoteCommand(meetingId, itemId, {
       ...opts,
       entityId: parent.entityId,
+      json: inheritOption(opts.json, parent.json),
     });
   });
 governanceCmd
   .command("notice <meeting-id>")
+  .option("--json", "Output as JSON")
+  .option("--dry-run", "Show the request without sending notices")
   .description("Send meeting notice")
-  .action(async (meetingId: string, _opts, cmd) => {
+  .action(async (meetingId: string, opts, cmd) => {
     const parent = cmd.parent!.opts();
     const { sendNoticeCommand } = await import("./commands/governance.js");
-    await sendNoticeCommand(meetingId, { entityId: parent.entityId });
+    await sendNoticeCommand(meetingId, {
+      ...opts,
+      entityId: parent.entityId,
+      json: inheritOption(opts.json, parent.json),
+    });
   });
 governanceCmd
   .command("adjourn <meeting-id>")
+  .option("--json", "Output as JSON")
+  .option("--dry-run", "Show the request without adjourning the meeting")
   .description("Adjourn a meeting")
-  .action(async (meetingId: string, _opts, cmd) => {
+  .action(async (meetingId: string, opts, cmd) => {
     const parent = cmd.parent!.opts();
     const { adjournMeetingCommand } = await import("./commands/governance.js");
-    await adjournMeetingCommand(meetingId, { entityId: parent.entityId });
+    await adjournMeetingCommand(meetingId, {
+      ...opts,
+      entityId: parent.entityId,
+      json: inheritOption(opts.json, parent.json),
+    });
   });
 governanceCmd
   .command("cancel <meeting-id>")
+  .option("--json", "Output as JSON")
+  .option("--dry-run", "Show the request without cancelling the meeting")
   .description("Cancel a meeting")
-  .action(async (meetingId: string, _opts, cmd) => {
+  .action(async (meetingId: string, opts, cmd) => {
     const parent = cmd.parent!.opts();
     const { cancelMeetingCommand } = await import("./commands/governance.js");
-    await cancelMeetingCommand(meetingId, { entityId: parent.entityId });
+    await cancelMeetingCommand(meetingId, {
+      ...opts,
+      entityId: parent.entityId,
+      json: inheritOption(opts.json, parent.json),
+    });
   });
 governanceCmd
   .command("agenda-items <meeting-id>")
@@ -535,31 +704,49 @@ governanceCmd
 governanceCmd
   .command("finalize-item <meeting-id> <item-id>")
   .requiredOption("--status <status>", "Status: voted, discussed, tabled, withdrawn")
+  .option("--json", "Output as JSON")
+  .option("--dry-run", "Show the request without finalizing the item")
   .description("Finalize an agenda item")
   .action(async (meetingId: string, itemId: string, opts, cmd) => {
     const parent = cmd.parent!.opts();
     const { finalizeAgendaItemCommand } = await import("./commands/governance.js");
-    await finalizeAgendaItemCommand(meetingId, itemId, { ...opts, entityId: parent.entityId });
+    await finalizeAgendaItemCommand(meetingId, itemId, {
+      ...opts,
+      entityId: parent.entityId,
+      json: inheritOption(opts.json, parent.json),
+    });
   });
 governanceCmd
   .command("resolve <meeting-id> <item-id>")
   .requiredOption("--text <resolution_text>", "Resolution text")
+  .option("--json", "Output as JSON")
+  .option("--dry-run", "Show the request without computing the resolution")
   .description("Compute a resolution for an agenda item")
   .action(async (meetingId: string, itemId: string, opts, cmd) => {
     const parent = cmd.parent!.opts();
     const { computeResolutionCommand } = await import("./commands/governance.js");
-    await computeResolutionCommand(meetingId, itemId, { ...opts, entityId: parent.entityId });
+    await computeResolutionCommand(meetingId, itemId, {
+      ...opts,
+      entityId: parent.entityId,
+      json: inheritOption(opts.json, parent.json),
+    });
   });
 governanceCmd
   .command("written-consent")
   .requiredOption("--body <id>", "Governance body ID")
   .requiredOption("--title <title>", "Title")
   .requiredOption("--description <desc>", "Description")
+  .option("--json", "Output as JSON")
+  .option("--dry-run", "Show the request without creating the written consent")
   .description("Create a written consent action")
   .action(async (opts, cmd) => {
     const parent = cmd.parent!.opts();
     const { writtenConsentCommand } = await import("./commands/governance.js");
-    await writtenConsentCommand({ ...opts, entityId: parent.entityId });
+    await writtenConsentCommand({
+      ...opts,
+      entityId: parent.entityId,
+      json: inheritOption(opts.json, parent.json),
+    });
   });
 
 // --- documents ---
@@ -586,11 +773,18 @@ documentsCmd
   .requiredOption("--template <type>", "Template type (consulting_agreement, employment_offer, contractor_agreement, nda, custom)")
   .requiredOption("--counterparty <name>", "Counterparty name")
   .option("--effective-date <date>", "Effective date (ISO 8601, defaults to today)")
+  .option("--base-salary <amount>", "Employment offer base salary (for employment_offer)")
+  .option("--param <key=value>", "Additional template parameter (repeatable)", (value: string, values: string[]) => [...values, value], [] as string[])
+  .option("--json", "Output as JSON")
   .description("Generate a contract from a template")
   .action(async (opts, cmd) => {
     const parent = cmd.parent!.opts();
     const { documentsGenerateCommand } = await import("./commands/documents.js");
-    await documentsGenerateCommand({ ...opts, entityId: parent.entityId });
+    await documentsGenerateCommand({
+      ...opts,
+      entityId: parent.entityId,
+      json: inheritOption(opts.json, parent.json),
+    });
   });
 documentsCmd
   .command("preview-pdf")
@@ -609,13 +803,18 @@ const taxCmd = program
   .option("--entity-id <id>", "Entity ID (overrides active entity)");
 taxCmd
   .command("file")
-  .requiredOption("--type <type>", "Document type")
+  .addOption(new Option("--type <type>", `Document type (${TAX_DOCUMENT_TYPE_CHOICES.join(", ")})`).choices([...TAX_DOCUMENT_TYPE_CHOICES]).makeOptionMandatory())
   .requiredOption("--year <year>", "Tax year", parseInt)
+  .option("--json", "Output as JSON")
   .description("File a tax document")
   .action(async (opts, cmd) => {
     const parent = cmd.parent!.opts();
     const { taxFileCommand } = await import("./commands/tax.js");
-    await taxFileCommand({ ...opts, entityId: parent.entityId });
+    await taxFileCommand({
+      ...opts,
+      entityId: parent.entityId,
+      json: inheritOption(opts.json, parent.json),
+    });
   });
 taxCmd
   .command("deadline")
@@ -623,11 +822,16 @@ taxCmd
   .requiredOption("--due-date <date>", "Due date (ISO 8601)")
   .requiredOption("--description <desc>", "Description")
   .option("--recurrence <recurrence>", "Recurrence (e.g. annual; 'yearly' is normalized)")
+  .option("--json", "Output as JSON")
   .description("Track a compliance deadline")
   .action(async (opts, cmd) => {
     const parent = cmd.parent!.opts();
     const { taxDeadlineCommand } = await import("./commands/tax.js");
-    await taxDeadlineCommand({ ...opts, entityId: parent.entityId });
+    await taxDeadlineCommand({
+      ...opts,
+      entityId: parent.entityId,
+      json: inheritOption(opts.json, parent.json),
+    });
   });
 
 // --- agents ---
@@ -650,38 +854,64 @@ agentsCmd.command("show <agent-id>").option("--json", "Output as JSON").descript
   });
 agentsCmd.command("create").requiredOption("--name <name>", "Agent name")
   .requiredOption("--prompt <prompt>", "System prompt").option("--model <model>", "Model")
+  .option("--json", "Output as JSON")
   .description("Create a new agent")
-  .action(async (opts) => {
+  .action(async (opts, cmd) => {
+    const parent = cmd.parent!.opts();
     const { agentsCreateCommand } = await import("./commands/agents.js");
-    await agentsCreateCommand(opts);
+    await agentsCreateCommand({
+      ...opts,
+      json: inheritOption(opts.json, parent.json),
+    });
   });
-agentsCmd.command("pause <agent-id>").description("Pause an agent")
-  .action(async (agentId: string) => {
+agentsCmd.command("pause <agent-id>").option("--json", "Output as JSON").description("Pause an agent")
+  .action(async (agentId: string, opts, cmd) => {
+    const parent = cmd.parent!.opts();
     const { agentsPauseCommand } = await import("./commands/agents.js");
-    await agentsPauseCommand(agentId);
+    await agentsPauseCommand(agentId, {
+      json: inheritOption(opts.json, parent.json),
+    });
   });
-agentsCmd.command("resume <agent-id>").description("Resume a paused agent")
-  .action(async (agentId: string) => {
+agentsCmd.command("resume <agent-id>").option("--json", "Output as JSON").description("Resume a paused agent")
+  .action(async (agentId: string, opts, cmd) => {
+    const parent = cmd.parent!.opts();
     const { agentsResumeCommand } = await import("./commands/agents.js");
-    await agentsResumeCommand(agentId);
+    await agentsResumeCommand(agentId, {
+      json: inheritOption(opts.json, parent.json),
+    });
   });
-agentsCmd.command("delete <agent-id>").description("Delete an agent")
-  .action(async (agentId: string) => {
+agentsCmd.command("delete <agent-id>").option("--json", "Output as JSON").description("Delete an agent")
+  .action(async (agentId: string, opts, cmd) => {
+    const parent = cmd.parent!.opts();
     const { agentsDeleteCommand } = await import("./commands/agents.js");
-    await agentsDeleteCommand(agentId);
+    await agentsDeleteCommand(agentId, {
+      json: inheritOption(opts.json, parent.json),
+    });
   });
-agentsCmd.command("message <agent-id>").requiredOption("--body <text>", "Message text")
+agentsCmd.command("message <agent-id>").option("--body <text>", "Message text")
+  .option("--body-file <path>", "Read the message body from a file")
+  .option("--json", "Output as JSON")
   .description("Send a message to an agent")
-  .action(async (agentId: string, opts) => {
+  .action(async (agentId: string, opts, cmd) => {
+    const parent = cmd.parent!.opts();
     const { agentsMessageCommand } = await import("./commands/agents.js");
-    await agentsMessageCommand(agentId, opts);
+    await agentsMessageCommand(agentId, {
+      ...opts,
+      json: inheritOption(opts.json, parent.json),
+    });
   });
 agentsCmd.command("skill <agent-id>").requiredOption("--name <name>", "Skill name")
   .requiredOption("--description <desc>", "Skill description").option("--instructions <text>", "Instructions")
+  .option("--instructions-file <path>", "Read skill instructions from a file")
+  .option("--json", "Output as JSON")
   .description("Add a skill to an agent")
-  .action(async (agentId: string, opts) => {
+  .action(async (agentId: string, opts, cmd) => {
+    const parent = cmd.parent!.opts();
     const { agentsSkillCommand } = await import("./commands/agents.js");
-    await agentsSkillCommand(agentId, opts);
+    await agentsSkillCommand(agentId, {
+      ...opts,
+      json: inheritOption(opts.json, parent.json),
+    });
   });
 
 // --- work-items ---
@@ -717,6 +947,7 @@ workItemsCmd
   .option("--deadline <date>", "Deadline (YYYY-MM-DD)")
   .option("--asap", "Mark as ASAP priority")
   .option("--created-by <name>", "Creator identifier")
+  .option("--json", "Output as JSON")
   .description("Create a new work item")
   .action(async (opts, cmd) => {
     const parent = cmd.parent!.opts();
@@ -725,43 +956,76 @@ workItemsCmd
       ...opts,
       category: inheritOption(opts.category, parent.category),
       entityId: parent.entityId,
+      json: inheritOption(opts.json, parent.json),
     });
   });
 workItemsCmd
   .command("claim <item-id>")
-  .requiredOption("--by <name>", "Agent or user claiming the item")
+  .option("--by <name>", "Agent or user claiming the item")
+  .option("--claimer <name>", "Alias for --by")
   .option("--ttl <seconds>", "Auto-release TTL in seconds", parseInt)
+  .option("--json", "Output as JSON")
   .description("Claim a work item")
   .action(async (itemId: string, opts, cmd) => {
     const parent = cmd.parent!.opts();
     const { workItemsClaimCommand } = await import("./commands/work-items.js");
-    await workItemsClaimCommand(itemId, { claimedBy: opts.by, ttl: opts.ttl, entityId: parent.entityId });
+    const claimedBy = opts.by ?? opts.claimer;
+    if (!claimedBy) {
+      cmd.error("required option '--by <name>' not specified");
+      return;
+    }
+    await workItemsClaimCommand(itemId, {
+      claimedBy,
+      ttl: opts.ttl,
+      entityId: parent.entityId,
+      json: inheritOption(opts.json, parent.json),
+    });
   });
 workItemsCmd
   .command("complete <item-id>")
-  .requiredOption("--by <name>", "Agent or user completing the item")
+  .option("--by <name>", "Agent or user completing the item")
+  .option("--completed-by <name>", "Alias for --by")
   .option("--result <text>", "Completion result or notes")
+  .option("--json", "Output as JSON")
   .description("Mark a work item as completed")
   .action(async (itemId: string, opts, cmd) => {
     const parent = cmd.parent!.opts();
     const { workItemsCompleteCommand } = await import("./commands/work-items.js");
-    await workItemsCompleteCommand(itemId, { completedBy: opts.by, result: opts.result, entityId: parent.entityId });
+    const completedBy = opts.by ?? opts.completedBy;
+    if (!completedBy) {
+      cmd.error("required option '--by <name>' not specified");
+      return;
+    }
+    await workItemsCompleteCommand(itemId, {
+      completedBy,
+      result: opts.result,
+      entityId: parent.entityId,
+      json: inheritOption(opts.json, parent.json),
+    });
   });
 workItemsCmd
   .command("release <item-id>")
+  .option("--json", "Output as JSON")
   .description("Release a claimed work item")
-  .action(async (itemId: string, _opts, cmd) => {
+  .action(async (itemId: string, opts, cmd) => {
     const parent = cmd.parent!.opts();
     const { workItemsReleaseCommand } = await import("./commands/work-items.js");
-    await workItemsReleaseCommand(itemId, { entityId: parent.entityId });
+    await workItemsReleaseCommand(itemId, {
+      entityId: parent.entityId,
+      json: inheritOption(opts.json, parent.json),
+    });
   });
 workItemsCmd
   .command("cancel <item-id>")
+  .option("--json", "Output as JSON")
   .description("Cancel a work item")
-  .action(async (itemId: string, _opts, cmd) => {
+  .action(async (itemId: string, opts, cmd) => {
     const parent = cmd.parent!.opts();
     const { workItemsCancelCommand } = await import("./commands/work-items.js");
-    await workItemsCancelCommand(itemId, { entityId: parent.entityId });
+    await workItemsCancelCommand(itemId, {
+      entityId: parent.entityId,
+      json: inheritOption(opts.json, parent.json),
+    });
   });
 
 // --- billing ---
@@ -807,12 +1071,16 @@ const formCmd = program
   .option("--entity-type <type>", "Entity type (llc, c_corp)")
   .option("--legal-name <name>", "Legal name")
   .option("--jurisdiction <jurisdiction>", "Jurisdiction (e.g. US-DE, US-WY)")
-  .option("--member <member>", "Member as 'name,email,role[,pct]' — role: director|officer|manager|member|chair (repeatable)", (v: string, a: string[]) => [...a, v], [] as string[])
+  .option("--member <member>", "Founder as 'name,email,role[,pct]' or key=value pairs like 'name=...,email=...,role=...,officer_title=cto,is_incorporator=true,address=street|city|state|zip' (repeatable)", (v: string, a: string[]) => [...a, v], [] as string[])
+  .option("--member-json <json>", "Founder JSON object (repeatable)", (v: string, a: string[]) => [...a, v], [] as string[])
+  .option("--members-file <path>", "Path to a JSON array of founders or {\"members\": [...]}")
   .option("--address <address>", "Company address as 'street,city,state,zip'")
   .option("--fiscal-year-end <date>", "Fiscal year end (MM-DD)", "12-31")
   .option("--s-corp", "Elect S-Corp status")
   .option("--transfer-restrictions", "Enable transfer restrictions")
   .option("--rofr", "Enable right of first refusal")
+  .option("--json", "Output as JSON")
+  .option("--dry-run", "Show the request without creating the entity")
   .action(async (opts) => {
     // Map --entity-type and --legal-name to the internal keys expected by formCommand
     if (opts.entityType && !opts.type) opts.type = opts.entityType;
@@ -833,6 +1101,8 @@ formCmd.command("create")
   .option("--transfer-restrictions", "Enable transfer restrictions")
   .option("--rofr", "Enable right of first refusal")
   .option("--company-address <address>", "Company address as 'street,city,state,zip'")
+  .option("--json", "Output as JSON")
+  .option("--dry-run", "Show the request without creating the pending entity")
   .action(async (opts) => {
     const { formCreateCommand } = await import("./commands/form.js");
     await formCreateCommand(opts);
@@ -843,9 +1113,11 @@ formCmd.command("add-founder <entity-id>")
   .requiredOption("--email <email>", "Founder email")
   .requiredOption("--role <role>", "Role: director|officer|manager|member|chair")
   .requiredOption("--pct <pct>", "Ownership percentage")
-  .option("--officer-title <title>", "Officer title (corporations only)")
+  .addOption(new Option("--officer-title <title>", "Officer title (corporations only)").choices(["ceo", "cfo", "cto", "coo", "secretary", "treasurer", "president", "vp", "other"]))
   .option("--incorporator", "Mark as sole incorporator (corporations only)")
   .option("--address <address>", "Founder address as 'street,city,state,zip'")
+  .option("--json", "Output as JSON")
+  .option("--dry-run", "Show the request without adding the founder")
   .action(async (entityId: string, opts) => {
     const { formAddFounderCommand } = await import("./commands/form.js");
     await formAddFounderCommand(entityId, opts);
@@ -864,6 +1136,8 @@ formCmd.command("finalize <entity-id>")
   .option("--company-address <address>", "Company address as 'street,city,state,zip'")
   .option("--incorporator-name <name>", "Incorporator legal name (overrides founder)")
   .option("--incorporator-address <address>", "Incorporator mailing address (overrides founder)")
+  .option("--json", "Output as JSON")
+  .option("--dry-run", "Show the request without finalizing formation")
   .action(async (entityId: string, opts) => {
     const { formFinalizeCommand } = await import("./commands/form.js");
     await formFinalizeCommand(entityId, opts);

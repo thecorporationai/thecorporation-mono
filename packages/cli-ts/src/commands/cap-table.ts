@@ -1,8 +1,9 @@
 import { requireConfig, resolveEntityId } from "../config.js";
 import { CorpAPIClient } from "../api-client.js";
+import { ensureSafeInstrument } from "@thecorporation/corp-tools";
 import {
   printCapTable, printSafesTable, printTransfersTable,
-  printValuationsTable, printError, printSuccess, printJson,
+  printValuationsTable, printDryRun, printError, printSuccess, printJson, printWriteResult,
 } from "../output.js";
 import chalk from "chalk";
 
@@ -100,11 +101,25 @@ export async function issueEquityCommand(opts: {
   recipient: string;
   email?: string;
   instrumentId?: string;
+  json?: boolean;
+  dryRun?: boolean;
 }): Promise<void> {
   const cfg = requireConfig("api_url", "api_key", "workspace_id");
   const eid = resolveEntityId(cfg, opts.entityId);
   const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
   try {
+    if (opts.dryRun) {
+      printDryRun("cap_table.issue_equity", {
+        entity_id: eid,
+        grant_type: opts.grantType,
+        shares: opts.shares,
+        recipient: opts.recipient,
+        email: opts.email,
+        instrument_id: opts.instrumentId,
+      });
+      return;
+    }
+
     // Fetch cap table to get issuer and instrument info
     const capTable = await client.getCapTable(eid);
     const issuerLegalEntityId = capTable.issuer_legal_entity_id as string;
@@ -156,6 +171,10 @@ export async function issueEquityCommand(opts: {
     // 3. Issue the round
     const result = await client.issueRound(roundId, { entity_id: eid });
 
+    if (opts.json) {
+      printJson(result);
+      return;
+    }
     printSuccess(`Equity issued: ${opts.shares} shares (${opts.grantType}) to ${opts.recipient}`);
     printJson(result);
   } catch (err) {
@@ -171,25 +190,32 @@ export async function issueSafeCommand(opts: {
   safeType: string;
   valuationCap: number;
   email?: string;
+  json?: boolean;
+  dryRun?: boolean;
 }): Promise<void> {
   const cfg = requireConfig("api_url", "api_key", "workspace_id");
   const eid = resolveEntityId(cfg, opts.entityId);
   const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
   try {
-    // Fetch cap table for issuer and SAFE instrument
+    if (opts.dryRun) {
+      printDryRun("cap_table.issue_safe", {
+        entity_id: eid,
+        investor: opts.investor,
+        amount: opts.amount,
+        safe_type: opts.safeType,
+        valuation_cap: opts.valuationCap,
+        email: opts.email,
+      });
+      return;
+    }
+
     const capTable = await client.getCapTable(eid);
     const issuerLegalEntityId = capTable.issuer_legal_entity_id as string;
     if (!issuerLegalEntityId) {
       printError("No issuer legal entity found. Has this entity been formed with a cap table?");
       process.exit(1);
     }
-
-    const instruments = capTable.instruments as Array<{ instrument_id: string; kind: string; symbol: string }>;
-    const safeInstrument = instruments?.find((i) => i.kind.toLowerCase() === "safe");
-    if (!safeInstrument) {
-      printError("No SAFE instrument found on cap table. Create a SAFE instrument first.");
-      process.exit(1);
-    }
+    const safeInstrument = await ensureSafeInstrument(client, eid);
 
     // Start a staged round for the SAFE
     const round = await client.startEquityRound({
@@ -213,6 +239,10 @@ export async function issueSafeCommand(opts: {
 
     // Issue the round
     const result = await client.issueRound(roundId, { entity_id: eid });
+    if (opts.json) {
+      printJson(result);
+      return;
+    }
     printSuccess(`SAFE issued: $${(opts.amount / 100).toLocaleString()} to ${opts.investor}`);
     printJson(result);
   } catch (err) {
@@ -233,11 +263,30 @@ export async function transferSharesCommand(opts: {
   prepareIntentId?: string;
   pricePerShareCents?: number;
   relationship?: string;
+  json?: boolean;
+  dryRun?: boolean;
 }): Promise<void> {
   const cfg = requireConfig("api_url", "api_key", "workspace_id");
   const eid = resolveEntityId(cfg, opts.entityId);
   const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
   try {
+    if (opts.dryRun) {
+      printDryRun("cap_table.transfer_shares", {
+        entity_id: eid,
+        from_contact_id: opts.from,
+        to_contact_id: opts.to,
+        share_count: opts.shares,
+        transfer_type: opts.type,
+        share_class_id: opts.shareClassId,
+        governing_doc_type: opts.governingDocType,
+        transferee_rights: opts.transfereeRights,
+        prepare_intent_id: opts.prepareIntentId,
+        price_per_share_cents: opts.pricePerShareCents,
+        relationship_to_holder: opts.relationship,
+      });
+      return;
+    }
+
     let intentId = opts.prepareIntentId;
     if (!intentId) {
       const intent = await client.createExecutionIntent({
@@ -263,8 +312,7 @@ export async function transferSharesCommand(opts: {
     if (opts.pricePerShareCents != null) body.price_per_share_cents = opts.pricePerShareCents;
     if (opts.relationship) body.relationship_to_holder = opts.relationship;
     const result = await client.transferShares(body);
-    printSuccess(`Transfer workflow created: ${result.workflow_id ?? "OK"}`);
-    printJson(result);
+    printWriteResult(result, `Transfer workflow created: ${result.workflow_id ?? "OK"}`, opts.json);
   } catch (err) {
     printError(`Failed to create transfer workflow: ${err}`);
     process.exit(1);
@@ -276,17 +324,23 @@ export async function distributeCommand(opts: {
   amount: number;
   type: string;
   description: string;
+  json?: boolean;
+  dryRun?: boolean;
 }): Promise<void> {
   const cfg = requireConfig("api_url", "api_key", "workspace_id");
   const eid = resolveEntityId(cfg, opts.entityId);
   const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
   try {
-    const result = await client.calculateDistribution({
+    const payload = {
       entity_id: eid, total_amount_cents: opts.amount, distribution_type: opts.type,
       description: opts.description,
-    });
-    printSuccess(`Distribution calculated: ${result.distribution_id ?? "OK"}`);
-    printJson(result);
+    };
+    if (opts.dryRun) {
+      printDryRun("cap_table.distribute", payload);
+      return;
+    }
+    const result = await client.calculateDistribution(payload);
+    printWriteResult(result, `Distribution calculated: ${result.distribution_id ?? "OK"}`, opts.json);
   } catch (err) {
     printError(`Failed to calculate distribution: ${err}`);
     process.exit(1);
@@ -297,18 +351,24 @@ export async function startRoundCommand(opts: {
   entityId?: string;
   name: string;
   issuerLegalEntityId: string;
+  json?: boolean;
+  dryRun?: boolean;
 }): Promise<void> {
   const cfg = requireConfig("api_url", "api_key", "workspace_id");
   const eid = resolveEntityId(cfg, opts.entityId);
   const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
   try {
-    const result = await client.startEquityRound({
+    const payload = {
       entity_id: eid,
       name: opts.name,
       issuer_legal_entity_id: opts.issuerLegalEntityId,
-    });
-    printSuccess(`Round started: ${result.round_id ?? "OK"}`);
-    printJson(result);
+    };
+    if (opts.dryRun) {
+      printDryRun("cap_table.start_round", payload);
+      return;
+    }
+    const result = await client.startEquityRound(payload);
+    printWriteResult(result, `Round started: ${result.round_id ?? "OK"}`, opts.json);
   } catch (err) {
     printError(`Failed to start round: ${err}`);
     process.exit(1);
@@ -325,6 +385,8 @@ export async function addSecurityCommand(opts: {
   recipientName: string;
   principalCents?: number;
   grantType?: string;
+  json?: boolean;
+  dryRun?: boolean;
 }): Promise<void> {
   const cfg = requireConfig("api_url", "api_key", "workspace_id");
   const eid = resolveEntityId(cfg, opts.entityId);
@@ -340,9 +402,12 @@ export async function addSecurityCommand(opts: {
     if (opts.email) body.email = opts.email;
     if (opts.principalCents) body.principal_cents = opts.principalCents;
     if (opts.grantType) body.grant_type = opts.grantType;
+    if (opts.dryRun) {
+      printDryRun("cap_table.add_security", { round_id: opts.roundId, ...body });
+      return;
+    }
     const result = await client.addRoundSecurity(opts.roundId, body);
-    printSuccess(`Security added for ${opts.recipientName}`);
-    printJson(result);
+    printWriteResult(result, `Security added for ${opts.recipientName}`, opts.json);
   } catch (err) {
     printError(`Failed to add security: ${err}`);
     process.exit(1);
@@ -352,14 +417,19 @@ export async function addSecurityCommand(opts: {
 export async function issueRoundCommand(opts: {
   entityId?: string;
   roundId: string;
+  json?: boolean;
+  dryRun?: boolean;
 }): Promise<void> {
   const cfg = requireConfig("api_url", "api_key", "workspace_id");
   const eid = resolveEntityId(cfg, opts.entityId);
   const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
   try {
+    if (opts.dryRun) {
+      printDryRun("cap_table.issue_round", { entity_id: eid, round_id: opts.roundId });
+      return;
+    }
     const result = await client.issueRound(opts.roundId, { entity_id: eid });
-    printSuccess("Round issued and closed");
-    printJson(result);
+    printWriteResult(result, "Round issued and closed", opts.json);
   } catch (err) {
     printError(`Failed to issue round: ${err}`);
     process.exit(1);
@@ -373,6 +443,8 @@ export async function createValuationCommand(opts: {
   methodology: string;
   fmv?: number;
   enterpriseValue?: number;
+  json?: boolean;
+  dryRun?: boolean;
 }): Promise<void> {
   const cfg = requireConfig("api_url", "api_key", "workspace_id");
   const eid = resolveEntityId(cfg, opts.entityId);
@@ -386,9 +458,12 @@ export async function createValuationCommand(opts: {
     };
     if (opts.fmv != null) body.fmv_per_share_cents = opts.fmv;
     if (opts.enterpriseValue != null) body.enterprise_value_cents = opts.enterpriseValue;
+    if (opts.dryRun) {
+      printDryRun("cap_table.create_valuation", body);
+      return;
+    }
     const result = await client.createValuation(body);
-    printSuccess(`Valuation created: ${result.valuation_id ?? "OK"}`);
-    printJson(result);
+    printWriteResult(result, `Valuation created: ${result.valuation_id ?? "OK"}`, opts.json);
   } catch (err) {
     printError(`Failed to create valuation: ${err}`);
     process.exit(1);
@@ -398,12 +473,22 @@ export async function createValuationCommand(opts: {
 export async function submitValuationCommand(opts: {
   entityId?: string;
   valuationId: string;
+  json?: boolean;
+  dryRun?: boolean;
 }): Promise<void> {
   const cfg = requireConfig("api_url", "api_key", "workspace_id");
   const eid = resolveEntityId(cfg, opts.entityId);
   const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
   try {
+    if (opts.dryRun) {
+      printDryRun("cap_table.submit_valuation", { entity_id: eid, valuation_id: opts.valuationId });
+      return;
+    }
     const result = await client.submitValuationForApproval(opts.valuationId, eid);
+    if (opts.json) {
+      printJson(result);
+      return;
+    }
     printSuccess(`Valuation submitted for approval: ${result.valuation_id ?? "OK"}`);
     if (result.meeting_id) console.log(`  Meeting: ${result.meeting_id}`);
     if (result.agenda_item_id) console.log(`  Agenda Item: ${result.agenda_item_id}`);
@@ -423,14 +508,23 @@ export async function approveValuationCommand(opts: {
   entityId?: string;
   valuationId: string;
   resolutionId?: string;
+  json?: boolean;
+  dryRun?: boolean;
 }): Promise<void> {
   const cfg = requireConfig("api_url", "api_key", "workspace_id");
   const eid = resolveEntityId(cfg, opts.entityId);
   const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
   try {
+    if (opts.dryRun) {
+      printDryRun("cap_table.approve_valuation", {
+        entity_id: eid,
+        valuation_id: opts.valuationId,
+        resolution_id: opts.resolutionId,
+      });
+      return;
+    }
     const result = await client.approveValuation(opts.valuationId, eid, opts.resolutionId);
-    printSuccess(`Valuation approved: ${result.valuation_id ?? "OK"}`);
-    printJson(result);
+    printWriteResult(result, `Valuation approved: ${result.valuation_id ?? "OK"}`, opts.json);
   } catch (err) {
     const msg = String(err);
     if (msg.includes("400")) {

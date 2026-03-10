@@ -9,8 +9,14 @@ fn main() {
         .join("ast");
 
     // Re-run build if any AST source file changes
-    println!("cargo:rerun-if-changed={}", ast_dir.join("meta.json").display());
-    println!("cargo:rerun-if-changed={}", ast_dir.join("rules.json").display());
+    println!(
+        "cargo:rerun-if-changed={}",
+        ast_dir.join("meta.json").display()
+    );
+    println!(
+        "cargo:rerun-if-changed={}",
+        ast_dir.join("rules.json").display()
+    );
     println!(
         "cargo:rerun-if-changed={}",
         ast_dir.join("structured-data.json").display()

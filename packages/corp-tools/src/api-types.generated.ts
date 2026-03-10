@@ -368,22 +368,6 @@ export type paths = {
         patch?: never;
         trace?: never;
     };
-    "/v1/chat/session": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["create_chat_session"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/v1/compliance/escalations/scan": {
         parameters: {
             query?: never;
@@ -1265,6 +1249,22 @@ export type paths = {
         patch?: never;
         trace?: never;
     };
+    "/v1/entities/{entity_id}/share-transfers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_legacy_share_transfers"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/entities/{entity_id}/spending-limits": {
         parameters: {
             query?: never;
@@ -1307,6 +1307,102 @@ export type paths = {
         get: operations["list_valuations"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/entities/{entity_id}/work-items": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_work_items"];
+        put?: never;
+        post: operations["create_work_item"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/entities/{entity_id}/work-items/{work_item_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_work_item"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/entities/{entity_id}/work-items/{work_item_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["cancel_work_item"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/entities/{entity_id}/work-items/{work_item_id}/claim": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["claim_work_item"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/entities/{entity_id}/work-items/{work_item_id}/complete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["complete_work_item"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/entities/{entity_id}/work-items/{work_item_id}/release": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["release_work_item"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1611,6 +1707,22 @@ export type paths = {
         get?: never;
         put?: never;
         post: operations["start_fundraising_workflow_signatures"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/equity/grants": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["create_legacy_grant"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2625,6 +2737,54 @@ export type paths = {
         patch?: never;
         trace?: never;
     };
+    "/v1/human/sign/{document_id}/pdf": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_signing_pdf"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/human/sign/{document_id}/resolve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["resolve_signing_link"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/human/sign/{document_id}/submit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["submit_signing"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/intents/{intent_id}/authorize": {
         parameters: {
             query?: never;
@@ -3415,6 +3575,22 @@ export type paths = {
         patch?: never;
         trace?: never;
     };
+    "/v1/share-transfers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["create_legacy_share_transfer"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/sign/{document_id}": {
         parameters: {
             query?: never;
@@ -3875,6 +4051,7 @@ export type components = {
          */
         AccountType: "asset" | "liability" | "equity" | "revenue" | "expense";
         AddFounderRequest: {
+            address?: null | components["schemas"]["Address"];
             email?: string | null;
             is_incorporator?: boolean | null;
             name: string;
@@ -4237,12 +4414,10 @@ export type components = {
             accounts: components["schemas"]["AccountResponse"][];
             entity_id: components["schemas"]["EntityId"];
         };
-        ChatSessionRequest: {
-            email: string;
-        };
-        ChatSessionResponse: {
-            expires_at: string;
-            ws_token: string;
+        ClaimWorkItemRequest: {
+            claimed_by: string;
+            /** Format: int64 */
+            ttl_seconds?: number | null;
         };
         /** Format: uuid */
         ClassificationId: string;
@@ -4278,6 +4453,10 @@ export type components = {
             entity_id: components["schemas"]["EntityId"];
             phase?: string | null;
             required_signers?: string[];
+        };
+        CompleteWorkItemRequest: {
+            completed_by: string;
+            result?: string | null;
         };
         /** Format: uuid */
         ComplianceEscalationId: string;
@@ -4329,7 +4508,9 @@ export type components = {
             contact_id: components["schemas"]["ContactId"];
             email?: string | null;
             entities: components["schemas"]["EntityId"][];
+            mailing_address?: string | null;
             name: string;
+            notes?: string | null;
             phone?: string | null;
         };
         ContactResponse: {
@@ -4340,6 +4521,7 @@ export type components = {
             created_at: string;
             email?: string | null;
             entity_id: components["schemas"]["EntityId"];
+            mailing_address?: string | null;
             name: string;
             notes?: string | null;
             phone?: string | null;
@@ -4376,7 +4558,7 @@ export type components = {
          * @description Template type for generated contracts.
          * @enum {string}
          */
-        ContractTemplateType: "consulting_agreement" | "employment_offer" | "contractor_agreement" | "nda" | "custom";
+        ContractTemplateType: "consulting_agreement" | "employment_offer" | "contractor_agreement" | "nda" | "safe_agreement" | "custom";
         /** Format: uuid */
         ControlLinkId: string;
         ControlLinkResponse: {
@@ -4445,6 +4627,7 @@ export type components = {
             total_new_units: number;
         };
         ConvertEntityRequest: {
+            jurisdiction?: null | components["schemas"]["Jurisdiction"];
             target_type: components["schemas"]["EntityType"];
         };
         CreateAccountRequest: {
@@ -4498,7 +4681,9 @@ export type components = {
             contact_type: components["schemas"]["ContactType"];
             email?: string | null;
             entity_id: components["schemas"]["EntityId"];
+            mailing_address?: string | null;
             name: string;
+            notes?: string | null;
         };
         CreateControlLinkRequest: {
             child_legal_entity_id: components["schemas"]["LegalEntityId"];
@@ -4632,6 +4817,24 @@ export type components = {
             entity_id: components["schemas"]["EntityId"];
             lines: components["schemas"]["LedgerLineRequest"][];
         };
+        CreateLegacyGrantRequest: {
+            entity_id: components["schemas"]["EntityId"];
+            grant_type: components["schemas"]["GrantType"];
+            recipient_name: string;
+            /** Format: int64 */
+            shares: number;
+        };
+        CreateLegacyShareTransferRequest: {
+            entity_id: components["schemas"]["EntityId"];
+            from_holder: string;
+            governing_doc_type?: null | components["schemas"]["GoverningDocType"];
+            share_class_id: components["schemas"]["ShareClassId"];
+            /** Format: int64 */
+            shares: number;
+            to_holder: string;
+            transfer_type: components["schemas"]["TransferType"];
+            transferee_rights?: null | components["schemas"]["TransfereeRights"];
+        };
         CreateLegalEntityRequest: {
             entity_id: components["schemas"]["EntityId"];
             linked_entity_id?: null | components["schemas"]["EntityId"];
@@ -4670,9 +4873,17 @@ export type components = {
             pay_period_start: string;
         };
         CreatePendingFormationRequest: {
+            company_address?: null | components["schemas"]["Address"];
             entity_type: components["schemas"]["EntityType"];
+            fiscal_year_end?: string | null;
+            formation_date?: string | null;
             jurisdiction?: null | components["schemas"]["Jurisdiction"];
             legal_name: string;
+            registered_agent_address?: string | null;
+            registered_agent_name?: string | null;
+            right_of_first_refusal?: boolean | null;
+            s_corp_election?: boolean | null;
+            transfer_restrictions?: boolean | null;
         };
         CreateProxyRequest: {
             description?: string | null;
@@ -4729,6 +4940,7 @@ export type components = {
             transferee_rights: components["schemas"]["TransfereeRights"];
         };
         CreateValuationRequest: {
+            dlom?: string | null;
             /** Format: date */
             effective_date: string;
             /** Format: int64 */
@@ -4740,8 +4952,19 @@ export type components = {
             hurdle_amount_cents?: number | null;
             methodology: components["schemas"]["ValuationMethodology"];
             provider_contact_id?: null | components["schemas"]["ContactId"];
+            report_date?: string | null;
             report_document_id?: null | components["schemas"]["DocumentId"];
             valuation_type: components["schemas"]["ValuationType"];
+        };
+        CreateWorkItemRequest: {
+            asap?: boolean;
+            category: string;
+            created_by?: string | null;
+            /** Format: date */
+            deadline?: string | null;
+            description?: string | null;
+            metadata?: unknown;
+            title: string;
         };
         /**
          * @description A cron expression validated to have at least 5 whitespace-separated fields.
@@ -4823,6 +5046,7 @@ export type components = {
         };
         DigestTriggerResponse: {
             digest_count: number;
+            message: string;
             triggered: boolean;
         };
         DilutionPreviewQuery: {
@@ -4938,14 +5162,14 @@ export type components = {
          * @description Type of legal document.
          * @enum {string}
          */
-        DocumentType: "articles_of_incorporation" | "articles_of_organization" | "bylaws" | "operating_agreement" | "ss4_application" | "meeting_notice" | "resolution" | "safe_agreement";
+        DocumentType: "articles_of_incorporation" | "articles_of_organization" | "bylaws" | "incorporator_action" | "initial_board_consent" | "operating_agreement" | "initial_written_consent" | "ss4_application" | "meeting_notice" | "resolution" | "consulting_agreement" | "employment_offer_letter" | "contractor_services_agreement" | "mutual_nondisclosure_agreement" | "safe_agreement" | "four_oh_nine_a_valuation_report" | "stock_transfer_agreement" | "transfer_board_consent" | "financing_board_consent" | "equity_issuance_approval" | "subscription_agreement" | "investor_rights_agreement" | "restricted_stock_purchase_agreement" | "ip_assignment_agreement" | "contract";
         /** Format: uuid */
         EntityId: string;
         /**
          * @description The legal structure of a business entity.
          * @enum {string}
          */
-        EntityType: "corporation" | "llc";
+        EntityType: "c_corp" | "llc";
         /** Format: uuid */
         EquityRoundId: string;
         /** @enum {string} */
@@ -5005,6 +5229,21 @@ export type components = {
         FinalizeAgendaItemRequest: {
             entity_id: components["schemas"]["EntityId"];
             status: components["schemas"]["AgendaItemStatus"];
+        };
+        FinalizePendingFormationRequest: {
+            /** Format: int64 */
+            authorized_shares?: number | null;
+            company_address?: null | components["schemas"]["Address"];
+            fiscal_year_end?: string | null;
+            formation_date?: string | null;
+            incorporator_address?: string | null;
+            incorporator_name?: string | null;
+            par_value?: string | null;
+            registered_agent_address?: string | null;
+            registered_agent_name?: string | null;
+            right_of_first_refusal?: boolean | null;
+            s_corp_election?: boolean | null;
+            transfer_restrictions?: boolean | null;
         };
         FinalizeWorkflowRequest: {
             entity_id: components["schemas"]["EntityId"];
@@ -5094,6 +5333,7 @@ export type components = {
             vesting?: null | components["schemas"]["VestingSchedule"];
         };
         FounderSummary: {
+            address?: null | components["schemas"]["Address"];
             email?: string | null;
             name: string;
             /** Format: double */
@@ -5359,6 +5599,11 @@ export type components = {
          * @enum {string}
          */
         GoverningDocType: "bylaws" | "operating_agreement" | "shareholder_agreement" | "other";
+        /**
+         * @description The type of equity grant.
+         * @enum {string}
+         */
+        GrantType: "common_stock" | "preferred_stock" | "membership_unit" | "stock_option" | "iso" | "nso" | "rsa" | "svu";
         /** Format: uuid */
         HolderId: string;
         HolderResponse: {
@@ -5736,7 +5981,7 @@ export type components = {
          * @description Officer title for a corporate officer.
          * @enum {string}
          */
-        OfficerTitle: "ceo" | "cfo" | "secretary" | "president" | "vp" | "other";
+        OfficerTitle: "ceo" | "cfo" | "cto" | "coo" | "secretary" | "treasurer" | "president" | "vp" | "other";
         /** Format: uuid */
         PacketId: string;
         PacketItem: {
@@ -6271,9 +6516,34 @@ export type components = {
             obligation_id: components["schemas"]["ObligationId"];
             token: string;
         };
+        /** @description Contract details included in signing resolve response. */
+        SigningContractDetails: {
+            counterparty_name: string;
+            effective_date: string;
+            parameters: unknown;
+            rendered_text?: string | null;
+            template_label?: string | null;
+            template_type: string;
+        };
         SigningLinkResponse: {
             document_id: components["schemas"]["DocumentId"];
             signing_url: string;
+            token: string;
+        };
+        /** @description Response for the public resolve endpoint. */
+        SigningResolveResponse: {
+            contract?: null | components["schemas"]["SigningContractDetails"];
+            document_id: components["schemas"]["DocumentId"];
+            document_status: string;
+            document_title: string;
+            entity_id: components["schemas"]["EntityId"];
+            /** @description Entity legal name for display. */
+            entity_name?: string | null;
+            /** @description Public PDF preview URL for the signing page. */
+            pdf_url?: string | null;
+            /** @description Plain-text preview fallback when a PDF is unavailable. */
+            preview_text?: string | null;
+            signatures: components["schemas"]["SignatureSummary"][];
         };
         /** Format: uuid */
         SpendingLimitId: string;
@@ -6449,8 +6719,10 @@ export type components = {
         };
         UpdateContactRequest: {
             cap_table_access?: null | components["schemas"]["CapTableAccess"];
+            category?: null | components["schemas"]["ContactCategory"];
             email?: string | null;
             entity_id: components["schemas"]["EntityId"];
+            mailing_address?: string | null;
             name?: string | null;
             notes?: string | null;
             phone?: string | null;
@@ -6459,8 +6731,13 @@ export type components = {
             adopted_by: string;
             /** Format: int32 */
             board_size?: number | null;
+            company_address?: null | components["schemas"]["CompanyAddress"];
+            directors?: components["schemas"]["DirectorInfo"][] | null;
+            document_options?: null | components["schemas"]["DocumentOptions"];
             /** Format: date */
             effective_date: string;
+            fiscal_year_end?: null | components["schemas"]["FiscalYearEnd"];
+            founders?: components["schemas"]["FounderInfo"][] | null;
             incomplete_profile?: boolean | null;
             incorporator_address?: string | null;
             incorporator_name?: string | null;
@@ -6470,10 +6747,12 @@ export type components = {
             legal_name: string;
             /** Format: date */
             next_mandatory_review: string;
+            officers?: components["schemas"]["OfficerInfo"][] | null;
             principal_name?: string | null;
             principal_title?: string | null;
             registered_agent_address?: string | null;
             registered_agent_name?: string | null;
+            stock_details?: null | components["schemas"]["StockDetails"];
         };
         UpdateNotificationPrefsRequest: {
             email_enabled?: boolean | null;
@@ -6561,6 +6840,32 @@ export type components = {
          * @enum {string}
          */
         VotingMethod: "per_capita" | "per_unit";
+        /** Format: uuid */
+        WorkItemId: string;
+        WorkItemResponse: {
+            asap: boolean;
+            category: string;
+            /** Format: int64 */
+            claim_ttl_seconds?: number | null;
+            claimed_at?: string | null;
+            claimed_by?: string | null;
+            completed_at?: string | null;
+            completed_by?: string | null;
+            created_at: string;
+            created_by?: string | null;
+            /** Format: date */
+            deadline?: string | null;
+            description: string;
+            effective_status: components["schemas"]["WorkItemStatus"];
+            entity_id: components["schemas"]["EntityId"];
+            metadata: unknown;
+            result?: string | null;
+            status: components["schemas"]["WorkItemStatus"];
+            title: string;
+            work_item_id: components["schemas"]["WorkItemId"];
+        };
+        /** @enum {string} */
+        WorkItemStatus: "open" | "claimed" | "completed" | "cancelled";
         WorkerWorkspaceQuery: {
             workspace_id: components["schemas"]["WorkspaceId"];
         };
@@ -7332,44 +7637,6 @@ export interface operations {
             };
             /** @description Invalid branch name */
             400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    create_chat_session: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ChatSessionRequest"];
-            };
-        };
-        responses: {
-            /** @description Chat session created */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ChatSessionResponse"];
-                };
-            };
-            /** @description Invalid email */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Chat sessions not configured */
-            503: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -9027,6 +9294,24 @@ export interface operations {
             };
         };
     };
+    list_legacy_share_transfers: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description List of share transfers */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     list_spending_limits: {
         parameters: {
             query?: never;
@@ -9096,6 +9381,255 @@ export interface operations {
             };
             /** @description Entity not found */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    list_work_items: {
+        parameters: {
+            query?: {
+                status?: null | components["schemas"]["WorkItemStatus"];
+                category?: string | null;
+            };
+            header?: never;
+            path: {
+                /** @description Entity ID */
+                entity_id: components["schemas"]["EntityId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description List of work items */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkItemResponse"][];
+                };
+            };
+        };
+    };
+    create_work_item: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Entity ID */
+                entity_id: components["schemas"]["EntityId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateWorkItemRequest"];
+            };
+        };
+        responses: {
+            /** @description Work item created */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkItemResponse"];
+                };
+            };
+        };
+    };
+    get_work_item: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Entity ID */
+                entity_id: components["schemas"]["EntityId"];
+                /** @description Work Item ID */
+                work_item_id: components["schemas"]["WorkItemId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Work item details */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkItemResponse"];
+                };
+            };
+            /** @description Work item not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    cancel_work_item: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Entity ID */
+                entity_id: components["schemas"]["EntityId"];
+                /** @description Work Item ID */
+                work_item_id: components["schemas"]["WorkItemId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Work item cancelled */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkItemResponse"];
+                };
+            };
+            /** @description Work item not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Invalid state transition */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    claim_work_item: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Entity ID */
+                entity_id: components["schemas"]["EntityId"];
+                /** @description Work Item ID */
+                work_item_id: components["schemas"]["WorkItemId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ClaimWorkItemRequest"];
+            };
+        };
+        responses: {
+            /** @description Work item claimed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkItemResponse"];
+                };
+            };
+            /** @description Work item not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Invalid state transition */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    complete_work_item: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Entity ID */
+                entity_id: components["schemas"]["EntityId"];
+                /** @description Work Item ID */
+                work_item_id: components["schemas"]["WorkItemId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CompleteWorkItemRequest"];
+            };
+        };
+        responses: {
+            /** @description Work item completed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkItemResponse"];
+                };
+            };
+            /** @description Work item not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Invalid state transition */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    release_work_item: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Entity ID */
+                entity_id: components["schemas"]["EntityId"];
+                /** @description Work Item ID */
+                work_item_id: components["schemas"]["WorkItemId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Claim released */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkItemResponse"];
+                };
+            };
+            /** @description Work item not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Work item is not claimed */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -9759,6 +10293,28 @@ export interface operations {
             };
             /** @description Workflow has no compiled packet */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    create_legacy_grant: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateLegacyGrantRequest"];
+            };
+        };
+        responses: {
+            /** @description Not implemented */
+            501: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -11077,7 +11633,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FinalizePendingFormationRequest"];
+            };
+        };
         responses: {
             /** @description Formation finalized with cap table */
             200: {
@@ -11905,6 +12465,116 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["SignerTokenResponse"];
                 };
+            };
+        };
+    };
+    get_signing_pdf: {
+        parameters: {
+            query: {
+                /** @description Signing token */
+                token: string;
+            };
+            header?: never;
+            path: {
+                /** @description Document ID */
+                document_id: components["schemas"]["DocumentId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description PDF preview for signing */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/pdf": unknown;
+                };
+            };
+            /** @description Invalid token or document not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    resolve_signing_link: {
+        parameters: {
+            query: {
+                /** @description Signing token */
+                token: string;
+            };
+            header?: never;
+            path: {
+                /** @description Document ID */
+                document_id: components["schemas"]["DocumentId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Document metadata for signing UI */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SigningResolveResponse"];
+                };
+            };
+            /** @description Invalid token or document not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    submit_signing: {
+        parameters: {
+            query: {
+                /** @description Signing token */
+                token: string;
+            };
+            header?: never;
+            path: {
+                /** @description Document ID */
+                document_id: components["schemas"]["DocumentId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SignDocumentRequest"];
+            };
+        };
+        responses: {
+            /** @description Document signed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SignDocumentResponse"];
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Invalid token or document not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
@@ -13419,6 +14089,28 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["ServiceTokenResponse"];
                 };
+            };
+        };
+    };
+    create_legacy_share_transfer: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateLegacyShareTransferRequest"];
+            };
+        };
+        responses: {
+            /** @description Transfer created */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

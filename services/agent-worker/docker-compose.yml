@@ -15,6 +15,7 @@ services:
       dockerfile: services/api-rs/Dockerfile
     environment:
       - REDIS_URL=redis://valkey:6379
+      - INTERNAL_WORKER_TOKEN=dev-internal-worker-token
       - JWT_SECRET=dev-secret-do-not-use-in-production
       - DATA_DIR=/data/repos
     ports:
@@ -31,6 +32,7 @@ services:
     environment:
       - REDIS_URL=redis://valkey:6379
       - API_BASE_URL=http://api:8000
+      - API_BEARER_TOKEN=dev-internal-worker-token
       - DOCKER_HOST=unix:///var/run/docker.sock
       - WORKSPACE_ROOT=/var/lib/agents/workspaces
       - RUNTIME_IMAGE=agents-runtime:pi
@@ -44,6 +46,15 @@ services:
       - api
     deploy:
       replicas: 2
+
+  agent-runtime:
+    image: agents-runtime:pi
+    build:
+      context: ../..
+      dockerfile: services/agent-worker/Dockerfile.runtime
+      target: pi
+    profiles:
+      - build-only
 
 volumes:
   api-data:

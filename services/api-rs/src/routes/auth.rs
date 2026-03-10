@@ -8,10 +8,7 @@ use axum::{
     http::StatusCode,
     routing::{delete, post},
 };
-use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
-use hmac::{Hmac, Mac};
 use serde::{Deserialize, Serialize};
-use sha2::Sha256;
 
 use super::AppState;
 use crate::auth::RequireAdmin;
@@ -23,8 +20,6 @@ use crate::domain::auth::{
 use crate::domain::ids::{ApiKeyId, ContactId, EntityId, WorkspaceId};
 use crate::error::AppError;
 use crate::store::workspace_store::WorkspaceStore;
-
-type HmacSha256 = Hmac<Sha256>;
 
 // ── Request types ────────────────────────────────────────────────────
 
@@ -62,12 +57,6 @@ pub struct TokenExchangeRequest {
     pub ttl_seconds: i64,
 }
 
-#[derive(Deserialize, utoipa::ToSchema)]
-#[serde(deny_unknown_fields)]
-pub struct ChatSessionRequest {
-    pub email: String,
-}
-
 fn default_ttl() -> i64 {
     3600
 }
@@ -102,18 +91,6 @@ pub struct TokenExchangeResponse {
     pub access_token: String,
     pub token_type: String,
     pub expires_in: i64,
-}
-
-#[derive(Serialize, utoipa::ToSchema)]
-pub struct ChatSessionResponse {
-    pub ws_token: String,
-    pub expires_at: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct ChatOwnerRecord {
-    owner_email: String,
-    created_at: String,
 }
 
 // ── Handlers ─────────────────────────────────────────────────────────
@@ -506,166 +483,10 @@ async fn token_exchange(
     }))
 }
 
-fn normalize_email(raw: &str) -> Result<String, AppError> {
-    let email = raw.trim().to_lowercase();
-    if email.is_empty() || email.len() > 320 {
-        return Err(AppError::BadRequest("email is required".to_owned()));
-    }
-    if !email.contains('@') || email.starts_with('@') || email.ends_with('@') {
-        return Err(AppError::BadRequest("invalid email address".to_owned()));
-    }
-    Ok(email)
-}
-
-fn chat_workspace_name(email: &str) -> String {
-    let base = format!("Chat Workspace ({email})");
-    if base.len() <= 256 {
-        base
-    } else {
-        base.chars().take(256).collect()
-    }
-}
-
-fn mint_chat_ws_token(
-    secret: &str,
-    email: &str,
-    workspace_id: WorkspaceId,
-    api_key: &str,
-    exp_unix: i64,
-) -> Result<String, AppError> {
-    let payload = serde_json::json!({
-        "email": email,
-        "workspace_id": workspace_id,
-        "api_key": api_key,
-        "exp": exp_unix,
-    });
-    let payload_json = serde_json::to_vec(&payload)
-        .map_err(|e| AppError::Internal(format!("serialize ws token payload: {e}")))?;
-    let payload_b64 = URL_SAFE_NO_PAD.encode(payload_json);
-
-    let mut mac = HmacSha256::new_from_slice(secret.as_bytes())
-        .map_err(|e| AppError::Internal(format!("init ws token signer: {e}")))?;
-    mac.update(payload_b64.as_bytes());
-    let signature = mac.finalize().into_bytes();
-    let signature_b64 = URL_SAFE_NO_PAD.encode(signature);
-
-    Ok(format!("{payload_b64}.{signature_b64}"))
-}
-
-#[utoipa::path(
-    post,
-    path = "/v1/chat/session",
-    tag = "auth",
-    request_body = ChatSessionRequest,
-    responses(
-        (status = 200, description = "Chat session created", body = ChatSessionResponse),
-        (status = 400, description = "Invalid email"),
-        (status = 503, description = "Chat sessions not configured"),
-    ),
-)]
-async fn create_chat_session(
-    State(state): State<AppState>,
-    Json(req): Json<ChatSessionRequest>,
-) -> Result<(StatusCode, Json<ChatSessionResponse>), AppError> {
-    let email = normalize_email(&req.email)?;
-    let chat_secret = std::env::var("TERMINAL_AUTH_SECRET").unwrap_or_default();
-    if chat_secret.trim().is_empty() {
-        return Err(AppError::ServiceUnavailable(
-            "chat sessions are not configured".to_owned(),
-        ));
-    }
-
-    let (workspace_id, raw_key) = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let email = email.clone();
-        move || {
-            // Resolve existing workspace bound to this chat email.
-            let existing_workspace = layout.list_workspace_ids().into_iter().find(|ws_id| {
-                let ws_store = match WorkspaceStore::open(&layout, *ws_id) {
-                    Ok(store) => store,
-                    Err(_) => return false,
-                };
-                match ws_store.read_json::<ChatOwnerRecord>("chat/owner.json") {
-                    Ok(owner) => owner.owner_email == email,
-                    Err(_) => false,
-                }
-            });
-
-            let workspace_id = existing_workspace.unwrap_or_else(WorkspaceId::new);
-            let ws_store = match existing_workspace {
-                Some(_) => WorkspaceStore::open(&layout, workspace_id).map_err(|e| {
-                    AppError::NotFound(format!(
-                        "workspace not found during chat session setup: {e}"
-                    ))
-                })?,
-                None => {
-                    let ws =
-                        WorkspaceStore::init(&layout, workspace_id, &chat_workspace_name(&email))
-                            .map_err(|e| AppError::Internal(format!("init workspace: {e}")))?;
-                    ws.write_json(
-                        "chat/owner.json",
-                        &ChatOwnerRecord {
-                            owner_email: email.clone(),
-                            created_at: chrono::Utc::now().to_rfc3339(),
-                        },
-                        "Bind workspace to chat owner",
-                    )
-                    .map_err(|e| AppError::Internal(format!("commit chat owner mapping: {e}")))?;
-                    ws
-                }
-            };
-
-            // Generate a fresh API key for each chat session (raw key is only available at creation time).
-            let scopes = ScopeSet::from_vec(vec![Scope::All]);
-            let (raw_key, record) = generate_api_key(
-                workspace_id,
-                format!("chat-session-{}", chrono::Utc::now().format("%Y%m%d%H%M%S")),
-                scopes,
-                Some(chrono::Utc::now() + chrono::Duration::hours(12)),
-                None,
-                None,
-            )
-            .map_err(|e| AppError::Internal(format!("generate chat session key: {e}")))?;
-            let key_id = record.key_id();
-            let path = format!("api-keys/{key_id}.json");
-            ws_store
-                .write_json(&path, &record, &format!("Create chat session key {key_id}"))
-                .map_err(|e| AppError::Internal(format!("commit chat session key: {e}")))?;
-
-            Ok::<_, AppError>((workspace_id, raw_key))
-        }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
-
-    let expires_in = std::env::var("CHAT_WS_TOKEN_TTL_SEC")
-        .ok()
-        .and_then(|v| v.parse::<i64>().ok())
-        .unwrap_or(3600)
-        .clamp(60, 86_400);
-    let expires_at = chrono::Utc::now() + chrono::Duration::seconds(expires_in);
-    let ws_token = mint_chat_ws_token(
-        &chat_secret,
-        &email,
-        workspace_id,
-        &raw_key,
-        expires_at.timestamp(),
-    )?;
-
-    Ok((
-        StatusCode::OK,
-        Json(ChatSessionResponse {
-            ws_token,
-            expires_at: expires_at.to_rfc3339(),
-        }),
-    ))
-}
-
 // ── Router ───────────────────────────────────────────────────────────
 
 pub fn auth_routes() -> Router<AppState> {
     Router::new()
-        .route("/v1/chat/session", post(create_chat_session))
         .route("/v1/workspaces/provision", post(provision_workspace))
         .route("/v1/api-keys", post(create_api_key).get(list_api_keys))
         .route("/v1/api-keys/{key_id}", delete(revoke_api_key))
@@ -682,7 +503,6 @@ pub fn auth_routes() -> Router<AppState> {
         revoke_api_key,
         rotate_api_key,
         token_exchange,
-        create_chat_session,
     ),
     components(schemas(
         ProvisionWorkspaceRequest,
@@ -691,8 +511,6 @@ pub fn auth_routes() -> Router<AppState> {
         ApiKeyResponse,
         TokenExchangeRequest,
         TokenExchangeResponse,
-        ChatSessionRequest,
-        ChatSessionResponse,
     ))
 )]
 pub struct AuthApi;

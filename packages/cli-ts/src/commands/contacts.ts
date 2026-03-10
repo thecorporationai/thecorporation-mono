@@ -1,6 +1,6 @@
 import { requireConfig, resolveEntityId } from "../config.js";
 import { CorpAPIClient } from "../api-client.js";
-import { printContactsTable, printError, printSuccess, printJson } from "../output.js";
+import { printContactsTable, printError, printJson, printWriteResult } from "../output.js";
 import chalk from "chalk";
 import type { ApiRecord } from "../types.js";
 
@@ -60,6 +60,9 @@ export async function contactsAddCommand(opts: {
   category?: string;
   phone?: string;
   notes?: string;
+  mailingAddress?: string;
+  address?: string;
+  json?: boolean;
 }): Promise<void> {
   const cfg = requireConfig("api_url", "api_key", "workspace_id");
   const eid = resolveEntityId(cfg, opts.entityId);
@@ -74,8 +77,13 @@ export async function contactsAddCommand(opts: {
     };
     if (opts.phone) data.phone = opts.phone;
     if (opts.notes) data.notes = opts.notes;
+    if (opts.mailingAddress ?? opts.address) data.mailing_address = opts.mailingAddress ?? opts.address;
     const result = await client.createContact(data);
-    printSuccess(`Contact created: ${result.contact_id ?? result.id ?? "OK"}`);
+    printWriteResult(
+      result,
+      `Contact created: ${result.contact_id ?? result.id ?? "OK"}`,
+      opts.json,
+    );
   } catch (err) {
     printError(`Failed to create contact: ${err}`);
     process.exit(1);
@@ -84,24 +92,54 @@ export async function contactsAddCommand(opts: {
 
 export async function contactsEditCommand(
   contactId: string,
-  opts: { entityId?: string; name?: string; email?: string; category?: string; phone?: string; notes?: string }
+  opts: {
+    entityId?: string;
+    name?: string;
+    email?: string;
+    category?: string;
+    phone?: string;
+    notes?: string;
+    mailingAddress?: string;
+    address?: string;
+    json?: boolean;
+  }
 ): Promise<void> {
   const cfg = requireConfig("api_url", "api_key", "workspace_id");
   const eid = resolveEntityId(cfg, opts.entityId);
   const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
   try {
     const data: ApiRecord = { entity_id: eid };
-    if (opts.name != null) data.name = opts.name;
-    if (opts.email != null) data.email = opts.email;
-    if (opts.category != null) data.category = opts.category;
-    if (opts.phone != null) data.phone = opts.phone;
-    if (opts.notes != null) data.notes = opts.notes;
-    if (Object.keys(data).length === 0) {
+    let hasUpdates = false;
+    if (opts.name != null) {
+      data.name = opts.name;
+      hasUpdates = true;
+    }
+    if (opts.email != null) {
+      data.email = opts.email;
+      hasUpdates = true;
+    }
+    if (opts.category != null) {
+      data.category = opts.category;
+      hasUpdates = true;
+    }
+    if (opts.phone != null) {
+      data.phone = opts.phone;
+      hasUpdates = true;
+    }
+    if (opts.notes != null) {
+      data.notes = opts.notes;
+      hasUpdates = true;
+    }
+    if (opts.mailingAddress != null || opts.address != null) {
+      data.mailing_address = opts.mailingAddress ?? opts.address;
+      hasUpdates = true;
+    }
+    if (!hasUpdates) {
       console.log("No fields to update.");
       return;
     }
-    await client.updateContact(contactId, data);
-    printSuccess("Contact updated.");
+    const result = await client.updateContact(contactId, data);
+    printWriteResult(result, "Contact updated.", opts.json);
   } catch (err) {
     printError(`Failed to update contact: ${err}`);
     process.exit(1);

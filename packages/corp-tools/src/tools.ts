@@ -135,6 +135,42 @@ const entityActions: Record<string, ToolHandler> = {
   dissolve: async (args, client) => client.dissolveEntity(requiredString(args, "entity_id"), args),
 };
 
+export type CapTableInstrument = { instrument_id: string; kind: string; symbol: string; status?: string };
+
+export async function ensureSafeInstrument(
+  client: CorpAPIClient,
+  entityId: string,
+): Promise<CapTableInstrument> {
+  const capTable = await client.getCapTable(entityId);
+  const issuerLegalEntityId = capTable.issuer_legal_entity_id as string;
+  if (!issuerLegalEntityId) {
+    throw new Error("No issuer legal entity found.");
+  }
+
+  const instruments = (capTable.instruments ?? []) as CapTableInstrument[];
+  const safeInstrument = instruments.find((instrument) => {
+    const status = String(instrument.status ?? "active").toLowerCase();
+    return instrument.kind.toLowerCase() === "safe" && status === "active";
+  });
+  if (safeInstrument) {
+    return safeInstrument;
+  }
+
+  const created = await client.createInstrument({
+    entity_id: entityId,
+    issuer_legal_entity_id: issuerLegalEntityId,
+    symbol: "SAFE",
+    kind: "safe",
+    terms: {},
+  });
+  return {
+    instrument_id: String(created.instrument_id ?? ""),
+    kind: String(created.kind ?? "safe"),
+    symbol: String(created.symbol ?? "SAFE"),
+    status: String(created.status ?? "active"),
+  };
+}
+
 const equityActions: Record<string, ToolHandler> = {
   start_round: async (args, client) => client.startEquityRound(args),
 
@@ -191,10 +227,7 @@ const equityActions: Record<string, ToolHandler> = {
     const capTable = await client.getCapTable(entityId);
     const issuerLegalEntityId = capTable.issuer_legal_entity_id as string;
     if (!issuerLegalEntityId) return { error: "No issuer legal entity found." };
-
-    const instruments = capTable.instruments as Array<{ instrument_id: string; kind: string; symbol: string }>;
-    const safeInstrument = instruments?.find((i) => i.kind.toLowerCase() === "safe");
-    if (!safeInstrument) return { error: "No SAFE instrument found on cap table." };
+    const safeInstrument = await ensureSafeInstrument(client, entityId);
 
     const principalCents = (args.principal_amount_cents ?? args.amount_cents ?? 0) as number;
     const round = await client.startEquityRound({
@@ -213,7 +246,6 @@ const equityActions: Record<string, ToolHandler> = {
       grant_type: args.safe_type ?? "post_money",
     };
     if (args.email) securityData.email = args.email;
-    if (args.valuation_cap_cents) securityData.valuation_cap_cents = args.valuation_cap_cents;
     await client.addRoundSecurity(roundId, securityData);
 
     return client.issueRound(roundId, { entity_id: entityId });

@@ -14,8 +14,8 @@ export type {
   IntentResponse,
 } from "./types.js";
 export { CorpAPIClient, SessionExpiredError, provisionWorkspace } from "./api-client.js";
-export { TOOL_DEFINITIONS, isWriteTool, executeTool } from "./tools.js";
-export type { ToolContext } from "./tools.js";
+export { TOOL_DEFINITIONS, isWriteTool, executeTool, ensureSafeInstrument } from "./tools.js";
+export type { ToolContext, CapTableInstrument } from "./tools.js";
 export { describeToolCall } from "./tool-descriptions.js";
 
 // System prompt
