@@ -1173,6 +1173,18 @@ program
     await demoCommand(opts);
   });
 
+// --- feedback ---
+program
+  .command("feedback")
+  .description("Submit feedback to TheCorporation")
+  .argument("<message>", "Feedback message")
+  .option("--category <category>", "Category (e.g. bug, feature, general)", "general")
+  .option("--email <email>", "Your email address (to receive a copy)")
+  .action(async (message, opts) => {
+    const { feedbackCommand } = await import("./commands/feedback.js");
+    await feedbackCommand(message, opts);
+  });
+
 // --- serve ---
 program
   .command("serve")

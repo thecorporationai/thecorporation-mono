@@ -403,5 +403,21 @@ export const GENERATED_TOOL_DEFINITIONS: Record<string, unknown>[] = [
         "required": ["action"]
       }
     }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "feedback",
+      "description": "Submit feedback to TheCorporation. Logs the feedback and optionally emails a copy to the submitter.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "message": { "type": "string", "description": "Feedback message" },
+          "category": { "type": "string", "description": "Category (e.g. bug, feature, general)" },
+          "email": { "type": "string", "description": "Submitter email to receive a copy" }
+        },
+        "required": ["message"]
+      }
+    }
   }
 ];

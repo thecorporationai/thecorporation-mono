@@ -384,6 +384,11 @@ export class CorpAPIClient {
   // --- Config ---
   getConfig() { return this.get("/v1/config") as Promise<ApiRecord>; }
 
+  // --- Feedback ---
+  submitFeedback(message: string, category?: string, email?: string) {
+    return this.post("/v1/feedback", { message, category, email }) as Promise<{ feedback_id: string; submitted_at: string }>;
+  }
+
   // --- Link/Claim ---
   async createLink(externalId: string, provider: string): Promise<ApiRecord> {
     const resp = await this.request("POST", "/v1/workspaces/link", { external_id: externalId, provider });

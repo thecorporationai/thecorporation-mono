@@ -604,6 +604,20 @@ export async function executeTool(
   client: CorpAPIClient,
   ctx: ToolContext,
 ): Promise<string> {
+  // Handle non-dispatch tools
+  if (name === "feedback") {
+    try {
+      const result = await client.submitFeedback(
+        args.message as string,
+        args.category as string | undefined,
+        args.email as string | undefined,
+      );
+      return JSON.stringify(result, null, 0);
+    } catch (err) {
+      return JSON.stringify({ error: String(err) });
+    }
+  }
+
   const dispatch = TOOL_DISPATCH[name];
   if (!dispatch) return JSON.stringify({ error: `Unknown tool: ${name}` });
 
