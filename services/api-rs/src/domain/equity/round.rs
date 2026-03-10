@@ -167,7 +167,7 @@ impl EquityRound {
         meeting_id: MeetingId,
         resolution_id: ResolutionId,
     ) -> Result<(), EquityError> {
-        if self.status != EquityRoundStatus::Open {
+        if !matches!(self.status, EquityRoundStatus::Draft | EquityRoundStatus::Open) {
             return Err(EquityError::InvalidRoundTransition {
                 from: self.status,
                 to: EquityRoundStatus::BoardApproved,
@@ -251,6 +251,15 @@ mod tests {
 
         round.close().unwrap();
         assert_eq!(round.status(), EquityRoundStatus::Closed);
+    }
+
+    #[test]
+    fn draft_round_can_be_board_approved_for_simple_issuance() {
+        let mut round = make_round();
+        round
+            .record_board_approval(MeetingId::new(), ResolutionId::new())
+            .unwrap();
+        assert_eq!(round.status(), EquityRoundStatus::BoardApproved);
     }
 
     #[test]

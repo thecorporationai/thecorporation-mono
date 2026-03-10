@@ -7,6 +7,63 @@ import {
 } from "../output.js";
 import chalk from "chalk";
 
+type CapTableInstrument = {
+  instrument_id: string;
+  kind: string;
+  symbol: string;
+};
+
+function normalizedGrantType(grantType: string): string {
+  return grantType.trim().toLowerCase().replaceAll("-", "_");
+}
+
+function expectedInstrumentKinds(grantType: string): string[] {
+  switch (normalizedGrantType(grantType)) {
+    case "common":
+    case "common_stock":
+      return ["common_equity"];
+    case "preferred":
+    case "preferred_stock":
+      return ["preferred_equity"];
+    case "membership_unit":
+      return ["membership_unit"];
+    case "stock_option":
+    case "iso":
+    case "nso":
+      return ["option_grant"];
+    case "rsa":
+      return ["common_equity", "preferred_equity"];
+    default:
+      return [];
+  }
+}
+
+function resolveInstrumentForGrant(
+  instruments: CapTableInstrument[],
+  grantType: string,
+  explicitInstrumentId?: string,
+): CapTableInstrument {
+  if (explicitInstrumentId) {
+    const explicit = instruments.find((instrument) => instrument.instrument_id === explicitInstrumentId);
+    if (!explicit) {
+      throw new Error(`Instrument ${explicitInstrumentId} was not found on the cap table.`);
+    }
+    return explicit;
+  }
+
+  const expectedKinds = expectedInstrumentKinds(grantType);
+  if (expectedKinds.length === 0) {
+    throw new Error(`No default instrument mapping exists for grant type "${grantType}". Pass --instrument-id explicitly.`);
+  }
+  const match = instruments.find((instrument) => expectedKinds.includes(String(instrument.kind).toLowerCase()));
+  if (!match) {
+    throw new Error(
+      `No instrument found for grant type "${grantType}". Expected one of: ${expectedKinds.join(", ")}.`,
+    );
+  }
+  return match;
+}
+
 export async function capTableCommand(opts: { entityId?: string; json?: boolean }): Promise<void> {
   const cfg = requireConfig("api_url", "api_key", "workspace_id");
   const eid = resolveEntityId(cfg, opts.entityId);
@@ -101,6 +158,8 @@ export async function issueEquityCommand(opts: {
   recipient: string;
   email?: string;
   instrumentId?: string;
+  meetingId?: string;
+  resolutionId?: string;
   json?: boolean;
   dryRun?: boolean;
 }): Promise<void> {
@@ -116,6 +175,8 @@ export async function issueEquityCommand(opts: {
         recipient: opts.recipient,
         email: opts.email,
         instrument_id: opts.instrumentId,
+        meeting_id: opts.meetingId,
+        resolution_id: opts.resolutionId,
       });
       return;
     }
@@ -129,24 +190,15 @@ export async function issueEquityCommand(opts: {
     }
 
     // Resolve instrument ID — use provided, or match by grant type, or use first common stock
-    let instrumentId = opts.instrumentId;
-    if (!instrumentId) {
-      const instruments = capTable.instruments as Array<{ instrument_id: string; kind: string; symbol: string }>;
-      if (!instruments?.length) {
-        printError("No instruments found on cap table. Create an instrument first.");
-        process.exit(1);
-      }
-      const grantLower = opts.grantType.toLowerCase();
-      const match = instruments.find(
-        (i) => i.kind.toLowerCase().includes(grantLower) || i.symbol.toLowerCase().includes(grantLower),
-      ) ?? instruments.find((i) => i.kind.toLowerCase().includes("common"));
-      if (match) {
-        instrumentId = match.instrument_id;
-        console.log(`Using instrument: ${match.symbol} (${match.kind})`);
-      } else {
-        instrumentId = instruments[0].instrument_id;
-        console.log(`Using first instrument: ${instruments[0].symbol} (${instruments[0].kind})`);
-      }
+    const instruments = (capTable.instruments ?? []) as CapTableInstrument[];
+    if (!instruments.length) {
+      printError("No instruments found on cap table. Create an instrument first.");
+      process.exit(1);
+    }
+    const instrument = resolveInstrumentForGrant(instruments, opts.grantType, opts.instrumentId);
+    const instrumentId = instrument.instrument_id;
+    if (!opts.instrumentId) {
+      console.log(`Using instrument: ${instrument.symbol} (${instrument.kind})`);
     }
 
     // 1. Start a staged round
@@ -169,7 +221,10 @@ export async function issueEquityCommand(opts: {
     await client.addRoundSecurity(roundId, securityData);
 
     // 3. Issue the round
-    const result = await client.issueRound(roundId, { entity_id: eid });
+    const issuePayload: Record<string, unknown> = { entity_id: eid };
+    if (opts.meetingId) issuePayload.meeting_id = opts.meetingId;
+    if (opts.resolutionId) issuePayload.resolution_id = opts.resolutionId;
+    const result = await client.issueRound(roundId, issuePayload);
 
     if (opts.json) {
       printJson(result);
@@ -190,6 +245,8 @@ export async function issueSafeCommand(opts: {
   safeType: string;
   valuationCap: number;
   email?: string;
+  meetingId?: string;
+  resolutionId?: string;
   json?: boolean;
   dryRun?: boolean;
 }): Promise<void> {
@@ -205,6 +262,8 @@ export async function issueSafeCommand(opts: {
         safe_type: opts.safeType,
         valuation_cap: opts.valuationCap,
         email: opts.email,
+        meeting_id: opts.meetingId,
+        resolution_id: opts.resolutionId,
       });
       return;
     }
@@ -238,7 +297,10 @@ export async function issueSafeCommand(opts: {
     await client.addRoundSecurity(roundId, securityData);
 
     // Issue the round
-    const result = await client.issueRound(roundId, { entity_id: eid });
+    const issuePayload: Record<string, unknown> = { entity_id: eid };
+    if (opts.meetingId) issuePayload.meeting_id = opts.meetingId;
+    if (opts.resolutionId) issuePayload.resolution_id = opts.resolutionId;
+    const result = await client.issueRound(roundId, issuePayload);
     if (opts.json) {
       printJson(result);
       return;
@@ -270,6 +332,12 @@ export async function transferSharesCommand(opts: {
   const eid = resolveEntityId(cfg, opts.entityId);
   const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
   try {
+    if (opts.pricePerShareCents != null && opts.pricePerShareCents < 0) {
+      throw new Error("price-per-share-cents cannot be negative");
+    }
+    if (opts.from === opts.to) {
+      throw new Error("--from and --to must be different contacts");
+    }
     if (opts.dryRun) {
       printDryRun("cap_table.transfer_shares", {
         entity_id: eid,

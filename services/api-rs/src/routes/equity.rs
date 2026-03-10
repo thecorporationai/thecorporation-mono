@@ -8,6 +8,7 @@ use axum::{
     extract::{Path, Query, State},
     routing::{get, post},
 };
+use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::{HashMap, HashSet};
@@ -48,7 +49,7 @@ use crate::domain::execution::{
 use crate::domain::formation::{
     document::Document,
     entity::Entity,
-    types::{DocumentType, EntityType},
+    types::{DocumentType, EntityType, FormationStatus},
 };
 use crate::domain::governance::policy_engine::evaluate_intent as evaluate_governance_intent;
 use crate::domain::governance::{
@@ -278,6 +279,10 @@ pub struct AddSecurityRequest {
 #[serde(deny_unknown_fields)]
 pub struct IssueStagedRoundRequest {
     pub entity_id: EntityId,
+    #[serde(default)]
+    pub meeting_id: Option<MeetingId>,
+    #[serde(default)]
+    pub resolution_id: Option<ResolutionId>,
 }
 
 #[derive(Debug, Serialize, utoipa::ToSchema)]
@@ -746,6 +751,98 @@ fn read_all<T: StoredEntity>(store: &EntityStore<'_>) -> Result<Vec<T>, AppError
         out.push(rec);
     }
     Ok(out)
+}
+
+fn normalized_grant_type(grant_type: Option<&str>) -> Option<String> {
+    grant_type.map(|value| value.trim().to_ascii_lowercase().replace('-', "_"))
+}
+
+fn expected_instrument_kinds(grant_type: Option<&str>) -> Option<&'static [InstrumentKind]> {
+    match normalized_grant_type(grant_type).as_deref() {
+        Some("common") | Some("common_stock") => Some(&[InstrumentKind::CommonEquity]),
+        Some("preferred") | Some("preferred_stock") => Some(&[InstrumentKind::PreferredEquity]),
+        Some("membership_unit") => Some(&[InstrumentKind::MembershipUnit]),
+        Some("stock_option") | Some("iso") | Some("nso") => Some(&[InstrumentKind::OptionGrant]),
+        Some("rsa") => Some(&[InstrumentKind::CommonEquity, InstrumentKind::PreferredEquity]),
+        Some("safe") | Some("post_money") | Some("pre_money") | Some("mfn") => {
+            Some(&[InstrumentKind::Safe])
+        }
+        _ => None,
+    }
+}
+
+fn validate_grant_type_for_instrument(
+    grant_type: Option<&str>,
+    instrument: &Instrument,
+) -> Result<(), AppError> {
+    let Some(expected_kinds) = expected_instrument_kinds(grant_type) else {
+        return Ok(());
+    };
+    if expected_kinds.contains(&instrument.kind()) {
+        return Ok(());
+    }
+    Err(AppError::BadRequest(format!(
+        "grant_type {} is not valid for instrument {} ({:?})",
+        grant_type.unwrap_or_default(),
+        instrument.symbol(),
+        instrument.kind()
+    )))
+}
+
+fn grant_requires_current_409a(grant_type: Option<&str>, instrument: &Instrument) -> bool {
+    instrument.kind() == InstrumentKind::OptionGrant
+        || matches!(
+            normalized_grant_type(grant_type).as_deref(),
+            Some("stock_option") | Some("iso") | Some("nso")
+        )
+}
+
+fn ensure_current_409a_exists(store: &EntityStore<'_>) -> Result<(), AppError> {
+    let has_current = read_all::<Valuation>(store)?
+        .into_iter()
+        .any(|valuation| valuation.is_current_409a());
+    if has_current {
+        return Ok(());
+    }
+    Err(AppError::BadRequest(
+        "stock option issuances require a current approved 409A valuation".to_owned(),
+    ))
+}
+
+fn ensure_instrument_has_capacity(
+    positions: &[Position],
+    pending: &[PendingSecurity],
+    instrument: &Instrument,
+    extra_quantity: i64,
+) -> Result<(), AppError> {
+    let Some(authorized_units) = instrument.authorized_units() else {
+        return Ok(());
+    };
+    let issued_units = positions
+        .iter()
+        .filter(|position| position.instrument_id() == instrument.instrument_id())
+        .map(|position| position.quantity_units().max(0))
+        .sum::<i64>();
+    let staged_units = pending
+        .iter()
+        .filter(|security| security.instrument_id == instrument.instrument_id())
+        .map(|security| security.quantity.max(0))
+        .sum::<i64>();
+    let total_units = issued_units
+        .checked_add(staged_units)
+        .and_then(|sum| sum.checked_add(extra_quantity))
+        .ok_or_else(|| AppError::BadRequest("issued quantity would overflow".to_owned()))?;
+    if total_units > authorized_units {
+        return Err(AppError::BadRequest(format!(
+            "issuing {} additional units would exceed authorized units for instrument {} (issued={}, staged={}, authorized={})",
+            extra_quantity.max(0),
+            instrument.symbol(),
+            issued_units,
+            staged_units,
+            authorized_units
+        )));
+    }
+    Ok(())
 }
 
 fn resolve_contact_reference(
@@ -2213,6 +2310,7 @@ async fn create_legal_entity(
     if !auth.allows_entity(entity_id) {
         return Err(AppError::Forbidden("entity access denied".to_owned()));
     }
+    state.enforce_creation_rate_limit("equity.legal_entity.create", workspace_id, 30, 60)?;
 
     let legal_entity = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
@@ -2781,6 +2879,11 @@ async fn create_transfer_workflow(
     if req.price_per_share_cents.is_some_and(|v| v < 0) {
         return Err(AppError::BadRequest(
             "price_per_share_cents cannot be negative".to_owned(),
+        ));
+    }
+    if req.from_contact_id == req.to_contact_id {
+        return Err(AppError::BadRequest(
+            "from_contact_id and to_contact_id must be different".to_owned(),
         ));
     }
 
@@ -5895,21 +5998,24 @@ async fn add_round_security(
             let round = store
                 .read::<EquityRound>("main", round_id)
                 .map_err(|e| AppError::NotFound(format!("round {round_id} not found: {e}")))?;
-            if round.status() != EquityRoundStatus::Draft {
+            if !matches!(
+                round.status(),
+                EquityRoundStatus::Draft | EquityRoundStatus::BoardApproved
+            ) {
                 return Err(AppError::BadRequest(
-                    "round is not in Draft status".to_owned(),
+                    "round must be in Draft or BoardApproved status".to_owned(),
                 ));
             }
 
             // Validate instrument exists
             let instruments = read_all::<Instrument>(&store)?;
-            if !instruments
+            let instrument = instruments
                 .iter()
-                .any(|i| i.instrument_id() == req.instrument_id)
-            {
-                return Err(AppError::BadRequest(
-                    "instrument_id does not exist".to_owned(),
-                ));
+                .find(|i| i.instrument_id() == req.instrument_id)
+                .ok_or_else(|| AppError::BadRequest("instrument_id does not exist".to_owned()))?;
+            validate_grant_type_for_instrument(req.grant_type.as_deref(), instrument)?;
+            if grant_requires_current_409a(req.grant_type.as_deref(), instrument) {
+                ensure_current_409a_exists(&store)?;
             }
 
             // Resolve holder
@@ -5966,7 +6072,8 @@ async fn add_round_security(
                         req.recipient_name.clone(),
                         Some(email.clone()),
                         ContactCategory::Investor,
-                    );
+                    )
+                    .map_err(AppError::BadRequest)?;
                     let new_holder = Holder::new(
                         HolderId::new(),
                         contact_id,
@@ -6000,7 +6107,8 @@ async fn add_round_security(
                     req.recipient_name.clone(),
                     None,
                     ContactCategory::Investor,
-                );
+                )
+                .map_err(AppError::BadRequest)?;
                 let new_holder = Holder::new(
                     HolderId::new(),
                     contact_id,
@@ -6039,6 +6147,8 @@ async fn add_round_security(
                 store.read_json("main", &pending_path).map_err(|e| {
                     AppError::NotFound(format!("pending securities file not found: {e}"))
                 })?;
+            let all_positions = read_all::<Position>(&store)?;
+            ensure_instrument_has_capacity(&all_positions, &pending.securities, instrument, req.quantity)?;
             pending.securities.push(security.clone());
 
             store
@@ -6115,8 +6225,34 @@ async fn issue_staged_round(
                 ));
             }
 
-            // Read all existing positions
+            // Read all existing positions and instruments.
             let all_positions = read_all::<Position>(&store)?;
+            let instrument_map: HashMap<InstrumentId, Instrument> = read_all::<Instrument>(&store)?
+                .into_iter()
+                .map(|instrument| (instrument.instrument_id(), instrument))
+                .collect();
+            for security in &pending.securities {
+                let instrument = instrument_map.get(&security.instrument_id).ok_or_else(|| {
+                    AppError::BadRequest(format!(
+                        "instrument {} does not exist",
+                        security.instrument_id
+                    ))
+                })?;
+                validate_grant_type_for_instrument(security.grant_type.as_deref(), instrument)?;
+            }
+            if pending.securities.iter().any(|security| {
+                instrument_map
+                    .get(&security.instrument_id)
+                    .map(|instrument| {
+                        grant_requires_current_409a(security.grant_type.as_deref(), instrument)
+                    })
+                    .unwrap_or(false)
+            }) {
+                ensure_current_409a_exists(&store)?;
+            }
+            for instrument in instrument_map.values() {
+                ensure_instrument_has_capacity(&all_positions, &pending.securities, instrument, 0)?;
+            }
 
             let mut files: Vec<FileWrite> = Vec::new();
             let mut result_positions: Vec<Position> = Vec::new();
@@ -6160,84 +6296,53 @@ async fn issue_staged_round(
                 result_positions.push(position);
             }
 
-            // Close the round
-            round
-                .close_from_draft()
-                .map_err(|e| AppError::Internal(format!("failed to close round: {e}")))?;
+            // Require board approval when a board exists; otherwise preserve the
+            // boardless draft-close path used for pre-governance entities.
+            let has_board = read_all::<GovernanceBody>(&store)?
+                .into_iter()
+                .any(|body| body.body_type() == BodyType::BoardOfDirectors);
+            let mut board_meeting_id = None;
+            if has_board {
+                if round.status() == EquityRoundStatus::Draft {
+                    let meeting_id = req.meeting_id.ok_or_else(|| {
+                        AppError::BadRequest(
+                            "meeting_id is required to issue a round when a board exists"
+                                .to_owned(),
+                        )
+                    })?;
+                    let resolution_id = req.resolution_id.ok_or_else(|| {
+                        AppError::BadRequest(
+                            "resolution_id is required to issue a round when a board exists"
+                                .to_owned(),
+                        )
+                    })?;
+                    validate_board_resolution_for_round(
+                        &store,
+                        entity_id,
+                        meeting_id,
+                        resolution_id,
+                    )?;
+                    round.record_board_approval(meeting_id, resolution_id).map_err(|e| {
+                        AppError::BadRequest(format!("failed to record board approval: {e}"))
+                    })?;
+                }
+                board_meeting_id = round.board_approval_meeting_id();
+                round.accept(None).map_err(|e| {
+                    AppError::BadRequest(format!("failed to accept approved round: {e}"))
+                })?;
+                round
+                    .close()
+                    .map_err(|e| AppError::BadRequest(format!("failed to close round: {e}")))?;
+            } else {
+                round
+                    .close_from_draft()
+                    .map_err(|e| AppError::BadRequest(format!("failed to close round: {e}")))?;
+            }
             files.push(FileWrite::json(
                 format!("cap-table/rounds/{}.json", round.equity_round_id()),
                 &round,
             )?);
-
-            // Auto-create board meeting agenda item for round approval.
-            let mut board_meeting_id = None;
-            let mut board_agenda_item_id = None;
-            let bodies = read_all::<GovernanceBody>(&store).unwrap_or_default();
-            if let Some(board_body) = bodies
-                .iter()
-                .find(|b| b.body_type() == BodyType::BoardOfDirectors)
-            {
-                let body_id = board_body.body_id();
-                let meetings = read_all::<Meeting>(&store).unwrap_or_default();
-                let existing_meeting = meetings.iter().find(|m| {
-                    m.body_id() == body_id
-                        && (m.status() == MeetingStatus::Draft
-                            || m.status() == MeetingStatus::Noticed)
-                });
-
-                let agenda_item_id = AgendaItemId::new();
-                let agenda_title = format!("Approve Equity Round ({})", round.name());
-
-                let (meeting_id, new_meeting) = if let Some(m) = existing_meeting {
-                    (m.meeting_id(), None)
-                } else {
-                    let mid = MeetingId::new();
-                    let meeting = Meeting::new(
-                        mid,
-                        body_id,
-                        MeetingType::BoardMeeting,
-                        format!("Board Meeting — Equity Round Approval ({})", round.name()),
-                        None,
-                        String::new(),
-                        0,
-                    );
-                    (mid, Some(meeting))
-                };
-
-                let existing_item_ids = store
-                    .list_agenda_item_ids("main", meeting_id)
-                    .unwrap_or_default();
-                let next_seq = (existing_item_ids.len() as u32) + 1;
-
-                let agenda_item = AgendaItem::new(
-                    agenda_item_id,
-                    meeting_id,
-                    next_seq,
-                    agenda_title,
-                    None,
-                    AgendaItemType::Resolution,
-                );
-
-                files.push(
-                    FileWrite::json(
-                        format!(
-                            "governance/meetings/{}/agenda/{}.json",
-                            meeting_id, agenda_item_id
-                        ),
-                        &agenda_item,
-                    )
-                    .map_err(|e| AppError::Internal(format!("serialize agenda item: {e}")))?,
-                );
-                if let Some(ref meeting) = new_meeting {
-                    files.push(
-                        FileWrite::json(Meeting::storage_path(meeting_id), meeting)
-                            .map_err(|e| AppError::Internal(format!("serialize meeting: {e}")))?,
-                    );
-                }
-
-                board_meeting_id = Some(meeting_id);
-                board_agenda_item_id = Some(agenda_item_id);
-            }
+            let board_agenda_item_id = None;
 
             store
                 .commit(
@@ -6411,6 +6516,12 @@ async fn create_valuation(
             .require_positive()
             .map_err(|e| AppError::BadRequest(e.to_owned()))?;
     }
+    let today = Utc::now().date_naive();
+    if req.effective_date > today {
+        return Err(AppError::BadRequest(
+            "effective_date cannot be in the future".to_owned(),
+        ));
+    }
     if req.valuation_type == ValuationType::FourOhNineA {
         if req.fmv_per_share_cents.is_none() {
             return Err(AppError::BadRequest(
@@ -6429,6 +6540,23 @@ async fn create_valuation(
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
             let (entity, _profile) = entity_profile_for_docs(&store)?;
+            if let Some(formation_date) = entity.formation_date()
+                && req.effective_date < formation_date.date_naive()
+            {
+                return Err(AppError::BadRequest(format!(
+                    "effective_date {} cannot be before entity formation date {}",
+                    req.effective_date,
+                    formation_date.date_naive()
+                )));
+            }
+            if req.valuation_type == ValuationType::FourOhNineA
+                && (entity.formation_status() != FormationStatus::Active
+                    || entity.formation_date().is_none())
+            {
+                return Err(AppError::BadRequest(
+                    "409A valuations require an active entity with a formation date".to_owned(),
+                ));
+            }
             let valuation_id = ValuationId::new();
             let report_document_id = if let Some(document_id) = req.report_document_id {
                 Some(document_id)
@@ -6870,6 +6998,11 @@ async fn create_legacy_share_transfer(
         .map_err(|e| AppError::BadRequest(e.to_owned()))?;
     let from_holder = req.from_holder.clone();
     let to_holder = req.to_holder.clone();
+    if from_holder.trim() == to_holder.trim() {
+        return Err(AppError::BadRequest(
+            "from_holder and to_holder must be different".to_owned(),
+        ));
+    }
     let share_class_id = req.share_class_id;
 
     let transfer = tokio::task::spawn_blocking({
@@ -6878,6 +7011,11 @@ async fn create_legacy_share_transfer(
             let store = open_store(&layout, workspace_id, entity_id)?;
             let from_contact = resolve_transfer_sender_contact(&store, &from_holder)?;
             let to_contact = resolve_contact_reference(&store, &to_holder)?;
+            if from_contact.contact_id() == to_contact.contact_id() {
+                return Err(AppError::BadRequest(
+                    "from_holder and to_holder must resolve to different contacts".to_owned(),
+                ));
+            }
             let share_class = read_all::<ShareClass>(&store)?
                 .into_iter()
                 .find(|sc| sc.share_class_id() == share_class_id)

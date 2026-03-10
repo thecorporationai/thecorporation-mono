@@ -284,6 +284,7 @@ async fn run_server(skip_validation: bool) {
         http_client,
         llm_upstream_url,
         model_pricing,
+        creation_rate_limiter: Arc::new(routes::CreationRateLimiter::default()),
     };
 
     let app = Router::new()

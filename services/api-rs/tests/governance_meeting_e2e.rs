@@ -48,6 +48,7 @@ fn build_app(tmp: &TempDir) -> Router {
         http_client: reqwest::Client::new(),
         llm_upstream_url: "http://localhost:0".to_owned(),
         model_pricing: HashMap::new(),
+        creation_rate_limiter: Arc::new(api_rs::routes::CreationRateLimiter::default()),
     };
 
     Router::new()

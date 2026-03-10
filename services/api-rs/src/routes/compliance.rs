@@ -68,6 +68,19 @@ fn allowed_tax_document_type(document_type: &str) -> bool {
     allowed_tax_document_types().contains(&document_type)
 }
 
+fn canonical_tax_document_type(document_type: &str) -> &str {
+    match document_type {
+        "form_1120" => "1120",
+        "form_1120s" => "1120s",
+        "form_1065" => "1065",
+        "form_1099_nec" => "1099_nec",
+        "form_k1" => "k1",
+        "form_941" => "941",
+        "form_w2" => "w2",
+        other => other,
+    }
+}
+
 fn allowed_tax_document_types() -> &'static [&'static str] {
     &[
         "1120",
@@ -332,13 +345,30 @@ async fn file_tax_document(
         let layout = state.layout.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
+            let document_type = canonical_tax_document_type(&req.document_type).to_owned();
+            let existing_ids = store
+                .list_ids::<TaxFiling>("main")
+                .map_err(|e| AppError::Internal(format!("list tax filings: {e}")))?;
+            for existing_id in existing_ids {
+                let existing = store
+                    .read::<TaxFiling>("main", existing_id)
+                    .map_err(|e| AppError::Internal(format!("read tax filing {existing_id}: {e}")))?;
+                if canonical_tax_document_type(existing.document_type()) == document_type
+                    && existing.tax_year() == req.tax_year
+                {
+                    return Err(AppError::Conflict(format!(
+                        "tax filing already exists for {} tax year {}",
+                        document_type, req.tax_year
+                    )));
+                }
+            }
 
             let filing_id = TaxFilingId::new();
             let document_id = DocumentId::new();
             let filing = TaxFiling::new(
                 filing_id,
                 entity_id,
-                req.document_type,
+                document_type,
                 req.tax_year,
                 document_id,
             );

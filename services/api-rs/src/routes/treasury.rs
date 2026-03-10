@@ -14,6 +14,7 @@ use serde::{Deserialize, Serialize};
 
 use super::AppState;
 use crate::auth::{RequireTreasuryRead, RequireTreasuryWrite};
+use crate::domain::formation::types::FormationStatus;
 use crate::domain::ids::{
     AccountId, BankAccountId, DistributionId, EntityId, InvoiceId, JournalEntryId, LedgerLineId,
     PaymentId, PayrollRunId, ReconciliationId, SpendingLimitId, WorkspaceId,
@@ -191,6 +192,17 @@ fn open_store<'a>(
         }
         other => AppError::Internal(other.to_string()),
     })
+}
+
+const MAX_FINANCIAL_AMOUNT_CENTS: i64 = 10_000_000_000_000; // $100B
+
+fn validate_reasonable_amount(amount_cents: i64, field_name: &str) -> Result<(), AppError> {
+    if amount_cents > MAX_FINANCIAL_AMOUNT_CENTS {
+        return Err(AppError::BadRequest(format!(
+            "{field_name} exceeds the supported maximum of {MAX_FINANCIAL_AMOUNT_CENTS} cents"
+        )));
+    }
+    Ok(())
 }
 
 // ── Handlers: Accounts ───────────────────────────────────────────────
@@ -517,6 +529,8 @@ async fn create_invoice(
             "amount_cents must be positive".to_owned(),
         ));
     }
+    validate_reasonable_amount(req.amount_cents, "amount_cents")?;
+    validate_reasonable_amount(req.amount_cents, "amount_cents")?;
 
     let invoice = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
@@ -1120,6 +1134,7 @@ async fn submit_payment(
     Cents::new(req.amount_cents)
         .require_positive()
         .map_err(|e| AppError::BadRequest(e.to_owned()))?;
+    validate_reasonable_amount(req.amount_cents, "amount_cents")?;
 
     let payment = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
@@ -1183,6 +1198,7 @@ async fn execute_payment(
     Cents::new(req.amount_cents)
         .require_positive()
         .map_err(|e| AppError::BadRequest(e.to_owned()))?;
+    validate_reasonable_amount(req.amount_cents, "amount_cents")?;
 
     let payment = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
@@ -1302,11 +1318,22 @@ async fn create_distribution(
     Cents::new(req.total_amount_cents)
         .require_positive()
         .map_err(|e| AppError::BadRequest(e.to_owned()))?;
+    validate_reasonable_amount(req.total_amount_cents, "total_amount_cents")?;
 
     let dist = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
+            if req.distribution_type == DistributionType::Liquidation {
+                let entity = store
+                    .read_entity("main")
+                    .map_err(|e| AppError::Internal(format!("read entity: {e}")))?;
+                if entity.formation_status() != FormationStatus::Dissolved {
+                    return Err(AppError::BadRequest(
+                        "liquidation distributions require a dissolved entity".to_owned(),
+                    ));
+                }
+            }
 
             let dist_id = DistributionId::new();
             let dist = Distribution::new(
@@ -1854,6 +1881,7 @@ async fn from_agent_request(
             "amount_cents must be positive".to_owned(),
         ));
     }
+    validate_reasonable_amount(req.amount_cents, "amount_cents")?;
 
     let invoice = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
@@ -2043,6 +2071,7 @@ async fn create_payout(
             "amount_cents must be positive".to_owned(),
         ));
     }
+    validate_reasonable_amount(req.amount_cents, "amount_cents")?;
 
     let payout_id = uuid::Uuid::new_v4().to_string();
     let now = chrono::Utc::now();

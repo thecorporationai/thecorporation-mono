@@ -151,6 +151,7 @@ async fn create_work_item(
     if !auth.allows_entity(entity_id) {
         return Err(AppError::Forbidden("entity access denied".to_owned()));
     }
+    state.enforce_creation_rate_limit("work_items.create", workspace_id, 60, 60)?;
     if req.title.trim().is_empty() {
         return Err(AppError::BadRequest("title cannot be empty".to_owned()));
     }
@@ -390,6 +391,15 @@ async fn complete_work_item(
             let mut w = store
                 .read::<WorkItem>("main", work_item_id)
                 .map_err(|_| AppError::NotFound(format!("work item {} not found", work_item_id)))?;
+            w.auto_release_expired_claim(Utc::now());
+            if let Some(claimed_by) = w.claimed_by()
+                && claimed_by != req.completed_by
+            {
+                return Err(AppError::Conflict(format!(
+                    "work item is claimed by {} and cannot be completed by {}",
+                    claimed_by, req.completed_by
+                )));
+            }
 
             w.complete(req.completed_by, req.result)?;
 

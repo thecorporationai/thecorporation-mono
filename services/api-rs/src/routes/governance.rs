@@ -14,7 +14,15 @@ use super::AppState;
 use crate::auth::{
     RequireGovernanceRead, RequireGovernanceVote, RequireGovernanceWrite, RequireInternalWorker,
 };
-use crate::domain::contacts::contact::Contact;
+use crate::domain::contacts::{
+    contact::Contact,
+    types::{ContactCategory, ContactType},
+};
+use crate::domain::equity::{
+    holder::Holder,
+    instrument::{Instrument, InstrumentKind},
+    position::Position,
+};
 use crate::domain::formation::types::{EntityType, FormationStatus};
 use crate::domain::governance::{
     agenda_item::AgendaItem,
@@ -542,6 +550,127 @@ fn open_store<'a>(
         }
         other => AppError::Internal(other.to_string()),
     })
+}
+
+fn validate_meeting_type_for_body(body_type: BodyType, meeting_type: MeetingType) -> Result<(), AppError> {
+    let is_allowed = match body_type {
+        BodyType::BoardOfDirectors => {
+            matches!(meeting_type, MeetingType::BoardMeeting | MeetingType::WrittenConsent)
+        }
+        BodyType::LlcMemberVote => {
+            matches!(meeting_type, MeetingType::MemberMeeting | MeetingType::WrittenConsent)
+        }
+    };
+    if is_allowed {
+        return Ok(());
+    }
+    Err(AppError::BadRequest(format!(
+        "meeting type {meeting_type:?} is not valid for governance body type {body_type:?}"
+    )))
+}
+
+fn holder_has_active_membership_units(
+    store: &EntityStore<'_>,
+    holder_id: ContactId,
+) -> Result<bool, AppError> {
+    let holder_record_id = store
+        .list_ids::<Holder>("main")
+        .map_err(|e| AppError::Internal(format!("list holders: {e}")))?
+        .into_iter()
+        .find_map(|id| {
+            store.read::<Holder>("main", id).ok().and_then(|holder| {
+                (holder.contact_id() == holder_id).then_some(holder.holder_id())
+            })
+        });
+    let Some(holder_record_id) = holder_record_id else {
+        return Ok(false);
+    };
+
+    let membership_instrument_ids: std::collections::HashSet<_> = store
+        .list_ids::<Instrument>("main")
+        .map_err(|e| AppError::Internal(format!("list instruments: {e}")))?
+        .into_iter()
+        .filter_map(|id| store.read::<Instrument>("main", id).ok())
+        .filter(|instrument| instrument.kind() == InstrumentKind::MembershipUnit)
+        .map(|instrument| instrument.instrument_id())
+        .collect();
+    if membership_instrument_ids.is_empty() {
+        return Ok(false);
+    }
+
+    let has_units = store
+        .list_ids::<Position>("main")
+        .map_err(|e| AppError::Internal(format!("list positions: {e}")))?
+        .into_iter()
+        .filter_map(|id| store.read::<Position>("main", id).ok())
+        .any(|position| {
+            position.holder_id() == holder_record_id
+                && position.quantity_units() > 0
+                && membership_instrument_ids.contains(&position.instrument_id())
+        });
+    Ok(has_units)
+}
+
+fn validate_holder_for_body(
+    store: &EntityStore<'_>,
+    body: &GovernanceBody,
+    holder: &Contact,
+) -> Result<(), AppError> {
+    match body.body_type() {
+        BodyType::BoardOfDirectors => {
+            if holder.contact_type() != ContactType::Individual {
+                return Err(AppError::BadRequest(
+                    "board seats require an individual contact".to_owned(),
+                ));
+            }
+            if !matches!(
+                holder.category(),
+                ContactCategory::BoardMember
+                    | ContactCategory::Founder
+                    | ContactCategory::Officer
+                    | ContactCategory::Investor
+            ) {
+                return Err(AppError::BadRequest(
+                    "board seats require a board_member, founder, officer, or investor contact"
+                        .to_owned(),
+                ));
+            }
+        }
+        BodyType::LlcMemberVote => {
+            if !matches!(
+                holder.category(),
+                ContactCategory::Member | ContactCategory::Founder
+            ) {
+                return Err(AppError::BadRequest(
+                    "llc member-vote seats require a member or founder contact".to_owned(),
+                ));
+            }
+            if !holder_has_active_membership_units(store, holder.contact_id())? {
+                return Err(AppError::BadRequest(
+                    "llc member-vote seats require a holder with active membership units"
+                        .to_owned(),
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn has_active_seat(
+    store: &EntityStore<'_>,
+    body_id: GovernanceBodyId,
+    holder_id: ContactId,
+) -> Result<bool, AppError> {
+    let seat_ids = store
+        .list_ids::<GovernanceSeat>("main")
+        .map_err(|e| AppError::Internal(format!("list governance seats: {e}")))?;
+    Ok(seat_ids.into_iter().filter_map(|id| store.read::<GovernanceSeat>("main", id).ok()).any(
+        |seat| {
+            seat.body_id() == body_id
+                && seat.holder_id() == holder_id
+                && seat.status() == SeatStatus::Active
+        },
+    ))
 }
 
 fn read_schedule_or_default(store: &EntityStore<'_>, entity_id: EntityId) -> DelegationSchedule {
@@ -2304,6 +2433,13 @@ async fn create_seat(
                     "seat holder must belong to the same entity".to_owned(),
                 ));
             }
+            validate_holder_for_body(&store, &body, &holder)?;
+            if has_active_seat(&store, body_id, req.holder_id)? {
+                return Err(AppError::Conflict(format!(
+                    "contact {} already has an active seat on body {}",
+                    req.holder_id, body_id
+                )));
+            }
 
             let seat_id = GovernanceSeatId::new();
             let voting_power = req
@@ -2472,11 +2608,12 @@ async fn schedule_meeting(
             let store = open_store(&layout, workspace_id, entity_id)?;
 
             // Verify body exists
-            store
+            let body = store
                 .read::<GovernanceBody>("main", req.body_id)
                 .map_err(|_| {
                     AppError::NotFound(format!("governance body {} not found", req.body_id))
                 })?;
+            validate_meeting_type_for_body(body.body_type(), req.meeting_type)?;
 
             let meeting_id = MeetingId::new();
             let meeting = Meeting::new(

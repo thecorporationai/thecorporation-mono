@@ -1014,7 +1014,8 @@ pub fn setup_cap_table(
             m.name.clone(),
             m.email.clone(),
             member_role_to_contact_category(m.role),
-        );
+        )
+        .map_err(FormationError::Validation)?;
         let mut contact = contact;
         if let Some(address) = &m.address {
             contact.set_mailing_address(Some(format_member_mailing_address(address)));
@@ -2176,6 +2177,7 @@ mod tests {
                     member.email.clone(),
                     member_role_to_contact_category(member.role),
                 )
+                .expect("test contact should be valid")
             })
             .collect();
 

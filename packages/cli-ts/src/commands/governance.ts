@@ -110,18 +110,19 @@ export async function governanceResolutionsCommand(meetingId: string, opts: { en
 }
 
 export async function governanceConveneCommand(opts: {
-  entityId?: string; body: string; meetingType: string; title: string; date: string; agenda: string[];
+  entityId?: string; body: string; meetingType: string; title: string; date?: string; agenda: string[];
   json?: boolean; dryRun?: boolean;
 }): Promise<void> {
   const cfg = requireConfig("api_url", "api_key", "workspace_id");
   const eid = resolveEntityId(cfg, opts.entityId);
   const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
   try {
-    const payload = {
+    const payload: Record<string, unknown> = {
       entity_id: eid, body_id: opts.body, meeting_type: opts.meetingType,
-      title: opts.title, scheduled_date: opts.date,
+      title: opts.title,
       agenda_item_titles: opts.agenda,
     };
+    if (opts.date) payload.scheduled_date = opts.date;
     if (opts.dryRun) {
       printDryRun("governance.schedule_meeting", payload);
       return;

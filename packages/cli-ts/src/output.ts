@@ -137,6 +137,42 @@ export function printContactsTable(contacts: ApiRecord[]): void {
 
 export function printCapTable(data: ApiRecord): void {
   const accessLevel = s(data.access_level) || "admin";
+  const instruments = (data.instruments ?? []) as ApiRecord[];
+  if (instruments.length > 0) {
+    const table = makeTable("Cap Table — Instruments", ["Symbol", "Kind", "Authorized", "Issued", "Diluted"]);
+    for (const instrument of instruments) {
+      table.push([
+        s(instrument.symbol),
+        s(instrument.kind),
+        s(instrument.authorized_units ?? "unlimited"),
+        s(instrument.issued_units),
+        s(instrument.diluted_units),
+      ]);
+    }
+    console.log(table.toString());
+  }
+
+  const holders = (data.holders ?? []) as ApiRecord[];
+  if (holders.length > 0 && accessLevel !== "summary") {
+    const table = makeTable(
+      "Ownership Breakdown",
+      ["Holder", "Outstanding", "As Converted", "Fully Diluted", "Fully Diluted %"],
+    );
+    for (const holder of holders) {
+      const dilutedBps = typeof holder.fully_diluted_bps === "number"
+        ? `${(holder.fully_diluted_bps / 100).toFixed(2)}%`
+        : "";
+      table.push([
+        s(holder.name),
+        s(holder.outstanding_units),
+        s(holder.as_converted_units),
+        s(holder.fully_diluted_units),
+        dilutedBps,
+      ]);
+    }
+    console.log(table.toString());
+  }
+
   const shareClasses = (data.share_classes ?? []) as ApiRecord[];
   if (shareClasses.length > 0) {
     const cols = ["Class", "Authorized", "Outstanding"];
@@ -174,6 +210,10 @@ export function printCapTable(data: ApiRecord): void {
   if (data.fully_diluted_shares != null) {
     const fd = data.fully_diluted_shares;
     console.log(`\n${chalk.bold("Fully Diluted Shares:")} ${typeof fd === "number" ? fd.toLocaleString() : fd}`);
+  }
+  if (data.total_units != null) {
+    console.log(`\n${chalk.bold("Cap Table Basis:")} ${s(data.basis) || "outstanding"}`);
+    console.log(`${chalk.bold("Total Units:")} ${typeof data.total_units === "number" ? data.total_units.toLocaleString() : data.total_units}`);
   }
 }
 

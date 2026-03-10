@@ -129,6 +129,7 @@ async fn create_contact(
     if !auth.allows_entity(entity_id) {
         return Err(AppError::Forbidden("entity access denied".to_owned()));
     }
+    state.enforce_creation_rate_limit("contacts.create", workspace_id, 60, 60)?;
     if req
         .mailing_address
         .as_deref()
@@ -170,7 +171,8 @@ async fn create_contact(
                 req.name,
                 normalized_email,
                 req.category,
-            );
+            )
+            .map_err(AppError::BadRequest)?;
             if let Some(mailing_address) = req.mailing_address
                 && !mailing_address.trim().is_empty()
             {
@@ -376,7 +378,7 @@ async fn update_contact(
             }
 
             if let Some(name) = req.name {
-                contact.set_name(name);
+                contact.set_name(name).map_err(AppError::BadRequest)?;
             }
             if let Some(email) = normalized_email {
                 contact.set_email(Some(email));

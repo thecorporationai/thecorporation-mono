@@ -60,6 +60,14 @@ impl Deadline {
         recurrence: Recurrence,
         severity: DeadlineSeverity,
     ) -> Self {
+        let today = Utc::now().date_naive();
+        let status = if due_date < today {
+            DeadlineStatus::Overdue
+        } else if due_date == today {
+            DeadlineStatus::Due
+        } else {
+            DeadlineStatus::Upcoming
+        };
         Self {
             deadline_id,
             entity_id,
@@ -68,7 +76,7 @@ impl Deadline {
             description,
             recurrence,
             severity,
-            status: DeadlineStatus::Upcoming,
+            status,
             completed_at: None,
             created_at: Utc::now(),
         }

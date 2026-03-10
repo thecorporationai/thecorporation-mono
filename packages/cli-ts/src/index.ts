@@ -284,6 +284,8 @@ capTableCmd
   .requiredOption("--recipient <name>", "Recipient name")
   .option("--email <email>", "Recipient email (auto-creates contact if needed)")
   .option("--instrument-id <id>", "Instrument ID (auto-detected from cap table if omitted)")
+  .option("--meeting-id <id>", "Board meeting ID required when a board approval already exists or is being recorded")
+  .option("--resolution-id <id>", "Board resolution ID required when issuing under a board-governed entity")
   .option("--json", "Output as JSON")
   .option("--dry-run", "Show the request without creating the round")
   .description("Issue an equity grant (creates a round, adds security, and issues it)")
@@ -302,6 +304,8 @@ capTableCmd
   .requiredOption("--amount <n>", "Principal amount in cents", parseInt)
   .option("--safe-type <type>", "SAFE type", "post_money")
   .requiredOption("--valuation-cap <n>", "Valuation cap in cents", parseInt)
+  .option("--meeting-id <id>", "Board meeting ID required when issuing under a board-governed entity")
+  .option("--resolution-id <id>", "Board resolution ID required when issuing under a board-governed entity")
   .option("--json", "Output as JSON")
   .option("--dry-run", "Show the request without creating the round")
   .description("Issue a SAFE note")
@@ -605,7 +609,7 @@ governanceCmd
   .requiredOption("--body <id>", "Governance body ID")
   .requiredOption("--type <type>", "Meeting type (board_meeting, shareholder_meeting, member_meeting, written_consent)")
   .requiredOption("--title <title>", "Meeting title")
-  .requiredOption("--date <date>", "Meeting date (ISO 8601)")
+  .option("--date <date>", "Meeting date (ISO 8601)")
   .option("--agenda <item>", "Agenda item (repeatable)", (v: string, a: string[]) => [...a, v], [] as string[])
   .option("--json", "Output as JSON")
   .option("--dry-run", "Show the request without scheduling the meeting")
@@ -788,12 +792,17 @@ documentsCmd
   });
 documentsCmd
   .command("preview-pdf")
-  .requiredOption("--document-id <id>", "AST document definition ID (e.g. 'bylaws')")
+  .requiredOption("--definition-id <id>", "AST document definition ID (e.g. 'bylaws')")
+  .option("--document-id <id>", "Deprecated alias for --definition-id")
   .description("Validate and print the authenticated PDF preview URL for a governance document")
   .action(async (opts, cmd) => {
     const parent = cmd.parent!.opts();
     const { documentsPreviewPdfCommand } = await import("./commands/documents.js");
-    await documentsPreviewPdfCommand({ ...opts, entityId: parent.entityId });
+    await documentsPreviewPdfCommand({
+      ...opts,
+      documentId: opts.definitionId ?? opts.documentId,
+      entityId: parent.entityId,
+    });
   });
 
 // --- tax ---
@@ -986,6 +995,7 @@ workItemsCmd
   .option("--by <name>", "Agent or user completing the item")
   .option("--completed-by <name>", "Alias for --by")
   .option("--result <text>", "Completion result or notes")
+  .option("--notes <text>", "Alias for --result")
   .option("--json", "Output as JSON")
   .description("Mark a work item as completed")
   .action(async (itemId: string, opts, cmd) => {
@@ -998,7 +1008,7 @@ workItemsCmd
     }
     await workItemsCompleteCommand(itemId, {
       completedBy,
-      result: opts.result,
+      result: opts.result ?? opts.notes,
       entityId: parent.entityId,
       json: inheritOption(opts.json, parent.json),
     });

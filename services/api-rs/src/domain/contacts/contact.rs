@@ -26,6 +26,17 @@ pub struct Contact {
 }
 
 impl Contact {
+    pub fn validate_name(name: &str) -> Result<String, String> {
+        let trimmed = name.trim();
+        if trimmed.is_empty() {
+            return Err("contact name cannot be empty".to_owned());
+        }
+        if trimmed.contains('<') || trimmed.contains('>') {
+            return Err("contact name cannot contain HTML or script markup".to_owned());
+        }
+        Ok(trimmed.to_owned())
+    }
+
     pub fn new(
         contact_id: ContactId,
         entity_id: EntityId,
@@ -34,13 +45,13 @@ impl Contact {
         name: String,
         email: Option<String>,
         category: ContactCategory,
-    ) -> Self {
-        Self {
+    ) -> Result<Self, String> {
+        Ok(Self {
             contact_id,
             entity_id,
             workspace_id,
             contact_type,
-            name,
+            name: Self::validate_name(&name)?,
             email,
             mailing_address: None,
             phone: None,
@@ -49,7 +60,7 @@ impl Contact {
             notes: None,
             status: ContactStatus::Active,
             created_at: Utc::now(),
-        }
+        })
     }
 
     pub fn deactivate(&mut self) {
@@ -64,8 +75,9 @@ impl Contact {
         self.phone = Some(phone);
     }
 
-    pub fn set_name(&mut self, name: String) {
-        self.name = name;
+    pub fn set_name(&mut self, name: String) -> Result<(), String> {
+        self.name = Self::validate_name(&name)?;
+        Ok(())
     }
 
     pub fn set_email(&mut self, email: Option<String>) {
@@ -140,6 +152,7 @@ mod tests {
             Some("jane@example.com".to_owned()),
             ContactCategory::Officer,
         )
+        .expect("valid contact")
     }
 
     #[test]
@@ -203,5 +216,35 @@ mod tests {
         assert_eq!(parsed.cap_table_access(), CapTableAccess::Summary);
         assert_eq!(parsed.status(), c.status());
         assert_eq!(parsed.contact_type(), ContactType::Individual);
+    }
+
+    #[test]
+    fn new_rejects_empty_name() {
+        let err = Contact::new(
+            ContactId::new(),
+            EntityId::new(),
+            WorkspaceId::new(),
+            ContactType::Individual,
+            "   ".to_owned(),
+            None,
+            ContactCategory::Founder,
+        )
+        .expect_err("empty name should fail");
+        assert_eq!(err, "contact name cannot be empty");
+    }
+
+    #[test]
+    fn new_rejects_markup_name() {
+        let err = Contact::new(
+            ContactId::new(),
+            EntityId::new(),
+            WorkspaceId::new(),
+            ContactType::Individual,
+            "<script>alert(1)</script>".to_owned(),
+            None,
+            ContactCategory::Founder,
+        )
+        .expect_err("markup should fail");
+        assert_eq!(err, "contact name cannot contain HTML or script markup");
     }
 }

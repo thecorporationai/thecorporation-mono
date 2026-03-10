@@ -386,6 +386,11 @@ async fn update_agent(
                 agent.set_model(req.model);
             }
             if let Some(status) = req.status {
+                if agent.status() == AgentStatus::Disabled && status != AgentStatus::Disabled {
+                    return Err(AppError::BadRequest(
+                        "disabled agents cannot be resumed or reactivated".to_owned(),
+                    ));
+                }
                 agent.set_status(status);
             }
             if req.webhook_url.is_some() {

@@ -16,12 +16,14 @@ pub mod secrets_proxy;
 pub mod treasury;
 pub mod work_items;
 
-use std::collections::HashMap;
-use std::sync::Arc;
+use std::collections::{HashMap, VecDeque};
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use axum::extract::FromRef;
 
 use crate::domain::ids::{EntityId, WorkspaceId};
+use crate::error::AppError;
 use crate::git::signing::CommitSigner;
 use crate::store::RepoLayout;
 
@@ -65,6 +67,48 @@ pub struct AppState {
     pub llm_upstream_url: String,
     /// Model pricing table: model name -> pricing (cents per million tokens).
     pub model_pricing: HashMap<String, ModelPricing>,
+    /// In-process throttle for bursty resource creation endpoints.
+    pub creation_rate_limiter: Arc<CreationRateLimiter>,
+}
+
+#[derive(Default)]
+pub struct CreationRateLimiter {
+    buckets: Mutex<HashMap<String, VecDeque<Instant>>>,
+}
+
+impl CreationRateLimiter {
+    pub fn check(&self, key: String, limit: u32, window_seconds: u32) -> Result<(), AppError> {
+        let mut buckets = self.buckets.lock().map_err(|_| {
+            AppError::ServiceUnavailable("creation rate limiter unavailable".to_owned())
+        })?;
+        let window = Duration::from_secs(u64::from(window_seconds));
+        let now = Instant::now();
+        let entries = buckets.entry(key).or_default();
+        while entries.front().is_some_and(|instant| now.duration_since(*instant) >= window) {
+            entries.pop_front();
+        }
+        if entries.len() >= limit as usize {
+            return Err(AppError::RateLimited {
+                limit,
+                window_seconds,
+            });
+        }
+        entries.push_back(now);
+        Ok(())
+    }
+}
+
+impl AppState {
+    pub fn enforce_creation_rate_limit(
+        &self,
+        scope: &str,
+        workspace_id: WorkspaceId,
+        limit: u32,
+        window_seconds: u32,
+    ) -> Result<(), AppError> {
+        self.creation_rate_limiter
+            .check(format!("{workspace_id}:{scope}"), limit, window_seconds)
+    }
 }
 
 /// Pricing for a single model: input/output costs in cents per million tokens.

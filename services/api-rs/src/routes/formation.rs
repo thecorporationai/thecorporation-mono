@@ -585,6 +585,7 @@ async fn create_formation(
         req.right_of_first_refusal,
         req.company_address.clone(),
     )?;
+    state.enforce_creation_rate_limit("formation.create", workspace_id, 20, 60)?;
 
     let result = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
@@ -665,6 +666,7 @@ async fn create_formation_with_cap_table(
         req.right_of_first_refusal,
         req.company_address.clone(),
     )?;
+    state.enforce_creation_rate_limit("formation.create", workspace_id, 20, 60)?;
 
     let result = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
@@ -3168,6 +3170,7 @@ async fn create_pending_formation(
 ) -> Result<Json<PendingFormationResponse>, AppError> {
     let workspace_id = auth.workspace_id();
     let entity_type = req.entity_type;
+    state.enforce_creation_rate_limit("formation.create", workspace_id, 20, 60)?;
     let profile_overrides = build_profile_overrides_from_fields(
         req.formation_date.as_deref(),
         req.fiscal_year_end.as_deref(),
