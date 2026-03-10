@@ -479,6 +479,8 @@ interface FormFinalizeOptions {
   transferRestrictions?: boolean;
   rofr?: boolean;
   companyAddress?: string;
+  incorporatorName?: string;
+  incorporatorAddress?: string;
 }
 
 export async function formAddFounderCommand(entityId: string, opts: FormAddFounderOptions): Promise<void> {
@@ -534,6 +536,8 @@ export async function formFinalizeCommand(entityId: string, opts: FormFinalizeOp
     if (opts.rofr !== undefined) payload.right_of_first_refusal = opts.rofr;
     const companyAddress = parseCsvAddress(opts.companyAddress);
     if (companyAddress) payload.company_address = companyAddress;
+    if (opts.incorporatorName) payload.incorporator_name = opts.incorporatorName;
+    if (opts.incorporatorAddress) payload.incorporator_address = opts.incorporatorAddress;
 
     const result = await client.finalizeFormation(entityId, payload);
     printSuccess(`Formation finalized: ${result.entity_id}`);

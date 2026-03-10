@@ -1206,6 +1206,8 @@ pub fn finalize_formation(
         par_value,
         None,
         None,
+        None,
+        None,
         FormationProfileOverrides::default(),
     )
 }
@@ -1220,6 +1222,8 @@ pub fn finalize_formation_with_profile_overrides(
     par_value: Option<&str>,
     registered_agent_name: Option<String>,
     registered_agent_address: Option<String>,
+    incorporator_name_override: Option<String>,
+    incorporator_address_override: Option<String>,
     profile_overrides: FormationProfileOverrides,
 ) -> Result<(FormationResult, CapTableSetupResult), FormationError> {
     let repo_path = layout.entity_repo_path(workspace_id, entity_id);
@@ -1285,7 +1289,7 @@ pub fn finalize_formation_with_profile_overrides(
             .and_then(|profile| profile.stock_details())
             .map(|details| format_par_value_units(details.par_value_cents))
     });
-    let governance_profile = build_governance_profile(
+    let mut governance_profile = build_governance_profile(
         &entity,
         &members,
         resolved_authorized_shares,
@@ -1293,6 +1297,15 @@ pub fn finalize_formation_with_profile_overrides(
         existing_profile,
         Some(&profile_overrides),
     );
+    // Apply explicit incorporator overrides from the finalize request.
+    // This allows setting incorporator details at finalize time when
+    // the founder was added without an address.
+    if incorporator_name_override.is_some() || incorporator_address_override.is_some() {
+        governance_profile.patch_incorporator(
+            incorporator_name_override,
+            incorporator_address_override,
+        );
+    }
     governance_profile
         .validate()
         .map_err(FormationError::Validation)?;
@@ -1865,6 +1878,8 @@ mod tests {
             None,
             Some("Wyoming Registered Agent LLC".to_string()),
             Some("123 Capitol Ave, Cheyenne, WY 82001".to_string()),
+            None,
+            None,
             FormationProfileOverrides::default(),
         )
         .expect("finalize_formation_with_profile_overrides should succeed");

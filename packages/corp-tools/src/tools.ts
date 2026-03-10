@@ -91,6 +91,8 @@ const entityActions: Record<string, ToolHandler> = {
       transfer_restrictions: args.transfer_restrictions,
       right_of_first_refusal: args.right_of_first_refusal,
       company_address: args.company_address,
+      incorporator_name: args.incorporator_name,
+      incorporator_address: args.incorporator_address,
     });
     if (entityId && ctx.onEntityFormed) {
       ctx.onEntityFormed(entityId);

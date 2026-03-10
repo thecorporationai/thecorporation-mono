@@ -52,6 +52,8 @@ export const GENERATED_TOOL_DEFINITIONS: Record<string, unknown>[] = [
           "right_of_first_refusal": { "type": "boolean", "description": "create/finalize/form: include ROFR in bylaws (corp)" },
           "authorized_shares": { "type": "integer", "description": "finalize: authorized shares for corporations" },
           "par_value": { "type": "string", "description": "finalize: par value per share, e.g. 0.0001" },
+          "incorporator_name": { "type": "string", "description": "finalize: incorporator legal name (overrides founder)" },
+          "incorporator_address": { "type": "string", "description": "finalize: incorporator mailing address (overrides founder)" },
           "company_address": {
             "type": "object",
             "properties": {

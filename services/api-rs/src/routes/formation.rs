@@ -306,6 +306,10 @@ pub struct FinalizePendingFormationRequest {
     pub right_of_first_refusal: Option<bool>,
     #[serde(default)]
     pub company_address: Option<crate::domain::formation::content::Address>,
+    #[serde(default)]
+    pub incorporator_name: Option<String>,
+    #[serde(default)]
+    pub incorporator_address: Option<String>,
 }
 
 #[derive(Serialize, utoipa::ToSchema)]
@@ -3291,6 +3295,8 @@ async fn finalize_pending_formation(
         let layout = state.layout.clone();
         let registered_agent_name = cleaned_optional_string(req.registered_agent_name);
         let registered_agent_address = cleaned_optional_string(req.registered_agent_address);
+        let incorporator_name = cleaned_optional_string(req.incorporator_name);
+        let incorporator_address = cleaned_optional_string(req.incorporator_address);
         let authorized_shares = req.authorized_shares;
         let par_value = req.par_value;
         let profile_overrides = profile_overrides.clone();
@@ -3303,6 +3309,8 @@ async fn finalize_pending_formation(
                 par_value.as_deref(),
                 registered_agent_name,
                 registered_agent_address,
+                incorporator_name,
+                incorporator_address,
                 profile_overrides,
             )
         }

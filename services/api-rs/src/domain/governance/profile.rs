@@ -330,6 +330,15 @@ impl GovernanceProfile {
     pub fn incorporator_address(&self) -> Option<&str> {
         self.incorporator_address.as_deref()
     }
+    /// Override incorporator fields (used when finalize provides them explicitly).
+    pub fn patch_incorporator(&mut self, name: Option<String>, address: Option<String>) {
+        if let Some(name) = name {
+            self.incorporator_name = Some(name);
+        }
+        if let Some(address) = address {
+            self.incorporator_address = Some(address);
+        }
+    }
     pub fn principal_name(&self) -> Option<&str> {
         self.principal_name.as_deref()
     }

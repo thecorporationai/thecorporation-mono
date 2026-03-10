@@ -862,6 +862,8 @@ formCmd.command("finalize <entity-id>")
   .option("--transfer-restrictions", "Enable transfer restrictions")
   .option("--rofr", "Enable right of first refusal")
   .option("--company-address <address>", "Company address as 'street,city,state,zip'")
+  .option("--incorporator-name <name>", "Incorporator legal name (overrides founder)")
+  .option("--incorporator-address <address>", "Incorporator mailing address (overrides founder)")
   .action(async (entityId: string, opts) => {
     const { formFinalizeCommand } = await import("./commands/form.js");
     await formFinalizeCommand(entityId, opts);
