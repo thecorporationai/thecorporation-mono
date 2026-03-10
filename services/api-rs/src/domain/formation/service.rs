@@ -531,11 +531,6 @@ fn bootstrap_governance_records(
                     }
                 })
                 .collect::<Result<Vec<_>, _>>()?;
-            if seat_members.is_empty() {
-                return Err(FormationError::Validation(
-                    "at least one eligible member is required for governance bootstrap".to_owned(),
-                ));
-            }
             let seats = seat_members
                 .into_iter()
                 .map(|(member, contact, voting_power)| {
