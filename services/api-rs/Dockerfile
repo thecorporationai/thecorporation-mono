@@ -12,7 +12,7 @@ COPY crates/agent-types /build/crates/agent-types
 COPY governance /build/governance
 
 # Copy api-rs source (Cargo.toml references ../../crates/agent-types)
-COPY services/api-rs/Cargo.toml services/api-rs/Cargo.lock /build/services/api-rs/
+COPY services/api-rs/Cargo.toml services/api-rs/Cargo.lock services/api-rs/build.rs /build/services/api-rs/
 COPY services/api-rs/src /build/services/api-rs/src
 
 WORKDIR /build/services/api-rs
