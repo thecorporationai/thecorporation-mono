@@ -70,13 +70,13 @@ fn allowed_tax_document_type(document_type: &str) -> bool {
 
 fn canonical_tax_document_type(document_type: &str) -> &str {
     match document_type {
-        "form_1120" => "1120",
-        "form_1120s" => "1120s",
-        "form_1065" => "1065",
-        "form_1099_nec" => "1099_nec",
-        "form_k1" => "k1",
-        "form_941" => "941",
-        "form_w2" => "w2",
+        "1120" | "form_1120" => "form_1120",
+        "1120s" | "form_1120s" => "form_1120s",
+        "1065" | "form_1065" => "form_1065",
+        "1099_nec" | "form_1099_nec" => "form_1099_nec",
+        "k1" | "form_k1" => "form_k1",
+        "941" | "form_941" => "form_941",
+        "w2" | "form_w2" => "form_w2",
         other => other,
     }
 }

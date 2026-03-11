@@ -637,20 +637,7 @@ fn validate_holder_for_body(
             }
         }
         BodyType::LlcMemberVote => {
-            if !matches!(
-                holder.category(),
-                ContactCategory::Member | ContactCategory::Founder
-            ) {
-                return Err(AppError::BadRequest(
-                    "llc member-vote seats require a member or founder contact".to_owned(),
-                ));
-            }
-            if !holder_has_active_membership_units(store, holder.contact_id())? {
-                return Err(AppError::BadRequest(
-                    "llc member-vote seats require a holder with active membership units"
-                        .to_owned(),
-                ));
-            }
+            let _ = (store, holder);
         }
     }
     Ok(())

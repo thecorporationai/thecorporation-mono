@@ -538,6 +538,9 @@ async fn approve_supersedes_previous() {
     let app = build_app(&tmp);
     let (entity_id, token) = create_entity(&app).await;
     let (_body_id, seat_ids, holder_ids) = get_governance_info(&app, &entity_id, &token).await;
+    let today = chrono::Utc::now().date_naive();
+    let first_effective = (today - chrono::Duration::days(90)).to_string();
+    let second_effective = (today - chrono::Duration::days(30)).to_string();
 
     // Helper: create, submit, run board approval, and approve a 409A valuation
     async fn create_and_approve_409a(
@@ -622,7 +625,7 @@ async fn approve_supersedes_previous() {
         &token,
         &seat_ids,
         &holder_ids,
-        "2026-01-01",
+        &first_effective,
     )
     .await;
 
@@ -633,7 +636,7 @@ async fn approve_supersedes_previous() {
         &token,
         &seat_ids,
         &holder_ids,
-        "2026-06-01",
+        &second_effective,
     )
     .await;
 

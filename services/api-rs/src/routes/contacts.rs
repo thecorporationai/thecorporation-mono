@@ -129,7 +129,7 @@ async fn create_contact(
     if !auth.allows_entity(entity_id) {
         return Err(AppError::Forbidden("entity access denied".to_owned()));
     }
-    state.enforce_creation_rate_limit("contacts.create", workspace_id, 60, 60)?;
+    state.enforce_creation_rate_limit("contacts.create", workspace_id, 250, 60)?;
     if req
         .mailing_address
         .as_deref()

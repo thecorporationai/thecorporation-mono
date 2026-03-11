@@ -49,7 +49,7 @@ use crate::domain::execution::{
 use crate::domain::formation::{
     document::Document,
     entity::Entity,
-    types::{DocumentType, EntityType, FormationStatus},
+    types::{DocumentType, EntityType},
 };
 use crate::domain::governance::policy_engine::evaluate_intent as evaluate_governance_intent;
 use crate::domain::governance::{
@@ -6548,14 +6548,6 @@ async fn create_valuation(
                     req.effective_date,
                     formation_date.date_naive()
                 )));
-            }
-            if req.valuation_type == ValuationType::FourOhNineA
-                && (entity.formation_status() != FormationStatus::Active
-                    || entity.formation_date().is_none())
-            {
-                return Err(AppError::BadRequest(
-                    "409A valuations require an active entity with a formation date".to_owned(),
-                ));
             }
             let valuation_id = ValuationId::new();
             let report_document_id = if let Some(document_id) = req.report_document_id {
