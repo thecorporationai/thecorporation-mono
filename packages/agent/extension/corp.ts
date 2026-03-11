@@ -632,6 +632,9 @@ const issueSafe = {
     principal_amount_cents: Type.Integer({ description: "Investment amount in cents" }),
     valuation_cap_cents: Type.Integer({ description: "Valuation cap in cents" }),
     safe_type: Type.Optional(Type.String({ description: "'pre_money', 'post_money', or 'mfn'" })),
+    email: Type.Optional(Type.String({ description: "Investor email for contact linking" })),
+    meeting_id: Type.Optional(Type.String({ description: "Passed board/member approval meeting ID when governance approval is required" })),
+    resolution_id: Type.Optional(Type.String({ description: "Passed board/member approval resolution ID when governance approval is required" })),
   }),
   async execute(toolCallId: string, params: any, signal: any) {
     const data = await apiCall("POST", "/v1/safe-notes", params);

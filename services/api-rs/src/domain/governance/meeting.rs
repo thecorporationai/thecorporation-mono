@@ -53,11 +53,7 @@ impl Meeting {
             location,
             notice_days,
             status: initial_status,
-            quorum_met: if meeting_type == MeetingType::WrittenConsent {
-                QuorumStatus::Met
-            } else {
-                QuorumStatus::Unknown
-            },
+            quorum_met: QuorumStatus::Unknown,
             present_seat_ids: Vec::new(),
             convened_at: if meeting_type == MeetingType::WrittenConsent {
                 Some(Utc::now())
@@ -135,7 +131,8 @@ impl Meeting {
 
     /// Whether voting is allowed (convened and quorum met).
     pub fn can_vote(&self) -> bool {
-        self.status == MeetingStatus::Convened && self.quorum_met.is_met()
+        self.status == MeetingStatus::Convened
+            && (self.meeting_type == MeetingType::WrittenConsent || self.quorum_met.is_met())
     }
 
     // ── Accessors ────────────────────────────────────────────────────────
@@ -256,6 +253,7 @@ mod tests {
     fn written_consent_starts_convened() {
         let m = make_meeting(MeetingType::WrittenConsent);
         assert_eq!(m.status(), MeetingStatus::Convened);
+        assert_eq!(m.quorum_met(), QuorumStatus::Unknown);
         assert!(m.convened_at().is_some());
     }
 
@@ -277,6 +275,12 @@ mod tests {
         let mut m = make_meeting(MeetingType::BoardMeeting);
         m.send_notice().unwrap();
         m.convene(vec![GovernanceSeatId::new()], true).unwrap();
+        assert!(m.can_vote());
+    }
+
+    #[test]
+    fn written_consent_can_vote_before_quorum_is_computed() {
+        let m = make_meeting(MeetingType::WrittenConsent);
         assert!(m.can_vote());
     }
 

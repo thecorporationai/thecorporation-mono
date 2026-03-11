@@ -6,6 +6,8 @@ use serde::{Deserialize, Serialize};
 use super::types::{CapTableAccess, ContactCategory, ContactStatus, ContactType};
 use crate::domain::ids::{ContactId, EntityId, WorkspaceId};
 
+const MAX_CONTACT_NAME_LEN: usize = 256;
+
 /// A person or organization that interacts with the entity.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Contact {
@@ -31,8 +33,16 @@ impl Contact {
         if trimmed.is_empty() {
             return Err("contact name cannot be empty".to_owned());
         }
+        if trimmed.len() > MAX_CONTACT_NAME_LEN {
+            return Err(format!(
+                "contact name must be at most {MAX_CONTACT_NAME_LEN} characters"
+            ));
+        }
         if trimmed.contains('<') || trimmed.contains('>') {
             return Err("contact name cannot contain HTML or script markup".to_owned());
+        }
+        if trimmed.chars().any(|ch| ch == '\n' || ch == '\r') {
+            return Err("contact name must be a single line".to_owned());
         }
         Ok(trimmed.to_owned())
     }
@@ -246,5 +256,20 @@ mod tests {
         )
         .expect_err("markup should fail");
         assert_eq!(err, "contact name cannot contain HTML or script markup");
+    }
+
+    #[test]
+    fn new_rejects_multiline_name() {
+        let err = Contact::new(
+            ContactId::new(),
+            EntityId::new(),
+            WorkspaceId::new(),
+            ContactType::Individual,
+            "Jane\nDoe".to_owned(),
+            None,
+            ContactCategory::Founder,
+        )
+        .expect_err("multiline name should fail");
+        assert_eq!(err, "contact name must be a single line");
     }
 }

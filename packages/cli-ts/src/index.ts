@@ -278,6 +278,26 @@ capTableCmd.command("409a").description("Current 409A valuation").action(async (
   await fourOhNineACommand(parent);
 });
 capTableCmd
+  .command("create-instrument")
+  .requiredOption("--kind <kind>", "Instrument kind (common_equity, preferred_equity, membership_unit, option_grant, safe)")
+  .requiredOption("--symbol <symbol>", "Instrument symbol")
+  .option("--issuer-legal-entity-id <id>", "Issuer legal entity ID (auto-detected from the cap table if omitted)")
+  .option("--authorized-units <n>", "Authorized units", parseInt)
+  .option("--issue-price-cents <n>", "Issue price in cents", parseInt)
+  .option("--terms-json <json>", "JSON object of instrument terms")
+  .option("--json", "Output as JSON")
+  .option("--dry-run", "Show the request without creating the instrument")
+  .description("Create a cap table instrument")
+  .action(async (opts, cmd) => {
+    const parent = cmd.parent!.opts();
+    const { createInstrumentCommand } = await import("./commands/cap-table.js");
+    await createInstrumentCommand({
+      ...opts,
+      entityId: parent.entityId,
+      json: inheritOption(opts.json, parent.json),
+    });
+  });
+capTableCmd
   .command("issue-equity")
   .requiredOption("--grant-type <type>", "Grant type (common, preferred, membership_unit, stock_option, iso, nso, rsa)")
   .requiredOption("--shares <n>", "Number of shares", parseInt)
@@ -400,6 +420,8 @@ capTableCmd
   });
 capTableCmd
   .command("issue-round")
+  .option("--meeting-id <id>", "Board meeting ID required when issuing under a board-governed entity")
+  .option("--resolution-id <id>", "Board resolution ID required when issuing under a board-governed entity")
   .option("--json", "Output as JSON")
   .option("--dry-run", "Show the request without issuing the round")
   .requiredOption("--round-id <id>", "Round ID")
@@ -1081,7 +1103,7 @@ const formCmd = program
   .option("--entity-type <type>", "Entity type (llc, c_corp)")
   .option("--legal-name <name>", "Legal name")
   .option("--jurisdiction <jurisdiction>", "Jurisdiction (e.g. US-DE, US-WY)")
-  .option("--member <member>", "Founder as 'name,email,role[,pct]' or key=value pairs like 'name=...,email=...,role=...,officer_title=cto,is_incorporator=true,address=street|city|state|zip' (repeatable)", (v: string, a: string[]) => [...a, v], [] as string[])
+  .option("--member <member>", "Founder as 'name,email,role[,pct[,address[,officer_title[,is_incorporator]]]]' with address as street|city|state|zip, or key=value pairs like 'name=...,email=...,role=...,officer_title=cto,is_incorporator=true,address=street|city|state|zip' (repeatable)", (v: string, a: string[]) => [...a, v], [] as string[])
   .option("--member-json <json>", "Founder JSON object (repeatable)", (v: string, a: string[]) => [...a, v], [] as string[])
   .option("--members-file <path>", "Path to a JSON array of founders or {\"members\": [...]}")
   .option("--address <address>", "Company address as 'street,city,state,zip'")
@@ -1113,9 +1135,13 @@ formCmd.command("create")
   .option("--company-address <address>", "Company address as 'street,city,state,zip'")
   .option("--json", "Output as JSON")
   .option("--dry-run", "Show the request without creating the pending entity")
-  .action(async (opts) => {
+  .action(async (opts, cmd) => {
     const { formCreateCommand } = await import("./commands/form.js");
-    await formCreateCommand(opts);
+    await formCreateCommand({
+      ...opts,
+      json: inheritOption(opts.json, cmd.parent!.opts().json),
+      dryRun: inheritOption(opts.dryRun, cmd.parent!.opts().dryRun),
+    });
   });
 formCmd.command("add-founder <entity-id>")
   .description("Add a founder to a pending entity (staged flow step 2)")
@@ -1128,9 +1154,13 @@ formCmd.command("add-founder <entity-id>")
   .option("--address <address>", "Founder address as 'street,city,state,zip'")
   .option("--json", "Output as JSON")
   .option("--dry-run", "Show the request without adding the founder")
-  .action(async (entityId: string, opts) => {
+  .action(async (entityId: string, opts, cmd) => {
     const { formAddFounderCommand } = await import("./commands/form.js");
-    await formAddFounderCommand(entityId, opts);
+    await formAddFounderCommand(entityId, {
+      ...opts,
+      json: inheritOption(opts.json, cmd.parent!.opts().json),
+      dryRun: inheritOption(opts.dryRun, cmd.parent!.opts().dryRun),
+    });
   });
 formCmd.command("finalize <entity-id>")
   .description("Finalize formation and generate documents + cap table (staged flow step 3)")
@@ -1148,9 +1178,13 @@ formCmd.command("finalize <entity-id>")
   .option("--incorporator-address <address>", "Incorporator mailing address (overrides founder)")
   .option("--json", "Output as JSON")
   .option("--dry-run", "Show the request without finalizing formation")
-  .action(async (entityId: string, opts) => {
+  .action(async (entityId: string, opts, cmd) => {
     const { formFinalizeCommand } = await import("./commands/form.js");
-    await formFinalizeCommand(entityId, opts);
+    await formFinalizeCommand(entityId, {
+      ...opts,
+      json: inheritOption(opts.json, cmd.parent!.opts().json),
+      dryRun: inheritOption(opts.dryRun, cmd.parent!.opts().dryRun),
+    });
   });
 
 // --- api-keys ---
@@ -1196,4 +1230,4 @@ program
     await serveCommand(opts);
   });
 
-program.parse();
+await program.parseAsync(process.argv);

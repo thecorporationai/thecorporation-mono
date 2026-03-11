@@ -137,7 +137,7 @@ export const GENERATED_TOOL_DEFINITIONS: Record<string, unknown>[] = [
     "type": "function",
     "function": {
       "name": "equity",
-      "description": "Equity and cap table operations. Actions: start_round (entity_id + name + issuer_legal_entity_id — step 1), add_security (round_id + instrument_id + quantity + recipient_name — step 2), issue_round (round_id — step 3, closes round + creates board agenda item), issue (entity_id + grant_type + shares + recipient_name — legacy single grant), issue_safe (entity_id + investor_name + principal_amount_cents + safe_type + valuation_cap_cents), transfer (entity_id + from_holder + to_holder + shares + skip_governance_review=true — bypasses governance), distribution (entity_id + total_amount_cents).",
+      "description": "Equity and cap table operations. Actions: start_round (entity_id + name + issuer_legal_entity_id — step 1), add_security (round_id + instrument_id + quantity + recipient_name — step 2), issue_round (round_id + optional meeting_id/resolution_id — step 3, closes round), issue (entity_id + grant_type + shares + recipient_name + optional instrument_id/meeting_id/resolution_id — single grant with instrument-kind validation), issue_safe (entity_id + investor_name + principal_amount_cents + safe_type + optional meeting_id/resolution_id), transfer (entity_id + from_holder + to_holder + shares + skip_governance_review=true — bypasses governance), distribution (entity_id + total_amount_cents).",
       "parameters": {
         "type": "object",
         "properties": {
@@ -161,6 +161,8 @@ export const GENERATED_TOOL_DEFINITIONS: Record<string, unknown>[] = [
           "grant_type": { "type": "string", "description": "issue/add_security: e.g. common, preferred, option" },
           "shares": { "type": "integer", "description": "issue/transfer: number of shares" },
           "vesting_schedule": { "type": "string", "description": "issue: vesting schedule" },
+          "meeting_id": { "type": "string", "description": "issue/issue_round/issue_safe: governing meeting ID when board approval is required" },
+          "resolution_id": { "type": "string", "description": "issue/issue_round/issue_safe: passed resolution ID when board approval is required" },
           "investor_name": { "type": "string", "description": "issue_safe: investor name" },
           "principal_amount_cents": { "type": "integer", "description": "issue_safe: principal in cents" },
           "safe_type": { "type": "string", "description": "issue_safe: SAFE type" },

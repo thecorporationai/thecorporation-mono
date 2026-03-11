@@ -167,7 +167,10 @@ impl EquityRound {
         meeting_id: MeetingId,
         resolution_id: ResolutionId,
     ) -> Result<(), EquityError> {
-        if !matches!(self.status, EquityRoundStatus::Draft | EquityRoundStatus::Open) {
+        if !matches!(
+            self.status,
+            EquityRoundStatus::Draft | EquityRoundStatus::Open
+        ) {
             return Err(EquityError::InvalidRoundTransition {
                 from: self.status,
                 to: EquityRoundStatus::BoardApproved,

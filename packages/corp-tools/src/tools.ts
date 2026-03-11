@@ -137,6 +137,124 @@ const entityActions: Record<string, ToolHandler> = {
 
 export type CapTableInstrument = { instrument_id: string; kind: string; symbol: string; status?: string };
 
+function normalizedGrantType(grantType: string): string {
+  return grantType.trim().toLowerCase().replaceAll("-", "_").replaceAll(" ", "_");
+}
+
+function expectedInstrumentKinds(grantType: string): string[] {
+  switch (normalizedGrantType(grantType)) {
+    case "common":
+    case "common_stock":
+      return ["common_equity"];
+    case "preferred":
+    case "preferred_stock":
+      return ["preferred_equity"];
+    case "unit":
+    case "membership_unit":
+      return ["membership_unit"];
+    case "option":
+    case "options":
+    case "stock_option":
+    case "iso":
+    case "nso":
+      return ["option_grant"];
+    case "rsa":
+      return ["common_equity", "preferred_equity"];
+    case "safe":
+    case "post_money":
+    case "pre_money":
+    case "mfn":
+      return ["safe"];
+    default:
+      return [];
+  }
+}
+
+function grantRequiresCurrent409a(grantType: string, instrumentKind?: string): boolean {
+  return instrumentKind?.toLowerCase() === "option_grant" || expectedInstrumentKinds(grantType).includes("option_grant");
+}
+
+function instrumentCreationHint(grantType: string): string {
+  const normalized = normalizedGrantType(grantType);
+  switch (normalized) {
+    case "preferred":
+    case "preferred_stock":
+      return "Create a preferred instrument first, then re-run issuance with that instrument ID.";
+    case "option":
+    case "options":
+    case "stock_option":
+    case "iso":
+    case "nso":
+      return "Create an option_grant instrument first, then re-run issuance with that instrument ID.";
+    case "membership_unit":
+    case "unit":
+      return "Create a membership_unit instrument first, then re-run issuance with that instrument ID.";
+    default:
+      return "Create a matching instrument first, then re-run issuance with that instrument ID.";
+  }
+}
+
+function resolveInstrumentForGrant(
+  instruments: CapTableInstrument[],
+  grantType: string,
+  explicitInstrumentId?: string,
+): CapTableInstrument {
+  if (explicitInstrumentId) {
+    const explicit = instruments.find((instrument) => instrument.instrument_id === explicitInstrumentId);
+    if (!explicit) {
+      throw new Error(`Instrument ${explicitInstrumentId} was not found on the cap table.`);
+    }
+    return explicit;
+  }
+
+  const expectedKinds = expectedInstrumentKinds(grantType);
+  if (!expectedKinds.length) {
+    throw new Error(`No default instrument mapping exists for grant type "${grantType}". ${instrumentCreationHint(grantType)}`);
+  }
+  const match = instruments.find((instrument) => expectedKinds.includes(instrument.kind.toLowerCase()));
+  if (!match) {
+    throw new Error(
+      `No instrument found for grant type "${grantType}". Expected one of: ${expectedKinds.join(", ")}. ${instrumentCreationHint(grantType)}`,
+    );
+  }
+  return match;
+}
+
+async function entityHasActiveBoard(client: CorpAPIClient, entityId: string): Promise<boolean> {
+  const bodies = await client.listGovernanceBodies(entityId);
+  return bodies.some((body) =>
+    String(body.body_type ?? "").toLowerCase() === "board_of_directors"
+      && String(body.status ?? "active").toLowerCase() === "active"
+  );
+}
+
+async function ensureIssuancePreflight(
+  client: CorpAPIClient,
+  entityId: string,
+  grantType: string,
+  instrument: CapTableInstrument | undefined,
+  meetingId: string | undefined,
+  resolutionId: string | undefined,
+): Promise<void> {
+  if ((!meetingId || !resolutionId) && await entityHasActiveBoard(client, entityId)) {
+    throw new Error("Board approval is required before issuing this round. Provide meeting_id and resolution_id from a passed board vote.");
+  }
+
+  if (!grantRequiresCurrent409a(grantType, instrument?.kind)) {
+    return;
+  }
+
+  try {
+    await client.getCurrent409a(entityId);
+  } catch (err) {
+    const msg = String(err);
+    if (msg.includes("404")) {
+      throw new Error("Stock option issuances require a current approved 409A valuation.");
+    }
+    throw err;
+  }
+}
+
 export async function ensureSafeInstrument(
   client: CorpAPIClient,
   entityId: string,
@@ -191,17 +309,19 @@ const equityActions: Record<string, ToolHandler> = {
     const issuerLegalEntityId = capTable.issuer_legal_entity_id as string;
     if (!issuerLegalEntityId) return { error: "No issuer legal entity found. Has this entity been formed with a cap table?" };
 
-    const instruments = capTable.instruments as Array<{ instrument_id: string; kind: string; symbol: string }>;
+    const instruments = (capTable.instruments ?? []) as CapTableInstrument[];
     if (!instruments?.length) return { error: "No instruments found on cap table." };
 
-    let instrumentId = args.instrument_id as string | undefined;
-    if (!instrumentId) {
-      const grantType = (args.grant_type as string ?? "").toLowerCase();
-      const match = instruments.find(
-        (i) => i.kind.toLowerCase().includes(grantType) || i.symbol.toLowerCase().includes(grantType),
-      ) ?? instruments.find((i) => i.kind.toLowerCase().includes("common"));
-      instrumentId = (match ?? instruments[0]).instrument_id;
-    }
+    const grantType = String(args.grant_type ?? "");
+    const instrument = resolveInstrumentForGrant(instruments, grantType, args.instrument_id as string | undefined);
+    await ensureIssuancePreflight(
+      client,
+      entityId,
+      grantType,
+      instrument,
+      args.meeting_id as string | undefined,
+      args.resolution_id as string | undefined,
+    );
 
     const round = await client.startEquityRound({
       entity_id: entityId,
@@ -212,7 +332,7 @@ const equityActions: Record<string, ToolHandler> = {
 
     const securityData: Record<string, unknown> = {
       entity_id: entityId,
-      instrument_id: instrumentId,
+      instrument_id: instrument.instrument_id,
       quantity: args.shares ?? args.quantity,
       recipient_name: args.recipient_name,
       grant_type: args.grant_type,
@@ -220,35 +340,34 @@ const equityActions: Record<string, ToolHandler> = {
     if (args.email) securityData.email = args.email;
     await client.addRoundSecurity(roundId, securityData);
 
-    return client.issueRound(roundId, { entity_id: entityId });
+    const issueBody: Record<string, unknown> = { entity_id: entityId };
+    if (args.meeting_id) issueBody.meeting_id = args.meeting_id;
+    if (args.resolution_id) issueBody.resolution_id = args.resolution_id;
+    return client.issueRound(roundId, issueBody);
   },
   issue_safe: async (args, client) => {
     const entityId = requiredString(args, "entity_id");
-    const capTable = await client.getCapTable(entityId);
-    const issuerLegalEntityId = capTable.issuer_legal_entity_id as string;
-    if (!issuerLegalEntityId) return { error: "No issuer legal entity found." };
-    const safeInstrument = await ensureSafeInstrument(client, entityId);
+    await ensureIssuancePreflight(
+      client,
+      entityId,
+      String(args.safe_type ?? "post_money"),
+      undefined,
+      args.meeting_id as string | undefined,
+      args.resolution_id as string | undefined,
+    );
 
     const principalCents = (args.principal_amount_cents ?? args.amount_cents ?? 0) as number;
-    const round = await client.startEquityRound({
+    const body: Record<string, unknown> = {
       entity_id: entityId,
-      name: `SAFE — ${args.investor_name ?? "investor"}`,
-      issuer_legal_entity_id: issuerLegalEntityId,
-    });
-    const roundId = (round.round_id ?? round.equity_round_id) as string;
-
-    const securityData: Record<string, unknown> = {
-      entity_id: entityId,
-      instrument_id: safeInstrument.instrument_id,
-      quantity: principalCents || 1,
-      recipient_name: args.investor_name,
-      principal_cents: principalCents,
-      grant_type: args.safe_type ?? "post_money",
+      investor_name: args.investor_name,
+      principal_amount_cents: principalCents,
+      valuation_cap_cents: args.valuation_cap_cents,
+      safe_type: args.safe_type ?? "post_money",
     };
-    if (args.email) securityData.email = args.email;
-    await client.addRoundSecurity(roundId, securityData);
-
-    return client.issueRound(roundId, { entity_id: entityId });
+    if (args.email) body.email = args.email;
+    if (args.meeting_id) body.meeting_id = args.meeting_id;
+    if (args.resolution_id) body.resolution_id = args.resolution_id;
+    return client.createSafeNote(body);
   },
 
   transfer: async (args, client) => {

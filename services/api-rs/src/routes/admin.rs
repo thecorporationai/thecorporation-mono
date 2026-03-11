@@ -433,11 +433,28 @@ async fn link_workspace(
     Json(req): Json<WorkspaceLinkRequest>,
 ) -> Result<Json<WorkspaceLinkResponse>, AppError> {
     let workspace_id = auth.workspace_id();
+    let provider = req.provider.trim().to_ascii_lowercase();
+    if provider.is_empty()
+        || provider.len() > 64
+        || !provider
+            .chars()
+            .all(|ch| ch.is_ascii_lowercase() || ch.is_ascii_digit() || ch == '_' || ch == '-')
+    {
+        return Err(AppError::BadRequest(
+            "provider must be a non-empty slug".to_owned(),
+        ));
+    }
+    let external_id = req.external_id.trim().to_owned();
+    if external_id.is_empty() || external_id.len() > 200 {
+        return Err(AppError::BadRequest(
+            "external_id must be between 1 and 200 characters".to_owned(),
+        ));
+    }
 
     tokio::task::spawn_blocking({
         let layout = state.layout.clone();
-        let provider = req.provider.clone();
-        let external_id = req.external_id.clone();
+        let provider = provider.clone();
+        let external_id = external_id.clone();
         move || {
             let ws_store = WorkspaceStore::open(&layout, workspace_id)
                 .map_err(|e| AppError::NotFound(format!("workspace not found: {e}")))?;
@@ -463,7 +480,7 @@ async fn link_workspace(
     Ok(Json(WorkspaceLinkResponse {
         workspace_id,
         linked: true,
-        provider: req.provider,
+        provider,
     }))
 }
 

@@ -84,7 +84,10 @@ impl CreationRateLimiter {
         let window = Duration::from_secs(u64::from(window_seconds));
         let now = Instant::now();
         let entries = buckets.entry(key).or_default();
-        while entries.front().is_some_and(|instant| now.duration_since(*instant) >= window) {
+        while entries
+            .front()
+            .is_some_and(|instant| now.duration_since(*instant) >= window)
+        {
             entries.pop_front();
         }
         if entries.len() >= limit as usize {

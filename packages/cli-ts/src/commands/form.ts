@@ -141,10 +141,18 @@ function normalizeFounderInfo(input: Record<string, unknown>): FounderInfo {
 function parseLegacyMemberSpec(raw: string): FounderInfo {
   const parts = raw.split(",").map((p) => p.trim());
   if (parts.length < 3) {
-    throw new Error(`Invalid member format: ${raw}. Expected: name,email,role[,pct]`);
+    throw new Error(
+      `Invalid member format: ${raw}. Expected: name,email,role[,pct[,address[,officer_title[,is_incorporator]]]]`,
+    );
   }
   const founder: FounderInfo = { name: parts[0], email: parts[1], role: parts[2] };
   if (parts.length >= 4) founder.ownership_pct = parseFloat(parts[3]);
+  if (parts.length >= 5 && parts[4]) founder.address = parseAddressValue(parts[4]);
+  if (parts.length >= 6 && parts[5]) founder.officer_title = parts[5];
+  if (parts.length >= 7) {
+    const incorporator = parseBoolean(parts[6]);
+    if (incorporator !== undefined) founder.is_incorporator = incorporator;
+  }
   return founder;
 }
 

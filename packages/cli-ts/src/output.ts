@@ -221,12 +221,12 @@ export function printSafesTable(safes: ApiRecord[]): void {
   const table = makeTable("SAFE Notes", ["ID", "Investor", "Amount", "Cap", "Discount", "Date"]);
   for (const s_ of safes) {
     table.push([
-      s(s_.safe_id ?? s_.id, 12),
+      s(s_.safe_note_id ?? s_.safe_id ?? s_.id, 12),
       s(s_.investor_name ?? s_.investor),
-      money(s_.investment_amount ?? s_.amount, false),
-      s(s_.valuation_cap ?? s_.cap),
+      money(s_.principal_amount_cents ?? s_.investment_amount ?? s_.amount, false),
+      money(s_.valuation_cap_cents ?? s_.valuation_cap ?? s_.cap, false),
       s(s_.discount_rate ?? s_.discount),
-      s(s_.date ?? s_.created_at),
+      s(s_.issued_at ?? s_.date ?? s_.created_at),
     ]);
   }
   console.log(table.toString());

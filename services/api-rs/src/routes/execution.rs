@@ -1138,6 +1138,7 @@ async fn create_obligation(
 ) -> Result<Json<ObligationResponse>, AppError> {
     let workspace_id = auth.workspace_id();
     let entity_id = req.entity_id;
+    state.enforce_creation_rate_limit("execution.obligation.create", workspace_id, 120, 60)?;
 
     let obligation = tokio::task::spawn_blocking({
         let layout = state.layout.clone();

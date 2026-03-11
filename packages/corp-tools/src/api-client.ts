@@ -167,15 +167,10 @@ export class CorpAPIClient {
 
   // --- Cap Table ---
   getCapTable(entityId: string) { return this.get(`/v1/entities/${entityId}/cap-table`) as Promise<ApiRecord>; }
-  /** Extract SAFE instruments from the cap table (no dedicated list endpoint). */
   async getSafeNotes(entityId: string): Promise<ApiRecord[]> {
-    const ct = await this.getCapTable(entityId);
-    const instruments = (ct.instruments ?? []) as ApiRecord[];
-    const positions = (ct.positions ?? []) as ApiRecord[];
-    const safeIds = new Set(instruments.filter((i) => String(i.kind).toLowerCase() === "safe").map((i) => i.instrument_id));
-    if (safeIds.size === 0) return [];
-    return positions.filter((p) => safeIds.has(p.instrument_id));
+    return this.get(`/v1/entities/${entityId}/safe-notes`) as Promise<ApiRecord[]>;
   }
+  createSafeNote(data: ApiRecord) { return this.post("/v1/safe-notes", data) as Promise<ApiRecord>; }
   /** Extract transfer-workflow info (no dedicated list endpoint for share transfers). */
   async getShareTransfers(entityId: string): Promise<ApiRecord[]> {
     // No list endpoint exists; return empty with a hint.

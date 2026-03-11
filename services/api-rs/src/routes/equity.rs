@@ -30,12 +30,13 @@ use crate::domain::equity::{
     position::{Position, PositionStatus},
     round::{EquityRound, EquityRoundStatus},
     rule_set::{AntiDilutionMethod, EquityRuleSet},
+    safe_note::SafeNote,
     share_class::ShareClass,
     transfer::ShareTransfer,
     transfer_workflow::{TransferWorkflow, WorkflowExecutionStatus as TransferExecutionStatus},
     types::{
-        GoverningDocType, GrantType, ShareCount, TransferStatus, TransferType, TransfereeRights,
-        ValuationMethodology, ValuationStatus, ValuationType,
+        GoverningDocType, GrantType, SafeStatus, SafeType, ShareCount, TransferStatus,
+        TransferType, TransfereeRights, ValuationMethodology, ValuationStatus, ValuationType,
     },
     valuation::Valuation,
 };
@@ -59,13 +60,13 @@ use crate::domain::governance::{
     meeting::Meeting,
     profile::{GOVERNANCE_PROFILE_PATH, GovernanceProfile},
     resolution::Resolution,
-    types::{AgendaItemType, BodyType, MeetingStatus, MeetingType},
+    types::{AgendaItemType, BodyStatus, BodyType, MeetingStatus, MeetingType},
 };
 use crate::domain::ids::{
     AgendaItemId, ContactId, ControlLinkId, ConversionExecutionId, DocumentId, EntityId,
     EquityRoundId, EquityRuleSetId, FundraisingWorkflowId, HolderId, InstrumentId, IntentId,
-    LegalEntityId, MeetingId, PacketId, PacketSignatureId, PositionId, ResolutionId, ShareClassId,
-    TransferId, TransferWorkflowId, ValuationId, WorkspaceId,
+    LegalEntityId, MeetingId, PacketId, PacketSignatureId, PositionId, ResolutionId, SafeNoteId,
+    ShareClassId, TransferId, TransferWorkflowId, ValuationId, WorkspaceId,
 };
 use crate::domain::treasury::types::Cents;
 use crate::error::AppError;
@@ -723,6 +724,61 @@ pub struct WorkflowStatusResponse {
     pub packet: Option<TransactionPacketResponse>,
 }
 
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct CreateSafeNoteRequest {
+    pub entity_id: EntityId,
+    pub investor_name: String,
+    #[serde(default)]
+    pub investor_contact_id: Option<ContactId>,
+    #[serde(default)]
+    pub email: Option<String>,
+    pub principal_amount_cents: i64,
+    #[serde(default)]
+    pub valuation_cap_cents: Option<i64>,
+    #[serde(default)]
+    pub discount_rate: Option<f64>,
+    #[serde(default)]
+    pub safe_type: Option<SafeType>,
+    #[serde(default)]
+    pub pro_rata_rights: bool,
+    #[serde(default)]
+    pub document_id: Option<DocumentId>,
+    #[serde(default)]
+    pub conversion_unit_type: Option<String>,
+    #[serde(default)]
+    pub meeting_id: Option<MeetingId>,
+    #[serde(default)]
+    pub resolution_id: Option<ResolutionId>,
+}
+
+#[derive(Debug, Serialize, utoipa::ToSchema)]
+pub struct SafeNoteResponse {
+    pub safe_note_id: SafeNoteId,
+    pub entity_id: EntityId,
+    pub investor_name: String,
+    pub investor_contact_id: Option<ContactId>,
+    pub principal_amount_cents: i64,
+    pub valuation_cap_cents: Option<i64>,
+    pub discount_rate: Option<f64>,
+    pub safe_type: SafeType,
+    pub pro_rata_rights: bool,
+    pub status: SafeStatus,
+    pub document_id: Option<DocumentId>,
+    pub conversion_unit_type: String,
+    pub issued_at: String,
+    pub created_at: String,
+    pub converted_at: Option<String>,
+    pub conversion_shares: Option<i64>,
+    pub conversion_price_cents: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub meeting_id: Option<MeetingId>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub resolution_id: Option<ResolutionId>,
+}
+
+const MAX_FMV_PER_SHARE_CENTS: i64 = 10_000_000;
+
 // ── Helpers ──────────────────────────────────────────────────────────
 
 fn open_store<'a>(
@@ -761,9 +817,14 @@ fn expected_instrument_kinds(grant_type: Option<&str>) -> Option<&'static [Instr
     match normalized_grant_type(grant_type).as_deref() {
         Some("common") | Some("common_stock") => Some(&[InstrumentKind::CommonEquity]),
         Some("preferred") | Some("preferred_stock") => Some(&[InstrumentKind::PreferredEquity]),
-        Some("membership_unit") => Some(&[InstrumentKind::MembershipUnit]),
-        Some("stock_option") | Some("iso") | Some("nso") => Some(&[InstrumentKind::OptionGrant]),
-        Some("rsa") => Some(&[InstrumentKind::CommonEquity, InstrumentKind::PreferredEquity]),
+        Some("membership_unit") | Some("unit") => Some(&[InstrumentKind::MembershipUnit]),
+        Some("option") | Some("options") | Some("stock_option") | Some("iso") | Some("nso") => {
+            Some(&[InstrumentKind::OptionGrant])
+        }
+        Some("rsa") => Some(&[
+            InstrumentKind::CommonEquity,
+            InstrumentKind::PreferredEquity,
+        ]),
         Some("safe") | Some("post_money") | Some("pre_money") | Some("mfn") => {
             Some(&[InstrumentKind::Safe])
         }
@@ -793,7 +854,7 @@ fn grant_requires_current_409a(grant_type: Option<&str>, instrument: &Instrument
     instrument.kind() == InstrumentKind::OptionGrant
         || matches!(
             normalized_grant_type(grant_type).as_deref(),
-            Some("stock_option") | Some("iso") | Some("nso")
+            Some("option") | Some("options") | Some("stock_option") | Some("iso") | Some("nso")
         )
 }
 
@@ -875,6 +936,55 @@ fn resolve_contact_reference(
             "contact reference is ambiguous: {reference}; use a contact_id"
         ))),
     }
+}
+
+fn resolve_or_prepare_investor_contact(
+    store: &EntityStore<'_>,
+    entity_id: EntityId,
+    workspace_id: WorkspaceId,
+    investor_name: &str,
+    investor_contact_id: Option<ContactId>,
+    email: Option<&str>,
+) -> Result<(Option<ContactId>, Vec<FileWrite>), AppError> {
+    if let Some(contact_id) = investor_contact_id {
+        let contact = store
+            .read::<Contact>("main", contact_id)
+            .map_err(|_| AppError::NotFound(format!("contact {contact_id} not found")))?;
+        if contact.entity_id() != entity_id {
+            return Err(AppError::BadRequest(format!(
+                "contact {contact_id} does not belong to entity {entity_id}"
+            )));
+        }
+        return Ok((Some(contact_id), Vec::new()));
+    }
+
+    let trimmed_email = email.map(str::trim).filter(|value| !value.is_empty());
+    if let Some(email) = trimmed_email {
+        let contacts = read_all::<Contact>(store)?;
+        if let Some(contact) = contacts.iter().find(|contact| {
+            contact
+                .email()
+                .map(|value| value.eq_ignore_ascii_case(email))
+                .unwrap_or(false)
+        }) {
+            return Ok((Some(contact.contact_id()), Vec::new()));
+        }
+    }
+
+    let contact_id = ContactId::new();
+    let contact = Contact::new(
+        contact_id,
+        entity_id,
+        workspace_id,
+        ContactType::Individual,
+        investor_name.trim().to_owned(),
+        trimmed_email.map(ToOwned::to_owned),
+        ContactCategory::Investor,
+    )
+    .map_err(AppError::BadRequest)?;
+    let file = FileWrite::json(format!("contacts/{}.json", contact_id), &contact)
+        .map_err(|e| AppError::Internal(format!("serialize contact {contact_id}: {e}")))?;
+    Ok((Some(contact_id), vec![file]))
 }
 
 fn resolve_transfer_sender_contact(
@@ -2253,6 +2363,7 @@ async fn create_holder(
     if !auth.allows_entity(entity_id) {
         return Err(AppError::Forbidden("entity access denied".to_owned()));
     }
+    state.enforce_creation_rate_limit("equity.holder.create", workspace_id, 120, 60)?;
 
     let holder = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
@@ -2434,6 +2545,7 @@ async fn create_instrument(
     if !auth.allows_entity(entity_id) {
         return Err(AppError::Forbidden("entity access denied".to_owned()));
     }
+    state.enforce_creation_rate_limit("equity.instrument.create", workspace_id, 120, 60)?;
 
     let instrument = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
@@ -2606,6 +2718,7 @@ async fn create_round(
     if !auth.allows_entity(entity_id) {
         return Err(AppError::Forbidden("entity access denied".to_owned()));
     }
+    state.enforce_creation_rate_limit("equity.round.create", workspace_id, 120, 60)?;
 
     let round = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
@@ -2881,6 +2994,9 @@ async fn create_transfer_workflow(
             "price_per_share_cents cannot be negative".to_owned(),
         ));
     }
+    ShareCount::new(req.share_count)
+        .require_positive()
+        .map_err(|e| AppError::BadRequest(e.to_owned()))?;
     if req.from_contact_id == req.to_contact_id {
         return Err(AppError::BadRequest(
             "from_contact_id and to_contact_id must be different".to_owned(),
@@ -2892,6 +3008,7 @@ async fn create_transfer_workflow(
     if !auth.allows_entity(entity_id) {
         return Err(AppError::Forbidden("entity access denied".to_owned()));
     }
+    state.enforce_creation_rate_limit("equity.transfer_workflow.create", workspace_id, 120, 60)?;
 
     let workflow = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
@@ -3544,6 +3661,12 @@ async fn create_fundraising_workflow(
     if !auth.allows_entity(entity_id) {
         return Err(AppError::Forbidden("entity access denied".to_owned()));
     }
+    state.enforce_creation_rate_limit(
+        "equity.fundraising_workflow.create",
+        workspace_id,
+        60,
+        60,
+    )?;
 
     let workflow = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
@@ -6148,7 +6271,12 @@ async fn add_round_security(
                     AppError::NotFound(format!("pending securities file not found: {e}"))
                 })?;
             let all_positions = read_all::<Position>(&store)?;
-            ensure_instrument_has_capacity(&all_positions, &pending.securities, instrument, req.quantity)?;
+            ensure_instrument_has_capacity(
+                &all_positions,
+                &pending.securities,
+                instrument,
+                req.quantity,
+            )?;
             pending.securities.push(security.clone());
 
             store
@@ -6322,9 +6450,11 @@ async fn issue_staged_round(
                         meeting_id,
                         resolution_id,
                     )?;
-                    round.record_board_approval(meeting_id, resolution_id).map_err(|e| {
-                        AppError::BadRequest(format!("failed to record board approval: {e}"))
-                    })?;
+                    round
+                        .record_board_approval(meeting_id, resolution_id)
+                        .map_err(|e| {
+                            AppError::BadRequest(format!("failed to record board approval: {e}"))
+                        })?;
                 }
                 board_meeting_id = round.board_approval_meeting_id();
                 round.accept(None).map_err(|e| {
@@ -6474,9 +6604,213 @@ fn valuation_to_response(v: &Valuation) -> ValuationResponse {
         board_approval_resolution_id: v.board_approval_resolution_id(),
         status: v.status(),
         created_at: v.created_at().to_rfc3339(),
-        meeting_id: None,
-        agenda_item_id: None,
+        meeting_id: v.board_approval_meeting_id(),
+        agenda_item_id: v.board_approval_agenda_item_id(),
     }
+}
+
+fn safe_note_to_response(note: &SafeNote) -> SafeNoteResponse {
+    SafeNoteResponse {
+        safe_note_id: note.safe_note_id(),
+        entity_id: note.entity_id(),
+        investor_name: note.investor_name().to_owned(),
+        investor_contact_id: note.investor_id(),
+        principal_amount_cents: note.principal_amount_cents().raw(),
+        valuation_cap_cents: note.valuation_cap_cents().map(|value| value.raw()),
+        discount_rate: note.discount_rate(),
+        safe_type: note.safe_type(),
+        pro_rata_rights: note.pro_rata_rights(),
+        status: note.status(),
+        document_id: note.document_id(),
+        conversion_unit_type: note.conversion_unit_type().to_owned(),
+        issued_at: note.issued_at().to_rfc3339(),
+        created_at: note.created_at().to_rfc3339(),
+        converted_at: note.converted_at().map(|value| value.to_rfc3339()),
+        conversion_shares: note.conversion_shares().map(|value| value.raw()),
+        conversion_price_cents: note.conversion_price_cents().map(|value| value.raw()),
+        meeting_id: note.board_approval_meeting_id(),
+        resolution_id: note.board_approval_resolution_id(),
+    }
+}
+
+// ── SAFE note handlers ──────────────────────────────────────────────
+
+#[utoipa::path(
+    post,
+    path = "/v1/safe-notes",
+    tag = "equity",
+    request_body = CreateSafeNoteRequest,
+    responses(
+        (status = 200, description = "SAFE note issued", body = SafeNoteResponse),
+        (status = 400, description = "Invalid request"),
+    ),
+)]
+async fn create_safe_note(
+    RequireEquityWrite(auth): RequireEquityWrite,
+    State(state): State<AppState>,
+    Json(req): Json<CreateSafeNoteRequest>,
+) -> Result<Json<SafeNoteResponse>, AppError> {
+    let workspace_id = auth.workspace_id();
+    let entity_id = req.entity_id;
+    if !auth.allows_entity(entity_id) {
+        return Err(AppError::Forbidden("entity access denied".to_owned()));
+    }
+    if req.investor_name.trim().is_empty() {
+        return Err(AppError::BadRequest(
+            "investor_name must not be empty".to_owned(),
+        ));
+    }
+    if req
+        .email
+        .as_deref()
+        .is_some_and(|email| email.trim().is_empty())
+    {
+        return Err(AppError::BadRequest("email cannot be empty".to_owned()));
+    }
+    if req
+        .conversion_unit_type
+        .as_deref()
+        .is_some_and(|value| value.trim().is_empty())
+    {
+        return Err(AppError::BadRequest(
+            "conversion_unit_type cannot be empty".to_owned(),
+        ));
+    }
+    if req.meeting_id.is_some() ^ req.resolution_id.is_some() {
+        return Err(AppError::BadRequest(
+            "meeting_id and resolution_id must be provided together".to_owned(),
+        ));
+    }
+    Cents::new(req.principal_amount_cents)
+        .require_positive()
+        .map_err(|e| AppError::BadRequest(e.to_owned()))?;
+    if let Some(cap) = req.valuation_cap_cents {
+        Cents::new(cap)
+            .require_positive()
+            .map_err(|e| AppError::BadRequest(e.to_owned()))?;
+    }
+    if let Some(rate) = req.discount_rate
+        && !(0.0..=1.0).contains(&rate)
+    {
+        return Err(AppError::BadRequest(
+            "discount_rate must be between 0.0 and 1.0".to_owned(),
+        ));
+    }
+    state.enforce_creation_rate_limit("equity.safe_note.create", workspace_id, 60, 60)?;
+
+    let safe_note = tokio::task::spawn_blocking({
+        let layout = state.layout.clone();
+        move || {
+            let store = open_store(&layout, workspace_id, entity_id)?;
+            let (investor_contact_id, mut files) = resolve_or_prepare_investor_contact(
+                &store,
+                entity_id,
+                workspace_id,
+                &req.investor_name,
+                req.investor_contact_id,
+                req.email.as_deref(),
+            )?;
+
+            let approval_required = read_all::<GovernanceBody>(&store)?.into_iter().any(|body| {
+                body.status() == BodyStatus::Active
+                    && matches!(
+                        body.body_type(),
+                        BodyType::BoardOfDirectors | BodyType::LlcMemberVote
+                    )
+            });
+
+            let safe_note_id = SafeNoteId::new();
+            let mut safe_note = SafeNote::new(
+                safe_note_id,
+                entity_id,
+                req.investor_name.trim().to_owned(),
+                investor_contact_id,
+                Cents::new(req.principal_amount_cents),
+                req.valuation_cap_cents.map(Cents::new),
+                req.discount_rate,
+                req.safe_type.unwrap_or(SafeType::PostMoney),
+                req.pro_rata_rights,
+                req.document_id,
+                req.conversion_unit_type
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                    .unwrap_or("preferred_equity")
+                    .to_owned(),
+            )
+            .map_err(|e| AppError::BadRequest(format!("{e}")))?;
+
+            if let (Some(meeting_id), Some(resolution_id)) = (req.meeting_id, req.resolution_id) {
+                validate_resolution_for_equity_workflow(
+                    &store,
+                    entity_id,
+                    meeting_id,
+                    resolution_id,
+                )?;
+                safe_note.record_board_approval(meeting_id, resolution_id);
+            } else if approval_required {
+                return Err(AppError::BadRequest(
+                    "meeting_id and resolution_id are required to issue a SAFE when an active board or member-vote body exists".to_owned(),
+                ));
+            }
+
+            files.push(
+                FileWrite::json(SafeNote::storage_path(safe_note_id), &safe_note)
+                    .map_err(|e| AppError::Internal(format!("serialize safe note: {e}")))?,
+            );
+            store
+                .commit("main", &format!("Issue SAFE note {safe_note_id}"), files)
+                .map_err(|e| AppError::Internal(format!("commit: {e}")))?;
+            Ok::<_, AppError>(safe_note)
+        }
+    })
+    .await
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+
+    Ok(Json(safe_note_to_response(&safe_note)))
+}
+
+#[utoipa::path(
+    get,
+    path = "/v1/entities/{entity_id}/safe-notes",
+    tag = "equity",
+    params(
+        ("entity_id" = EntityId, Path, description = "Entity ID"),
+    ),
+    responses(
+        (status = 200, description = "List SAFE notes", body = Vec<SafeNoteResponse>),
+        (status = 404, description = "Entity not found"),
+    ),
+)]
+async fn list_safe_notes(
+    RequireEquityRead(auth): RequireEquityRead,
+    State(state): State<AppState>,
+    Path(entity_id): Path<EntityId>,
+) -> Result<Json<Vec<SafeNoteResponse>>, AppError> {
+    let workspace_id = auth.workspace_id();
+    if !auth.allows_entity(entity_id) {
+        return Err(AppError::Forbidden("entity access denied".to_owned()));
+    }
+
+    let safe_notes = tokio::task::spawn_blocking({
+        let layout = state.layout.clone();
+        move || {
+            let store = open_store(&layout, workspace_id, entity_id)?;
+            let mut notes = read_all::<SafeNote>(&store)?;
+            notes.sort_by_key(|note| note.created_at());
+            Ok::<_, AppError>(
+                notes
+                    .iter()
+                    .rev()
+                    .map(safe_note_to_response)
+                    .collect::<Vec<_>>(),
+            )
+        }
+    })
+    .await
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+
+    Ok(Json(safe_notes))
 }
 
 // ── Valuation handlers ──────────────────────────────────────────────
@@ -6501,10 +6835,17 @@ async fn create_valuation(
     if !auth.allows_entity(entity_id) {
         return Err(AppError::Forbidden("entity access denied".to_owned()));
     }
+    state.enforce_creation_rate_limit("equity.valuation.create", workspace_id, 60, 60)?;
     if let Some(amount) = req.fmv_per_share_cents {
         Cents::new(amount)
             .require_positive()
             .map_err(|e| AppError::BadRequest(e.to_owned()))?;
+        if amount > MAX_FMV_PER_SHARE_CENTS {
+            return Err(AppError::BadRequest(format!(
+                "fmv_per_share_cents exceeds sanity limit (max {} cents per share)",
+                MAX_FMV_PER_SHARE_CENTS
+            )));
+        }
     }
     if let Some(amount) = req.enterprise_value_cents {
         Cents::new(amount)
@@ -6676,7 +7017,9 @@ async fn get_current_409a(
             let all = read_all::<Valuation>(&store)?;
             all.into_iter()
                 .find(|v| v.is_current_409a())
-                .ok_or_else(|| AppError::NotFound("no current 409A valuation found".to_owned()))
+                .ok_or_else(|| {
+                    AppError::NotFound("no current approved 409A valuation found".to_owned())
+                })
         }
     })
     .await
@@ -6775,6 +7118,7 @@ async fn submit_valuation_for_approval(
                 None,
                 AgendaItemType::Resolution,
             );
+            valuation.record_submission_for_approval(meeting_id, agenda_item_id);
 
             // Build atomic commit.
             let mut files = vec![
@@ -7166,6 +7510,8 @@ async fn list_legacy_share_transfers(
         get_cap_table,
         get_control_map,
         get_dilution_preview,
+        create_safe_note,
+        list_safe_notes,
         create_valuation,
         list_valuations,
         get_current_409a,
@@ -7238,6 +7584,8 @@ async fn list_legacy_share_transfers(
         TransactionPacketResponse,
         PacketSignatureResponse,
         WorkflowStatusResponse,
+        CreateSafeNoteRequest,
+        SafeNoteResponse,
         ValuationResponse,
         CreateLegacyGrantRequest,
         CreateLegacyShareTransferRequest,
@@ -7393,6 +7741,8 @@ pub fn equity_routes() -> Router<AppState> {
         .route("/v1/entities/{entity_id}/cap-table", get(get_cap_table))
         .route("/v1/equity/control-map", get(get_control_map))
         .route("/v1/equity/dilution/preview", get(get_dilution_preview))
+        .route("/v1/safe-notes", post(create_safe_note))
+        .route("/v1/entities/{entity_id}/safe-notes", get(list_safe_notes))
         .route("/v1/valuations", post(create_valuation))
         .route("/v1/entities/{entity_id}/valuations", get(list_valuations))
         .route(

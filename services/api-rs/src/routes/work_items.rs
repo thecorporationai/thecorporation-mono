@@ -34,6 +34,27 @@ fn open_store<'a>(
     })
 }
 
+fn validate_category(category: &str) -> Result<String, AppError> {
+    let trimmed = category.trim();
+    if trimmed.is_empty() {
+        return Err(AppError::BadRequest("category cannot be empty".to_owned()));
+    }
+    if trimmed.len() > 64 {
+        return Err(AppError::BadRequest(
+            "category must be at most 64 characters".to_owned(),
+        ));
+    }
+    if !trimmed
+        .chars()
+        .all(|ch| ch.is_ascii_alphanumeric() || ch == '_' || ch == '-')
+    {
+        return Err(AppError::BadRequest(
+            "category must use only letters, numbers, '_' or '-'".to_owned(),
+        ));
+    }
+    Ok(trimmed.to_owned())
+}
+
 // ── Request types ───────────────────────────────────────────────────
 
 #[derive(Deserialize, utoipa::ToSchema)]
@@ -155,9 +176,19 @@ async fn create_work_item(
     if req.title.trim().is_empty() {
         return Err(AppError::BadRequest("title cannot be empty".to_owned()));
     }
+    if req
+        .deadline
+        .is_some_and(|deadline| deadline < Utc::now().date_naive() - chrono::Duration::days(365))
+    {
+        return Err(AppError::BadRequest(
+            "deadline cannot be more than one year in the past".to_owned(),
+        ));
+    }
+    let category = validate_category(&req.category)?;
 
     let work_item = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let category = category.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
             let work_item_id = WorkItemId::new();
@@ -169,7 +200,7 @@ async fn create_work_item(
                 entity_id,
                 req.title,
                 req.description.unwrap_or_default(),
-                req.category,
+                category,
                 req.deadline,
                 req.asap,
                 metadata,

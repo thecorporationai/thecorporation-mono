@@ -19,9 +19,19 @@ use crate::domain::contacts::{
     types::{ContactCategory, ContactType},
 };
 use crate::domain::equity::{
+    fundraising_workflow::{
+        FundraisingWorkflow, WorkflowExecutionStatus as FundraisingWorkflowExecutionStatus,
+    },
     holder::Holder,
     instrument::{Instrument, InstrumentKind},
     position::Position,
+    round::{EquityRound, EquityRoundStatus},
+    safe_note::SafeNote,
+    transfer_workflow::{
+        TransferWorkflow, WorkflowExecutionStatus as TransferWorkflowExecutionStatus,
+    },
+    types::{SafeStatus, ValuationStatus},
+    valuation::Valuation,
 };
 use crate::domain::formation::types::{EntityType, FormationStatus};
 use crate::domain::governance::{
@@ -71,6 +81,7 @@ use crate::routes::governance_enforcement::{
     set_mode_with_history,
 };
 use crate::store::entity_store::EntityStore;
+use crate::store::stored_entity::StoredEntity;
 
 // ── Query types ──────────────────────────────────────────────────────
 
@@ -552,13 +563,37 @@ fn open_store<'a>(
     })
 }
 
-fn validate_meeting_type_for_body(body_type: BodyType, meeting_type: MeetingType) -> Result<(), AppError> {
+fn read_all<T: StoredEntity>(store: &EntityStore<'_>) -> Result<Vec<T>, AppError> {
+    let ids = store
+        .list_ids::<T>("main")
+        .map_err(|e| AppError::Internal(format!("list {}: {e}", T::storage_dir())))?;
+
+    let mut records = Vec::new();
+    for id in ids {
+        let record = store
+            .read::<T>("main", id)
+            .map_err(|e| AppError::Internal(format!("read {} {}: {e}", T::storage_dir(), id)))?;
+        records.push(record);
+    }
+    Ok(records)
+}
+
+fn validate_meeting_type_for_body(
+    body_type: BodyType,
+    meeting_type: MeetingType,
+) -> Result<(), AppError> {
     let is_allowed = match body_type {
         BodyType::BoardOfDirectors => {
-            matches!(meeting_type, MeetingType::BoardMeeting | MeetingType::WrittenConsent)
+            matches!(
+                meeting_type,
+                MeetingType::BoardMeeting | MeetingType::WrittenConsent
+            )
         }
         BodyType::LlcMemberVote => {
-            matches!(meeting_type, MeetingType::MemberMeeting | MeetingType::WrittenConsent)
+            matches!(
+                meeting_type,
+                MeetingType::MemberMeeting | MeetingType::WrittenConsent
+            )
         }
     };
     if is_allowed {
@@ -578,9 +613,10 @@ fn holder_has_active_membership_units(
         .map_err(|e| AppError::Internal(format!("list holders: {e}")))?
         .into_iter()
         .find_map(|id| {
-            store.read::<Holder>("main", id).ok().and_then(|holder| {
-                (holder.contact_id() == holder_id).then_some(holder.holder_id())
-            })
+            store
+                .read::<Holder>("main", id)
+                .ok()
+                .and_then(|holder| (holder.contact_id() == holder_id).then_some(holder.holder_id()))
         });
     let Some(holder_record_id) = holder_record_id else {
         return Ok(false);
@@ -651,13 +687,127 @@ fn has_active_seat(
     let seat_ids = store
         .list_ids::<GovernanceSeat>("main")
         .map_err(|e| AppError::Internal(format!("list governance seats: {e}")))?;
-    Ok(seat_ids.into_iter().filter_map(|id| store.read::<GovernanceSeat>("main", id).ok()).any(
-        |seat| {
+    Ok(seat_ids
+        .into_iter()
+        .filter_map(|id| store.read::<GovernanceSeat>("main", id).ok())
+        .any(|seat| {
             seat.body_id() == body_id
                 && seat.holder_id() == holder_id
                 && seat.status() == SeatStatus::Active
-        },
-    ))
+        }))
+}
+
+fn eligible_voting_power_for_body(
+    store: &EntityStore<'_>,
+    body_id: GovernanceBodyId,
+) -> Result<u32, AppError> {
+    Ok(read_all::<GovernanceSeat>(store)?
+        .into_iter()
+        .filter(|seat| seat.body_id() == body_id && seat.can_vote())
+        .map(|seat| seat.voting_power().raw())
+        .sum())
+}
+
+fn ensure_meeting_can_be_cancelled(
+    store: &EntityStore<'_>,
+    meeting: &Meeting,
+) -> Result<(), AppError> {
+    for round in read_all::<EquityRound>(store)? {
+        if round.board_approval_meeting_id() == Some(meeting.meeting_id())
+            && !matches!(
+                round.status(),
+                EquityRoundStatus::Closed | EquityRoundStatus::Cancelled
+            )
+        {
+            return Err(AppError::Conflict(format!(
+                "meeting {} is linked to active equity round {}",
+                meeting.meeting_id(),
+                round.equity_round_id()
+            )));
+        }
+    }
+
+    for workflow in read_all::<TransferWorkflow>(store)? {
+        if workflow.board_approval_meeting_id() == Some(meeting.meeting_id())
+            && !matches!(
+                workflow.execution_status(),
+                TransferWorkflowExecutionStatus::Executed
+                    | TransferWorkflowExecutionStatus::Failed
+                    | TransferWorkflowExecutionStatus::Cancelled
+            )
+        {
+            return Err(AppError::Conflict(format!(
+                "meeting {} is linked to active transfer workflow {}",
+                meeting.meeting_id(),
+                workflow.transfer_workflow_id()
+            )));
+        }
+    }
+
+    for workflow in read_all::<FundraisingWorkflow>(store)? {
+        if workflow.board_approval_meeting_id() == Some(meeting.meeting_id())
+            && !matches!(
+                workflow.execution_status(),
+                FundraisingWorkflowExecutionStatus::Executed
+                    | FundraisingWorkflowExecutionStatus::Failed
+                    | FundraisingWorkflowExecutionStatus::Cancelled
+            )
+        {
+            return Err(AppError::Conflict(format!(
+                "meeting {} is linked to active fundraising workflow {}",
+                meeting.meeting_id(),
+                workflow.fundraising_workflow_id()
+            )));
+        }
+    }
+
+    for valuation in read_all::<Valuation>(store)? {
+        if valuation.board_approval_meeting_id() == Some(meeting.meeting_id())
+            && valuation.status() == ValuationStatus::PendingApproval
+        {
+            return Err(AppError::Conflict(format!(
+                "meeting {} is linked to pending valuation {}",
+                meeting.meeting_id(),
+                valuation.valuation_id()
+            )));
+        }
+    }
+
+    for safe_note in read_all::<SafeNote>(store)? {
+        if safe_note.board_approval_meeting_id() == Some(meeting.meeting_id())
+            && safe_note.status() == SafeStatus::Issued
+        {
+            return Err(AppError::Conflict(format!(
+                "meeting {} is linked to issued SAFE note {}",
+                meeting.meeting_id(),
+                safe_note.safe_note_id()
+            )));
+        }
+    }
+
+    let has_legacy_409a_agenda = store
+        .list_agenda_item_ids("main", meeting.meeting_id())
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|item_id| {
+            store
+                .read_agenda_item("main", meeting.meeting_id(), item_id)
+                .ok()
+        })
+        .any(|item| item.title().starts_with("Approve 409A Valuation"));
+    if has_legacy_409a_agenda
+        && read_all::<Valuation>(store)?.into_iter().any(|valuation| {
+            valuation.status() == ValuationStatus::PendingApproval
+                && valuation.board_approval_meeting_id().is_none()
+        })
+    {
+        return Err(AppError::Conflict(format!(
+            "meeting {} may be linked to a pending valuation approval; resolve or recreate that workflow before cancelling",
+            meeting.meeting_id()
+        )));
+    }
+
+    Ok(())
 }
 
 fn read_schedule_or_default(store: &EntityStore<'_>, entity_id: EntityId) -> DelegationSchedule {
@@ -1698,6 +1848,7 @@ async fn create_governance_body(
 ) -> Result<Json<GovernanceBodyResponse>, AppError> {
     let workspace_id = auth.workspace_id();
     let entity_id = req.entity_id;
+    state.enforce_creation_rate_limit("governance.body.create", workspace_id, 120, 60)?;
 
     let body = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
@@ -2398,6 +2549,7 @@ async fn create_seat(
 ) -> Result<Json<GovernanceSeatResponse>, AppError> {
     let workspace_id = auth.workspace_id();
     let entity_id = query.entity_id;
+    state.enforce_creation_rate_limit("governance.seat.create", workspace_id, 120, 60)?;
 
     let seat = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
@@ -2974,6 +3126,7 @@ async fn cancel_meeting(
                 .read::<Meeting>("main", meeting_id)
                 .map_err(|_| AppError::NotFound(format!("meeting {} not found", meeting_id)))?;
 
+            ensure_meeting_can_be_cancelled(&store, &meeting)?;
             meeting.cancel()?;
 
             let path = format!("governance/meetings/{}/meeting.json", meeting_id);
@@ -3037,9 +3190,28 @@ async fn cast_vote(
             }
 
             // Verify agenda item exists
-            store
+            let item = store
                 .read_agenda_item("main", meeting_id, item_id)
                 .map_err(|_| AppError::NotFound(format!("agenda item {} not found", item_id)))?;
+            if matches!(
+                item.status(),
+                AgendaItemStatus::Voted | AgendaItemStatus::Tabled | AgendaItemStatus::Withdrawn
+            ) {
+                return Err(AppError::Conflict(format!(
+                    "agenda item {item_id} already finalized"
+                )));
+            }
+            let has_resolution = store
+                .list_resolution_ids("main", meeting_id)
+                .unwrap_or_default()
+                .into_iter()
+                .filter_map(|rid| store.read_resolution("main", meeting_id, rid).ok())
+                .any(|resolution| resolution.agenda_item_id() == item_id);
+            if has_resolution {
+                return Err(AppError::Conflict(format!(
+                    "agenda item {item_id} already has a resolution"
+                )));
+            }
 
             // Find the seat for the voter in this body
             let seat_ids = store.list_ids::<GovernanceSeat>("main").unwrap_or_default();
@@ -3311,13 +3483,13 @@ async fn compute_resolution(
                 }
             }
 
-            // Determine if the resolution passed using the body's quorum rule.
-            // Total eligible = for + against (abstentions and recusals don't count
-            // toward the denominator for pass/fail determination).
-            let total_eligible = votes_for + votes_against;
+            // Determine if the resolution passed using all eligible voting power
+            // on the body, less any recorded recusals.
+            let total_eligible = eligible_voting_power_for_body(&store, meeting.body_id())?
+                .saturating_sub(recused_count);
             if total_eligible == 0 {
                 return Err(AppError::BadRequest(
-                    "cannot compute a resolution with zero counted votes".to_owned(),
+                    "cannot compute a resolution with zero eligible voting power".to_owned(),
                 ));
             }
             let passed = body.quorum_rule().is_met(votes_for, total_eligible);
@@ -3624,6 +3796,10 @@ async fn written_consent(
 ) -> Result<Json<WrittenConsentResponse>, AppError> {
     let workspace_id = auth.workspace_id();
     let entity_id = req.entity_id;
+    state.enforce_creation_rate_limit("governance.written_consent.create", workspace_id, 60, 60)?;
+    if req.title.trim().is_empty() {
+        return Err(AppError::BadRequest("title cannot be empty".to_owned()));
+    }
 
     let meeting = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
@@ -3642,7 +3818,7 @@ async fn written_consent(
                 meeting_id,
                 req.body_id,
                 MeetingType::WrittenConsent,
-                req.title,
+                req.title.trim().to_owned(),
                 None,          // No scheduled date for written consent
                 String::new(), // No location
                 0,             // No notice days

@@ -248,9 +248,81 @@ impl fmt::Display for FilingStatus {
 /// Maximum length for a jurisdiction string.
 const MAX_JURISDICTION_LEN: usize = 200;
 
-/// A validated jurisdiction (e.g., "Delaware", "California").
+const US_JURISDICTIONS: &[(&str, &str)] = &[
+    ("US-AL", "Alabama"),
+    ("US-AK", "Alaska"),
+    ("US-AZ", "Arizona"),
+    ("US-AR", "Arkansas"),
+    ("US-CA", "California"),
+    ("US-CO", "Colorado"),
+    ("US-CT", "Connecticut"),
+    ("US-DE", "Delaware"),
+    ("US-DC", "District of Columbia"),
+    ("US-FL", "Florida"),
+    ("US-GA", "Georgia"),
+    ("US-HI", "Hawaii"),
+    ("US-ID", "Idaho"),
+    ("US-IL", "Illinois"),
+    ("US-IN", "Indiana"),
+    ("US-IA", "Iowa"),
+    ("US-KS", "Kansas"),
+    ("US-KY", "Kentucky"),
+    ("US-LA", "Louisiana"),
+    ("US-ME", "Maine"),
+    ("US-MD", "Maryland"),
+    ("US-MA", "Massachusetts"),
+    ("US-MI", "Michigan"),
+    ("US-MN", "Minnesota"),
+    ("US-MS", "Mississippi"),
+    ("US-MO", "Missouri"),
+    ("US-MT", "Montana"),
+    ("US-NE", "Nebraska"),
+    ("US-NV", "Nevada"),
+    ("US-NH", "New Hampshire"),
+    ("US-NJ", "New Jersey"),
+    ("US-NM", "New Mexico"),
+    ("US-NY", "New York"),
+    ("US-NC", "North Carolina"),
+    ("US-ND", "North Dakota"),
+    ("US-OH", "Ohio"),
+    ("US-OK", "Oklahoma"),
+    ("US-OR", "Oregon"),
+    ("US-PA", "Pennsylvania"),
+    ("US-RI", "Rhode Island"),
+    ("US-SC", "South Carolina"),
+    ("US-SD", "South Dakota"),
+    ("US-TN", "Tennessee"),
+    ("US-TX", "Texas"),
+    ("US-UT", "Utah"),
+    ("US-VT", "Vermont"),
+    ("US-VA", "Virginia"),
+    ("US-WA", "Washington"),
+    ("US-WV", "West Virginia"),
+    ("US-WI", "Wisconsin"),
+    ("US-WY", "Wyoming"),
+];
+
+fn canonicalize_jurisdiction(input: &str) -> Option<String> {
+    let trimmed = input.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    let upper = trimmed.to_ascii_uppercase();
+    for (code, name) in US_JURISDICTIONS {
+        if upper == *code || upper == code.trim_start_matches("US-") {
+            return Some((*code).to_owned());
+        }
+        if upper == name.to_ascii_uppercase() {
+            return Some((*name).to_owned());
+        }
+    }
+    None
+}
+
+/// A validated jurisdiction (e.g., "Delaware", "US-DE").
 ///
-/// Guarantees: non-empty, at most 200 characters.
+/// Guarantees: non-empty, at most 200 characters, and matches a supported US
+/// state or DC jurisdiction name/code.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, utoipa::ToSchema)]
 #[schema(value_type = String)]
 #[serde(transparent)]
@@ -260,7 +332,7 @@ impl Jurisdiction {
     /// Create a validated jurisdiction.
     pub fn new(s: impl Into<String>) -> Result<Self, String> {
         let s = s.into();
-        if s.is_empty() {
+        if s.trim().is_empty() {
             return Err("jurisdiction must not be empty".into());
         }
         if s.len() > MAX_JURISDICTION_LEN {
@@ -269,7 +341,10 @@ impl Jurisdiction {
                 MAX_JURISDICTION_LEN
             ));
         }
-        Ok(Self(s))
+        let canonical = canonicalize_jurisdiction(&s).ok_or_else(|| {
+            "jurisdiction must be a supported US state or DC code/name".to_owned()
+        })?;
+        Ok(Self(canonical))
     }
 
     pub fn as_str(&self) -> &str {
@@ -412,6 +487,8 @@ mod tests {
     fn jurisdiction_valid() {
         assert!(Jurisdiction::new("Delaware").is_ok());
         assert!(Jurisdiction::new("California").is_ok());
+        assert_eq!(Jurisdiction::new("de").unwrap().as_str(), "US-DE");
+        assert_eq!(Jurisdiction::new("US-wy").unwrap().as_str(), "US-WY");
     }
 
     #[test]
@@ -438,5 +515,11 @@ mod tests {
         let json = serde_json::json!("");
         let result: Result<Jurisdiction, _> = serde_json::from_value(json);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn jurisdiction_rejects_invalid_codes() {
+        assert!(Jurisdiction::new("XX-XX").is_err());
+        assert!(Jurisdiction::new("Atlantis").is_err());
     }
 }

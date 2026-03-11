@@ -146,12 +146,120 @@ pub struct ClassifyContractorRequest {
     #[serde(default = "default_state")]
     pub state: String,
     #[serde(default)]
+    pub hours_per_week: Option<u32>,
+    #[serde(default)]
+    pub exclusive_client: Option<bool>,
+    #[serde(default)]
+    pub duration_months: Option<u32>,
+    #[serde(default)]
+    pub provides_tools: Option<bool>,
+    #[serde(default)]
     #[schema(value_type = Object)]
     pub factors: serde_json::Value,
 }
 
 fn default_state() -> String {
     "CA".to_owned()
+}
+
+const VALID_US_STATE_CODES: &[&str] = &[
+    "AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "FL", "GA", "HI", "ID", "IL", "IN", "IA", "KS",
+    "KY", "LA", "ME", "MD", "MA", "MI", "MN", "MS", "MO", "MT", "NE", "NV", "NH", "NJ", "NM", "NY",
+    "NC", "ND", "OH", "OK", "OR", "PA", "RI", "SC", "SD", "TN", "TX", "UT", "VT", "VA", "WA", "WV",
+    "WI", "WY", "DC",
+];
+
+fn normalize_state_code(state: &str) -> Result<String, AppError> {
+    let normalized = state.trim().to_ascii_uppercase();
+    if VALID_US_STATE_CODES.contains(&normalized.as_str()) {
+        return Ok(normalized);
+    }
+    Err(AppError::BadRequest(format!(
+        "unsupported state code: {}",
+        state
+    )))
+}
+
+fn json_u32(value: &serde_json::Value, key: &str) -> Option<u32> {
+    value
+        .get(key)
+        .and_then(serde_json::Value::as_u64)
+        .and_then(|raw| u32::try_from(raw).ok())
+}
+
+fn json_bool(value: &serde_json::Value, key: &str) -> Option<bool> {
+    value.get(key).and_then(serde_json::Value::as_bool)
+}
+
+fn classify_contractor_inputs(
+    req: &ClassifyContractorRequest,
+) -> (RiskLevel, Vec<String>, ClassificationResult) {
+    let mut score = 0u32;
+    let mut flags = Vec::new();
+
+    match req.state.as_str() {
+        "CA" | "MA" | "NJ" | "NY" => {
+            score += 2;
+            flags.push(format!(
+                "{}_strict_classification_laws",
+                req.state.to_lowercase()
+            ));
+        }
+        "TX" | "FL" | "WA" => {}
+        _ => {
+            score += 1;
+        }
+    }
+
+    let hours_per_week = req
+        .hours_per_week
+        .or_else(|| json_u32(&req.factors, "hours_per_week"));
+    if hours_per_week.is_some_and(|hours| hours >= 35) {
+        score += 2;
+        flags.push("full_time_schedule".to_owned());
+    }
+
+    let exclusive_client = req
+        .exclusive_client
+        .or_else(|| json_bool(&req.factors, "exclusive_client"))
+        .unwrap_or(false);
+    if exclusive_client {
+        score += 2;
+        flags.push("exclusive_client".to_owned());
+    }
+
+    let duration_months = req
+        .duration_months
+        .or_else(|| json_u32(&req.factors, "duration_months"));
+    if duration_months.is_some_and(|months| months >= 12) {
+        score += 1;
+        flags.push("long_term_engagement".to_owned());
+    }
+
+    let provides_tools = req
+        .provides_tools
+        .or_else(|| json_bool(&req.factors, "provides_tools"));
+    if provides_tools == Some(false) {
+        score += 2;
+        flags.push("company_provides_tools".to_owned());
+    }
+
+    let risk_level = if score >= 5 {
+        RiskLevel::High
+    } else if score >= 2 {
+        RiskLevel::Medium
+    } else {
+        RiskLevel::Low
+    };
+    let classification = if score >= 6 {
+        ClassificationResult::Employee
+    } else if score >= 3 {
+        ClassificationResult::Uncertain
+    } else {
+        ClassificationResult::Independent
+    };
+
+    (risk_level, flags, classification)
 }
 
 #[derive(Deserialize, utoipa::ToSchema)]
@@ -339,6 +447,7 @@ async fn file_tax_document(
 ) -> Result<Json<TaxFilingResponse>, AppError> {
     let workspace_id = auth.workspace_id();
     let entity_id = req.entity_id;
+    state.enforce_creation_rate_limit("compliance.tax_filing.create", workspace_id, 60, 60)?;
     validate_tax_document_type(&req.document_type)?;
 
     let filing = tokio::task::spawn_blocking({
@@ -350,9 +459,9 @@ async fn file_tax_document(
                 .list_ids::<TaxFiling>("main")
                 .map_err(|e| AppError::Internal(format!("list tax filings: {e}")))?;
             for existing_id in existing_ids {
-                let existing = store
-                    .read::<TaxFiling>("main", existing_id)
-                    .map_err(|e| AppError::Internal(format!("read tax filing {existing_id}: {e}")))?;
+                let existing = store.read::<TaxFiling>("main", existing_id).map_err(|e| {
+                    AppError::Internal(format!("read tax filing {existing_id}: {e}"))
+                })?;
                 if canonical_tax_document_type(existing.document_type()) == document_type
                     && existing.tax_year() == req.tax_year
                 {
@@ -417,6 +526,7 @@ async fn create_deadline(
 ) -> Result<Json<DeadlineResponse>, AppError> {
     let workspace_id = auth.workspace_id();
     let entity_id = req.entity_id;
+    state.enforce_creation_rate_limit("compliance.deadline.create", workspace_id, 120, 60)?;
     validate_deadline_recurrence(&req.deadline_type, req.recurrence)?;
 
     let deadline = tokio::task::spawn_blocking({
@@ -471,36 +581,45 @@ async fn classify_contractor(
 ) -> Result<Json<ClassificationResponse>, AppError> {
     let workspace_id = auth.workspace_id();
     let entity_id = req.entity_id;
+    state.enforce_creation_rate_limit(
+        "compliance.contractor_classification.create",
+        workspace_id,
+        60,
+        60,
+    )?;
+    if req.contractor_name.trim().is_empty() {
+        return Err(AppError::BadRequest(
+            "contractor_name cannot be empty".to_owned(),
+        ));
+    }
+    let normalized_state = normalize_state_code(&req.state)?;
+    let (risk_level, flags, classification_result) =
+        classify_contractor_inputs(&ClassifyContractorRequest {
+            state: normalized_state.clone(),
+            contractor_name: req.contractor_name.clone(),
+            entity_id,
+            hours_per_week: req.hours_per_week,
+            exclusive_client: req.exclusive_client,
+            duration_months: req.duration_months,
+            provides_tools: req.provides_tools,
+            factors: req.factors.clone(),
+        });
 
     let classification = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let contractor_name = req.contractor_name.trim().to_owned();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
 
             let classification_id = ClassificationId::new();
-            // Simple risk assessment based on state
-            let risk_level = match req.state.as_str() {
-                "CA" | "NY" | "MA" => RiskLevel::High,
-                "TX" | "FL" | "WA" => RiskLevel::Low,
-                _ => RiskLevel::Medium,
-            };
-            let flags: Vec<String> = if risk_level == RiskLevel::High {
-                vec![format!(
-                    "{}_strict_classification_laws",
-                    req.state.to_lowercase()
-                )]
-            } else {
-                vec![]
-            };
-
             let classification = ContractorClassification::new(
                 classification_id,
                 entity_id,
-                req.contractor_name,
-                req.state,
+                contractor_name,
+                normalized_state,
                 risk_level,
                 flags,
-                ClassificationResult::Independent,
+                classification_result,
             );
 
             let path = format!("contractors/{}.json", classification_id);
@@ -954,7 +1073,11 @@ pub struct ComplianceApi;
 
 #[cfg(test)]
 mod tests {
-    use super::validate_tax_document_type;
+    use super::{
+        ClassificationResult, ClassifyContractorRequest, RiskLevel, classify_contractor_inputs,
+        normalize_state_code, validate_tax_document_type,
+    };
+    use crate::domain::ids::EntityId;
     use crate::error::AppError;
 
     #[test]
@@ -968,5 +1091,36 @@ mod tests {
             }
             other => panic!("expected bad request, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn normalize_state_code_rejects_invalid_values() {
+        let err = normalize_state_code("XX").expect_err("invalid state should fail");
+        match err {
+            AppError::BadRequest(message) => {
+                assert!(message.contains("unsupported state code"));
+            }
+            other => panic!("expected bad request, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn contractor_classification_uses_behavioral_inputs() {
+        let req = ClassifyContractorRequest {
+            entity_id: EntityId::new(),
+            contractor_name: "Jane Consultant".to_owned(),
+            state: "CA".to_owned(),
+            hours_per_week: Some(40),
+            exclusive_client: Some(true),
+            duration_months: Some(18),
+            provides_tools: Some(false),
+            factors: serde_json::json!({}),
+        };
+        let (risk_level, flags, classification) = classify_contractor_inputs(&req);
+        assert_eq!(risk_level, RiskLevel::High);
+        assert_eq!(classification, ClassificationResult::Employee);
+        assert!(flags.iter().any(|flag| flag == "full_time_schedule"));
+        assert!(flags.iter().any(|flag| flag == "exclusive_client"));
+        assert!(flags.iter().any(|flag| flag == "company_provides_tools"));
     }
 }

@@ -1,6 +1,5 @@
 import { requireConfig, resolveEntityId } from "../config.js";
 import { CorpAPIClient } from "../api-client.js";
-import { ensureSafeInstrument } from "@thecorporation/corp-tools";
 import {
   printCapTable, printSafesTable, printTransfersTable,
   printValuationsTable, printDryRun, printError, printSuccess, printJson, printWriteResult,
@@ -11,10 +10,11 @@ type CapTableInstrument = {
   instrument_id: string;
   kind: string;
   symbol: string;
+  status?: string;
 };
 
 function normalizedGrantType(grantType: string): string {
-  return grantType.trim().toLowerCase().replaceAll("-", "_");
+  return grantType.trim().toLowerCase().replaceAll("-", "_").replaceAll(" ", "_");
 }
 
 function expectedInstrumentKinds(grantType: string): string[] {
@@ -25,8 +25,11 @@ function expectedInstrumentKinds(grantType: string): string[] {
     case "preferred":
     case "preferred_stock":
       return ["preferred_equity"];
+    case "unit":
     case "membership_unit":
       return ["membership_unit"];
+    case "option":
+    case "options":
     case "stock_option":
     case "iso":
     case "nso":
@@ -35,6 +38,33 @@ function expectedInstrumentKinds(grantType: string): string[] {
       return ["common_equity", "preferred_equity"];
     default:
       return [];
+  }
+}
+
+function grantRequiresCurrent409a(grantType: string, instrumentKind?: string): boolean {
+  return instrumentKind?.toLowerCase() === "option_grant" || expectedInstrumentKinds(grantType).includes("option_grant");
+}
+
+function buildInstrumentCreationHint(grantType: string): string {
+  const normalized = normalizedGrantType(grantType);
+  switch (normalized) {
+    case "preferred":
+    case "preferred_stock":
+      return "Create one with: corp cap-table create-instrument --kind preferred_equity --symbol SERIES-A --authorized-units <shares>";
+    case "option":
+    case "options":
+    case "stock_option":
+    case "iso":
+    case "nso":
+      return "Create one with: corp cap-table create-instrument --kind option_grant --symbol OPTION-PLAN --authorized-units <shares>";
+    case "membership_unit":
+    case "unit":
+      return "Create one with: corp cap-table create-instrument --kind membership_unit --symbol UNIT --authorized-units <units>";
+    case "common":
+    case "common_stock":
+      return "Create one with: corp cap-table create-instrument --kind common_equity --symbol COMMON --authorized-units <shares>";
+    default:
+      return "Create a matching instrument first, then pass --instrument-id explicitly.";
   }
 }
 
@@ -53,15 +83,58 @@ function resolveInstrumentForGrant(
 
   const expectedKinds = expectedInstrumentKinds(grantType);
   if (expectedKinds.length === 0) {
-    throw new Error(`No default instrument mapping exists for grant type "${grantType}". Pass --instrument-id explicitly.`);
+    throw new Error(
+      `No default instrument mapping exists for grant type "${grantType}". ${buildInstrumentCreationHint(grantType)}`,
+    );
   }
   const match = instruments.find((instrument) => expectedKinds.includes(String(instrument.kind).toLowerCase()));
   if (!match) {
     throw new Error(
-      `No instrument found for grant type "${grantType}". Expected one of: ${expectedKinds.join(", ")}.`,
+      `No instrument found for grant type "${grantType}". Expected one of: ${expectedKinds.join(", ")}. ${buildInstrumentCreationHint(grantType)}`,
     );
   }
   return match;
+}
+
+async function entityHasActiveBoard(client: CorpAPIClient, entityId: string): Promise<boolean> {
+  const bodies = await client.listGovernanceBodies(entityId);
+  return bodies.some((body) =>
+    String(body.body_type ?? "").toLowerCase() === "board_of_directors"
+      && String(body.status ?? "active").toLowerCase() === "active"
+  );
+}
+
+async function ensureIssuancePreflight(
+  client: CorpAPIClient,
+  entityId: string,
+  grantType: string,
+  instrument?: CapTableInstrument,
+  meetingId?: string,
+  resolutionId?: string,
+): Promise<void> {
+  if (!meetingId || !resolutionId) {
+    if (await entityHasActiveBoard(client, entityId)) {
+      throw new Error(
+        "Board approval is required before issuing this round. Pass --meeting-id and --resolution-id from a passed board vote.",
+      );
+    }
+  }
+
+  if (!grantRequiresCurrent409a(grantType, instrument?.kind)) {
+    return;
+  }
+
+  try {
+    await client.getCurrent409a(entityId);
+  } catch (err) {
+    const msg = String(err);
+    if (msg.includes("404")) {
+      throw new Error(
+        "Stock option issuances require a current approved 409A valuation. Create and approve one first with: corp cap-table create-valuation --type four_oh_nine_a --date YYYY-MM-DD --methodology <method>; corp cap-table submit-valuation <id>; corp cap-table approve-valuation <id> --resolution-id <resolution-id>",
+      );
+    }
+    throw err;
+  }
 }
 
 export async function capTableCommand(opts: { entityId?: string; json?: boolean }): Promise<void> {
@@ -192,7 +265,7 @@ export async function issueEquityCommand(opts: {
     // Resolve instrument ID — use provided, or match by grant type, or use first common stock
     const instruments = (capTable.instruments ?? []) as CapTableInstrument[];
     if (!instruments.length) {
-      printError("No instruments found on cap table. Create an instrument first.");
+      printError("No instruments found on cap table. Create one with: corp cap-table create-instrument --kind common_equity --symbol COMMON --authorized-units <shares>");
       process.exit(1);
     }
     const instrument = resolveInstrumentForGrant(instruments, opts.grantType, opts.instrumentId);
@@ -200,6 +273,14 @@ export async function issueEquityCommand(opts: {
     if (!opts.instrumentId) {
       console.log(`Using instrument: ${instrument.symbol} (${instrument.kind})`);
     }
+    await ensureIssuancePreflight(
+      client,
+      eid,
+      opts.grantType,
+      instrument,
+      opts.meetingId,
+      opts.resolutionId,
+    );
 
     // 1. Start a staged round
     const round = await client.startEquityRound({
@@ -268,39 +349,26 @@ export async function issueSafeCommand(opts: {
       return;
     }
 
-    const capTable = await client.getCapTable(eid);
-    const issuerLegalEntityId = capTable.issuer_legal_entity_id as string;
-    if (!issuerLegalEntityId) {
-      printError("No issuer legal entity found. Has this entity been formed with a cap table?");
-      process.exit(1);
-    }
-    const safeInstrument = await ensureSafeInstrument(client, eid);
+    await ensureIssuancePreflight(
+      client,
+      eid,
+      opts.safeType,
+      undefined,
+      opts.meetingId,
+      opts.resolutionId,
+    );
 
-    // Start a staged round for the SAFE
-    const round = await client.startEquityRound({
+    const body: Record<string, unknown> = {
       entity_id: eid,
-      name: `SAFE — ${opts.investor}`,
-      issuer_legal_entity_id: issuerLegalEntityId,
-    });
-    const roundId = (round.round_id ?? round.equity_round_id) as string;
-
-    // Add the SAFE security — use principal_cents as quantity since quantity must be > 0
-    const securityData: Record<string, unknown> = {
-      entity_id: eid,
-      instrument_id: safeInstrument.instrument_id,
-      quantity: opts.amount,
-      recipient_name: opts.investor,
-      principal_cents: opts.amount,
-      grant_type: opts.safeType,
+      investor_name: opts.investor,
+      principal_amount_cents: opts.amount,
+      valuation_cap_cents: opts.valuationCap,
+      safe_type: opts.safeType,
     };
-    if (opts.email) securityData.email = opts.email;
-    await client.addRoundSecurity(roundId, securityData);
-
-    // Issue the round
-    const issuePayload: Record<string, unknown> = { entity_id: eid };
-    if (opts.meetingId) issuePayload.meeting_id = opts.meetingId;
-    if (opts.resolutionId) issuePayload.resolution_id = opts.resolutionId;
-    const result = await client.issueRound(roundId, issuePayload);
+    if (opts.email) body.email = opts.email;
+    if (opts.meetingId) body.meeting_id = opts.meetingId;
+    if (opts.resolutionId) body.resolution_id = opts.resolutionId;
+    const result = await client.createSafeNote(body);
     if (opts.json) {
       printJson(result);
       return;
@@ -443,6 +511,52 @@ export async function startRoundCommand(opts: {
   }
 }
 
+export async function createInstrumentCommand(opts: {
+  entityId?: string;
+  issuerLegalEntityId?: string;
+  kind: string;
+  symbol: string;
+  authorizedUnits?: number;
+  issuePriceCents?: number;
+  termsJson?: string;
+  json?: boolean;
+  dryRun?: boolean;
+}): Promise<void> {
+  const cfg = requireConfig("api_url", "api_key", "workspace_id");
+  const eid = resolveEntityId(cfg, opts.entityId);
+  const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
+  try {
+    let issuerLegalEntityId = opts.issuerLegalEntityId;
+    if (!issuerLegalEntityId) {
+      const capTable = await client.getCapTable(eid);
+      issuerLegalEntityId = capTable.issuer_legal_entity_id as string | undefined;
+    }
+    if (!issuerLegalEntityId) {
+      throw new Error("No issuer legal entity found. Has this entity been formed with a cap table?");
+    }
+
+    const terms = opts.termsJson ? JSON.parse(opts.termsJson) as Record<string, unknown> : {};
+    const payload: Record<string, unknown> = {
+      entity_id: eid,
+      issuer_legal_entity_id: issuerLegalEntityId,
+      kind: opts.kind,
+      symbol: opts.symbol,
+      terms,
+    };
+    if (opts.authorizedUnits != null) payload.authorized_units = opts.authorizedUnits;
+    if (opts.issuePriceCents != null) payload.issue_price_cents = opts.issuePriceCents;
+    if (opts.dryRun) {
+      printDryRun("cap_table.create_instrument", payload);
+      return;
+    }
+    const result = await client.createInstrument(payload);
+    printWriteResult(result, `Instrument created: ${result.instrument_id ?? "OK"}`, opts.json);
+  } catch (err) {
+    printError(`Failed to create instrument: ${err}`);
+    process.exit(1);
+  }
+}
+
 export async function addSecurityCommand(opts: {
   entityId?: string;
   roundId: string;
@@ -485,6 +599,8 @@ export async function addSecurityCommand(opts: {
 export async function issueRoundCommand(opts: {
   entityId?: string;
   roundId: string;
+  meetingId?: string;
+  resolutionId?: string;
   json?: boolean;
   dryRun?: boolean;
 }): Promise<void> {
@@ -493,10 +609,23 @@ export async function issueRoundCommand(opts: {
   const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
   try {
     if (opts.dryRun) {
-      printDryRun("cap_table.issue_round", { entity_id: eid, round_id: opts.roundId });
+      printDryRun("cap_table.issue_round", {
+        entity_id: eid,
+        round_id: opts.roundId,
+        meeting_id: opts.meetingId,
+        resolution_id: opts.resolutionId,
+      });
       return;
     }
-    const result = await client.issueRound(opts.roundId, { entity_id: eid });
+    if ((!opts.meetingId || !opts.resolutionId) && await entityHasActiveBoard(client, eid)) {
+      throw new Error(
+        "Board approval is required before issuing this round. Pass --meeting-id and --resolution-id from a passed board vote.",
+      );
+    }
+    const body: Record<string, unknown> = { entity_id: eid };
+    if (opts.meetingId) body.meeting_id = opts.meetingId;
+    if (opts.resolutionId) body.resolution_id = opts.resolutionId;
+    const result = await client.issueRound(opts.roundId, body);
     printWriteResult(result, "Round issued and closed", opts.json);
   } catch (err) {
     printError(`Failed to issue round: ${err}`);

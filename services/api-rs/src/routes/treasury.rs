@@ -194,7 +194,7 @@ fn open_store<'a>(
     })
 }
 
-const MAX_FINANCIAL_AMOUNT_CENTS: i64 = 10_000_000_000_000; // $100B
+const MAX_FINANCIAL_AMOUNT_CENTS: i64 = 1_000_000_000_000; // $10B
 
 fn validate_reasonable_amount(amount_cents: i64, field_name: &str) -> Result<(), AppError> {
     if amount_cents > MAX_FINANCIAL_AMOUNT_CENTS {
@@ -203,6 +203,36 @@ fn validate_reasonable_amount(amount_cents: i64, field_name: &str) -> Result<(),
         )));
     }
     Ok(())
+}
+
+fn payment_method_requires_active_bank_account(method: PaymentMethod) -> bool {
+    !matches!(method, PaymentMethod::Card)
+}
+
+fn ensure_active_bank_account_available(store: &EntityStore<'_>) -> Result<(), AppError> {
+    let account_ids = store
+        .list_ids::<BankAccount>("main")
+        .map_err(|e| AppError::Internal(format!("list bank accounts: {e}")))?;
+    let mut has_pending_review = false;
+    for account_id in account_ids {
+        let account = store
+            .read::<BankAccount>("main", account_id)
+            .map_err(|e| AppError::Internal(format!("read bank account {account_id}: {e}")))?;
+        match account.status() {
+            BankAccountStatus::Active => return Ok(()),
+            BankAccountStatus::PendingReview => has_pending_review = true,
+            BankAccountStatus::Closed => {}
+        }
+    }
+    if has_pending_review {
+        return Err(AppError::BadRequest(
+            "payments require an active bank account; pending_review accounts cannot be used"
+                .to_owned(),
+        ));
+    }
+    Err(AppError::BadRequest(
+        "payments require an active bank account".to_owned(),
+    ))
 }
 
 // ── Handlers: Accounts ───────────────────────────────────────────────
@@ -223,6 +253,7 @@ async fn create_account(
 ) -> Result<Json<AccountResponse>, AppError> {
     let workspace_id = auth.workspace_id();
     let entity_id = req.entity_id;
+    state.enforce_creation_rate_limit("treasury.account.create", workspace_id, 120, 60)?;
 
     let account = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
@@ -309,6 +340,7 @@ async fn create_journal_entry(
 ) -> Result<Json<JournalEntryResponse>, AppError> {
     let workspace_id = auth.workspace_id();
     let entity_id = req.entity_id;
+    state.enforce_creation_rate_limit("treasury.journal_entry.create", workspace_id, 120, 60)?;
 
     for line in &req.lines {
         if line.amount_cents < 0 {
@@ -316,6 +348,7 @@ async fn create_journal_entry(
                 "journal entry line amounts must be non-negative".to_owned(),
             ));
         }
+        validate_reasonable_amount(line.amount_cents, "line.amount_cents")?;
     }
 
     let entry = tokio::task::spawn_blocking({
@@ -523,13 +556,23 @@ async fn create_invoice(
 ) -> Result<Json<InvoiceResponse>, AppError> {
     let workspace_id = auth.workspace_id();
     let entity_id = req.entity_id;
+    state.enforce_creation_rate_limit("treasury.invoice.create", workspace_id, 120, 60)?;
 
     if req.amount_cents <= 0 {
         return Err(AppError::BadRequest(
             "amount_cents must be positive".to_owned(),
         ));
     }
-    validate_reasonable_amount(req.amount_cents, "amount_cents")?;
+    if req.customer_name.trim().is_empty() {
+        return Err(AppError::BadRequest(
+            "customer_name cannot be empty".to_owned(),
+        ));
+    }
+    if req.due_date < chrono::Utc::now().date_naive() - chrono::Duration::days(365) {
+        return Err(AppError::BadRequest(
+            "due_date cannot be more than one year in the past".to_owned(),
+        ));
+    }
     validate_reasonable_amount(req.amount_cents, "amount_cents")?;
 
     let invoice = tokio::task::spawn_blocking({
@@ -541,7 +584,7 @@ async fn create_invoice(
             let invoice = Invoice::new(
                 invoice_id,
                 entity_id,
-                req.customer_name,
+                req.customer_name.trim().to_owned(),
                 Cents::new(req.amount_cents),
                 req.description,
                 req.due_date,
@@ -816,15 +859,21 @@ async fn create_bank_account(
 ) -> Result<Json<BankAccountResponse>, AppError> {
     let workspace_id = auth.workspace_id();
     let entity_id = req.entity_id;
+    state.enforce_creation_rate_limit("treasury.bank_account.create", workspace_id, 60, 60)?;
+    let bank_name = req.bank_name.trim().to_owned();
+    if bank_name.is_empty() {
+        return Err(AppError::BadRequest("bank_name cannot be empty".to_owned()));
+    }
 
     let bank_account = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let bank_name = bank_name.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
             let existing_ids = store
                 .list_ids::<BankAccount>("main")
                 .map_err(|e| AppError::Internal(format!("list bank accounts: {e}")))?;
-            let normalized_bank = req.bank_name.trim().to_ascii_lowercase();
+            let normalized_bank = bank_name.to_ascii_lowercase();
             for existing_id in existing_ids {
                 let existing = store
                     .read::<BankAccount>("main", existing_id)
@@ -837,7 +886,7 @@ async fn create_bank_account(
                 {
                     return Err(AppError::Conflict(format!(
                         "open bank account already exists for {}",
-                        req.bank_name
+                        bank_name
                     )));
                 }
             }
@@ -846,7 +895,7 @@ async fn create_bank_account(
             let bank_account = BankAccount::new(
                 bank_account_id,
                 entity_id,
-                req.bank_name,
+                bank_name,
                 req.account_type.unwrap_or_default(),
             );
 
@@ -1064,6 +1113,10 @@ pub struct ReconcileLedgerRequest {
     pub entity_id: EntityId,
     #[serde(default)]
     pub as_of_date: Option<chrono::NaiveDate>,
+    #[serde(default)]
+    pub start_date: Option<chrono::NaiveDate>,
+    #[serde(default)]
+    pub end_date: Option<chrono::NaiveDate>,
 }
 
 // ── Response types ──────────────────────────────────────────────────
@@ -1131,6 +1184,7 @@ async fn submit_payment(
 ) -> Result<Json<PaymentResponse>, AppError> {
     let workspace_id = auth.workspace_id();
     let entity_id = req.entity_id;
+    state.enforce_creation_rate_limit("treasury.payment.create", workspace_id, 120, 60)?;
     Cents::new(req.amount_cents)
         .require_positive()
         .map_err(|e| AppError::BadRequest(e.to_owned()))?;
@@ -1140,6 +1194,9 @@ async fn submit_payment(
         let layout = state.layout.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
+            if payment_method_requires_active_bank_account(req.payment_method) {
+                ensure_active_bank_account_available(&store)?;
+            }
 
             let payment_id = PaymentId::new();
             let payment = Payment::new(
@@ -1195,6 +1252,7 @@ async fn execute_payment(
 ) -> Result<Json<PaymentResponse>, AppError> {
     let workspace_id = auth.workspace_id();
     let entity_id = req.entity_id;
+    state.enforce_creation_rate_limit("treasury.payment.execute", workspace_id, 120, 60)?;
     Cents::new(req.amount_cents)
         .require_positive()
         .map_err(|e| AppError::BadRequest(e.to_owned()))?;
@@ -1204,6 +1262,9 @@ async fn execute_payment(
         let layout = state.layout.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
+            if payment_method_requires_active_bank_account(req.payment_method) {
+                ensure_active_bank_account_available(&store)?;
+            }
 
             let payment_id = PaymentId::new();
             let mut payment = Payment::new(
@@ -1262,9 +1323,17 @@ async fn create_payroll_run(
 ) -> Result<Json<PayrollRunResponse>, AppError> {
     let workspace_id = auth.workspace_id();
     let entity_id = req.entity_id;
+    state.enforce_creation_rate_limit("treasury.payroll.create", workspace_id, 60, 60)?;
     if req.pay_period_end < req.pay_period_start {
         return Err(AppError::BadRequest(
             "pay_period_end must be on or after pay_period_start".to_owned(),
+        ));
+    }
+    let today = chrono::Utc::now().date_naive();
+    let max_future_date = today + chrono::Duration::days(366);
+    if req.pay_period_start > max_future_date || req.pay_period_end > max_future_date {
+        return Err(AppError::BadRequest(
+            "pay period dates are too far in the future".to_owned(),
         ));
     }
 
@@ -1272,6 +1341,24 @@ async fn create_payroll_run(
         let layout = state.layout.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
+            let existing_ids = store
+                .list_ids::<PayrollRun>("main")
+                .map_err(|e| AppError::Internal(format!("list payroll runs: {e}")))?;
+            for existing_id in existing_ids {
+                let existing = store.read::<PayrollRun>("main", existing_id).map_err(|e| {
+                    AppError::Internal(format!("read payroll run {existing_id}: {e}"))
+                })?;
+                let overlaps = req.pay_period_start <= existing.pay_period_end()
+                    && req.pay_period_end >= existing.pay_period_start();
+                if overlaps {
+                    return Err(AppError::Conflict(format!(
+                        "payroll period overlaps existing run {} ({} to {})",
+                        existing.payroll_run_id(),
+                        existing.pay_period_start(),
+                        existing.pay_period_end()
+                    )));
+                }
+            }
 
             let run_id = PayrollRunId::new();
             let run = PayrollRun::new(run_id, entity_id, req.pay_period_start, req.pay_period_end);
@@ -1315,6 +1402,7 @@ async fn create_distribution(
 ) -> Result<Json<DistributionResponse>, AppError> {
     let workspace_id = auth.workspace_id();
     let entity_id = req.entity_id;
+    state.enforce_creation_rate_limit("treasury.distribution.create", workspace_id, 60, 60)?;
     Cents::new(req.total_amount_cents)
         .require_positive()
         .map_err(|e| AppError::BadRequest(e.to_owned()))?;
@@ -1324,15 +1412,33 @@ async fn create_distribution(
         let layout = state.layout.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
-            if req.distribution_type == DistributionType::Liquidation {
-                let entity = store
-                    .read_entity("main")
-                    .map_err(|e| AppError::Internal(format!("read entity: {e}")))?;
-                if entity.formation_status() != FormationStatus::Dissolved {
-                    return Err(AppError::BadRequest(
-                        "liquidation distributions require a dissolved entity".to_owned(),
-                    ));
-                }
+            let entity = store
+                .read_entity("main")
+                .map_err(|e| AppError::Internal(format!("read entity: {e}")))?;
+            if req.distribution_type == DistributionType::Dividend
+                && entity.formation_status() != FormationStatus::Active
+            {
+                return Err(AppError::BadRequest(
+                    "dividend distributions require an active entity".to_owned(),
+                ));
+            }
+            if req.distribution_type == DistributionType::Liquidation
+                && entity.formation_status() != FormationStatus::Dissolved
+            {
+                return Err(AppError::BadRequest(
+                    "liquidation distributions require a dissolved entity".to_owned(),
+                ));
+            }
+            if matches!(
+                entity.formation_status(),
+                FormationStatus::Pending
+                    | FormationStatus::DocumentsGenerated
+                    | FormationStatus::FilingSubmitted
+                    | FormationStatus::Filed
+            ) {
+                return Err(AppError::BadRequest(
+                    "distributions require an active or dissolved entity".to_owned(),
+                ));
             }
 
             let dist_id = DistributionId::new();
@@ -1389,9 +1495,16 @@ async fn reconcile_ledger(
 ) -> Result<Json<ReconciliationResponse>, AppError> {
     let workspace_id = auth.workspace_id();
     let entity_id = req.entity_id;
-    let as_of_date = req
-        .as_of_date
-        .unwrap_or_else(|| chrono::Utc::now().date_naive());
+    let today = chrono::Utc::now().date_naive();
+    let as_of_date = req.end_date.or(req.as_of_date).unwrap_or(today);
+    let start_date = req.start_date;
+    if let Some(start_date) = start_date
+        && as_of_date < start_date
+    {
+        return Err(AppError::BadRequest(
+            "end_date must be on or after start_date".to_owned(),
+        ));
+    }
 
     let recon = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
@@ -1408,8 +1521,53 @@ async fn reconcile_ledger(
 
             for id in entry_ids {
                 if let Ok(entry) = store.read::<JournalEntry>("main", id) {
+                    if entry.effective_date() > as_of_date {
+                        continue;
+                    }
+                    if start_date.is_some_and(|start| entry.effective_date() < start) {
+                        continue;
+                    }
                     total_debits += entry.total_debits();
                     total_credits += entry.total_credits();
+                }
+            }
+
+            for id in store.list_ids::<Invoice>("main").unwrap_or_default() {
+                if let Ok(invoice) = store.read::<Invoice>("main", id) {
+                    if invoice.due_date() > as_of_date {
+                        continue;
+                    }
+                    if start_date.is_some_and(|start| invoice.due_date() < start) {
+                        continue;
+                    }
+                    total_debits += invoice.amount_cents();
+                    total_credits += invoice.amount_cents();
+                }
+            }
+            for id in store.list_ids::<Payment>("main").unwrap_or_default() {
+                if let Ok(payment) = store.read::<Payment>("main", id) {
+                    let payment_date = payment.created_at().date_naive();
+                    if payment_date > as_of_date {
+                        continue;
+                    }
+                    if start_date.is_some_and(|start| payment_date < start) {
+                        continue;
+                    }
+                    total_debits += payment.amount_cents();
+                    total_credits += payment.amount_cents();
+                }
+            }
+            for id in store.list_ids::<Distribution>("main").unwrap_or_default() {
+                if let Ok(distribution) = store.read::<Distribution>("main", id) {
+                    let distribution_date = distribution.created_at().date_naive();
+                    if distribution_date > as_of_date {
+                        continue;
+                    }
+                    if start_date.is_some_and(|start| distribution_date < start) {
+                        continue;
+                    }
+                    total_debits += distribution.total_amount_cents();
+                    total_credits += distribution.total_amount_cents();
                 }
             }
 
@@ -2065,6 +2223,7 @@ async fn create_payout(
 ) -> Result<Json<PayoutResponse>, AppError> {
     let workspace_id = auth.workspace_id();
     let entity_id = req.entity_id;
+    state.enforce_creation_rate_limit("treasury.payout.create", workspace_id, 60, 60)?;
 
     if req.amount_cents <= 0 {
         return Err(AppError::BadRequest(
@@ -2150,12 +2309,14 @@ async fn create_payment_intent(
 ) -> Result<Json<PaymentIntentResponse>, AppError> {
     let workspace_id = auth.workspace_id();
     let entity_id = req.entity_id;
+    state.enforce_creation_rate_limit("treasury.payment_intent.create", workspace_id, 120, 60)?;
 
     if req.amount_cents <= 0 {
         return Err(AppError::BadRequest(
             "amount_cents must be positive".to_owned(),
         ));
     }
+    validate_reasonable_amount(req.amount_cents, "amount_cents")?;
 
     let pi_id = format!("pi_{}", uuid::Uuid::new_v4().simple());
     let client_secret = format!("{}_secret_{}", pi_id, uuid::Uuid::new_v4().simple());

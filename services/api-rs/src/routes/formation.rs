@@ -2307,6 +2307,12 @@ async fn generate_contract(
 ) -> Result<Json<ContractResponse>, AppError> {
     let workspace_id = auth.workspace_id();
     let entity_id = req.entity_id;
+    state.enforce_creation_rate_limit("formation.contract.create", workspace_id, 60, 60)?;
+    if req.counterparty_name.trim().is_empty() {
+        return Err(AppError::BadRequest(
+            "counterparty_name cannot be empty".to_owned(),
+        ));
+    }
     let is_legacy_safe = req.template_type == ContractTemplateType::Custom
         && req
             .parameters
@@ -2341,7 +2347,7 @@ async fn generate_contract(
                 contract_id,
                 entity_id,
                 template_type,
-                req.counterparty_name,
+                req.counterparty_name.trim().to_owned(),
                 req.effective_date,
                 req.parameters,
                 document_id,
@@ -2452,7 +2458,7 @@ async fn get_signing_link(
         let token_hash = token_hash.clone();
         let expires_at = expires_at.clone();
         move || {
-            let resolved_entity_id = resolve_document_entity_id_with_fallback(
+            let resolved_entity_id = resolve_document_entity_id(
                 &layout,
                 workspace_id,
                 requested_entity_id,

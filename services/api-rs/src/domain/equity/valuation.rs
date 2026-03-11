@@ -5,7 +5,10 @@ use serde::{Deserialize, Serialize};
 
 use super::error::EquityError;
 use super::types::{ValuationMethodology, ValuationStatus, ValuationType};
-use crate::domain::ids::{ContactId, DocumentId, EntityId, ResolutionId, ValuationId, WorkspaceId};
+use crate::domain::ids::{
+    AgendaItemId, ContactId, DocumentId, EntityId, MeetingId, ResolutionId, ValuationId,
+    WorkspaceId,
+};
 use crate::domain::treasury::types::Cents;
 
 /// A valuation record (409A, FMV, profits interest, etc.).
@@ -23,6 +26,8 @@ pub struct Valuation {
     methodology: ValuationMethodology,
     provider_contact_id: Option<ContactId>,
     report_document_id: Option<DocumentId>,
+    board_approval_meeting_id: Option<MeetingId>,
+    board_approval_agenda_item_id: Option<AgendaItemId>,
     board_approval_resolution_id: Option<ResolutionId>,
     status: ValuationStatus,
     created_at: DateTime<Utc>,
@@ -31,7 +36,7 @@ pub struct Valuation {
 impl Valuation {
     /// Create a new valuation.
     ///
-    /// If the type is 409A, auto-sets expiration_date = effective_date + 365 days.
+    /// If the type is 409A or FMV, auto-sets expiration_date = effective_date + 365 days.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         valuation_id: ValuationId,
@@ -46,10 +51,11 @@ impl Valuation {
         provider_contact_id: Option<ContactId>,
         report_document_id: Option<DocumentId>,
     ) -> Self {
-        let expiration_date = if valuation_type == ValuationType::FourOhNineA {
-            Some(effective_date + chrono::Duration::days(365))
-        } else {
-            None
+        let expiration_date = match valuation_type {
+            ValuationType::FourOhNineA | ValuationType::FairMarketValue => {
+                Some(effective_date + chrono::Duration::days(365))
+            }
+            _ => None,
         };
 
         Self {
@@ -65,6 +71,8 @@ impl Valuation {
             methodology,
             provider_contact_id,
             report_document_id,
+            board_approval_meeting_id: None,
+            board_approval_agenda_item_id: None,
             board_approval_resolution_id: None,
             status: ValuationStatus::Draft,
             created_at: Utc::now(),
@@ -81,6 +89,16 @@ impl Valuation {
         }
         self.status = ValuationStatus::PendingApproval;
         Ok(())
+    }
+
+    /// Record the governance artifacts created when this valuation is submitted.
+    pub fn record_submission_for_approval(
+        &mut self,
+        meeting_id: MeetingId,
+        agenda_item_id: AgendaItemId,
+    ) {
+        self.board_approval_meeting_id = Some(meeting_id);
+        self.board_approval_agenda_item_id = Some(agenda_item_id);
     }
 
     /// Approve the valuation. Must be PendingApproval.
@@ -178,6 +196,14 @@ impl Valuation {
         self.report_document_id
     }
 
+    pub fn board_approval_meeting_id(&self) -> Option<MeetingId> {
+        self.board_approval_meeting_id
+    }
+
+    pub fn board_approval_agenda_item_id(&self) -> Option<AgendaItemId> {
+        self.board_approval_agenda_item_id
+    }
+
     pub fn board_approval_resolution_id(&self) -> Option<ResolutionId> {
         self.board_approval_resolution_id
     }
@@ -227,7 +253,7 @@ mod tests {
     }
 
     #[test]
-    fn no_expiration_for_non_409a() {
+    fn fmv_uses_one_year_expiration() {
         let v = Valuation::new(
             ValuationId::new(),
             EntityId::new(),
@@ -241,7 +267,9 @@ mod tests {
             None,
             None,
         );
-        assert!(v.expiration_date().is_none());
+        let exp = v.expiration_date().expect("FMV should have expiration");
+        let expected = NaiveDate::from_ymd_opt(2027, 6, 1).unwrap();
+        assert_eq!(exp, expected);
     }
 
     #[test]

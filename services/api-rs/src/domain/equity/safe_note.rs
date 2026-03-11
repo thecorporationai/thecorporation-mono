@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use super::error::EquityError;
 use super::types::{SafeStatus, SafeType, ShareCount};
-use crate::domain::ids::{ContactId, DocumentId, EntityId, SafeNoteId};
+use crate::domain::ids::{ContactId, DocumentId, EntityId, MeetingId, ResolutionId, SafeNoteId};
 use crate::domain::treasury::types::Cents;
 
 /// Validate data-integrity invariants shared by `new()` and `TryFrom<RawSafeNote>`.
@@ -52,6 +52,8 @@ struct RawSafeNote {
     pro_rata_rights: bool,
     status: SafeStatus,
     document_id: Option<DocumentId>,
+    board_approval_meeting_id: Option<MeetingId>,
+    board_approval_resolution_id: Option<ResolutionId>,
     conversion_unit_type: String,
     issued_at: DateTime<Utc>,
     created_at: DateTime<Utc>,
@@ -81,6 +83,8 @@ impl TryFrom<RawSafeNote> for SafeNote {
             pro_rata_rights: raw.pro_rata_rights,
             status: raw.status,
             document_id: raw.document_id,
+            board_approval_meeting_id: raw.board_approval_meeting_id,
+            board_approval_resolution_id: raw.board_approval_resolution_id,
             conversion_unit_type: raw.conversion_unit_type,
             issued_at: raw.issued_at,
             created_at: raw.created_at,
@@ -108,6 +112,8 @@ pub struct SafeNote {
     pro_rata_rights: bool,
     status: SafeStatus,
     document_id: Option<DocumentId>,
+    board_approval_meeting_id: Option<MeetingId>,
+    board_approval_resolution_id: Option<ResolutionId>,
     conversion_unit_type: String,
     issued_at: DateTime<Utc>,
     created_at: DateTime<Utc>,
@@ -148,6 +154,8 @@ impl SafeNote {
             pro_rata_rights,
             status: SafeStatus::Issued,
             document_id,
+            board_approval_meeting_id: None,
+            board_approval_resolution_id: None,
             conversion_unit_type,
             issued_at: now,
             created_at: now,
@@ -228,6 +236,14 @@ impl SafeNote {
         self.document_id
     }
 
+    pub fn board_approval_meeting_id(&self) -> Option<MeetingId> {
+        self.board_approval_meeting_id
+    }
+
+    pub fn board_approval_resolution_id(&self) -> Option<ResolutionId> {
+        self.board_approval_resolution_id
+    }
+
     pub fn conversion_unit_type(&self) -> &str {
         &self.conversion_unit_type
     }
@@ -250,6 +266,11 @@ impl SafeNote {
 
     pub fn conversion_price_cents(&self) -> Option<Cents> {
         self.conversion_price_cents
+    }
+
+    pub fn record_board_approval(&mut self, meeting_id: MeetingId, resolution_id: ResolutionId) {
+        self.board_approval_meeting_id = Some(meeting_id);
+        self.board_approval_resolution_id = Some(resolution_id);
     }
 }
 
