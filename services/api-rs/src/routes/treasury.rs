@@ -13,6 +13,10 @@ use chrono::NaiveDate;
 use serde::{Deserialize, Serialize};
 
 use super::AppState;
+use super::validation::{
+    require_non_empty_trimmed, validate_date_order, validate_not_too_far_future,
+    validate_not_too_far_past,
+};
 use crate::auth::{RequireTreasuryRead, RequireTreasuryWrite};
 use crate::domain::formation::types::FormationStatus;
 use crate::domain::ids::{
@@ -235,6 +239,25 @@ fn ensure_active_bank_account_available(store: &EntityStore<'_>) -> Result<(), A
     ))
 }
 
+fn ensure_entity_ready_for_treasury(
+    store: &EntityStore<'_>,
+    operation: &str,
+) -> Result<(), AppError> {
+    let entity = store
+        .read_entity("main")
+        .map_err(|e| AppError::Internal(format!("read entity: {e}")))?;
+    if matches!(
+        entity.formation_status(),
+        FormationStatus::Pending | FormationStatus::Rejected | FormationStatus::Dissolved
+    ) {
+        return Err(AppError::BadRequest(format!(
+            "{operation} requires a formed entity, currently {}",
+            entity.formation_status()
+        )));
+    }
+    Ok(())
+}
+
 // ── Handlers: Accounts ───────────────────────────────────────────────
 
 #[utoipa::path(
@@ -259,6 +282,7 @@ async fn create_account(
         let layout = state.layout.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
+            ensure_entity_ready_for_treasury(&store, "account creation")?;
 
             let account_id = AccountId::new();
             let account = Account::new(account_id, entity_id, req.account_code);
@@ -355,6 +379,7 @@ async fn create_journal_entry(
         let layout = state.layout.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
+            ensure_entity_ready_for_treasury(&store, "journal entry creation")?;
 
             let entry_id = JournalEntryId::new();
             let lines: Vec<LedgerLine> = req
@@ -557,34 +582,28 @@ async fn create_invoice(
     let workspace_id = auth.workspace_id();
     let entity_id = req.entity_id;
     state.enforce_creation_rate_limit("treasury.invoice.create", workspace_id, 120, 60)?;
+    let customer_name = require_non_empty_trimmed(&req.customer_name, "customer_name")?;
 
     if req.amount_cents <= 0 {
         return Err(AppError::BadRequest(
             "amount_cents must be positive".to_owned(),
         ));
     }
-    if req.customer_name.trim().is_empty() {
-        return Err(AppError::BadRequest(
-            "customer_name cannot be empty".to_owned(),
-        ));
-    }
-    if req.due_date < chrono::Utc::now().date_naive() - chrono::Duration::days(365) {
-        return Err(AppError::BadRequest(
-            "due_date cannot be more than one year in the past".to_owned(),
-        ));
-    }
+    validate_not_too_far_past("due_date", req.due_date, 365)?;
     validate_reasonable_amount(req.amount_cents, "amount_cents")?;
 
     let invoice = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let customer_name = customer_name.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
+            ensure_entity_ready_for_treasury(&store, "invoice creation")?;
 
             let invoice_id = InvoiceId::new();
             let invoice = Invoice::new(
                 invoice_id,
                 entity_id,
-                req.customer_name.trim().to_owned(),
+                customer_name,
                 Cents::new(req.amount_cents),
                 req.description,
                 req.due_date,
@@ -860,16 +879,14 @@ async fn create_bank_account(
     let workspace_id = auth.workspace_id();
     let entity_id = req.entity_id;
     state.enforce_creation_rate_limit("treasury.bank_account.create", workspace_id, 60, 60)?;
-    let bank_name = req.bank_name.trim().to_owned();
-    if bank_name.is_empty() {
-        return Err(AppError::BadRequest("bank_name cannot be empty".to_owned()));
-    }
+    let bank_name = require_non_empty_trimmed(&req.bank_name, "bank_name")?;
 
     let bank_account = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         let bank_name = bank_name.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
+            ensure_entity_ready_for_treasury(&store, "bank account creation")?;
             let existing_ids = store
                 .list_ids::<BankAccount>("main")
                 .map_err(|e| AppError::Internal(format!("list bank accounts: {e}")))?;
@@ -1194,6 +1211,7 @@ async fn submit_payment(
         let layout = state.layout.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
+            ensure_entity_ready_for_treasury(&store, "payment submission")?;
             if payment_method_requires_active_bank_account(req.payment_method) {
                 ensure_active_bank_account_available(&store)?;
             }
@@ -1262,6 +1280,7 @@ async fn execute_payment(
         let layout = state.layout.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
+            ensure_entity_ready_for_treasury(&store, "payment execution")?;
             if payment_method_requires_active_bank_account(req.payment_method) {
                 ensure_active_bank_account_available(&store)?;
             }
@@ -1324,23 +1343,20 @@ async fn create_payroll_run(
     let workspace_id = auth.workspace_id();
     let entity_id = req.entity_id;
     state.enforce_creation_rate_limit("treasury.payroll.create", workspace_id, 60, 60)?;
-    if req.pay_period_end < req.pay_period_start {
-        return Err(AppError::BadRequest(
-            "pay_period_end must be on or after pay_period_start".to_owned(),
-        ));
-    }
-    let today = chrono::Utc::now().date_naive();
-    let max_future_date = today + chrono::Duration::days(366);
-    if req.pay_period_start > max_future_date || req.pay_period_end > max_future_date {
-        return Err(AppError::BadRequest(
-            "pay period dates are too far in the future".to_owned(),
-        ));
-    }
+    validate_date_order(
+        "pay_period_start",
+        req.pay_period_start,
+        "pay_period_end",
+        req.pay_period_end,
+    )?;
+    validate_not_too_far_future("pay_period_start", req.pay_period_start, 366)?;
+    validate_not_too_far_future("pay_period_end", req.pay_period_end, 366)?;
 
     let run = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
+            ensure_entity_ready_for_treasury(&store, "payroll creation")?;
             let existing_ids = store
                 .list_ids::<PayrollRun>("main")
                 .map_err(|e| AppError::Internal(format!("list payroll runs: {e}")))?;
@@ -1510,6 +1526,7 @@ async fn reconcile_ledger(
         let layout = state.layout.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
+            ensure_entity_ready_for_treasury(&store, "ledger reconciliation")?;
 
             // Sum up all journal entries to compute totals
             let entry_ids = store
@@ -2045,6 +2062,7 @@ async fn from_agent_request(
         let layout = state.layout.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
+            ensure_entity_ready_for_treasury(&store, "invoice creation")?;
 
             let invoice_id = InvoiceId::new();
             let mut invoice = Invoice::new(
@@ -2331,6 +2349,7 @@ async fn create_payment_intent(
         let description = req.description.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
+            ensure_entity_ready_for_treasury(&store, "payment intent creation")?;
             store
                 .write_json(
                     "main",

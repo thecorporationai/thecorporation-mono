@@ -43,9 +43,10 @@ program
 program
   .command("status")
   .description("Workspace summary")
-  .action(async () => {
+  .option("--json", "Output as JSON")
+  .action(async (opts) => {
     const { statusCommand } = await import("./commands/status.js");
-    await statusCommand();
+    await statusCommand(opts);
   });
 
 program
@@ -72,9 +73,10 @@ const configCmd = program.command("config").description("Manage configuration");
 configCmd
   .command("set <key> <value>")
   .description("Set a config value (dot-path)")
-  .action(async (key: string, value: string) => {
+  .option("--force", "Allow updating a security-sensitive config key")
+  .action(async (key: string, value: string, opts: { force?: boolean }) => {
     const { configSetCommand } = await import("./commands/config.js");
-    configSetCommand(key, value);
+    configSetCommand(key, value, opts);
   });
 configCmd
   .command("get <key>")
@@ -108,6 +110,7 @@ program
   .description("View or trigger daily digests")
   .option("--trigger", "Trigger digest now")
   .option("--key <key>", "Get specific digest by key")
+  .option("--json", "Output as JSON")
   .action(async (opts) => {
     const { digestCommand } = await import("./commands/digest.js");
     await digestCommand(opts);
@@ -211,6 +214,7 @@ contactsCmd
   .requiredOption("--email <email>", "Contact email")
   .option("--type <type>", "Contact type (individual, organization)", "individual")
   .option("--category <category>", "Category (employee, contractor, board_member, investor, law_firm, valuation_firm, accounting_firm, officer, founder, member, other)")
+  .option("--cap-table-access <level>", "Cap table access (none, summary, detailed)")
   .option("--address <address>", "Mailing address")
   .option("--mailing-address <address>", "Alias for --address")
   .option("--phone <phone>", "Phone number")
@@ -231,6 +235,7 @@ contactsCmd
   .option("--name <name>", "Contact name")
   .option("--email <email>", "Contact email")
   .option("--category <category>", "Contact category")
+  .option("--cap-table-access <level>", "Cap table access (none, summary, detailed)")
   .option("--address <address>", "Mailing address")
   .option("--mailing-address <address>", "Alias for --address")
   .option("--phone <phone>", "Phone number")
@@ -490,48 +495,69 @@ capTableCmd
 const financeCmd = program
   .command("finance")
   .description("Invoicing, payroll, payments, banking")
-  .option("--entity-id <id>", "Entity ID (overrides active entity)");
+  .option("--entity-id <id>", "Entity ID (overrides active entity)")
+  .option("--json", "Output as JSON");
 financeCmd
   .command("invoice")
   .requiredOption("--customer <name>", "Customer name")
   .requiredOption("--amount <n>", "Amount in cents", parseInt)
   .requiredOption("--due-date <date>", "Due date (ISO 8601)")
   .option("--description <desc>", "Description", "Services rendered")
+  .option("--json", "Output as JSON")
   .description("Create an invoice")
   .action(async (opts, cmd) => {
     const parent = cmd.parent!.opts();
     const { financeInvoiceCommand } = await import("./commands/finance.js");
-    await financeInvoiceCommand({ ...opts, entityId: parent.entityId });
+    await financeInvoiceCommand({
+      ...opts,
+      entityId: parent.entityId,
+      json: inheritOption(opts.json, parent.json),
+    });
   });
 financeCmd
   .command("payroll")
   .requiredOption("--period-start <date>", "Pay period start")
   .requiredOption("--period-end <date>", "Pay period end")
+  .option("--json", "Output as JSON")
   .description("Run payroll")
   .action(async (opts, cmd) => {
     const parent = cmd.parent!.opts();
     const { financePayrollCommand } = await import("./commands/finance.js");
-    await financePayrollCommand({ ...opts, entityId: parent.entityId });
+    await financePayrollCommand({
+      ...opts,
+      entityId: parent.entityId,
+      json: inheritOption(opts.json, parent.json),
+    });
   });
 financeCmd
   .command("pay")
   .requiredOption("--amount <n>", "Amount in cents", parseInt)
   .requiredOption("--recipient <name>", "Recipient name")
   .option("--method <method>", "Payment method", "ach")
+  .option("--json", "Output as JSON")
   .description("Submit a payment")
   .action(async (opts, cmd) => {
     const parent = cmd.parent!.opts();
     const { financePayCommand } = await import("./commands/finance.js");
-    await financePayCommand({ ...opts, entityId: parent.entityId });
+    await financePayCommand({
+      ...opts,
+      entityId: parent.entityId,
+      json: inheritOption(opts.json, parent.json),
+    });
   });
 financeCmd
   .command("open-account")
   .option("--institution <name>", "Banking institution", "Mercury")
+  .option("--json", "Output as JSON")
   .description("Open a business bank account")
   .action(async (opts, cmd) => {
     const parent = cmd.parent!.opts();
     const { financeOpenAccountCommand } = await import("./commands/finance.js");
-    await financeOpenAccountCommand({ ...opts, entityId: parent.entityId });
+    await financeOpenAccountCommand({
+      ...opts,
+      entityId: parent.entityId,
+      json: inheritOption(opts.json, parent.json),
+    });
   });
 financeCmd
   .command("classify-contractor")
@@ -541,21 +567,31 @@ financeCmd
   .option("--exclusive", "Exclusive client", false)
   .requiredOption("--duration <n>", "Duration in months", parseInt)
   .option("--provides-tools", "Company provides tools", false)
+  .option("--json", "Output as JSON")
   .description("Analyze contractor classification risk")
   .action(async (opts, cmd) => {
     const parent = cmd.parent!.opts();
     const { financeClassifyContractorCommand } = await import("./commands/finance.js");
-    await financeClassifyContractorCommand({ ...opts, entityId: parent.entityId });
+    await financeClassifyContractorCommand({
+      ...opts,
+      entityId: parent.entityId,
+      json: inheritOption(opts.json, parent.json),
+    });
   });
 financeCmd
   .command("reconcile")
   .requiredOption("--start-date <date>", "Period start")
   .requiredOption("--end-date <date>", "Period end")
+  .option("--json", "Output as JSON")
   .description("Reconcile ledger")
   .action(async (opts, cmd) => {
     const parent = cmd.parent!.opts();
     const { financeReconcileCommand } = await import("./commands/finance.js");
-    await financeReconcileCommand({ ...opts, entityId: parent.entityId });
+    await financeReconcileCommand({
+      ...opts,
+      entityId: parent.entityId,
+      json: inheritOption(opts.json, parent.json),
+    });
   });
 
 // --- governance ---
@@ -1166,6 +1202,8 @@ formCmd.command("finalize <entity-id>")
   .description("Finalize formation and generate documents + cap table (staged flow step 3)")
   .option("--authorized-shares <count>", "Authorized shares for corporations")
   .option("--par-value <value>", "Par value per share, e.g. 0.0001")
+  .option("--board-size <count>", "Board size for corporations")
+  .option("--principal-name <name>", "Principal or manager name for LLCs")
   .option("--registered-agent-name <name>", "Registered agent legal name")
   .option("--registered-agent-address <address>", "Registered agent address line")
   .option("--formation-date <date>", "Formation date (RFC3339 or YYYY-MM-DD)")

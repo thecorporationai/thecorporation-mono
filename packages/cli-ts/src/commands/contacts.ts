@@ -58,6 +58,7 @@ export async function contactsAddCommand(opts: {
   email: string;
   type?: string;
   category?: string;
+  capTableAccess?: string;
   phone?: string;
   notes?: string;
   mailingAddress?: string;
@@ -78,6 +79,7 @@ export async function contactsAddCommand(opts: {
     if (opts.phone) data.phone = opts.phone;
     if (opts.notes) data.notes = opts.notes;
     if (opts.mailingAddress ?? opts.address) data.mailing_address = opts.mailingAddress ?? opts.address;
+    if (opts.capTableAccess) data.cap_table_access = opts.capTableAccess;
     const result = await client.createContact(data);
     printWriteResult(
       result,
@@ -97,6 +99,7 @@ export async function contactsEditCommand(
     name?: string;
     email?: string;
     category?: string;
+    capTableAccess?: string;
     phone?: string;
     notes?: string;
     mailingAddress?: string;
@@ -128,6 +131,10 @@ export async function contactsEditCommand(
     }
     if (opts.notes != null) {
       data.notes = opts.notes;
+      hasUpdates = true;
+    }
+    if (opts.capTableAccess != null) {
+      data.cap_table_access = opts.capTableAccess;
       hasUpdates = true;
     }
     if (opts.mailingAddress != null || opts.address != null) {

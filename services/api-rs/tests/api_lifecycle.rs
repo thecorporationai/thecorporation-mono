@@ -3023,24 +3023,25 @@ async fn test_board_approve_round_validation_guards() {
     let (_issuer_legal_entity_id, round_id) =
         create_round_with_terms(&app, &entity_id, &token).await;
 
-    let (llc_meeting_id, llc_resolution_id) =
-        create_resolution_for_body(&app, &entity_id, &token, "llc_member_vote", &["for"]).await;
-
-    let (status, non_board_body) = post_json(
+    // Creating an LLC body type on a C-Corp entity is now rejected at creation time
+    let e_query = format!("entity_id={entity_id}");
+    let (status, _llc_body_err) = post_json(
         &app,
-        &format!("/v1/equity/rounds/{round_id}/board-approve"),
+        "/v1/governance-bodies",
         json!({
             "entity_id": entity_id,
-            "meeting_id": llc_meeting_id,
-            "resolution_id": llc_resolution_id,
+            "body_type": "llc_member_vote",
+            "name": "LLC Members",
+            "quorum_rule": "majority",
+            "voting_method": "per_capita",
         }),
         &token,
     )
     .await;
     assert_eq!(
         status,
-        StatusCode::UNPROCESSABLE_ENTITY,
-        "board approval with non-board body should fail: {non_board_body}"
+        StatusCode::BAD_REQUEST,
+        "creating LLC body on C-Corp should be rejected"
     );
 
     let (failed_meeting_id, failed_resolution_id) = create_resolution_for_body(

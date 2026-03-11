@@ -4,7 +4,7 @@ import {
   executeTool as _executeTool,
 } from "@thecorporation/corp-tools";
 import type { CorpAPIClient } from "@thecorporation/corp-tools";
-import { loadConfig, saveConfig } from "./config.js";
+import { setActiveEntityId, updateConfig } from "./config.js";
 import { join } from "node:path";
 import { homedir } from "node:os";
 
@@ -20,9 +20,9 @@ export async function executeTool(
     dataDir: join(homedir(), ".corp"),
     onEntityFormed: (entityId) => {
       try {
-        const cfg = loadConfig();
-        cfg.active_entity_id = entityId;
-        saveConfig(cfg);
+        updateConfig((cfg) => {
+          setActiveEntityId(cfg, entityId);
+        });
       } catch { /* ignore */ }
     },
   });

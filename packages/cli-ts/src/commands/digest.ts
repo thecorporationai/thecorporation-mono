@@ -2,7 +2,7 @@ import { requireConfig } from "../config.js";
 import { CorpAPIClient } from "../api-client.js";
 import { printError, printSuccess, printJson, printWarning } from "../output.js";
 
-export async function digestCommand(opts: { trigger?: boolean; key?: string }): Promise<void> {
+export async function digestCommand(opts: { trigger?: boolean; key?: string; json?: boolean }): Promise<void> {
   const cfg = requireConfig("api_url", "api_key", "workspace_id");
   const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
   try {
@@ -12,8 +12,10 @@ export async function digestCommand(opts: { trigger?: boolean; key?: string }): 
         const value = (result as Record<string, unknown>).message;
         return typeof value === "string" && value.trim() ? value : null;
       })();
-      printSuccess(result.digest_count > 0 ? "Digest triggered." : "Digest trigger accepted.");
-      if (message) {
+      if (!opts.json) {
+        printSuccess(result.digest_count > 0 ? "Digest triggered." : "Digest trigger accepted.");
+      }
+      if (message && !opts.json) {
         printWarning(message);
       }
       printJson(result);

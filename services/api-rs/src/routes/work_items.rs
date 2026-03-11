@@ -12,6 +12,7 @@ use chrono::{NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 
 use super::AppState;
+use super::validation::{require_non_empty_trimmed, validate_max_len, validate_not_too_far_past};
 use crate::auth::{RequireExecutionRead, RequireExecutionWrite};
 use crate::domain::ids::{EntityId, WorkItemId, WorkspaceId};
 use crate::domain::work_items::types::WorkItemStatus;
@@ -173,22 +174,20 @@ async fn create_work_item(
         return Err(AppError::Forbidden("entity access denied".to_owned()));
     }
     state.enforce_creation_rate_limit("work_items.create", workspace_id, 60, 60)?;
-    if req.title.trim().is_empty() {
-        return Err(AppError::BadRequest("title cannot be empty".to_owned()));
+    let title = require_non_empty_trimmed(&req.title, "title")?;
+    validate_max_len(&title, "title", 1000)?;
+    if let Some(deadline) = req.deadline {
+        validate_not_too_far_past("deadline", deadline, 365)?;
     }
-    if req
-        .deadline
-        .is_some_and(|deadline| deadline < Utc::now().date_naive() - chrono::Duration::days(365))
-    {
-        return Err(AppError::BadRequest(
-            "deadline cannot be more than one year in the past".to_owned(),
-        ));
+    if let Some(ref created_by) = req.created_by {
+        validate_max_len(created_by, "created_by", 256)?;
     }
     let category = validate_category(&req.category)?;
 
     let work_item = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         let category = category.clone();
+        let title = title.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
             let work_item_id = WorkItemId::new();
@@ -198,7 +197,7 @@ async fn create_work_item(
             let work_item = WorkItem::new(
                 work_item_id,
                 entity_id,
-                req.title,
+                title,
                 req.description.unwrap_or_default(),
                 category,
                 req.deadline,
@@ -357,6 +356,9 @@ async fn claim_work_item(
         return Err(AppError::Forbidden("entity access denied".to_owned()));
     }
 
+    require_non_empty_trimmed(&req.claimed_by, "claimed_by")?;
+    validate_max_len(&req.claimed_by, "claimed_by", 256)?;
+
     let work_item = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
@@ -414,6 +416,9 @@ async fn complete_work_item(
     if !auth.allows_entity(entity_id) {
         return Err(AppError::Forbidden("entity access denied".to_owned()));
     }
+
+    require_non_empty_trimmed(&req.completed_by, "completed_by")?;
+    validate_max_len(&req.completed_by, "completed_by", 256)?;
 
     let work_item = tokio::task::spawn_blocking({
         let layout = state.layout.clone();

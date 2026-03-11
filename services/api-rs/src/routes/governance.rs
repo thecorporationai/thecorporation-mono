@@ -11,6 +11,9 @@ use chrono::{NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 
 use super::AppState;
+use super::validation::{
+    require_non_empty_trimmed, validate_not_too_far_future, validate_not_too_far_past,
+};
 use crate::auth::{
     RequireGovernanceRead, RequireGovernanceVote, RequireGovernanceWrite, RequireInternalWorker,
 };
@@ -604,6 +607,23 @@ fn validate_meeting_type_for_body(
     )))
 }
 
+fn validate_body_type_for_entity(
+    entity_type: EntityType,
+    body_type: BodyType,
+) -> Result<(), AppError> {
+    let is_allowed = matches!(
+        (entity_type, body_type),
+        (EntityType::CCorp, BodyType::BoardOfDirectors)
+            | (EntityType::Llc, BodyType::LlcMemberVote)
+    );
+    if is_allowed {
+        return Ok(());
+    }
+    Err(AppError::BadRequest(format!(
+        "governance body type {body_type:?} is not valid for entity type {entity_type}"
+    )))
+}
+
 fn holder_has_active_membership_units(
     store: &EntityStore<'_>,
     holder_id: ContactId,
@@ -673,7 +693,17 @@ fn validate_holder_for_body(
             }
         }
         BodyType::LlcMemberVote => {
-            let _ = (store, holder);
+            let is_member_contact = matches!(
+                holder.category(),
+                ContactCategory::Founder | ContactCategory::Member
+            );
+            if !is_member_contact
+                && !holder_has_active_membership_units(store, holder.contact_id())?
+            {
+                return Err(AppError::BadRequest(
+                    "llc member-vote seats require a member contact".to_owned(),
+                ));
+            }
         }
     }
     Ok(())
@@ -1854,6 +1884,10 @@ async fn create_governance_body(
         let layout = state.layout.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
+            let entity = store
+                .read_entity("main")
+                .map_err(|e| AppError::Internal(format!("read entity: {e}")))?;
+            validate_body_type_for_entity(entity.entity_type(), req.body_type)?;
             let body_ids = store
                 .list_ids::<GovernanceBody>("main")
                 .map_err(|e| AppError::Internal(format!("list governance bodies: {e}")))?;
@@ -2564,6 +2598,15 @@ async fn create_seat(
                     "governance body does not belong to entity".to_owned(),
                 ));
             }
+            if body.status() != BodyStatus::Active {
+                return Err(AppError::BadRequest(
+                    "governance body is inactive".to_owned(),
+                ));
+            }
+            let entity = store
+                .read_entity("main")
+                .map_err(|e| AppError::Internal(format!("read entity: {e}")))?;
+            validate_body_type_for_entity(entity.entity_type(), body.body_type())?;
             let holder = store
                 .read::<Contact>("main", req.holder_id)
                 .map_err(|_| AppError::NotFound(format!("contact {} not found", req.holder_id)))?;
@@ -2740,9 +2783,20 @@ async fn schedule_meeting(
 ) -> Result<Json<MeetingResponse>, AppError> {
     let workspace_id = auth.workspace_id();
     let entity_id = req.entity_id;
+    let title = require_non_empty_trimmed(&req.title, "title")?;
+    if req.meeting_type != MeetingType::WrittenConsent && req.scheduled_date.is_none() {
+        return Err(AppError::BadRequest(
+            "scheduled_date is required for scheduled meetings".to_owned(),
+        ));
+    }
+    if let Some(scheduled_date) = req.scheduled_date {
+        validate_not_too_far_past("scheduled_date", scheduled_date, 365)?;
+        validate_not_too_far_future("scheduled_date", scheduled_date, 730)?;
+    }
 
     let (meeting, agenda_item_ids) = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let title = title.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
 
@@ -2759,7 +2813,7 @@ async fn schedule_meeting(
                 meeting_id,
                 req.body_id,
                 req.meeting_type,
-                req.title,
+                title,
                 req.scheduled_date,
                 req.location.unwrap_or_default(),
                 req.notice_days.unwrap_or(10),
@@ -3074,6 +3128,42 @@ async fn adjourn_meeting(
             let mut meeting = store
                 .read::<Meeting>("main", meeting_id)
                 .map_err(|_| AppError::NotFound(format!("meeting {} not found", meeting_id)))?;
+
+            // Recompute quorum before adjourning.
+            // For written consents (which skip convene), quorum was never set.
+            // For regular meetings, re-derive from current vote counts.
+            let body = store
+                .read::<GovernanceBody>("main", meeting.body_id())
+                .map_err(|_| {
+                    AppError::NotFound(format!(
+                        "governance body {} not found",
+                        meeting.body_id()
+                    ))
+                })?;
+            let seat_ids = store.list_ids::<GovernanceSeat>("main").unwrap_or_default();
+            let mut total_eligible: u32 = 0;
+            for id in &seat_ids {
+                if let Ok(s) = store.read::<GovernanceSeat>("main", *id) {
+                    if s.body_id() == meeting.body_id() && s.can_vote() {
+                        total_eligible += 1;
+                    }
+                }
+            }
+
+            if total_eligible == 0 {
+                // No eligible voters — quorum cannot be met
+                meeting.set_quorum_status(QuorumStatus::NotMet);
+            } else if meeting.quorum_met() == QuorumStatus::Unknown {
+                // Written consent or unset: compute from present seats
+                let present_count =
+                    u32::try_from(meeting.present_seat_ids().len()).unwrap_or(0);
+                let quorum_met = body.quorum_rule().is_met(present_count, total_eligible);
+                meeting.set_quorum_status(if quorum_met {
+                    QuorumStatus::Met
+                } else {
+                    QuorumStatus::NotMet
+                });
+            }
 
             meeting.adjourn()?;
 
@@ -3797,12 +3887,11 @@ async fn written_consent(
     let workspace_id = auth.workspace_id();
     let entity_id = req.entity_id;
     state.enforce_creation_rate_limit("governance.written_consent.create", workspace_id, 60, 60)?;
-    if req.title.trim().is_empty() {
-        return Err(AppError::BadRequest("title cannot be empty".to_owned()));
-    }
+    let title = require_non_empty_trimmed(&req.title, "title")?;
 
     let meeting = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let title = title.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
 
@@ -3818,7 +3907,7 @@ async fn written_consent(
                 meeting_id,
                 req.body_id,
                 MeetingType::WrittenConsent,
-                req.title.trim().to_owned(),
+                title,
                 None,          // No scheduled date for written consent
                 String::new(), // No location
                 0,             // No notice days

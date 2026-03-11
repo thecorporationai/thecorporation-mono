@@ -10,6 +10,7 @@ use axum::{
 use serde::{Deserialize, Serialize};
 
 use super::AppState;
+use super::validation::{reject_blank_optional, require_non_empty_trimmed, validate_max_len};
 use crate::auth::{RequireContactsRead, RequireContactsWrite};
 use crate::domain::contacts::{
     contact::Contact,
@@ -32,6 +33,8 @@ pub struct CreateContactRequest {
     #[serde(default)]
     pub mailing_address: Option<String>,
     pub category: ContactCategory,
+    #[serde(default)]
+    pub cap_table_access: Option<CapTableAccess>,
     #[serde(default)]
     pub notes: Option<String>,
 }
@@ -94,13 +97,25 @@ fn normalize_email(email: &str) -> String {
 
 fn validate_email(email: &str) -> Result<String, AppError> {
     let normalized = normalize_email(email);
-    if normalized.is_empty() || !normalized.contains('@') {
+    if normalized.is_empty()
+        || normalized.chars().any(char::is_whitespace)
+        || normalized.contains(',')
+        || normalized.matches('@').count() != 1
+    {
         return Err(AppError::BadRequest(
             "email must be a valid address".to_owned(),
         ));
     }
-    let parts: Vec<&str> = normalized.splitn(2, '@').collect();
-    if parts.len() != 2 || parts[0].is_empty() || parts[1].is_empty() || !parts[1].contains('.') {
+    let (local, domain) = normalized
+        .split_once('@')
+        .ok_or_else(|| AppError::BadRequest("email must be a valid address".to_owned()))?;
+    if local.is_empty()
+        || domain.is_empty()
+        || !domain.contains('.')
+        || domain.starts_with('.')
+        || domain.ends_with('.')
+        || domain.contains("..")
+    {
         return Err(AppError::BadRequest(
             "email must be a valid address".to_owned(),
         ));
@@ -130,19 +145,20 @@ async fn create_contact(
         return Err(AppError::Forbidden("entity access denied".to_owned()));
     }
     state.enforce_creation_rate_limit("contacts.create", workspace_id, 250, 60)?;
-    if req
-        .mailing_address
-        .as_deref()
-        .is_some_and(|s| s.trim().is_empty())
-    {
-        return Err(AppError::BadRequest(
-            "mailing_address cannot be empty".to_owned(),
-        ));
+    reject_blank_optional(req.mailing_address.as_deref(), "mailing_address")?;
+    if let Some(ref addr) = req.mailing_address {
+        validate_max_len(addr, "mailing_address", 1000)?;
+    }
+    let name = require_non_empty_trimmed(&req.name, "name")?;
+    validate_max_len(&name, "name", 256)?;
+    if let Some(ref email) = req.email {
+        validate_max_len(email, "email", 320)?;
     }
     let normalized_email = req.email.as_deref().map(validate_email).transpose()?;
 
     let contact = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let name = name.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
             let contact_ids = store
@@ -168,11 +184,14 @@ async fn create_contact(
                 entity_id,
                 workspace_id,
                 req.contact_type,
-                req.name,
+                name,
                 normalized_email,
                 req.category,
             )
             .map_err(AppError::BadRequest)?;
+            if let Some(access) = req.cap_table_access {
+                contact.set_cap_table_access(access);
+            }
             if let Some(mailing_address) = req.mailing_address
                 && !mailing_address.trim().is_empty()
             {
@@ -330,25 +349,20 @@ async fn update_contact(
     if !auth.allows_entity(entity_id) {
         return Err(AppError::Forbidden("entity access denied".to_owned()));
     }
-    if req.name.as_deref().is_some_and(|s| s.trim().is_empty()) {
-        return Err(AppError::BadRequest("name cannot be empty".to_owned()));
-    }
+    let name = req
+        .name
+        .as_deref()
+        .map(|value| require_non_empty_trimmed(value, "name"))
+        .transpose()?;
     if req.email.as_deref().is_some_and(|s| s.trim().is_empty()) {
         return Err(AppError::BadRequest("email cannot be empty".to_owned()));
     }
-    if req
-        .mailing_address
-        .as_deref()
-        .is_some_and(|s| s.trim().is_empty())
-    {
-        return Err(AppError::BadRequest(
-            "mailing_address cannot be empty".to_owned(),
-        ));
-    }
+    reject_blank_optional(req.mailing_address.as_deref(), "mailing_address")?;
     let normalized_email = req.email.as_deref().map(validate_email).transpose()?;
 
     let contact = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let name = name.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
             let mut contact = store
@@ -377,7 +391,7 @@ async fn update_contact(
                 }
             }
 
-            if let Some(name) = req.name {
+            if let Some(name) = name {
                 contact.set_name(name).map_err(AppError::BadRequest)?;
             }
             if let Some(email) = normalized_email {

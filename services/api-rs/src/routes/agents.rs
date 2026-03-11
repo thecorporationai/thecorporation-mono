@@ -303,7 +303,8 @@ async fn create_agent(
     State(state): State<AppState>,
     Json(req): Json<CreateAgentRequest>,
 ) -> Result<(StatusCode, Json<AgentResponse>), AppError> {
-    if req.name.is_empty() || req.name.len() > 256 {
+    let trimmed_name = req.name.trim();
+    if trimmed_name.is_empty() || trimmed_name.len() > 256 {
         return Err(AppError::BadRequest(
             "agent name must be between 1 and 256 characters".to_owned(),
         ));
@@ -317,6 +318,22 @@ async fn create_agent(
         move || {
             let ws_store = WorkspaceStore::open(&layout, workspace_id)
                 .map_err(|e| AppError::NotFound(format!("workspace not found: {e}")))?;
+
+            // Reject duplicate agent names within the workspace
+            let existing_ids: Vec<AgentId> = ws_store
+                .list_ids_in_dir_pub("agents")
+                .unwrap_or_default();
+            for id in existing_ids {
+                let path = format!("agents/{}.json", id);
+                if let Ok(existing) = ws_store.read_json::<Agent>(&path) {
+                    if existing.name().eq_ignore_ascii_case(&req.name) {
+                        return Err(AppError::Conflict(format!(
+                            "an agent named '{}' already exists",
+                            req.name
+                        )));
+                    }
+                }
+            }
 
             // Validate parent_agent_id if provided
             if let Some(parent_id) = req.parent_agent_id {

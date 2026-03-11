@@ -15,6 +15,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use super::AppState;
+use super::validation::{
+    require_non_empty_trimmed, validate_not_too_far_future, validate_not_too_far_past,
+};
 use crate::auth::{RequireFormationCreate, RequireFormationRead, RequireFormationSign};
 use crate::domain::formation::{
     content::{InvestorType, MemberInput, MemberRole, OfficerTitle},
@@ -291,6 +294,10 @@ pub struct FinalizePendingFormationRequest {
     #[serde(default)]
     pub par_value: Option<String>,
     #[serde(default)]
+    pub board_size: Option<u32>,
+    #[serde(default)]
+    pub principal_name: Option<String>,
+    #[serde(default)]
     pub registered_agent_name: Option<String>,
     #[serde(default)]
     pub registered_agent_address: Option<String>,
@@ -527,6 +534,8 @@ fn build_profile_overrides_from_fields(
     transfer_restrictions: Option<bool>,
     right_of_first_refusal: Option<bool>,
     company_address: Option<crate::domain::formation::content::Address>,
+    board_size: Option<u32>,
+    principal_name: Option<String>,
 ) -> Result<service::FormationProfileOverrides, AppError> {
     Ok(service::FormationProfileOverrides {
         formation_date: parse_formation_date(formation_date)?,
@@ -538,6 +547,8 @@ fn build_profile_overrides_from_fields(
             s_corp_election: s_corp_election.unwrap_or(false),
         }),
         company_address: request_company_address(company_address),
+        board_size,
+        principal_name: cleaned_optional_string(principal_name),
     })
 }
 
@@ -584,6 +595,8 @@ async fn create_formation(
         req.transfer_restrictions,
         req.right_of_first_refusal,
         req.company_address.clone(),
+        None,
+        None,
     )?;
     state.enforce_creation_rate_limit("formation.create", workspace_id, 20, 60)?;
 
@@ -665,6 +678,8 @@ async fn create_formation_with_cap_table(
         req.transfer_restrictions,
         req.right_of_first_refusal,
         req.company_address.clone(),
+        None,
+        None,
     )?;
     state.enforce_creation_rate_limit("formation.create", workspace_id, 20, 60)?;
 
@@ -2308,11 +2323,13 @@ async fn generate_contract(
     let workspace_id = auth.workspace_id();
     let entity_id = req.entity_id;
     state.enforce_creation_rate_limit("formation.contract.create", workspace_id, 60, 60)?;
-    if req.counterparty_name.trim().is_empty() {
-        return Err(AppError::BadRequest(
-            "counterparty_name cannot be empty".to_owned(),
-        ));
-    }
+    let counterparty_name = require_non_empty_trimmed(&req.counterparty_name, "counterparty_name")?;
+    validate_not_too_far_past("effective_date", req.effective_date, 3650)?;
+    validate_not_too_far_future("effective_date", req.effective_date, 730)?;
+    super::validation::reject_dangerous_param_keys(&req.parameters)?;
+    super::validation::validate_non_negative_json_f64(&req.parameters, "hourly_rate")?;
+    super::validation::validate_non_negative_json_f64(&req.parameters, "monthly_rate")?;
+    super::validation::validate_non_negative_json_f64(&req.parameters, "annual_salary")?;
     let is_legacy_safe = req.template_type == ContractTemplateType::Custom
         && req
             .parameters
@@ -2338,6 +2355,7 @@ async fn generate_contract(
 
     let contract = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let counterparty_name = counterparty_name.clone();
         move || {
             let store = open_formation_store(&layout, workspace_id, entity_id)?;
 
@@ -2347,7 +2365,7 @@ async fn generate_contract(
                 contract_id,
                 entity_id,
                 template_type,
-                req.counterparty_name.trim().to_owned(),
+                counterparty_name,
                 req.effective_date,
                 req.parameters,
                 document_id,
@@ -3048,6 +3066,7 @@ async fn convert_entity(
     Json(req): Json<ConvertEntityRequest>,
 ) -> Result<Json<FormationStatusResponse>, AppError> {
     let workspace_id = auth.workspace_id();
+    state.enforce_creation_rate_limit("formation.entity_conversion.create", workspace_id, 5, 60)?;
 
     let entity = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
@@ -3056,6 +3075,16 @@ async fn convert_entity(
             let mut entity = store.read_entity("main").map_err(|e| {
                 crate::domain::formation::error::FormationError::Validation(e.to_string())
             })?;
+            if entity.formation_status() != FormationStatus::Active {
+                return Err(crate::domain::formation::error::FormationError::Validation(
+                    "entity conversion is only allowed after formation is active".to_owned(),
+                ));
+            }
+            if entity.entity_type() == req.target_type {
+                return Err(crate::domain::formation::error::FormationError::Validation(
+                    "entity is already the requested type".to_owned(),
+                ));
+            }
 
             entity.set_entity_type(req.target_type)?;
             if let Some(jurisdiction) = req.jurisdiction {
@@ -3073,6 +3102,34 @@ async fn convert_entity(
                         "commit error: {e}"
                     ))
                 })?;
+
+            match store.read_json::<GovernanceProfile>("main", GOVERNANCE_PROFILE_PATH) {
+                Ok(mut profile) => {
+                    profile.retype_for_entity(&entity);
+                    profile
+                        .validate()
+                        .map_err(crate::domain::formation::error::FormationError::Validation)?;
+                    store
+                        .write_json(
+                            "main",
+                            GOVERNANCE_PROFILE_PATH,
+                            &profile,
+                            &format!("Retype governance profile to {}", req.target_type),
+                        )
+                        .map_err(|e| {
+                            crate::domain::formation::error::FormationError::Validation(format!(
+                                "commit error: {e}"
+                            ))
+                        })?;
+                }
+                Err(crate::git::error::GitStorageError::NotFound(_)) => {}
+                Err(e) => {
+                    return Err(crate::domain::formation::error::FormationError::Validation(
+                        format!("failed to read governance profile: {e}"),
+                    ));
+                }
+            }
+            service::retire_incompatible_governance_for_entity(&store, &entity)?;
 
             Ok::<_, crate::domain::formation::error::FormationError>(entity)
         }
@@ -3184,6 +3241,8 @@ async fn create_pending_formation(
         req.transfer_restrictions,
         req.right_of_first_refusal,
         req.company_address.clone(),
+        None,
+        None,
     )?;
     let jurisdiction = req.jurisdiction.unwrap_or_else(|| {
         let j = match entity_type {
@@ -3324,6 +3383,8 @@ async fn finalize_pending_formation(
         req.transfer_restrictions,
         req.right_of_first_refusal,
         req.company_address.clone(),
+        req.board_size,
+        req.principal_name.clone(),
     )?;
 
     let result = tokio::task::spawn_blocking({

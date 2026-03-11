@@ -122,21 +122,11 @@ export async function serveCommand(opts: ServeOptions): Promise<void> {
   ensureEnvFile(envPath);
   loadEnvFile(envPath);
 
-  // Auto-configure CLI to point at the local server
   const localUrl = `http://localhost:${port}`;
-  const { loadConfig, saveConfig } = await import("../config.js");
-  const cfg = loadConfig();
-  const previousUrl = cfg.api_url;
-  if (cfg.api_url !== localUrl) {
-    cfg.api_url = localUrl;
-    saveConfig(cfg);
-    console.log(`CLI configured to use local server: ${localUrl}`);
-    console.log(`  (previous: ${previousUrl})`);
-    console.log(`  To revert: corp config set api_url ${previousUrl}\n`);
-  }
-
   console.log(`Starting server on port ${port}...`);
   console.log(`Data directory: ${opts.dataDir}`);
+  console.log(`CLI API URL remains unchanged.`);
+  console.log(`  Use CORP_API_URL=${localUrl} for commands against this local server.\n`);
 
   const child = server.startServer({
     port,
@@ -145,13 +135,6 @@ export async function serveCommand(opts: ServeOptions): Promise<void> {
 
   const shutdown = () => {
     console.log("\nShutting down server...");
-    // Restore previous API URL
-    if (previousUrl !== localUrl) {
-      const current = loadConfig();
-      current.api_url = previousUrl;
-      saveConfig(current);
-      console.log(`CLI restored to: ${previousUrl}`);
-    }
     child.kill("SIGTERM");
   };
 

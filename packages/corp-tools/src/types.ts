@@ -14,6 +14,7 @@ export interface CorpConfig {
     email: string;
   };
   active_entity_id: string;
+  active_entity_ids?: Record<string, string>;
   [key: string]: unknown;
 }
 

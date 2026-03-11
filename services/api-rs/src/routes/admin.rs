@@ -11,8 +11,10 @@ use axum::{
 use serde::{Deserialize, Serialize};
 
 use super::AppState;
+use super::validation::{normalize_slug, require_non_empty_trimmed_max};
 use crate::auth::RequireAdmin;
 use crate::domain::contacts::contact::Contact;
+use crate::domain::formation::types::FormationStatus;
 use crate::domain::ids::{EntityId, WorkspaceId};
 use crate::error::AppError;
 use crate::store::workspace_store::WorkspaceStore;
@@ -343,6 +345,23 @@ async fn demo_seed(
             )
             .map_err(|e| AppError::Internal(format!("create entity: {e}")))?;
 
+            // Walk entity through formation statuses to Active so it is
+            // fully formed and ready for all operations.
+            let mut entity = entity;
+            let formation_steps = [
+                FormationStatus::DocumentsGenerated,
+                FormationStatus::DocumentsSigned,
+                FormationStatus::FilingSubmitted,
+                FormationStatus::Filed,
+                FormationStatus::EinApplied,
+                FormationStatus::Active,
+            ];
+            for step in formation_steps {
+                entity
+                    .advance_status(step)
+                    .map_err(|e| AppError::Internal(format!("advance entity status: {e}")))?;
+            }
+
             crate::store::entity_store::EntityStore::init(
                 &layout,
                 workspace_id,
@@ -433,23 +452,8 @@ async fn link_workspace(
     Json(req): Json<WorkspaceLinkRequest>,
 ) -> Result<Json<WorkspaceLinkResponse>, AppError> {
     let workspace_id = auth.workspace_id();
-    let provider = req.provider.trim().to_ascii_lowercase();
-    if provider.is_empty()
-        || provider.len() > 64
-        || !provider
-            .chars()
-            .all(|ch| ch.is_ascii_lowercase() || ch.is_ascii_digit() || ch == '_' || ch == '-')
-    {
-        return Err(AppError::BadRequest(
-            "provider must be a non-empty slug".to_owned(),
-        ));
-    }
-    let external_id = req.external_id.trim().to_owned();
-    if external_id.is_empty() || external_id.len() > 200 {
-        return Err(AppError::BadRequest(
-            "external_id must be between 1 and 200 characters".to_owned(),
-        ));
-    }
+    let provider = normalize_slug(&req.provider, "provider", 64)?;
+    let external_id = require_non_empty_trimmed_max(&req.external_id, "external_id", 200)?;
 
     tokio::task::spawn_blocking({
         let layout = state.layout.clone();

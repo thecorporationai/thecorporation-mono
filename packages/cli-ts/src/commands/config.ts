@@ -1,11 +1,27 @@
-import { configForDisplay, getValue, loadConfig, saveConfig, setValue } from "../config.js";
+import { configForDisplay, getValue, loadConfig, setValue, updateConfig } from "../config.js";
 import { printError, printJson } from "../output.js";
 
-export function configSetCommand(key: string, value: string): void {
-  const cfg = loadConfig();
-  setValue(cfg as unknown as Record<string, unknown>, key, value);
-  saveConfig(cfg);
-  console.log(`${key} = ${value}`);
+export function configSetCommand(
+  key: string,
+  value: string,
+  options: { force?: boolean } = {},
+): void {
+  try {
+    updateConfig((cfg) => {
+      setValue(cfg as unknown as Record<string, unknown>, key, value, {
+        forceSensitive: options.force,
+      });
+    });
+  } catch (err) {
+    printError(`Failed to update config: ${err}`);
+    process.exit(1);
+  }
+
+  if (key === "api_key" || key === "llm.api_key") {
+    console.log(`${key} updated.`);
+    return;
+  }
+  console.log(`${key} updated.`);
 }
 
 export function configGetCommand(key: string): void {

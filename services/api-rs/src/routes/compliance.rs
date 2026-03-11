@@ -11,6 +11,7 @@ use chrono::{NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 
 use super::AppState;
+use super::validation::{require_non_empty_trimmed_max, validate_max_len, validate_reasonable_year};
 use crate::auth::RequireAdmin;
 use crate::domain::formation::{
     contractor::{ClassificationResult, ContractorClassification, RiskLevel},
@@ -449,6 +450,7 @@ async fn file_tax_document(
     let entity_id = req.entity_id;
     state.enforce_creation_rate_limit("compliance.tax_filing.create", workspace_id, 60, 60)?;
     validate_tax_document_type(&req.document_type)?;
+    validate_reasonable_year("tax_year", req.tax_year, 1900, 2)?;
 
     let filing = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
@@ -527,6 +529,8 @@ async fn create_deadline(
     let workspace_id = auth.workspace_id();
     let entity_id = req.entity_id;
     state.enforce_creation_rate_limit("compliance.deadline.create", workspace_id, 120, 60)?;
+    require_non_empty_trimmed_max(&req.deadline_type, "deadline_type", 128)?;
+    require_non_empty_trimmed_max(&req.description, "description", 2000)?;
     validate_deadline_recurrence(&req.deadline_type, req.recurrence)?;
 
     let deadline = tokio::task::spawn_blocking({
@@ -592,6 +596,7 @@ async fn classify_contractor(
             "contractor_name cannot be empty".to_owned(),
         ));
     }
+    validate_max_len(&req.contractor_name, "contractor_name", 256)?;
     let normalized_state = normalize_state_code(&req.state)?;
     let (risk_level, flags, classification_result) =
         classify_contractor_inputs(&ClassifyContractorRequest {

@@ -256,6 +256,33 @@ impl GovernanceProfile {
         self.updated_at = Utc::now();
     }
 
+    pub fn retype_for_entity(&mut self, entity: &Entity) {
+        self.entity_type = entity.entity_type();
+        self.legal_name = entity.legal_name().to_owned();
+        self.jurisdiction = entity.jurisdiction().to_string();
+        self.registered_agent_name = entity.registered_agent_name().map(ToOwned::to_owned);
+        self.registered_agent_address = entity.registered_agent_address().map(ToOwned::to_owned);
+        self.adopted_by = match entity.entity_type() {
+            EntityType::CCorp => "Board of Directors".to_owned(),
+            EntityType::Llc => "Members".to_owned(),
+        };
+        match entity.entity_type() {
+            EntityType::CCorp => {
+                self.principal_name = None;
+                self.principal_title = None;
+            }
+            EntityType::Llc => {
+                self.board_size = None;
+                self.incorporator_name = None;
+                self.incorporator_address = None;
+                self.directors.clear();
+                self.stock_details = None;
+            }
+        }
+        self.version = self.version.saturating_add(1);
+        self.updated_at = Utc::now();
+    }
+
     pub fn set_company_address(&mut self, address: CompanyAddress) {
         self.company_address = Some(address);
         self.updated_at = Utc::now();

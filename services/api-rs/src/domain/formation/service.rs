@@ -19,11 +19,14 @@ use crate::domain::governance::{
     body::GovernanceBody,
     doc_ast, doc_generator,
     seat::GovernanceSeat,
-    types::{BodyType, QuorumThreshold, SeatRole, VotingMethod, VotingPower},
+    types::{
+        BodyStatus, BodyType, QuorumThreshold, SeatRole, SeatStatus, VotingMethod, VotingPower,
+    },
 };
 use crate::domain::ids::*;
 use crate::git::commit::FileWrite;
 use chrono::{DateTime, Utc};
+use std::collections::HashSet;
 
 use super::error::FormationError;
 
@@ -79,6 +82,8 @@ pub struct FormationProfileOverrides {
     pub fiscal_year_end: Option<FiscalYearEnd>,
     pub document_options: Option<DocumentOptions>,
     pub company_address: Option<CompanyAddress>,
+    pub board_size: Option<u32>,
+    pub principal_name: Option<String>,
 }
 
 fn member_role_label(role: Option<MemberRole>, entity_type: EntityType) -> String {
@@ -93,6 +98,72 @@ fn member_role_label(role: Option<MemberRole>, entity_type: EntityType) -> Strin
             EntityType::Llc => "organizer".to_owned(),
         },
     }
+}
+
+fn validate_member_email(email: &str) -> Result<String, FormationError> {
+    let normalized = email.trim().to_ascii_lowercase();
+    if normalized.is_empty()
+        || normalized.chars().any(char::is_whitespace)
+        || normalized.contains(',')
+        || normalized.matches('@').count() != 1
+    {
+        return Err(FormationError::Validation(
+            "member email must be a valid single address".to_owned(),
+        ));
+    }
+    let (local, domain) = normalized.split_once('@').ok_or_else(|| {
+        FormationError::Validation("member email must be a valid single address".to_owned())
+    })?;
+    if local.is_empty()
+        || domain.is_empty()
+        || !domain.contains('.')
+        || domain.starts_with('.')
+        || domain.ends_with('.')
+        || domain.contains("..")
+    {
+        return Err(FormationError::Validation(
+            "member email must be a valid single address".to_owned(),
+        ));
+    }
+    Ok(normalized)
+}
+
+fn validate_member_inputs(members: &[MemberInput]) -> Result<(), FormationError> {
+    let mut seen_emails = HashSet::new();
+    let mut specified_ownership_total = 0.0_f64;
+
+    for member in members {
+        if member.name.trim().is_empty() {
+            return Err(FormationError::Validation(
+                "member name cannot be empty".to_owned(),
+            ));
+        }
+        if let Some(email) = member.email.as_deref() {
+            let normalized = validate_member_email(email)?;
+            if !seen_emails.insert(normalized.clone()) {
+                return Err(FormationError::Validation(format!(
+                    "duplicate member email: {normalized}"
+                )));
+            }
+        }
+        if let Some(ownership_pct) = member.ownership_pct {
+            if !ownership_pct.is_finite() || ownership_pct <= 0.0 || ownership_pct > 100.0 {
+                return Err(FormationError::Validation(
+                    "ownership_pct must be greater than 0 and at most 100".to_owned(),
+                ));
+            }
+            specified_ownership_total += ownership_pct;
+        }
+    }
+
+    if specified_ownership_total > 100.000_001 {
+        return Err(FormationError::Validation(format!(
+            "total ownership_pct cannot exceed 100, got {:.2}",
+            specified_ownership_total
+        )));
+    }
+
+    Ok(())
 }
 
 /// Create a new entity — initializes the git repo, generates documents,
@@ -146,6 +217,7 @@ pub fn create_entity_with_profile_overrides(
             "at least one member is required".into(),
         ));
     }
+    validate_member_inputs(members)?;
 
     let entity_id = EntityId::new();
 
@@ -295,6 +367,76 @@ pub fn next_formation_action(status: FormationStatus) -> Option<&'static str> {
         FormationStatus::EinApplied => Some("confirm_ein"),
         FormationStatus::Active | FormationStatus::Rejected | FormationStatus::Dissolved => None,
     }
+}
+
+pub fn retire_incompatible_governance_for_entity(
+    store: &crate::store::entity_store::EntityStore<'_>,
+    entity: &Entity,
+) -> Result<(), FormationError> {
+    let body_ids = store
+        .list_ids::<GovernanceBody>("main")
+        .map_err(|e| FormationError::Storage(format!("failed to list governance bodies: {e}")))?;
+    let seat_ids = store
+        .list_ids::<GovernanceSeat>("main")
+        .map_err(|e| FormationError::Storage(format!("failed to list governance seats: {e}")))?;
+    let incompatible_body_type = match entity.entity_type() {
+        EntityType::CCorp => BodyType::LlcMemberVote,
+        EntityType::Llc => BodyType::BoardOfDirectors,
+    };
+
+    let mut files = Vec::new();
+    let mut retired_body_ids = HashSet::new();
+    for body_id in body_ids {
+        let path = format!("governance/bodies/{body_id}.json");
+        let mut body = match store.read::<GovernanceBody>("main", body_id) {
+            Ok(body) => body,
+            Err(_) => continue,
+        };
+        if body.entity_id() != entity.entity_id()
+            || body.body_type() != incompatible_body_type
+            || body.status() != BodyStatus::Active
+        {
+            continue;
+        }
+        body.deactivate();
+        retired_body_ids.insert(body.body_id());
+        files.push(FileWrite::json(path, &body).map_err(|e| {
+            FormationError::Storage(format!("failed to serialize governance body: {e}"))
+        })?);
+    }
+
+    for seat_id in seat_ids {
+        let path = format!("governance/seats/{seat_id}.json");
+        let mut seat = match store.read::<GovernanceSeat>("main", seat_id) {
+            Ok(seat) => seat,
+            Err(_) => continue,
+        };
+        if retired_body_ids.contains(&seat.body_id()) && seat.status() == SeatStatus::Active {
+            seat.expire();
+            files.push(FileWrite::json(path, &seat).map_err(|e| {
+                FormationError::Storage(format!("failed to serialize governance seat: {e}"))
+            })?);
+        }
+    }
+
+    if files.is_empty() {
+        return Ok(());
+    }
+
+    store
+        .commit(
+            "main",
+            &format!(
+                "Retire incompatible governance after converting to {}",
+                entity.entity_type()
+            ),
+            files,
+        )
+        .map_err(|e| {
+            FormationError::Storage(format!("failed to commit governance retirement: {e}"))
+        })?;
+
+    Ok(())
 }
 
 /// Map a formation MemberRole to a ContactCategory.
@@ -678,7 +820,9 @@ fn build_governance_profile(
         })
         .collect();
 
-    let board_size = (!directors.is_empty()).then_some(directors.len() as u32);
+    let board_size = overrides
+        .and_then(|config| config.board_size)
+        .or_else(|| (!directors.is_empty()).then_some(directors.len() as u32));
     let principal = non_agent_members
         .iter()
         .find(|member| matches!(member.role, Some(MemberRole::Manager)))
@@ -723,8 +867,9 @@ fn build_governance_profile(
             .and_then(|member| member.address.as_ref())
             .map(format_member_mailing_address)
             .or_else(|| profile.incorporator_address().map(ToOwned::to_owned)),
-        principal
-            .map(|member| member.name.clone())
+        overrides
+            .and_then(|config| config.principal_name.clone())
+            .or_else(|| principal.map(|member| member.name.clone()))
             .or_else(|| profile.principal_name().map(ToOwned::to_owned)),
         principal_title.or_else(|| profile.principal_title().map(ToOwned::to_owned)),
         Some(profile.incomplete_profile()),
@@ -1359,6 +1504,7 @@ pub fn add_pending_member(
         .map_err(|e| FormationError::Storage(format!("failed to read pending members: {e}")))?;
 
     members.push(member);
+    validate_member_inputs(&members)?;
 
     // Commit updated list
     let file = FileWrite::json("formation/pending_members.json", &members)
@@ -1437,6 +1583,7 @@ pub fn finalize_formation_with_profile_overrides(
             "at least one member is required to finalize formation".into(),
         ));
     }
+    validate_member_inputs(&members)?;
 
     if registered_agent_name.is_some() || registered_agent_address.is_some() {
         entity.set_registered_agent(
@@ -1610,9 +1757,10 @@ mod tests {
     use crate::domain::governance::{
         body::GovernanceBody,
         seat::GovernanceSeat,
-        types::{BodyType, QuorumThreshold, VotingMethod},
+        types::{BodyStatus, BodyType, QuorumThreshold, SeatStatus, VotingMethod, VotingPower},
     };
     use crate::store::RepoLayout;
+    use crate::store::entity_store::EntityStore;
     use tempfile::TempDir;
 
     fn delaware_address() -> Address {
@@ -2261,5 +2409,107 @@ mod tests {
         assert_eq!(seats.len(), 1);
         assert_eq!(seats[0].body_id(), bodies[0].body_id());
         assert_eq!(seats[0].voting_power().raw(), 1);
+    }
+
+    #[test]
+    fn add_pending_member_rejects_duplicate_email_and_overallocated_ownership() {
+        let tmp = TempDir::new().unwrap();
+        let layout = RepoLayout::new(tmp.path().to_path_buf());
+        let workspace_id = WorkspaceId::new();
+
+        let entity = create_pending_entity(
+            &layout,
+            workspace_id,
+            "Validation LLC".to_string(),
+            EntityType::Llc,
+            Jurisdiction::new("US-WY").unwrap(),
+        )
+        .unwrap();
+        let entity_id = entity.entity_id();
+
+        add_pending_member(&layout, workspace_id, entity_id, alice()).unwrap();
+
+        let mut duplicate_email = bob();
+        duplicate_email.email = Some("ALICE@example.com".to_string());
+        let duplicate_result =
+            add_pending_member(&layout, workspace_id, entity_id, duplicate_email);
+        assert!(
+            duplicate_result
+                .unwrap_err()
+                .to_string()
+                .contains("duplicate member email")
+        );
+
+        let mut overallocated = bob();
+        overallocated.email = Some("charlie@example.com".to_string());
+        overallocated.ownership_pct = Some(50.0);
+        let ownership_result = add_pending_member(&layout, workspace_id, entity_id, overallocated);
+        assert!(
+            ownership_result
+                .unwrap_err()
+                .to_string()
+                .contains("total ownership_pct cannot exceed 100")
+        );
+    }
+
+    #[test]
+    fn retire_incompatible_governance_deactivates_old_body_and_seats() {
+        let tmp = TempDir::new().unwrap();
+        let layout = RepoLayout::new(tmp.path().to_path_buf());
+        let workspace_id = WorkspaceId::new();
+
+        let entity = create_pending_entity(
+            &layout,
+            workspace_id,
+            "Converted LLC".to_string(),
+            EntityType::Llc,
+            Jurisdiction::new("US-WY").unwrap(),
+        )
+        .unwrap();
+        let entity_id = entity.entity_id();
+        let store = EntityStore::open(&layout, workspace_id, entity_id).unwrap();
+
+        let body = GovernanceBody::new(
+            GovernanceBodyId::new(),
+            entity_id,
+            BodyType::BoardOfDirectors,
+            "Legacy Board".to_string(),
+            QuorumThreshold::Majority,
+            VotingMethod::PerCapita,
+        )
+        .unwrap();
+        let seat = GovernanceSeat::new(
+            GovernanceSeatId::new(),
+            body.body_id(),
+            ContactId::new(),
+            SeatRole::Member,
+            None,
+            None,
+            Some(VotingPower::new(1).unwrap()),
+        )
+        .unwrap();
+        store
+            .commit(
+                "main",
+                "Add legacy governance",
+                vec![
+                    FileWrite::json(format!("governance/bodies/{}.json", body.body_id()), &body)
+                        .unwrap(),
+                    FileWrite::json(format!("governance/seats/{}.json", seat.seat_id()), &seat)
+                        .unwrap(),
+                ],
+            )
+            .unwrap();
+
+        retire_incompatible_governance_for_entity(&store, &entity).unwrap();
+
+        let retired_body = store
+            .read::<GovernanceBody>("main", body.body_id())
+            .unwrap();
+        let retired_seat = store
+            .read::<GovernanceSeat>("main", seat.seat_id())
+            .unwrap();
+        assert_eq!(retired_body.status(), BodyStatus::Inactive);
+        assert_eq!(retired_seat.status(), SeatStatus::Expired);
     }
 }

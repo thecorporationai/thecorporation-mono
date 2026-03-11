@@ -1,5 +1,5 @@
 import chalk from "chalk";
-import { loadConfig, requireConfig } from "../config.js";
+import { getActiveEntityId, loadConfig, requireConfig } from "../config.js";
 import { CorpAPIClient } from "../api-client.js";
 import { printError, printJson } from "../output.js";
 
@@ -14,8 +14,9 @@ export async function contextCommand(opts: { json?: boolean }): Promise<void> {
       client.listEntities(),
     ]);
 
-    const activeEntity = rawCfg.active_entity_id
-      ? entities.find((entity) => entity.entity_id === rawCfg.active_entity_id) ?? null
+    const activeEntityId = getActiveEntityId(rawCfg);
+    const activeEntity = activeEntityId
+      ? entities.find((entity) => entity.entity_id === activeEntityId) ?? null
       : null;
 
     const [contactsResult, documentsResult, workItemsResult] = activeEntity

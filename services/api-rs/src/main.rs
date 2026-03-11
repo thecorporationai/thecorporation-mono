@@ -309,11 +309,21 @@ async fn run_server(skip_validation: bool) {
         .with_state(state)
         .layer(middleware::map_response(security_headers));
 
-    let addr = SocketAddr::from(([0, 0, 0, 0], 8000));
+    let port: u16 = std::env::var("PORT")
+        .ok()
+        .and_then(|p| p.parse().ok())
+        .unwrap_or(8000);
+    let addr = SocketAddr::from(([0, 0, 0, 0], port));
     tracing::info!("listening on {}", addr);
 
-    let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
-    axum::serve(listener, app).await.unwrap();
+    let listener = tokio::net::TcpListener::bind(addr).await.map_err(|e| {
+        eprintln!("ERROR: cannot bind to {addr}: {e}");
+        std::process::exit(1);
+    }).unwrap();
+    axum::serve(listener, app).await.map_err(|e| {
+        eprintln!("ERROR: server error: {e}");
+        std::process::exit(1);
+    }).unwrap();
 }
 
 async fn security_headers(mut response: Response) -> Response {

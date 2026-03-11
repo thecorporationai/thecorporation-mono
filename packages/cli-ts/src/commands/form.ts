@@ -647,6 +647,8 @@ interface FormAddFounderOptions {
 interface FormFinalizeOptions {
   authorizedShares?: string;
   parValue?: string;
+  boardSize?: string;
+  principalName?: string;
   registeredAgentName?: string;
   registeredAgentAddress?: string;
   formationDate?: string;
@@ -714,6 +716,14 @@ export async function formFinalizeCommand(entityId: string, opts: FormFinalizeOp
       payload.authorized_shares = authorizedShares;
     }
     if (opts.parValue) payload.par_value = opts.parValue;
+    if (opts.boardSize) {
+      const boardSize = parseInt(opts.boardSize, 10);
+      if (!Number.isFinite(boardSize) || boardSize <= 0) {
+        throw new Error(`Invalid board size: ${opts.boardSize}`);
+      }
+      payload.board_size = boardSize;
+    }
+    if (opts.principalName) payload.principal_name = opts.principalName;
     if (opts.registeredAgentName) payload.registered_agent_name = opts.registeredAgentName;
     if (opts.registeredAgentAddress) payload.registered_agent_address = opts.registeredAgentAddress;
     if (opts.formationDate) payload.formation_date = opts.formationDate;

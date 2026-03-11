@@ -115,6 +115,11 @@ impl Meeting {
         Ok(())
     }
 
+    /// Update quorum status (used by adjournment handler to recompute from votes).
+    pub fn set_quorum_status(&mut self, status: QuorumStatus) {
+        self.quorum_met = status;
+    }
+
     /// Cancel the meeting. Only from `Draft` or `Noticed`.
     pub fn cancel(&mut self) -> Result<(), GovernanceError> {
         match self.status {

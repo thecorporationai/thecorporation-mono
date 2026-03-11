@@ -472,6 +472,7 @@ async fn submit_adds_to_existing_meeting() {
             "body_id": body_id,
             "meeting_type": "board_meeting",
             "title": "Q1 Board Meeting",
+            "scheduled_date": "2026-06-15",
             "agenda_item_titles": ["Approve budget"]
         }),
         &token,

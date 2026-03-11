@@ -292,6 +292,7 @@ async fn board_meeting_full_lifecycle() {
             "body_id": body_id,
             "meeting_type": "board_meeting",
             "title": "Q1 Board Meeting",
+            "scheduled_date": "2026-06-15",
             "agenda_item_titles": ["Approve budget", "Elect officers"]
         }),
         &token,
@@ -491,6 +492,7 @@ async fn cancel_meeting_test() {
             "body_id": body_id,
             "meeting_type": "board_meeting",
             "title": "Meeting to cancel",
+            "scheduled_date": "2026-06-15",
             "agenda_item_titles": ["Item 1"]
         }),
         &token,
@@ -542,6 +544,7 @@ async fn voting_requires_quorum() {
             "body_id": body_id,
             "meeting_type": "board_meeting",
             "title": "No quorum meeting",
+            "scheduled_date": "2026-06-15",
             "agenda_item_titles": ["Test item"]
         }),
         &token,

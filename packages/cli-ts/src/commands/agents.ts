@@ -3,7 +3,8 @@ import { CorpAPIClient } from "../api-client.js";
 import { printAgentsTable, printError, printJson, printWriteResult } from "../output.js";
 import chalk from "chalk";
 import type { ApiRecord } from "../types.js";
-import { readFileSync } from "node:fs";
+import { readFileSync, realpathSync } from "node:fs";
+import { relative, resolve } from "node:path";
 
 export async function agentsListCommand(opts: { json?: boolean }): Promise<void> {
   const cfg = requireConfig("api_url", "api_key", "workspace_id");
@@ -94,7 +95,18 @@ function resolveTextInput(
     throw new Error(`Pass either --${label} or --${label}-file, not both.`);
   }
   if (filePath) {
-    return readFileSync(filePath, "utf8");
+    if (process.env.CORP_ALLOW_UNSAFE_FILE_INPUT === "1") {
+      return readFileSync(filePath, "utf8");
+    }
+    const resolvedFile = realpathSync(resolve(filePath));
+    const workingTreeRoot = realpathSync(process.cwd());
+    const rel = relative(workingTreeRoot, resolvedFile);
+    if (rel === "" || (!rel.startsWith("..") && !rel.startsWith("/"))) {
+      return readFileSync(resolvedFile, "utf8");
+    }
+    throw new Error(
+      `--${label}-file must stay inside the current working directory unless CORP_ALLOW_UNSAFE_FILE_INPUT=1 is set.`,
+    );
   }
   if (inlineText) {
     return inlineText;
