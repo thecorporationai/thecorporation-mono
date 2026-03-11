@@ -115,6 +115,19 @@ impl Meeting {
         Ok(())
     }
 
+    /// Re-open an adjourned meeting so discussion and voting can continue.
+    pub fn reopen(&mut self) -> Result<(), GovernanceError> {
+        if self.status != MeetingStatus::Adjourned {
+            return Err(GovernanceError::InvalidMeetingTransition {
+                from: self.status,
+                to: MeetingStatus::Convened,
+            });
+        }
+        self.adjourned_at = None;
+        self.status = MeetingStatus::Convened;
+        Ok(())
+    }
+
     /// Update quorum status (used by adjournment handler to recompute from votes).
     pub fn set_quorum_status(&mut self, status: QuorumStatus) {
         self.quorum_met = status;
@@ -244,6 +257,17 @@ mod tests {
         m.send_notice().unwrap();
         m.cancel().unwrap();
         assert_eq!(m.status(), MeetingStatus::Cancelled);
+    }
+
+    #[test]
+    fn adjourned_meeting_can_reopen() {
+        let mut m = make_meeting(MeetingType::BoardMeeting);
+        m.send_notice().unwrap();
+        m.convene(vec![GovernanceSeatId::new()], true).unwrap();
+        m.adjourn().unwrap();
+        m.reopen().unwrap();
+        assert_eq!(m.status(), MeetingStatus::Convened);
+        assert!(m.adjourned_at().is_none());
     }
 
     #[test]

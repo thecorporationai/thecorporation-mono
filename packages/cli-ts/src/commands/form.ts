@@ -1,10 +1,12 @@
 import { input, select, confirm, number } from "@inquirer/prompts";
 import chalk from "chalk";
 import Table from "cli-table3";
-import { readFileSync } from "node:fs";
+import { readFileSync, realpathSync } from "node:fs";
+import { relative, resolve } from "node:path";
 import { requireConfig } from "../config.js";
 import { CorpAPIClient } from "../api-client.js";
-import { printDryRun, printError, printJson, printSuccess } from "../output.js";
+import { printDryRun, printError, printJson, printReferenceSummary, printSuccess } from "../output.js";
+import { ReferenceResolver } from "../references.js";
 import type { ApiRecord } from "../types.js";
 import { EntityType, OfficerTitle } from "@thecorporation/corp-tools";
 
@@ -168,6 +170,21 @@ function parseKeyValueMemberSpec(raw: string): FounderInfo {
   return normalizeFounderInfo(parsed);
 }
 
+function readSafeJsonFile(filePath: string, label: string): string {
+  if (process.env.CORP_ALLOW_UNSAFE_FILE_INPUT === "1") {
+    return readFileSync(filePath, "utf8");
+  }
+  const resolvedFile = realpathSync(resolve(filePath));
+  const workingTreeRoot = realpathSync(process.cwd());
+  const rel = relative(workingTreeRoot, resolvedFile);
+  if (rel === "" || (!rel.startsWith("..") && !rel.startsWith("/"))) {
+    return readFileSync(resolvedFile, "utf8");
+  }
+  throw new Error(
+    `--${label} must stay inside the current working directory unless CORP_ALLOW_UNSAFE_FILE_INPUT=1 is set.`,
+  );
+}
+
 function parseScriptedFounders(opts: FormOptions): FounderInfo[] {
   const founders: FounderInfo[] = [];
   for (const raw of opts.member ?? []) {
@@ -177,7 +194,7 @@ function parseScriptedFounders(opts: FormOptions): FounderInfo[] {
     founders.push(normalizeFounderInfo(JSON.parse(raw) as Record<string, unknown>));
   }
   if (opts.membersFile) {
-    const parsed = JSON.parse(readFileSync(opts.membersFile, "utf8")) as unknown;
+    const parsed = JSON.parse(readSafeJsonFile(opts.membersFile, "members-file")) as unknown;
     let entries: unknown[];
     if (Array.isArray(parsed)) {
       entries = parsed;
@@ -451,6 +468,7 @@ function printSummary(
 export async function formCommand(opts: FormOptions): Promise<void> {
   const cfg = requireConfig("api_url", "api_key", "workspace_id");
   const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
+  const resolver = new ReferenceResolver(client, cfg);
 
   try {
     let serverCfg: ApiRecord = {};
@@ -521,6 +539,8 @@ export async function formCommand(opts: FormOptions): Promise<void> {
     }
 
     const result = await client.createFormationWithCapTable(payload);
+    await resolver.stabilizeRecord("entity", result);
+    resolver.rememberFromRecord("entity", result);
 
     if (opts.json) {
       printJson(result);
@@ -529,7 +549,9 @@ export async function formCommand(opts: FormOptions): Promise<void> {
 
     // Output results
     printSuccess(`Formation created: ${result.formation_id ?? "OK"}`);
-    if (result.entity_id) console.log(`  Entity ID: ${result.entity_id}`);
+    if (result.entity_id) {
+      printReferenceSummary("entity", result, { showReuseHint: true });
+    }
     if (result.legal_entity_id) console.log(`  Legal Entity ID: ${result.legal_entity_id}`);
     if (result.instrument_id) console.log(`  Instrument ID: ${result.instrument_id}`);
 
@@ -589,9 +611,33 @@ function parseCsvAddress(raw?: string): { street: string; city: string; state: s
   return { street: parts[0], city: parts[1], state: parts[2], zip: parts[3] };
 }
 
+function shouldResolveEntityRefForDryRun(entityRef: string): boolean {
+  const trimmed = entityRef.trim().toLowerCase();
+  return trimmed === "_" || trimmed === "@last" || trimmed.startsWith("@last:");
+}
+
+async function resolveEntityRefForFormCommand(
+  resolver: ReferenceResolver,
+  entityRef: string,
+  dryRun?: boolean,
+): Promise<string> {
+  if (!dryRun || shouldResolveEntityRefForDryRun(entityRef)) {
+    return resolver.resolveEntity(entityRef);
+  }
+  try {
+    return await resolver.resolveEntity(entityRef);
+  } catch (err) {
+    if (String(err).includes("fetch failed")) {
+      return entityRef;
+    }
+    throw err;
+  }
+}
+
 export async function formCreateCommand(opts: FormCreateOptions): Promise<void> {
   const cfg = requireConfig("api_url", "api_key", "workspace_id");
   const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
+  const resolver = new ReferenceResolver(client, cfg);
 
   try {
     const entityType = opts.type === "corporation" ? "c_corp" : opts.type;
@@ -616,16 +662,19 @@ export async function formCreateCommand(opts: FormCreateOptions): Promise<void> 
     }
 
     const result = await client.createPendingEntity(payload);
+    await resolver.stabilizeRecord("entity", result);
+    resolver.rememberFromRecord("entity", result);
     if (opts.json) {
       printJson(result);
       return;
     }
     printSuccess(`Pending entity created: ${result.entity_id}`);
+    printReferenceSummary("entity", result, { showReuseHint: true });
     console.log(`  Name: ${result.legal_name}`);
     console.log(`  Type: ${result.entity_type}`);
     console.log(`  Jurisdiction: ${result.jurisdiction}`);
     console.log(`  Status: ${result.formation_status}`);
-    console.log(chalk.yellow(`\n  Next: corp form add-founder ${result.entity_id} --name "..." --email "..." --role member --pct 50`));
+    console.log(chalk.yellow(`\n  Next: corp form add-founder @last:entity --name "..." --email "..." --role member --pct 50`));
   } catch (err) {
     printError(`Failed to create pending entity: ${err}`);
     process.exit(1);
@@ -666,8 +715,10 @@ interface FormFinalizeOptions {
 export async function formAddFounderCommand(entityId: string, opts: FormAddFounderOptions): Promise<void> {
   const cfg = requireConfig("api_url", "api_key", "workspace_id");
   const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
+  const resolver = new ReferenceResolver(client, cfg);
 
   try {
+    const resolvedEntityId = await resolveEntityRefForFormCommand(resolver, entityId, opts.dryRun);
     const payload: ApiRecord = {
       name: opts.name,
       email: opts.email,
@@ -680,11 +731,11 @@ export async function formAddFounderCommand(entityId: string, opts: FormAddFound
     if (address) payload.address = address;
 
     if (opts.dryRun) {
-      printDryRun("formation.add_founder", { entity_id: entityId, ...payload });
+      printDryRun("formation.add_founder", { entity_id: resolvedEntityId, ...payload });
       return;
     }
 
-    const result = await client.addFounder(entityId, payload);
+    const result = await client.addFounder(resolvedEntityId, payload);
     if (opts.json) {
       printJson(result);
       return;
@@ -695,7 +746,7 @@ export async function formAddFounderCommand(entityId: string, opts: FormAddFound
       const pct = typeof m.ownership_pct === "number" ? ` (${m.ownership_pct}%)` : "";
       console.log(`  - ${m.name} <${m.email ?? "no email"}> [${m.role ?? "member"}]${pct}`);
     }
-    console.log(chalk.yellow(`\n  Next: add more founders or run: corp form finalize ${entityId}`));
+    console.log(chalk.yellow(`\n  Next: add more founders or run: corp form finalize @last:entity`));
   } catch (err) {
     printError(`Failed to add founder: ${err}`);
     process.exit(1);
@@ -705,8 +756,10 @@ export async function formAddFounderCommand(entityId: string, opts: FormAddFound
 export async function formFinalizeCommand(entityId: string, opts: FormFinalizeOptions): Promise<void> {
   const cfg = requireConfig("api_url", "api_key", "workspace_id");
   const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
+  const resolver = new ReferenceResolver(client, cfg);
 
   try {
+    const resolvedEntityId = await resolveEntityRefForFormCommand(resolver, entityId, opts.dryRun);
     const payload: ApiRecord = {};
     if (opts.authorizedShares) {
       const authorizedShares = parseInt(opts.authorizedShares, 10);
@@ -737,16 +790,19 @@ export async function formFinalizeCommand(entityId: string, opts: FormFinalizeOp
     if (opts.incorporatorAddress) payload.incorporator_address = opts.incorporatorAddress;
 
     if (opts.dryRun) {
-      printDryRun("formation.finalize", { entity_id: entityId, ...payload });
+      printDryRun("formation.finalize", { entity_id: resolvedEntityId, ...payload });
       return;
     }
 
-    const result = await client.finalizeFormation(entityId, payload);
+    const result = await client.finalizeFormation(resolvedEntityId, payload);
+    await resolver.stabilizeRecord("entity", result);
+    resolver.rememberFromRecord("entity", result);
     if (opts.json) {
       printJson(result);
       return;
     }
     printSuccess(`Formation finalized: ${result.entity_id}`);
+    printReferenceSummary("entity", result, { showReuseHint: true });
     if (result.legal_entity_id) console.log(`  Legal Entity ID: ${result.legal_entity_id}`);
     if (result.instrument_id) console.log(`  Instrument ID: ${result.instrument_id}`);
 

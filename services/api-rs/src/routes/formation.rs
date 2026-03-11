@@ -16,9 +16,11 @@ use serde_json::Value;
 
 use super::AppState;
 use super::validation::{
-    require_non_empty_trimmed, validate_not_too_far_future, validate_not_too_far_past,
+    normalize_slug, require_non_empty_trimmed, require_non_empty_trimmed_max,
+    validate_not_too_far_future, validate_not_too_far_past,
 };
 use crate::auth::{RequireFormationCreate, RequireFormationRead, RequireFormationSign};
+use crate::domain::contacts::contact::Contact;
 use crate::domain::formation::{
     content::{InvestorType, MemberInput, MemberRole, OfficerTitle},
     contract::{Contract, ContractStatus, ContractTemplateType},
@@ -378,6 +380,13 @@ fn open_formation_store<'a>(
             other => crate::domain::formation::error::FormationError::Validation(other.to_string()),
         }
     })
+}
+
+fn ensure_entity_not_dissolved(entity: &Entity, action: &str) -> Result<(), String> {
+    if entity.formation_status() == FormationStatus::Dissolved {
+        return Err(format!("{action} is not allowed for dissolved entities"));
+    }
+    Ok(())
 }
 
 fn resolve_document_entity_id(
@@ -2322,8 +2331,15 @@ async fn generate_contract(
 ) -> Result<Json<ContractResponse>, AppError> {
     let workspace_id = auth.workspace_id();
     let entity_id = req.entity_id;
+    if !auth.allows_entity(entity_id) {
+        return Err(AppError::Forbidden("entity access denied".to_owned()));
+    }
     state.enforce_creation_rate_limit("formation.contract.create", workspace_id, 60, 60)?;
-    let counterparty_name = require_non_empty_trimmed(&req.counterparty_name, "counterparty_name")?;
+    let counterparty_name = Contact::validate_name(&require_non_empty_trimmed(
+        &req.counterparty_name,
+        "counterparty_name",
+    )?)
+    .map_err(AppError::BadRequest)?;
     validate_not_too_far_past("effective_date", req.effective_date, 3650)?;
     validate_not_too_far_future("effective_date", req.effective_date, 730)?;
     super::validation::reject_dangerous_param_keys(&req.parameters)?;
@@ -2358,6 +2374,11 @@ async fn generate_contract(
         let counterparty_name = counterparty_name.clone();
         move || {
             let store = open_formation_store(&layout, workspace_id, entity_id)?;
+            let entity = store.read_entity("main").map_err(|e| {
+                crate::domain::formation::error::FormationError::Validation(e.to_string())
+            })?;
+            ensure_entity_not_dissolved(&entity, "contract generation")
+                .map_err(crate::domain::formation::error::FormationError::Validation)?;
 
             let contract_id = ContractId::new();
             let document_id = DocumentId::new();
@@ -2620,6 +2641,10 @@ pub struct PreviewDocumentQuery {
     pub document_id: String,
 }
 
+fn normalize_preview_document_id(doc_id: &str) -> Result<String, AppError> {
+    normalize_slug(doc_id, "document_id", 128)
+}
+
 /// Validate that a document definition exists and applies to the entity type.
 /// Does NOT render the PDF — returns instantly.
 fn validate_preview_document(
@@ -2628,6 +2653,7 @@ fn validate_preview_document(
     entity_id: EntityId,
     doc_id: &str,
 ) -> Result<(), AppError> {
+    let doc_id = normalize_preview_document_id(doc_id)?;
     let store = open_formation_store(layout, workspace_id, entity_id)?;
     let entity = store
         .read_entity("main")
@@ -2671,7 +2697,10 @@ async fn validate_preview_document_pdf(
 ) -> Result<Json<serde_json::Value>, AppError> {
     let workspace_id = auth.workspace_id();
     let entity_id = query.entity_id;
-    let doc_id = query.document_id;
+    if !auth.allows_entity(entity_id) {
+        return Err(AppError::Forbidden("entity access denied".to_owned()));
+    }
+    let doc_id = normalize_preview_document_id(&query.document_id)?;
 
     tokio::task::spawn_blocking({
         let layout = state.layout.clone();
@@ -2702,7 +2731,10 @@ async fn preview_document_pdf(
 ) -> Result<impl IntoResponse, AppError> {
     let workspace_id = auth.workspace_id();
     let entity_id = query.entity_id;
-    let doc_id = query.document_id;
+    if !auth.allows_entity(entity_id) {
+        return Err(AppError::Forbidden("entity access denied".to_owned()));
+    }
+    let doc_id = normalize_preview_document_id(&query.document_id)?;
 
     let pdf_bytes = tokio::time::timeout(
         std::time::Duration::from_secs(30),
@@ -3155,6 +3187,8 @@ async fn convert_entity(
 pub struct DissolveEntityRequest {
     #[serde(default)]
     pub reason: Option<String>,
+    #[serde(default)]
+    pub effective_date: Option<chrono::NaiveDate>,
 }
 
 #[utoipa::path(
@@ -3177,20 +3211,45 @@ async fn dissolve_entity(
     Json(req): Json<DissolveEntityRequest>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     let workspace_id = auth.workspace_id();
-    let reason = req
-        .reason
-        .unwrap_or_else(|| "voluntary dissolution".to_owned());
+    if !auth.allows_entity(entity_id) {
+        return Err(AppError::Forbidden("entity access denied".to_owned()));
+    }
+    let reason = match req.reason.as_deref() {
+        Some(reason) => require_non_empty_trimmed_max(reason, "reason", 512)?,
+        None => "voluntary dissolution".to_owned(),
+    };
+    if let Some(effective_date) = req.effective_date {
+        validate_not_too_far_past("effective_date", effective_date, 365)?;
+        if effective_date > Utc::now().date_naive() {
+            return Err(AppError::BadRequest(
+                "effective_date cannot be in the future".to_owned(),
+            ));
+        }
+    }
 
     let entity = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         let reason = reason.clone();
+        let effective_date = req.effective_date;
         move || {
             let store = open_formation_store(&layout, workspace_id, entity_id)?;
             let mut entity = store.read_entity("main").map_err(|e| {
                 crate::domain::formation::error::FormationError::Validation(e.to_string())
             })?;
+            if let Some(effective_date) = effective_date
+                && let Some(formation_date) = entity.formation_date()
+                && effective_date < formation_date.date_naive()
+            {
+                return Err(crate::domain::formation::error::FormationError::Validation(
+                    format!(
+                        "effective_date {} cannot be before entity formation date {}",
+                        effective_date,
+                        formation_date.date_naive()
+                    ),
+                ));
+            }
 
-            entity.dissolve()?;
+            entity.dissolve(effective_date)?;
 
             store
                 .write_entity("main", &entity, &format!("Dissolve entity: {reason}"))
@@ -3211,6 +3270,7 @@ async fn dissolve_entity(
         "legal_name": entity.legal_name(),
         "status": "dissolved",
         "reason": reason,
+        "effective_date": entity.dissolution_effective_date().map(|date| date.to_string()),
     })))
 }
 

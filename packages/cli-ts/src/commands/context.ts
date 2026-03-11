@@ -1,18 +1,21 @@
 import chalk from "chalk";
 import { getActiveEntityId, loadConfig, requireConfig } from "../config.js";
 import { CorpAPIClient } from "../api-client.js";
-import { printError, printJson } from "../output.js";
+import { printError, printJson, printReferenceSummary } from "../output.js";
+import { ReferenceResolver } from "../references.js";
 
 export async function contextCommand(opts: { json?: boolean }): Promise<void> {
   const cfg = requireConfig("api_url", "api_key", "workspace_id");
   const rawCfg = loadConfig();
   const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
+  const resolver = new ReferenceResolver(client, cfg);
 
   try {
     const [status, entities] = await Promise.all([
       client.getStatus(),
       client.listEntities(),
     ]);
+    await resolver.stabilizeRecords("entity", entities);
 
     const activeEntityId = getActiveEntityId(rawCfg);
     const activeEntity = activeEntityId
@@ -73,7 +76,7 @@ export async function contextCommand(opts: { json?: boolean }): Promise<void> {
     console.log(`  ${chalk.bold("Entities:")} ${entities.length}`);
     if (payload.active_entity) {
       console.log(`  ${chalk.bold("Active Entity:")} ${payload.active_entity.entity.legal_name ?? payload.active_entity.entity.entity_id}`);
-      console.log(`  ${chalk.bold("Active Entity ID:")} ${payload.active_entity.entity.entity_id}`);
+      printReferenceSummary("entity", payload.active_entity.entity, { label: "Active Entity Ref:" });
       console.log(`  ${chalk.bold("Contacts:")} ${payload.active_entity.summary.contact_count ?? "N/A"}`);
       console.log(`  ${chalk.bold("Documents:")} ${payload.active_entity.summary.document_count ?? "N/A"}`);
       console.log(`  ${chalk.bold("Work Items:")} ${payload.active_entity.summary.work_item_count ?? "N/A"}`);

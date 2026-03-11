@@ -5735,6 +5735,305 @@ async fn test_create_valuation_rejects_absurd_fmv_per_share() {
 }
 
 #[tokio::test]
+async fn test_round4b_dissolved_entity_rejects_contact_and_contract_creation() {
+    let tmp = TempDir::new().unwrap();
+    let app = build_app(&tmp);
+    let (_ws_id, entity_id, token) = create_entity(&app).await;
+    advance_entity_to_active(&app, &entity_id, &token).await;
+
+    let (status, dissolved) = post_json(
+        &app,
+        &format!("/v1/entities/{entity_id}/dissolve"),
+        json!({
+            "reason": "board-approved wind down",
+            "effective_date": chrono::Utc::now().date_naive().to_string(),
+        }),
+        &token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "dissolve entity: {dissolved}");
+
+    let (status, contact) = post_json(
+        &app,
+        "/v1/contacts",
+        json!({
+            "entity_id": entity_id,
+            "contact_type": "individual",
+            "name": "Late Contact",
+            "email": "late@example.com",
+            "category": "other",
+        }),
+        &token,
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::BAD_REQUEST,
+        "dissolved entity should reject contact creation: {contact}"
+    );
+
+    let (status, contract) = post_json(
+        &app,
+        "/v1/contracts",
+        json!({
+            "entity_id": entity_id,
+            "template_type": "nda",
+            "counterparty_name": "Acme Vendor",
+            "effective_date": chrono::Utc::now().date_naive().to_string(),
+            "parameters": {},
+        }),
+        &token,
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "dissolved entity should reject contract generation: {contract}"
+    );
+}
+
+#[tokio::test]
+async fn test_round4b_dissolve_entity_validates_reason_and_effective_date() {
+    let tmp = TempDir::new().unwrap();
+    let app = build_app(&tmp);
+    let (_ws_id, entity_id, token) = create_entity(&app).await;
+    advance_entity_to_active(&app, &entity_id, &token).await;
+
+    let (status, blank_reason) = post_json(
+        &app,
+        &format!("/v1/entities/{entity_id}/dissolve"),
+        json!({
+            "reason": "   ",
+        }),
+        &token,
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::BAD_REQUEST,
+        "blank dissolution reason should fail: {blank_reason}"
+    );
+
+    let (status, far_past) = post_json(
+        &app,
+        &format!("/v1/entities/{entity_id}/dissolve"),
+        json!({
+            "reason": "wind down",
+            "effective_date": "2020-01-01",
+        }),
+        &token,
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::BAD_REQUEST,
+        "far-past dissolution date should fail: {far_past}"
+    );
+}
+
+#[tokio::test]
+async fn test_round4b_create_instrument_rejects_invalid_symbol_terms_and_pricing() {
+    let tmp = TempDir::new().unwrap();
+    let app = build_app(&tmp);
+    let (_ws_id, entity_id, token) = create_entity(&app).await;
+
+    let (status, legal_entity) = post_json(
+        &app,
+        "/v1/equity/entities",
+        json!({
+            "entity_id": entity_id,
+            "linked_entity_id": entity_id,
+            "name": "Validation Corp",
+            "role": "operating",
+        }),
+        &token,
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "create legal entity: {legal_entity}"
+    );
+    let issuer_legal_entity_id = legal_entity["legal_entity_id"].as_str().unwrap();
+
+    let (status, bad_symbol) = post_json(
+        &app,
+        "/v1/equity/instruments",
+        json!({
+            "entity_id": entity_id,
+            "issuer_legal_entity_id": issuer_legal_entity_id,
+            "symbol": "<script>alert(1)</script>",
+            "kind": "common_equity",
+            "authorized_units": 1000,
+            "terms": {},
+        }),
+        &token,
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::BAD_REQUEST,
+        "instrument symbol markup should fail: {bad_symbol}"
+    );
+
+    let (status, zero_units) = post_json(
+        &app,
+        "/v1/equity/instruments",
+        json!({
+            "entity_id": entity_id,
+            "issuer_legal_entity_id": issuer_legal_entity_id,
+            "symbol": "COMMON",
+            "kind": "common_equity",
+            "authorized_units": 0,
+            "terms": {},
+        }),
+        &token,
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::BAD_REQUEST,
+        "zero authorized units should fail: {zero_units}"
+    );
+
+    let (status, negative_price) = post_json(
+        &app,
+        "/v1/equity/instruments",
+        json!({
+            "entity_id": entity_id,
+            "issuer_legal_entity_id": issuer_legal_entity_id,
+            "symbol": "COMMON",
+            "kind": "common_equity",
+            "authorized_units": 1000,
+            "issue_price_cents": -1,
+            "terms": {},
+        }),
+        &token,
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::BAD_REQUEST,
+        "negative issue price should fail: {negative_price}"
+    );
+
+    let (status, proto_terms) = post_json(
+        &app,
+        "/v1/equity/instruments",
+        json!({
+            "entity_id": entity_id,
+            "issuer_legal_entity_id": issuer_legal_entity_id,
+            "symbol": "COMMON",
+            "kind": "common_equity",
+            "authorized_units": 1000,
+            "terms": {"__proto__": {"polluted": true}},
+        }),
+        &token,
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::BAD_REQUEST,
+        "prototype-polluting terms should fail: {proto_terms}"
+    );
+}
+
+#[tokio::test]
+async fn test_round4b_board_resolution_cannot_be_reused_across_rounds() {
+    let tmp = TempDir::new().unwrap();
+    let app = build_app(&tmp);
+    let (_ws_id, entity_id, token) = create_entity(&app).await;
+    advance_entity_to_active(&app, &entity_id, &token).await;
+    let (_issuer_legal_entity_id, round_one_id) =
+        create_round_with_terms(&app, &entity_id, &token).await;
+    let (_issuer_legal_entity_id, round_two_id) =
+        create_round_with_terms(&app, &entity_id, &token).await;
+    let (meeting_id, resolution_id) =
+        create_resolution_for_body(&app, &entity_id, &token, "board_of_directors", &["for"]).await;
+
+    let (status, first_approval) = post_json(
+        &app,
+        &format!("/v1/equity/rounds/{round_one_id}/board-approve"),
+        json!({
+            "entity_id": entity_id,
+            "meeting_id": meeting_id,
+            "resolution_id": resolution_id,
+        }),
+        &token,
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "first board approval: {first_approval}"
+    );
+
+    let (status, reused) = post_json(
+        &app,
+        &format!("/v1/equity/rounds/{round_two_id}/board-approve"),
+        json!({
+            "entity_id": entity_id,
+            "meeting_id": meeting_id,
+            "resolution_id": resolution_id,
+        }),
+        &token,
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::CONFLICT,
+        "resolution reuse across rounds should fail: {reused}"
+    );
+}
+
+#[tokio::test]
+async fn test_round4b_create_valuation_rejects_stale_409a_date() {
+    let tmp = TempDir::new().unwrap();
+    let app = build_app(&tmp);
+    let (_ws_id, entity_id, token) = create_entity(&app).await;
+    let stale_date = (chrono::Utc::now().date_naive() - chrono::Duration::days(400)).to_string();
+
+    let (status, body) = post_json(
+        &app,
+        "/v1/valuations",
+        json!({
+            "entity_id": entity_id,
+            "valuation_type": "four_oh_nine_a",
+            "effective_date": stale_date,
+            "fmv_per_share_cents": 100,
+            "enterprise_value_cents": 1000000,
+            "methodology": "market",
+        }),
+        &token,
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::BAD_REQUEST,
+        "stale 409A valuation should fail: {body}"
+    );
+}
+
+#[tokio::test]
+async fn test_round4b_preview_document_pdf_rejects_invalid_document_id() {
+    let tmp = TempDir::new().unwrap();
+    let app = build_app(&tmp);
+    let (_ws_id, entity_id, token) = create_entity(&app).await;
+
+    let (status, body) = get_json(
+        &app,
+        &format!("/v1/documents/preview/pdf?entity_id={entity_id}&document_id=%27%20OR%201%3D1--"),
+        &token,
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::BAD_REQUEST,
+        "invalid preview document id should fail cleanly: {body}"
+    );
+}
+
+#[tokio::test]
 async fn test_trigger_digests_returns_explanatory_message_when_no_digests_generated() {
     let tmp = TempDir::new().unwrap();
     let app = build_app(&tmp);

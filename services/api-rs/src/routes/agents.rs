@@ -320,9 +320,8 @@ async fn create_agent(
                 .map_err(|e| AppError::NotFound(format!("workspace not found: {e}")))?;
 
             // Reject duplicate agent names within the workspace
-            let existing_ids: Vec<AgentId> = ws_store
-                .list_ids_in_dir_pub("agents")
-                .unwrap_or_default();
+            let existing_ids: Vec<AgentId> =
+                ws_store.list_ids_in_dir_pub("agents").unwrap_or_default();
             for id in existing_ids {
                 let path = format!("agents/{}.json", id);
                 if let Ok(existing) = ws_store.read_json::<Agent>(&path) {

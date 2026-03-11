@@ -11,9 +11,7 @@ use chrono::{NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 
 use super::AppState;
-use super::validation::{
-    require_non_empty_trimmed, validate_not_too_far_future, validate_not_too_far_past,
-};
+use super::validation::{require_non_empty_trimmed, validate_not_too_far_future};
 use crate::auth::{
     RequireGovernanceRead, RequireGovernanceVote, RequireGovernanceWrite, RequireInternalWorker,
 };
@@ -556,8 +554,17 @@ fn incident_to_response(incident: &GovernanceIncident) -> IncidentResponse {
 fn open_store<'a>(
     layout: &'a crate::store::RepoLayout,
     workspace_id: WorkspaceId,
+    allowed_entity_ids: Option<&[EntityId]>,
     entity_id: EntityId,
 ) -> Result<EntityStore<'a>, AppError> {
+    if let Some(ids) = allowed_entity_ids
+        && !ids.contains(&entity_id)
+    {
+        return Err(AppError::Forbidden(format!(
+            "principal is not authorized for entity {}",
+            entity_id
+        )));
+    }
     EntityStore::open(layout, workspace_id, entity_id).map_err(|e| match e {
         crate::git::error::GitStorageError::RepoNotFound(_) => {
             AppError::NotFound(format!("entity {} not found", entity_id))
@@ -853,6 +860,22 @@ fn governance_doc_entity_type_for(entity_type: EntityType) -> GovernanceDocEntit
     }
 }
 
+fn ensure_entity_ready_for_governance(
+    store: &EntityStore<'_>,
+    action: &str,
+) -> Result<(), AppError> {
+    let entity = store
+        .read_entity("main")
+        .map_err(|e| AppError::Internal(format!("read entity: {e}")))?;
+    if entity.formation_status() != FormationStatus::Active {
+        return Err(AppError::BadRequest(format!(
+            "{action} requires an active entity, current status is {}",
+            entity.formation_status()
+        )));
+    }
+    Ok(())
+}
+
 fn read_profile_or_default(
     store: &EntityStore<'_>,
     entity_id: EntityId,
@@ -980,11 +1003,12 @@ async fn get_governance_profile(
     Path(entity_id): Path<EntityId>,
 ) -> Result<Json<GovernanceProfile>, AppError> {
     let workspace_id = auth.workspace_id();
+    let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
     let profile = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
             let profile = read_profile_or_default(&store, entity_id)?;
             profile.validate().map_err(AppError::UnprocessableEntity)?;
             Ok::<_, AppError>(profile)
@@ -1016,11 +1040,12 @@ async fn update_governance_profile(
     Json(req): Json<UpdateGovernanceProfileRequest>,
 ) -> Result<Json<GovernanceProfile>, AppError> {
     let workspace_id = auth.workspace_id();
+    let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
     let profile = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
             let mut profile = read_profile_or_default(&store, entity_id)?;
             profile.update(
                 req.legal_name,
@@ -1097,11 +1122,12 @@ async fn generate_governance_doc_bundle(
     Json(req): Json<GenerateGovernanceDocBundleRequest>,
 ) -> Result<Json<GenerateGovernanceDocBundleResponse>, AppError> {
     let workspace_id = auth.workspace_id();
+    let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
     let response = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
             let profile = read_profile_or_default(&store, entity_id)?;
             profile.validate().map_err(AppError::UnprocessableEntity)?;
 
@@ -1183,11 +1209,12 @@ async fn get_current_governance_doc_bundle(
     Path(entity_id): Path<EntityId>,
 ) -> Result<Json<GovernanceDocBundleCurrent>, AppError> {
     let workspace_id = auth.workspace_id();
+    let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
     let current = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
             let current = read_doc_bundle_current(&store)?;
             if current.entity_id != entity_id {
                 return Err(AppError::NotFound(format!(
@@ -1220,11 +1247,12 @@ async fn list_governance_doc_bundles(
     Path(entity_id): Path<EntityId>,
 ) -> Result<Json<Vec<GovernanceDocBundleSummary>>, AppError> {
     let workspace_id = auth.workspace_id();
+    let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
     let summaries = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
             let summaries = list_doc_bundle_summaries(&store)?;
             Ok::<_, AppError>(summaries)
         }
@@ -1254,11 +1282,12 @@ async fn get_governance_doc_bundle(
     Path((entity_id, bundle_id)): Path<(EntityId, GovernanceDocBundleId)>,
 ) -> Result<Json<GovernanceDocBundleManifest>, AppError> {
     let workspace_id = auth.workspace_id();
+    let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
     let manifest = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
             let path = bundle_manifest_path(bundle_id);
             let manifest = store
                 .read_json::<GovernanceDocBundleManifest>("main", &path)
@@ -1299,11 +1328,12 @@ async fn list_governance_triggers(
     Path(entity_id): Path<EntityId>,
 ) -> Result<Json<Vec<GovernanceTriggerEvent>>, AppError> {
     let workspace_id = auth.workspace_id();
+    let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
     let triggers = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
             let ids = store
                 .list_ids::<GovernanceTriggerEvent>("main")
                 .map_err(|e| AppError::Internal(format!("list governance triggers: {e}")))?;
@@ -1345,11 +1375,12 @@ async fn list_governance_mode_history(
     Path(entity_id): Path<EntityId>,
 ) -> Result<Json<Vec<GovernanceModeChangeEvent>>, AppError> {
     let workspace_id = auth.workspace_id();
+    let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
     let events = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
             let ids = store
                 .list_ids::<GovernanceModeChangeEvent>("main")
                 .map_err(|e| AppError::Internal(format!("list governance mode history: {e}")))?;
@@ -1397,7 +1428,7 @@ async fn ingest_lockdown_trigger(
     let response = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, None, entity_id)?;
             let result = apply_lockdown_trigger(
                 &store,
                 entity_id,
@@ -1447,11 +1478,12 @@ async fn list_governance_audit_entries(
     Path(entity_id): Path<EntityId>,
 ) -> Result<Json<Vec<GovernanceAuditEntry>>, AppError> {
     let workspace_id = auth.workspace_id();
+    let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
     let entries = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
             let mut entries = list_audit_entries_sorted(&store, entity_id)?;
             entries.reverse();
             Ok::<_, AppError>(entries)
@@ -1479,6 +1511,7 @@ async fn create_governance_audit_event(
     Json(req): Json<CreateGovernanceAuditEventRequest>,
 ) -> Result<Json<GovernanceAuditEntry>, AppError> {
     let workspace_id = auth.workspace_id();
+    let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = req.entity_id;
 
     if req.action.trim().is_empty() {
@@ -1490,7 +1523,7 @@ async fn create_governance_audit_event(
     let entry = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
             let entry = build_audit_entry(
                 &store,
                 entity_id,
@@ -1538,12 +1571,13 @@ async fn write_governance_audit_checkpoint(
     Json(req): Json<WriteGovernanceAuditCheckpointRequest>,
 ) -> Result<Json<GovernanceAuditCheckpoint>, AppError> {
     let workspace_id = auth.workspace_id();
+    let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = req.entity_id;
 
     let checkpoint = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
             let entries = list_audit_entries_sorted(&store, entity_id)?;
             let latest = entries.last().ok_or_else(|| {
                 AppError::UnprocessableEntity(
@@ -1629,11 +1663,12 @@ async fn list_governance_audit_checkpoints(
     Path(entity_id): Path<EntityId>,
 ) -> Result<Json<Vec<GovernanceAuditCheckpoint>>, AppError> {
     let workspace_id = auth.workspace_id();
+    let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
     let checkpoints = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
             let ids = store
                 .list_ids::<GovernanceAuditCheckpoint>("main")
                 .map_err(|e| {
@@ -1675,12 +1710,13 @@ async fn verify_governance_audit_chain(
     Json(req): Json<VerifyGovernanceAuditChainRequest>,
 ) -> Result<Json<GovernanceAuditVerificationReport>, AppError> {
     let workspace_id = auth.workspace_id();
+    let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = req.entity_id;
 
     let report = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
             let entries = list_audit_entries_sorted(&store, entity_id)?;
             let total_entries = u64::try_from(entries.len())
                 .map_err(|_| AppError::Internal("audit entry count overflow".to_owned()))?;
@@ -1829,11 +1865,12 @@ async fn list_governance_audit_verifications(
     Path(entity_id): Path<EntityId>,
 ) -> Result<Json<Vec<GovernanceAuditVerificationReport>>, AppError> {
     let workspace_id = auth.workspace_id();
+    let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
     let reports = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
             let ids = store
                 .list_ids::<GovernanceAuditVerificationReport>("main")
                 .map_err(|e| {
@@ -1877,13 +1914,15 @@ async fn create_governance_body(
     Json(req): Json<CreateGovernanceBodyRequest>,
 ) -> Result<Json<GovernanceBodyResponse>, AppError> {
     let workspace_id = auth.workspace_id();
+    let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = req.entity_id;
     state.enforce_creation_rate_limit("governance.body.create", workspace_id, 120, 60)?;
 
     let body = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
+            ensure_entity_ready_for_governance(&store, "governance body creation")?;
             let entity = store
                 .read_entity("main")
                 .map_err(|e| AppError::Internal(format!("read entity: {e}")))?;
@@ -1956,11 +1995,12 @@ async fn list_governance_bodies(
     Path(entity_id): Path<EntityId>,
 ) -> Result<Json<Vec<GovernanceBodyResponse>>, AppError> {
     let workspace_id = auth.workspace_id();
+    let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
     let bodies = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
             let ids = store
                 .list_ids::<GovernanceBody>("main")
                 .map_err(|e| AppError::Internal(format!("list governance bodies: {e}")))?;
@@ -2001,12 +2041,13 @@ async fn get_governance_mode(
     Query(query): Query<super::EntityIdQuery>,
 ) -> Result<Json<GovernanceModeResponse>, AppError> {
     let workspace_id = auth.workspace_id();
+    let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = query.entity_id;
 
     let mode = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
             Ok::<_, AppError>(read_mode_or_default(&store, entity_id))
         }
     })
@@ -2032,13 +2073,14 @@ async fn set_governance_mode(
     Json(req): Json<SetGovernanceModeRequest>,
 ) -> Result<Json<GovernanceModeResponse>, AppError> {
     let workspace_id = auth.workspace_id();
+    let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = req.entity_id;
     let updated_by = auth.contact_id();
 
     let mode = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
             let current = read_mode_or_default(&store, entity_id);
 
             if matches!(current.mode(), GovernanceMode::IncidentLockdown)
@@ -2097,12 +2139,13 @@ async fn create_incident(
     Json(req): Json<CreateIncidentRequest>,
 ) -> Result<Json<IncidentResponse>, AppError> {
     let workspace_id = auth.workspace_id();
+    let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = req.entity_id;
 
     let incident = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
             let incident = GovernanceIncident::new(
                 IncidentId::new(),
                 entity_id,
@@ -2146,11 +2189,12 @@ async fn list_incidents(
     Path(entity_id): Path<EntityId>,
 ) -> Result<Json<Vec<IncidentResponse>>, AppError> {
     let workspace_id = auth.workspace_id();
+    let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
     let incidents = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
             let ids = store
                 .list_ids::<GovernanceIncident>("main")
                 .map_err(|e| AppError::Internal(format!("list incidents: {e}")))?;
@@ -2191,12 +2235,13 @@ async fn resolve_incident(
     Query(query): Query<super::EntityIdQuery>,
 ) -> Result<Json<IncidentResponse>, AppError> {
     let workspace_id = auth.workspace_id();
+    let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = query.entity_id;
 
     let incident = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
             let mut incident = store
                 .read::<GovernanceIncident>("main", incident_id)
                 .map_err(|_| AppError::NotFound(format!("incident {incident_id} not found")))?;
@@ -2236,12 +2281,13 @@ async fn get_delegation_schedule(
     Query(query): Query<super::EntityIdQuery>,
 ) -> Result<Json<DelegationSchedule>, AppError> {
     let workspace_id = auth.workspace_id();
+    let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = query.entity_id;
 
     let schedule = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
             Ok::<_, AppError>(read_schedule_or_default(&store, entity_id))
         }
     })
@@ -2268,12 +2314,13 @@ async fn amend_delegation_schedule(
     Json(req): Json<AmendDelegationScheduleRequest>,
 ) -> Result<Json<DelegationScheduleChangeResponse>, AppError> {
     let workspace_id = auth.workspace_id();
+    let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = req.entity_id;
 
     let response = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
             let current = read_schedule_or_default(&store, entity_id);
             let mut amended = current.clone();
 
@@ -2408,12 +2455,13 @@ async fn reauthorize_delegation_schedule(
     Json(req): Json<ReauthorizeDelegationScheduleRequest>,
 ) -> Result<Json<DelegationScheduleChangeResponse>, AppError> {
     let workspace_id = auth.workspace_id();
+    let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = req.entity_id;
 
     let response = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
             validate_schedule_resolution(&store, req.meeting_id, req.adopted_resolution_id)?;
 
             let current = read_schedule_or_default(&store, entity_id);
@@ -2484,12 +2532,13 @@ async fn list_delegation_schedule_history(
     Query(query): Query<super::EntityIdQuery>,
 ) -> Result<Json<Vec<ScheduleAmendment>>, AppError> {
     let workspace_id = auth.workspace_id();
+    let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = query.entity_id;
 
     let history = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
             let ids = store
                 .list_ids::<ScheduleAmendment>("main")
                 .map_err(|e| AppError::Internal(format!("list schedule amendments: {e}")))?;
@@ -2527,12 +2576,13 @@ async fn evaluate_governance(
     Json(req): Json<EvaluateGovernanceRequest>,
 ) -> Result<Json<PolicyDecision>, AppError> {
     let workspace_id = auth.workspace_id();
+    let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = req.entity_id;
 
     let decision = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
             let mode = read_mode_or_default(&store, entity_id);
             let schedule = read_schedule_or_default(&store, entity_id);
             let entity = store
@@ -2582,13 +2632,15 @@ async fn create_seat(
     Json(req): Json<CreateSeatRequest>,
 ) -> Result<Json<GovernanceSeatResponse>, AppError> {
     let workspace_id = auth.workspace_id();
+    let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = query.entity_id;
     state.enforce_creation_rate_limit("governance.seat.create", workspace_id, 120, 60)?;
 
     let seat = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
+            ensure_entity_ready_for_governance(&store, "seat appointment")?;
 
             let body = store.read::<GovernanceBody>("main", body_id).map_err(|_| {
                 AppError::NotFound(format!("governance body {} not found", body_id))
@@ -2677,12 +2729,13 @@ async fn list_seats(
     Query(query): Query<BodyQuery>,
 ) -> Result<Json<Vec<GovernanceSeatResponse>>, AppError> {
     let workspace_id = auth.workspace_id();
+    let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = query.entity_id;
 
     let seats = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
             let body = store.read::<GovernanceBody>("main", body_id).map_err(|_| {
                 AppError::NotFound(format!("governance body {} not found", body_id))
             })?;
@@ -2733,12 +2786,13 @@ async fn resign_seat(
     Query(query): Query<BodyQuery>,
 ) -> Result<Json<GovernanceSeatResponse>, AppError> {
     let workspace_id = auth.workspace_id();
+    let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = query.entity_id;
 
     let seat = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
             let mut seat = store.read::<GovernanceSeat>("main", seat_id).map_err(|_| {
                 AppError::NotFound(format!("governance seat {} not found", seat_id))
             })?;
@@ -2782,6 +2836,7 @@ async fn schedule_meeting(
     Json(req): Json<ScheduleMeetingRequest>,
 ) -> Result<Json<MeetingResponse>, AppError> {
     let workspace_id = auth.workspace_id();
+    let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = req.entity_id;
     let title = require_non_empty_trimmed(&req.title, "title")?;
     if req.meeting_type != MeetingType::WrittenConsent && req.scheduled_date.is_none() {
@@ -2790,7 +2845,11 @@ async fn schedule_meeting(
         ));
     }
     if let Some(scheduled_date) = req.scheduled_date {
-        validate_not_too_far_past("scheduled_date", scheduled_date, 365)?;
+        if scheduled_date < Utc::now().date_naive() {
+            return Err(AppError::BadRequest(
+                "scheduled_date cannot be in the past".to_owned(),
+            ));
+        }
         validate_not_too_far_future("scheduled_date", scheduled_date, 730)?;
     }
 
@@ -2798,7 +2857,8 @@ async fn schedule_meeting(
         let layout = state.layout.clone();
         let title = title.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
+            ensure_entity_ready_for_governance(&store, "meeting scheduling")?;
 
             // Verify body exists
             let body = store
@@ -2885,12 +2945,13 @@ async fn list_meetings(
     Query(query): Query<BodyQuery>,
 ) -> Result<Json<Vec<MeetingResponse>>, AppError> {
     let workspace_id = auth.workspace_id();
+    let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = query.entity_id;
 
     let meetings = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
             let body = store.read::<GovernanceBody>("main", body_id).map_err(|_| {
                 AppError::NotFound(format!("governance body {} not found", body_id))
             })?;
@@ -2941,12 +3002,13 @@ async fn list_agenda_items(
     Query(query): Query<MeetingQuery>,
 ) -> Result<Json<Vec<AgendaItemResponse>>, AppError> {
     let workspace_id = auth.workspace_id();
+    let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = query.entity_id;
 
     let agenda_items = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
             // Ensure the meeting exists and belongs to this entity's store.
             store
                 .read::<Meeting>("main", meeting_id)
@@ -2992,12 +3054,14 @@ async fn send_notice(
     Query(query): Query<MeetingQuery>,
 ) -> Result<Json<MeetingResponse>, AppError> {
     let workspace_id = auth.workspace_id();
+    let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = query.entity_id;
 
     let meeting = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
+            ensure_entity_ready_for_governance(&store, "meeting notice")?;
             let mut meeting = store
                 .read::<Meeting>("main", meeting_id)
                 .map_err(|_| AppError::NotFound(format!("meeting {} not found", meeting_id)))?;
@@ -3045,12 +3109,14 @@ async fn convene_meeting(
     Json(req): Json<ConveneMeetingRequest>,
 ) -> Result<Json<MeetingResponse>, AppError> {
     let workspace_id = auth.workspace_id();
+    let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = query.entity_id;
 
     let meeting = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
+            ensure_entity_ready_for_governance(&store, "meeting convening")?;
             let mut meeting = store
                 .read::<Meeting>("main", meeting_id)
                 .map_err(|_| AppError::NotFound(format!("meeting {} not found", meeting_id)))?;
@@ -3119,12 +3185,14 @@ async fn adjourn_meeting(
     Query(query): Query<MeetingQuery>,
 ) -> Result<Json<MeetingResponse>, AppError> {
     let workspace_id = auth.workspace_id();
+    let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = query.entity_id;
 
     let meeting = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
+            ensure_entity_ready_for_governance(&store, "meeting adjournment")?;
             let mut meeting = store
                 .read::<Meeting>("main", meeting_id)
                 .map_err(|_| AppError::NotFound(format!("meeting {} not found", meeting_id)))?;
@@ -3135,10 +3203,7 @@ async fn adjourn_meeting(
             let body = store
                 .read::<GovernanceBody>("main", meeting.body_id())
                 .map_err(|_| {
-                    AppError::NotFound(format!(
-                        "governance body {} not found",
-                        meeting.body_id()
-                    ))
+                    AppError::NotFound(format!("governance body {} not found", meeting.body_id()))
                 })?;
             let seat_ids = store.list_ids::<GovernanceSeat>("main").unwrap_or_default();
             let mut total_eligible: u32 = 0;
@@ -3155,8 +3220,7 @@ async fn adjourn_meeting(
                 meeting.set_quorum_status(QuorumStatus::NotMet);
             } else if meeting.quorum_met() == QuorumStatus::Unknown {
                 // Written consent or unset: compute from present seats
-                let present_count =
-                    u32::try_from(meeting.present_seat_ids().len()).unwrap_or(0);
+                let present_count = u32::try_from(meeting.present_seat_ids().len()).unwrap_or(0);
                 let quorum_met = body.quorum_rule().is_met(present_count, total_eligible);
                 meeting.set_quorum_status(if quorum_met {
                     QuorumStatus::Met
@@ -3174,6 +3238,59 @@ async fn adjourn_meeting(
                     &path,
                     &meeting,
                     &format!("Adjourn meeting {meeting_id}"),
+                )
+                .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
+
+            Ok::<_, AppError>(meeting)
+        }
+    })
+    .await
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+
+    Ok(Json(meeting_to_response(&meeting)))
+}
+
+#[utoipa::path(
+    post,
+    path = "/v1/meetings/{meeting_id}/reopen",
+    tag = "governance",
+    params(
+        ("meeting_id" = MeetingId, Path, description = "Meeting ID"),
+        MeetingQuery,
+    ),
+    responses(
+        (status = 200, description = "Re-opened meeting", body = MeetingResponse),
+        (status = 404, description = "Meeting not found"),
+    ),
+)]
+async fn reopen_meeting(
+    RequireGovernanceWrite(auth): RequireGovernanceWrite,
+    State(state): State<AppState>,
+    Path(meeting_id): Path<MeetingId>,
+    Query(query): Query<MeetingQuery>,
+) -> Result<Json<MeetingResponse>, AppError> {
+    let workspace_id = auth.workspace_id();
+    let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
+    let entity_id = query.entity_id;
+
+    let meeting = tokio::task::spawn_blocking({
+        let layout = state.layout.clone();
+        move || {
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
+            ensure_entity_ready_for_governance(&store, "meeting reopening")?;
+            let mut meeting = store
+                .read::<Meeting>("main", meeting_id)
+                .map_err(|_| AppError::NotFound(format!("meeting {} not found", meeting_id)))?;
+
+            meeting.reopen()?;
+
+            let path = format!("governance/meetings/{}/meeting.json", meeting_id);
+            store
+                .write_json(
+                    "main",
+                    &path,
+                    &meeting,
+                    &format!("Re-open meeting {meeting_id}"),
                 )
                 .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
 
@@ -3206,12 +3323,14 @@ async fn cancel_meeting(
     Query(query): Query<MeetingQuery>,
 ) -> Result<Json<MeetingResponse>, AppError> {
     let workspace_id = auth.workspace_id();
+    let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = query.entity_id;
 
     let meeting = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
+            ensure_entity_ready_for_governance(&store, "meeting cancellation")?;
             let mut meeting = store
                 .read::<Meeting>("main", meeting_id)
                 .map_err(|_| AppError::NotFound(format!("meeting {} not found", meeting_id)))?;
@@ -3264,12 +3383,14 @@ async fn cast_vote(
     Json(req): Json<CastVoteRequest>,
 ) -> Result<Json<VoteResponse>, AppError> {
     let workspace_id = auth.workspace_id();
+    let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = query.entity_id;
 
     let vote = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
+            ensure_entity_ready_for_governance(&store, "vote casting")?;
 
             // Read the meeting and check it can accept votes
             let meeting = store
@@ -3392,12 +3513,13 @@ async fn list_votes(
     Query(query): Query<MeetingQuery>,
 ) -> Result<Json<Vec<VoteResponse>>, AppError> {
     let workspace_id = auth.workspace_id();
+    let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = query.entity_id;
 
     let votes = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
             let ids = store.list_vote_ids("main", meeting_id).unwrap_or_default();
 
             let mut results = Vec::new();
@@ -3440,12 +3562,14 @@ async fn finalize_agenda_item(
     Json(req): Json<FinalizeAgendaItemRequest>,
 ) -> Result<Json<AgendaItemResponse>, AppError> {
     let workspace_id = auth.workspace_id();
+    let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = req.entity_id;
 
     let agenda_item = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
+            ensure_entity_ready_for_governance(&store, "agenda finalization")?;
             store
                 .read::<Meeting>("main", meeting_id)
                 .map_err(|_| AppError::NotFound(format!("meeting {meeting_id} not found")))?;
@@ -3532,12 +3656,22 @@ async fn compute_resolution(
     Json(req): Json<ComputeResolutionRequest>,
 ) -> Result<Json<ResolutionResponse>, AppError> {
     let workspace_id = auth.workspace_id();
+    let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = query.entity_id;
+    if let Some(effective_date) = req.effective_date {
+        if effective_date < Utc::now().date_naive() {
+            return Err(AppError::BadRequest(
+                "effective_date cannot be in the past".to_owned(),
+            ));
+        }
+        validate_not_too_far_future("effective_date", effective_date, 730)?;
+    }
 
     let resolution = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
+            ensure_entity_ready_for_governance(&store, "resolution computation")?;
 
             // Read the meeting
             let meeting = store
@@ -3663,12 +3797,13 @@ async fn list_resolutions(
     Query(query): Query<MeetingQuery>,
 ) -> Result<Json<Vec<ResolutionResponse>>, AppError> {
     let workspace_id = auth.workspace_id();
+    let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = query.entity_id;
 
     let resolutions = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
             let meeting = store
                 .read::<Meeting>("main", meeting_id)
                 .map_err(|_| AppError::NotFound(format!("meeting {} not found", meeting_id)))?;
@@ -3723,12 +3858,13 @@ async fn attach_resolution_document(
     Json(req): Json<AttachResolutionDocumentRequest>,
 ) -> Result<Json<ResolutionResponse>, AppError> {
     let workspace_id = auth.workspace_id();
+    let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = req.entity_id;
 
     let resolution = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
             // Validate attached document exists in formation records.
             store.read_document("main", req.document_id).map_err(|_| {
                 AppError::NotFound(format!("document {} not found", req.document_id))
@@ -3793,12 +3929,13 @@ async fn scan_expired_seats(
     Query(query): Query<super::EntityIdQuery>,
 ) -> Result<Json<ScanExpiredResponse>, AppError> {
     let workspace_id = auth.workspace_id();
+    let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = query.entity_id;
 
     let result = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
             let body_ids = store
                 .list_ids::<GovernanceBody>("main")
                 .map_err(|e| AppError::Internal(format!("list bodies: {e}")))?;
@@ -3885,6 +4022,7 @@ async fn written_consent(
     Json(req): Json<WrittenConsentRequest>,
 ) -> Result<Json<WrittenConsentResponse>, AppError> {
     let workspace_id = auth.workspace_id();
+    let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = req.entity_id;
     state.enforce_creation_rate_limit("governance.written_consent.create", workspace_id, 60, 60)?;
     let title = require_non_empty_trimmed(&req.title, "title")?;
@@ -3893,7 +4031,8 @@ async fn written_consent(
         let layout = state.layout.clone();
         let title = title.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
+            ensure_entity_ready_for_governance(&store, "written consent creation")?;
 
             // Verify body exists
             store
@@ -3975,12 +4114,13 @@ async fn list_all_meetings(
     Query(query): Query<super::EntityIdQuery>,
 ) -> Result<Json<Vec<MeetingResponse>>, AppError> {
     let workspace_id = auth.workspace_id();
+    let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = query.entity_id;
 
     let meetings = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
             let ids = store
                 .list_ids::<Meeting>("main")
                 .map_err(|e| AppError::Internal(format!("list meetings: {e}")))?;
@@ -4017,12 +4157,13 @@ async fn list_all_governance_bodies(
     Query(query): Query<super::EntityIdQuery>,
 ) -> Result<Json<Vec<GovernanceBodyResponse>>, AppError> {
     let workspace_id = auth.workspace_id();
+    let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = query.entity_id;
 
     let bodies = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
             let ids = store
                 .list_ids::<GovernanceBody>("main")
                 .map_err(|e| AppError::Internal(format!("list bodies: {e}")))?;
@@ -4157,6 +4298,7 @@ pub fn governance_routes() -> Router<AppState> {
         .route("/v1/meetings/{meeting_id}/notice", post(send_notice))
         .route("/v1/meetings/{meeting_id}/convene", post(convene_meeting))
         .route("/v1/meetings/{meeting_id}/adjourn", post(adjourn_meeting))
+        .route("/v1/meetings/{meeting_id}/reopen", post(reopen_meeting))
         .route("/v1/meetings/{meeting_id}/cancel", post(cancel_meeting))
         // Votes
         .route(
@@ -4236,6 +4378,7 @@ pub fn governance_routes() -> Router<AppState> {
         send_notice,
         convene_meeting,
         adjourn_meeting,
+        reopen_meeting,
         cancel_meeting,
         cast_vote,
         list_votes,

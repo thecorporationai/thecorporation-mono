@@ -21,7 +21,8 @@ export async function claimCommand(code: string): Promise<void> {
     cfg.workspace_id = data.workspace_id;
     saveConfig(cfg);
     console.log(`Workspace joined: ${data.workspace_id}`);
-    console.log("Credentials saved to ~/.corp/config.json");
+    console.log("Credentials saved to ~/.corp/auth.json");
+    console.log("Settings remain in ~/.corp/config.json");
   } catch (err) {
     printError(`${err}`);
     process.exit(1);

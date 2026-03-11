@@ -303,6 +303,7 @@ async fn run_server(skip_validation: bool) {
         .merge(routes::agent_executions::execution_routes())
         .merge(routes::secrets_proxy::secrets_routes())
         .merge(routes::llm_proxy::llm_proxy_routes())
+        .merge(routes::references::references_routes())
         .merge(routes::secret_proxies::secret_proxy_routes())
         .merge(routes::work_items::work_items_routes())
         .merge(routes::admin::admin_routes())
@@ -316,14 +317,20 @@ async fn run_server(skip_validation: bool) {
     let addr = SocketAddr::from(([0, 0, 0, 0], port));
     tracing::info!("listening on {}", addr);
 
-    let listener = tokio::net::TcpListener::bind(addr).await.map_err(|e| {
-        eprintln!("ERROR: cannot bind to {addr}: {e}");
-        std::process::exit(1);
-    }).unwrap();
-    axum::serve(listener, app).await.map_err(|e| {
-        eprintln!("ERROR: server error: {e}");
-        std::process::exit(1);
-    }).unwrap();
+    let listener = tokio::net::TcpListener::bind(addr)
+        .await
+        .map_err(|e| {
+            eprintln!("ERROR: cannot bind to {addr}: {e}");
+            std::process::exit(1);
+        })
+        .unwrap();
+    axum::serve(listener, app)
+        .await
+        .map_err(|e| {
+            eprintln!("ERROR: server error: {e}");
+            std::process::exit(1);
+        })
+        .unwrap();
 }
 
 async fn security_headers(mut response: Response) -> Response {

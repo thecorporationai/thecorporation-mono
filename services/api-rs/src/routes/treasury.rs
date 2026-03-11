@@ -183,13 +183,71 @@ fn bank_account_to_response(ba: &BankAccount) -> BankAccountResponse {
     }
 }
 
+fn payment_to_response(payment: &Payment) -> PaymentResponse {
+    PaymentResponse {
+        payment_id: payment.payment_id(),
+        entity_id: payment.entity_id(),
+        amount_cents: payment.amount_cents().raw(),
+        recipient: payment.recipient().to_owned(),
+        payment_method: payment.payment_method(),
+        description: payment.description().to_owned(),
+        status: payment.status(),
+        created_at: payment.created_at().to_rfc3339(),
+    }
+}
+
+fn payroll_run_to_response(run: &PayrollRun) -> PayrollRunResponse {
+    PayrollRunResponse {
+        payroll_run_id: run.payroll_run_id(),
+        entity_id: run.entity_id(),
+        pay_period_start: run.pay_period_start(),
+        pay_period_end: run.pay_period_end(),
+        status: run.status(),
+        created_at: run.created_at().to_rfc3339(),
+    }
+}
+
+fn distribution_to_response(dist: &Distribution) -> DistributionResponse {
+    DistributionResponse {
+        distribution_id: dist.distribution_id(),
+        entity_id: dist.entity_id(),
+        distribution_type: dist.distribution_type(),
+        total_amount_cents: dist.total_amount_cents().raw(),
+        description: dist.description().to_owned(),
+        status: dist.status(),
+        created_at: dist.created_at().to_rfc3339(),
+    }
+}
+
+fn reconciliation_to_response(recon: &Reconciliation) -> ReconciliationResponse {
+    ReconciliationResponse {
+        reconciliation_id: recon.reconciliation_id(),
+        entity_id: recon.entity_id(),
+        as_of_date: recon.as_of_date(),
+        total_debits_cents: recon.total_debits_cents().raw(),
+        total_credits_cents: recon.total_credits_cents().raw(),
+        difference_cents: recon.difference_cents().raw(),
+        status: recon.status(),
+        created_at: recon.created_at().to_rfc3339(),
+    }
+}
+
 // ── Helper to open a store ───────────────────────────────────────────
 
 fn open_store<'a>(
     layout: &'a crate::store::RepoLayout,
     workspace_id: WorkspaceId,
+    allowed_entity_ids: Option<&[EntityId]>,
     entity_id: EntityId,
 ) -> Result<EntityStore<'a>, AppError> {
+    if let Some(ids) = allowed_entity_ids
+        && !ids.contains(&entity_id)
+    {
+        return Err(AppError::Forbidden(format!(
+            "principal is not authorized for entity {}",
+            entity_id
+        )));
+    }
     EntityStore::open(layout, workspace_id, entity_id).map_err(|e| match e {
         crate::git::error::GitStorageError::RepoNotFound(_) => {
             AppError::NotFound(format!("entity {} not found", entity_id))
@@ -275,13 +333,14 @@ async fn create_account(
     Json(req): Json<CreateAccountRequest>,
 ) -> Result<Json<AccountResponse>, AppError> {
     let workspace_id = auth.workspace_id();
+    let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = req.entity_id;
     state.enforce_creation_rate_limit("treasury.account.create", workspace_id, 120, 60)?;
 
     let account = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
             ensure_entity_ready_for_treasury(&store, "account creation")?;
 
             let account_id = AccountId::new();
@@ -321,11 +380,12 @@ async fn list_accounts(
     Path(entity_id): Path<EntityId>,
 ) -> Result<Json<Vec<AccountResponse>>, AppError> {
     let workspace_id = auth.workspace_id();
+    let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
     let accounts = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
             let ids = store
                 .list_ids::<Account>("main")
                 .map_err(|e| AppError::Internal(format!("list accounts: {e}")))?;
@@ -363,6 +423,7 @@ async fn create_journal_entry(
     Json(req): Json<CreateJournalEntryRequest>,
 ) -> Result<Json<JournalEntryResponse>, AppError> {
     let workspace_id = auth.workspace_id();
+    let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = req.entity_id;
     state.enforce_creation_rate_limit("treasury.journal_entry.create", workspace_id, 120, 60)?;
 
@@ -378,7 +439,7 @@ async fn create_journal_entry(
     let entry = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
             ensure_entity_ready_for_treasury(&store, "journal entry creation")?;
 
             let entry_id = JournalEntryId::new();
@@ -438,11 +499,12 @@ async fn list_journal_entries(
     Path(entity_id): Path<EntityId>,
 ) -> Result<Json<Vec<JournalEntryResponse>>, AppError> {
     let workspace_id = auth.workspace_id();
+    let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
     let entries = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
             let ids = store
                 .list_ids::<JournalEntry>("main")
                 .map_err(|e| AppError::Internal(format!("list journal entries: {e}")))?;
@@ -482,12 +544,13 @@ async fn post_journal_entry(
     Query(query): Query<super::EntityIdQuery>,
 ) -> Result<Json<JournalEntryResponse>, AppError> {
     let workspace_id = auth.workspace_id();
+    let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = query.entity_id;
 
     let entry = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
             let mut entry = store
                 .read::<JournalEntry>("main", entry_id)
                 .map_err(|_| AppError::NotFound(format!("journal entry {} not found", entry_id)))?;
@@ -532,12 +595,13 @@ async fn void_journal_entry(
     Query(query): Query<super::EntityIdQuery>,
 ) -> Result<Json<JournalEntryResponse>, AppError> {
     let workspace_id = auth.workspace_id();
+    let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = query.entity_id;
 
     let entry = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
             let mut entry = store
                 .read::<JournalEntry>("main", entry_id)
                 .map_err(|_| AppError::NotFound(format!("journal entry {} not found", entry_id)))?;
@@ -580,6 +644,7 @@ async fn create_invoice(
     Json(req): Json<CreateInvoiceRequest>,
 ) -> Result<Json<InvoiceResponse>, AppError> {
     let workspace_id = auth.workspace_id();
+    let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = req.entity_id;
     state.enforce_creation_rate_limit("treasury.invoice.create", workspace_id, 120, 60)?;
     let customer_name = require_non_empty_trimmed(&req.customer_name, "customer_name")?;
@@ -596,7 +661,7 @@ async fn create_invoice(
         let layout = state.layout.clone();
         let customer_name = customer_name.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
             ensure_entity_ready_for_treasury(&store, "invoice creation")?;
 
             let invoice_id = InvoiceId::new();
@@ -643,11 +708,12 @@ async fn list_invoices(
     Path(entity_id): Path<EntityId>,
 ) -> Result<Json<Vec<InvoiceResponse>>, AppError> {
     let workspace_id = auth.workspace_id();
+    let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
     let invoices = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
             let ids = store
                 .list_ids::<Invoice>("main")
                 .map_err(|e| AppError::Internal(format!("list invoices: {e}")))?;
@@ -687,12 +753,13 @@ async fn send_invoice(
     Query(query): Query<super::EntityIdQuery>,
 ) -> Result<Json<InvoiceResponse>, AppError> {
     let workspace_id = auth.workspace_id();
+    let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = query.entity_id;
 
     let invoice = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
             let mut invoice = store
                 .read::<Invoice>("main", invoice_id)
                 .map_err(|_| AppError::NotFound(format!("invoice {} not found", invoice_id)))?;
@@ -737,12 +804,13 @@ async fn mark_invoice_paid(
     Query(query): Query<super::EntityIdQuery>,
 ) -> Result<Json<InvoiceResponse>, AppError> {
     let workspace_id = auth.workspace_id();
+    let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = query.entity_id;
 
     let invoice = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
             let mut invoice = store
                 .read::<Invoice>("main", invoice_id)
                 .map_err(|_| AppError::NotFound(format!("invoice {} not found", invoice_id)))?;
@@ -787,12 +855,13 @@ async fn get_invoice_status(
     Query(query): Query<super::EntityIdQuery>,
 ) -> Result<Json<InvoiceResponse>, AppError> {
     let workspace_id = auth.workspace_id();
+    let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = query.entity_id;
 
     let invoice = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
             store
                 .read::<Invoice>("main", invoice_id)
                 .map_err(|_| AppError::NotFound(format!("invoice {} not found", invoice_id)))
@@ -832,12 +901,13 @@ async fn get_pay_instructions(
     Query(query): Query<super::EntityIdQuery>,
 ) -> Result<Json<PayInstructionsResponse>, AppError> {
     let workspace_id = auth.workspace_id();
+    let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = query.entity_id;
 
     let invoice = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
             store
                 .read::<Invoice>("main", invoice_id)
                 .map_err(|_| AppError::NotFound(format!("invoice {} not found", invoice_id)))
@@ -877,6 +947,7 @@ async fn create_bank_account(
     Json(req): Json<CreateBankAccountRequest>,
 ) -> Result<Json<BankAccountResponse>, AppError> {
     let workspace_id = auth.workspace_id();
+    let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = req.entity_id;
     state.enforce_creation_rate_limit("treasury.bank_account.create", workspace_id, 60, 60)?;
     let bank_name = require_non_empty_trimmed(&req.bank_name, "bank_name")?;
@@ -885,7 +956,7 @@ async fn create_bank_account(
         let layout = state.layout.clone();
         let bank_name = bank_name.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
             ensure_entity_ready_for_treasury(&store, "bank account creation")?;
             let existing_ids = store
                 .list_ids::<BankAccount>("main")
@@ -950,11 +1021,12 @@ async fn list_bank_accounts(
     Path(entity_id): Path<EntityId>,
 ) -> Result<Json<Vec<BankAccountResponse>>, AppError> {
     let workspace_id = auth.workspace_id();
+    let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
     let bank_accounts = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
             let ids = store
                 .list_ids::<BankAccount>("main")
                 .map_err(|e| AppError::Internal(format!("list bank accounts: {e}")))?;
@@ -976,6 +1048,170 @@ async fn list_bank_accounts(
 }
 
 #[utoipa::path(
+    get,
+    path = "/v1/entities/{entity_id}/payments",
+    tag = "treasury",
+    params(("entity_id" = EntityId, Path, description = "Entity ID")),
+    responses(
+        (status = 200, description = "List of payments", body = Vec<PaymentResponse>),
+    ),
+)]
+async fn list_payments(
+    RequireTreasuryRead(auth): RequireTreasuryRead,
+    State(state): State<AppState>,
+    Path(entity_id): Path<EntityId>,
+) -> Result<Json<Vec<PaymentResponse>>, AppError> {
+    let workspace_id = auth.workspace_id();
+    let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
+
+    let payments = tokio::task::spawn_blocking({
+        let layout = state.layout.clone();
+        move || {
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
+            let ids = store
+                .list_ids::<Payment>("main")
+                .map_err(|e| AppError::Internal(format!("list payments: {e}")))?;
+
+            let mut results = Vec::new();
+            for id in ids {
+                let payment = store
+                    .read::<Payment>("main", id)
+                    .map_err(|e| AppError::Internal(format!("read payment {id}: {e}")))?;
+                results.push(payment_to_response(&payment));
+            }
+            Ok::<_, AppError>(results)
+        }
+    })
+    .await
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+
+    Ok(Json(payments))
+}
+
+#[utoipa::path(
+    get,
+    path = "/v1/entities/{entity_id}/payroll-runs",
+    tag = "treasury",
+    params(("entity_id" = EntityId, Path, description = "Entity ID")),
+    responses(
+        (status = 200, description = "List of payroll runs", body = Vec<PayrollRunResponse>),
+    ),
+)]
+async fn list_payroll_runs(
+    RequireTreasuryRead(auth): RequireTreasuryRead,
+    State(state): State<AppState>,
+    Path(entity_id): Path<EntityId>,
+) -> Result<Json<Vec<PayrollRunResponse>>, AppError> {
+    let workspace_id = auth.workspace_id();
+    let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
+
+    let payroll_runs = tokio::task::spawn_blocking({
+        let layout = state.layout.clone();
+        move || {
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
+            let ids = store
+                .list_ids::<PayrollRun>("main")
+                .map_err(|e| AppError::Internal(format!("list payroll runs: {e}")))?;
+
+            let mut results = Vec::new();
+            for id in ids {
+                let run = store
+                    .read::<PayrollRun>("main", id)
+                    .map_err(|e| AppError::Internal(format!("read payroll run {id}: {e}")))?;
+                results.push(payroll_run_to_response(&run));
+            }
+            Ok::<_, AppError>(results)
+        }
+    })
+    .await
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+
+    Ok(Json(payroll_runs))
+}
+
+#[utoipa::path(
+    get,
+    path = "/v1/entities/{entity_id}/distributions",
+    tag = "treasury",
+    params(("entity_id" = EntityId, Path, description = "Entity ID")),
+    responses(
+        (status = 200, description = "List of distributions", body = Vec<DistributionResponse>),
+    ),
+)]
+async fn list_distributions(
+    RequireTreasuryRead(auth): RequireTreasuryRead,
+    State(state): State<AppState>,
+    Path(entity_id): Path<EntityId>,
+) -> Result<Json<Vec<DistributionResponse>>, AppError> {
+    let workspace_id = auth.workspace_id();
+    let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
+
+    let distributions = tokio::task::spawn_blocking({
+        let layout = state.layout.clone();
+        move || {
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
+            let ids = store
+                .list_ids::<Distribution>("main")
+                .map_err(|e| AppError::Internal(format!("list distributions: {e}")))?;
+
+            let mut results = Vec::new();
+            for id in ids {
+                let dist = store
+                    .read::<Distribution>("main", id)
+                    .map_err(|e| AppError::Internal(format!("read distribution {id}: {e}")))?;
+                results.push(distribution_to_response(&dist));
+            }
+            Ok::<_, AppError>(results)
+        }
+    })
+    .await
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+
+    Ok(Json(distributions))
+}
+
+#[utoipa::path(
+    get,
+    path = "/v1/entities/{entity_id}/reconciliations",
+    tag = "treasury",
+    params(("entity_id" = EntityId, Path, description = "Entity ID")),
+    responses(
+        (status = 200, description = "List of reconciliations", body = Vec<ReconciliationResponse>),
+    ),
+)]
+async fn list_reconciliations(
+    RequireTreasuryRead(auth): RequireTreasuryRead,
+    State(state): State<AppState>,
+    Path(entity_id): Path<EntityId>,
+) -> Result<Json<Vec<ReconciliationResponse>>, AppError> {
+    let workspace_id = auth.workspace_id();
+    let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
+
+    let reconciliations = tokio::task::spawn_blocking({
+        let layout = state.layout.clone();
+        move || {
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
+            let ids = store
+                .list_ids::<Reconciliation>("main")
+                .map_err(|e| AppError::Internal(format!("list reconciliations: {e}")))?;
+
+            let mut results = Vec::new();
+            for id in ids {
+                let recon = store
+                    .read::<Reconciliation>("main", id)
+                    .map_err(|e| AppError::Internal(format!("read reconciliation {id}: {e}")))?;
+                results.push(reconciliation_to_response(&recon));
+            }
+            Ok::<_, AppError>(results)
+        }
+    })
+    .await
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+
+    Ok(Json(reconciliations))
+}
+
+#[utoipa::path(
     post,
     path = "/v1/bank-accounts/{bank_account_id}/activate",
     tag = "treasury",
@@ -994,12 +1230,13 @@ async fn activate_bank_account(
     Query(query): Query<super::EntityIdQuery>,
 ) -> Result<Json<BankAccountResponse>, AppError> {
     let workspace_id = auth.workspace_id();
+    let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = query.entity_id;
 
     let bank_account = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
             let mut ba = store
                 .read::<BankAccount>("main", bank_account_id)
                 .map_err(|_| {
@@ -1046,12 +1283,13 @@ async fn close_bank_account(
     Query(query): Query<super::EntityIdQuery>,
 ) -> Result<Json<BankAccountResponse>, AppError> {
     let workspace_id = auth.workspace_id();
+    let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = query.entity_id;
 
     let bank_account = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
             let mut ba = store
                 .read::<BankAccount>("main", bank_account_id)
                 .map_err(|_| {
@@ -1200,6 +1438,7 @@ async fn submit_payment(
     Json(req): Json<SubmitPaymentRequest>,
 ) -> Result<Json<PaymentResponse>, AppError> {
     let workspace_id = auth.workspace_id();
+    let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = req.entity_id;
     state.enforce_creation_rate_limit("treasury.payment.create", workspace_id, 120, 60)?;
     Cents::new(req.amount_cents)
@@ -1210,7 +1449,7 @@ async fn submit_payment(
     let payment = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
             ensure_entity_ready_for_treasury(&store, "payment submission")?;
             if payment_method_requires_active_bank_account(req.payment_method) {
                 ensure_active_bank_account_available(&store)?;
@@ -1269,6 +1508,7 @@ async fn execute_payment(
     Json(req): Json<ExecutePaymentRequest>,
 ) -> Result<Json<PaymentResponse>, AppError> {
     let workspace_id = auth.workspace_id();
+    let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = req.entity_id;
     state.enforce_creation_rate_limit("treasury.payment.execute", workspace_id, 120, 60)?;
     Cents::new(req.amount_cents)
@@ -1279,7 +1519,7 @@ async fn execute_payment(
     let payment = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
             ensure_entity_ready_for_treasury(&store, "payment execution")?;
             if payment_method_requires_active_bank_account(req.payment_method) {
                 ensure_active_bank_account_available(&store)?;
@@ -1341,6 +1581,7 @@ async fn create_payroll_run(
     Json(req): Json<CreatePayrollRunRequest>,
 ) -> Result<Json<PayrollRunResponse>, AppError> {
     let workspace_id = auth.workspace_id();
+    let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = req.entity_id;
     state.enforce_creation_rate_limit("treasury.payroll.create", workspace_id, 60, 60)?;
     validate_date_order(
@@ -1349,13 +1590,18 @@ async fn create_payroll_run(
         "pay_period_end",
         req.pay_period_end,
     )?;
+    if req.pay_period_start == req.pay_period_end {
+        return Err(AppError::BadRequest(
+            "pay_period_end must be after pay_period_start".to_owned(),
+        ));
+    }
     validate_not_too_far_future("pay_period_start", req.pay_period_start, 366)?;
     validate_not_too_far_future("pay_period_end", req.pay_period_end, 366)?;
 
     let run = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
             ensure_entity_ready_for_treasury(&store, "payroll creation")?;
             let existing_ids = store
                 .list_ids::<PayrollRun>("main")
@@ -1417,6 +1663,7 @@ async fn create_distribution(
     Json(req): Json<CreateDistributionRequest>,
 ) -> Result<Json<DistributionResponse>, AppError> {
     let workspace_id = auth.workspace_id();
+    let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = req.entity_id;
     state.enforce_creation_rate_limit("treasury.distribution.create", workspace_id, 60, 60)?;
     Cents::new(req.total_amount_cents)
@@ -1427,7 +1674,7 @@ async fn create_distribution(
     let dist = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
             let entity = store
                 .read_entity("main")
                 .map_err(|e| AppError::Internal(format!("read entity: {e}")))?;
@@ -1510,6 +1757,7 @@ async fn reconcile_ledger(
     Json(req): Json<ReconcileLedgerRequest>,
 ) -> Result<Json<ReconciliationResponse>, AppError> {
     let workspace_id = auth.workspace_id();
+    let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = req.entity_id;
     let today = chrono::Utc::now().date_naive();
     let as_of_date = req.end_date.or(req.as_of_date).unwrap_or(today);
@@ -1525,7 +1773,7 @@ async fn reconcile_ledger(
     let recon = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
             ensure_entity_ready_for_treasury(&store, "ledger reconciliation")?;
 
             // Sum up all journal entries to compute totals
@@ -1649,11 +1897,12 @@ async fn get_stripe_account(
     Path(entity_id): Path<EntityId>,
 ) -> Result<Json<StripeAccountResponse>, AppError> {
     let workspace_id = auth.workspace_id();
+    let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
     let conn = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
 
             // Try to read existing connection
             match store.read_json::<StripeConnection>("main", "treasury/stripe-connection.json") {
@@ -1733,12 +1982,13 @@ async fn create_spending_limit(
     Json(req): Json<CreateSpendingLimitRequest>,
 ) -> Result<Json<SpendingLimitResponse>, AppError> {
     let workspace_id = auth.workspace_id();
+    let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = req.entity_id;
 
     let sl = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
             let sl_id = SpendingLimitId::new();
             let sl =
                 SpendingLimit::new(sl_id, entity_id, req.amount_cents, req.period, req.category);
@@ -1775,11 +2025,12 @@ async fn list_spending_limits(
     Path(entity_id): Path<EntityId>,
 ) -> Result<Json<Vec<SpendingLimitResponse>>, AppError> {
     let workspace_id = auth.workspace_id();
+    let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
     let limits = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
             let ids: Vec<SpendingLimitId> = store
                 .list_ids_in_dir("main", "treasury/spending-limits")
                 .unwrap_or_default();
@@ -1841,11 +2092,12 @@ async fn get_financial_statements(
     Query(query): Query<FinancialStatementQuery>,
 ) -> Result<Json<FinancialStatementResponse>, AppError> {
     let workspace_id = auth.workspace_id();
+    let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
     let statement = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
 
             // Read all accounts and compute totals by type
             let account_ids = store.list_ids::<Account>("main").unwrap_or_default();
@@ -1936,12 +2188,13 @@ async fn seed_chart_of_accounts(
     Json(req): Json<SeedChartOfAccountsRequest>,
 ) -> Result<Json<SeedChartOfAccountsResponse>, AppError> {
     let workspace_id = auth.workspace_id();
+    let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = req.entity_id;
 
     let count = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
 
             let codes = vec![
                 GlAccountCode::Cash,
@@ -1997,12 +2250,13 @@ async fn get_invoice(
     Query(query): Query<super::EntityIdQuery>,
 ) -> Result<Json<InvoiceResponse>, AppError> {
     let workspace_id = auth.workspace_id();
+    let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = query.entity_id;
 
     let invoice = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
             store
                 .read::<Invoice>("main", invoice_id)
                 .map_err(|_| AppError::NotFound(format!("invoice {} not found", invoice_id)))
@@ -2049,6 +2303,7 @@ async fn from_agent_request(
     Json(req): Json<AgentInvoiceRequest>,
 ) -> Result<Json<PaymentOfferResponse>, AppError> {
     let workspace_id = auth.workspace_id();
+    let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = req.entity_id;
 
     if req.amount_cents <= 0 {
@@ -2061,7 +2316,7 @@ async fn from_agent_request(
     let invoice = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
             ensure_entity_ready_for_treasury(&store, "invoice creation")?;
 
             let invoice_id = InvoiceId::new();
@@ -2124,12 +2379,13 @@ async fn create_stripe_account(
     Json(req): Json<CreateStripeAccountRequest>,
 ) -> Result<Json<StripeAccountResponse>, AppError> {
     let workspace_id = auth.workspace_id();
+    let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = req.entity_id;
 
     let conn = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
             let conn = StripeConnection::new(
                 StripeConnectionId::new(),
                 entity_id,
@@ -2178,11 +2434,12 @@ async fn get_chart_of_accounts(
     Path(entity_id): Path<EntityId>,
 ) -> Result<Json<ChartOfAccountsResponse>, AppError> {
     let workspace_id = auth.workspace_id();
+    let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
     let accounts = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
             let ids = store
                 .list_ids::<Account>("main")
                 .map_err(|e| AppError::Internal(format!("list accounts: {e}")))?;
@@ -2240,6 +2497,7 @@ async fn create_payout(
     Json(req): Json<CreatePayoutRequest>,
 ) -> Result<Json<PayoutResponse>, AppError> {
     let workspace_id = auth.workspace_id();
+    let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = req.entity_id;
     state.enforce_creation_rate_limit("treasury.payout.create", workspace_id, 60, 60)?;
 
@@ -2259,7 +2517,7 @@ async fn create_payout(
         let destination = req.destination.clone();
         let description = req.description.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
             store
                 .write_json(
                     "main",
@@ -2326,6 +2584,7 @@ async fn create_payment_intent(
     Json(req): Json<CreatePaymentIntentRequest>,
 ) -> Result<Json<PaymentIntentResponse>, AppError> {
     let workspace_id = auth.workspace_id();
+    let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = req.entity_id;
     state.enforce_creation_rate_limit("treasury.payment_intent.create", workspace_id, 120, 60)?;
 
@@ -2348,7 +2607,7 @@ async fn create_payment_intent(
         let client_secret = client_secret.clone();
         let description = req.description.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
             ensure_entity_ready_for_treasury(&store, "payment intent creation")?;
             store
                 .write_json(
@@ -2467,13 +2726,26 @@ pub fn treasury_routes() -> Router<AppState> {
         )
         // Payments
         .route("/v1/payments", post(submit_payment))
+        .route("/v1/entities/{entity_id}/payments", get(list_payments))
         .route("/v1/payments/execute", post(execute_payment))
         // Payroll
         .route("/v1/payroll/runs", post(create_payroll_run))
+        .route(
+            "/v1/entities/{entity_id}/payroll-runs",
+            get(list_payroll_runs),
+        )
         // Distributions
         .route("/v1/distributions", post(create_distribution))
+        .route(
+            "/v1/entities/{entity_id}/distributions",
+            get(list_distributions),
+        )
         // Reconciliation
         .route("/v1/ledger/reconcile", post(reconcile_ledger))
+        .route(
+            "/v1/entities/{entity_id}/reconciliations",
+            get(list_reconciliations),
+        )
         // Treasury advanced
         .route(
             "/v1/entities/{entity_id}/stripe-account",
@@ -2532,10 +2804,14 @@ pub fn treasury_routes() -> Router<AppState> {
         activate_bank_account,
         close_bank_account,
         submit_payment,
+        list_payments,
         execute_payment,
         create_payroll_run,
+        list_payroll_runs,
         create_distribution,
+        list_distributions,
         reconcile_ledger,
+        list_reconciliations,
         get_stripe_account,
         create_spending_limit,
         list_spending_limits,

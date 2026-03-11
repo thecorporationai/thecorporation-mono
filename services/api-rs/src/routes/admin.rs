@@ -8,14 +8,20 @@ use axum::{
     extract::{Path, State},
     routing::{get, post},
 };
+use chrono::{Duration, Utc};
 use serde::{Deserialize, Serialize};
 
 use super::AppState;
 use super::validation::{normalize_slug, require_non_empty_trimmed_max};
 use crate::auth::RequireAdmin;
+use crate::domain::auth::{
+    api_key::generate_api_key,
+    scopes::{Scope, ScopeSet},
+};
+use crate::domain::billing::subscription::Subscription;
 use crate::domain::contacts::contact::Contact;
 use crate::domain::formation::types::FormationStatus;
-use crate::domain::ids::{EntityId, WorkspaceId};
+use crate::domain::ids::{ApiKeyId, EntityId, SubscriptionId, WorkspaceId};
 use crate::error::AppError;
 use crate::store::workspace_store::WorkspaceStore;
 
@@ -48,6 +54,16 @@ pub struct SystemHealth {
 
 // ── Handlers ─────────────────────────────────────────────────────────
 
+fn ensure_workspace_access(
+    auth_workspace_id: WorkspaceId,
+    requested_workspace_id: WorkspaceId,
+) -> Result<(), AppError> {
+    if auth_workspace_id != requested_workspace_id {
+        return Err(AppError::Forbidden("workspace access denied".to_owned()));
+    }
+    Ok(())
+}
+
 #[utoipa::path(
     get,
     path = "/v1/admin/workspaces",
@@ -57,34 +73,25 @@ pub struct SystemHealth {
     ),
 )]
 async fn list_workspaces(
-    RequireAdmin(_auth): RequireAdmin,
+    RequireAdmin(auth): RequireAdmin,
     State(state): State<AppState>,
 ) -> Result<Json<Vec<WorkspaceSummary>>, AppError> {
+    let workspace_id = auth.workspace_id();
     let summaries = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
-            let workspace_ids = layout.list_workspace_ids();
-            let mut results = Vec::new();
-
-            for ws_id in workspace_ids {
-                let name = match WorkspaceStore::open(&layout, ws_id) {
-                    Ok(ws_store) => ws_store
-                        .read_workspace()
-                        .map(|r| r.name)
-                        .unwrap_or_else(|_| ws_id.to_string()),
-                    Err(_) => ws_id.to_string(),
-                };
-
-                let entity_count = layout.list_entity_ids(ws_id).len();
-
-                results.push(WorkspaceSummary {
-                    workspace_id: ws_id,
-                    name,
-                    entity_count,
-                });
-            }
-
-            Ok::<_, AppError>(results)
+            let ws_store = WorkspaceStore::open(&layout, workspace_id)
+                .map_err(|e| AppError::NotFound(format!("workspace not found: {e}")))?;
+            let name = ws_store
+                .read_workspace()
+                .map(|r| r.name)
+                .unwrap_or_else(|_| workspace_id.to_string());
+            let entity_count = layout.list_entity_ids(workspace_id).len();
+            Ok::<_, AppError>(vec![WorkspaceSummary {
+                workspace_id,
+                name,
+                entity_count,
+            }])
         }
     })
     .await
@@ -102,35 +109,29 @@ async fn list_workspaces(
     ),
 )]
 async fn list_audit_events(
-    RequireAdmin(_auth): RequireAdmin,
+    RequireAdmin(auth): RequireAdmin,
     State(state): State<AppState>,
 ) -> Result<Json<Vec<AuditEvent>>, AppError> {
+    let workspace_id = auth.workspace_id();
     let events = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
             let mut events = Vec::new();
-            let workspace_ids = layout.list_workspace_ids();
-
-            for ws_id in workspace_ids {
-                // Read git log from workspace repo for recent commits
-                if let Ok(ws_store) = WorkspaceStore::open(&layout, ws_id) {
-                    if let Ok(log_entries) = ws_store.repo().recent_commits("main", 10) {
-                        for (oid, message, timestamp) in log_entries {
-                            events.push(AuditEvent {
-                                event_id: oid,
-                                event_type: "commit".to_owned(),
-                                timestamp,
-                                details: serde_json::json!({
-                                    "workspace_id": ws_id,
-                                    "message": message,
-                                }),
-                            });
-                        }
-                    }
+            let ws_store = WorkspaceStore::open(&layout, workspace_id)
+                .map_err(|e| AppError::NotFound(format!("workspace not found: {e}")))?;
+            if let Ok(log_entries) = ws_store.repo().recent_commits("main", 50) {
+                for (oid, message, timestamp) in log_entries {
+                    events.push(AuditEvent {
+                        event_id: oid,
+                        event_type: "commit".to_owned(),
+                        timestamp,
+                        details: serde_json::json!({
+                            "workspace_id": workspace_id,
+                            "message": message,
+                        }),
+                    });
                 }
             }
-
-            // Sort by timestamp descending
             events.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
             events.truncate(50);
 
@@ -304,6 +305,7 @@ async fn demo_seed(
     Json(req): Json<DemoSeedRequest>,
 ) -> Result<Json<DemoSeedResponse>, AppError> {
     let workspace_id = auth.workspace_id();
+    state.enforce_creation_rate_limit("admin.demo_seed.create", workspace_id, 5, 60)?;
     let scenario = req.scenario.clone();
 
     let entities_created = tokio::task::spawn_blocking({
@@ -339,7 +341,7 @@ async fn demo_seed(
                 workspace_id,
                 legal_name.to_owned(),
                 entity_type,
-                crate::domain::formation::types::Jurisdiction::new("Delaware").unwrap(),
+                crate::domain::formation::types::Jurisdiction::new("US-DE").unwrap(),
                 None,
                 None,
             )
@@ -454,6 +456,16 @@ async fn link_workspace(
     let workspace_id = auth.workspace_id();
     let provider = normalize_slug(&req.provider, "provider", 64)?;
     let external_id = require_non_empty_trimmed_max(&req.external_id, "external_id", 200)?;
+    if external_id.contains('<')
+        || external_id.contains('>')
+        || external_id.contains("{{")
+        || external_id.contains("}}")
+        || external_id.chars().any(|ch| ch == '\n' || ch == '\r')
+    {
+        return Err(AppError::BadRequest(
+            "external_id cannot contain markup, template syntax, or newlines".to_owned(),
+        ));
+    }
 
     tokio::task::spawn_blocking({
         let layout = state.layout.clone();
@@ -499,6 +511,78 @@ pub struct WorkspaceClaimResponse {
     pub claimed: bool,
 }
 
+#[derive(Serialize, utoipa::ToSchema)]
+pub struct BillingStatusResponse {
+    pub workspace_id: WorkspaceId,
+    pub plan: String,
+    pub status: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub current_period_end: Option<String>,
+}
+
+#[derive(Serialize, utoipa::ToSchema)]
+pub struct BillingPlanResponse {
+    pub plan_id: String,
+    pub name: String,
+    pub price_cents: i64,
+    pub interval: String,
+}
+
+#[derive(Serialize, utoipa::ToSchema)]
+pub struct BillingPlansResponse {
+    pub plans: Vec<BillingPlanResponse>,
+}
+
+#[derive(Deserialize, utoipa::ToSchema)]
+pub struct BillingCheckoutRequest {
+    pub plan_id: String,
+    #[serde(default)]
+    pub entity_id: Option<EntityId>,
+}
+
+#[derive(Serialize, utoipa::ToSchema)]
+pub struct BillingPortalResponse {
+    pub portal_url: String,
+}
+
+#[derive(Serialize, utoipa::ToSchema)]
+pub struct BillingCheckoutResponse {
+    pub checkout_url: String,
+    pub plan: String,
+    pub status: String,
+}
+
+fn billing_plans() -> Vec<BillingPlanResponse> {
+    vec![
+        BillingPlanResponse {
+            plan_id: "free".to_owned(),
+            name: "Free".to_owned(),
+            price_cents: 0,
+            interval: "month".to_owned(),
+        },
+        BillingPlanResponse {
+            plan_id: "pro".to_owned(),
+            name: "Pro".to_owned(),
+            price_cents: 4_900,
+            interval: "month".to_owned(),
+        },
+        BillingPlanResponse {
+            plan_id: "enterprise".to_owned(),
+            name: "Enterprise".to_owned(),
+            price_cents: 29_900,
+            interval: "month".to_owned(),
+        },
+    ]
+}
+
+fn billing_checkout_url(workspace_id: WorkspaceId, plan_id: &str) -> String {
+    format!("https://billing.thecorporation.ai/checkout?workspace_id={workspace_id}&plan={plan_id}")
+}
+
+fn billing_portal_url(workspace_id: WorkspaceId) -> String {
+    format!("https://billing.thecorporation.ai/portal?workspace_id={workspace_id}")
+}
+
 #[utoipa::path(
     post,
     path = "/v1/workspaces/claim",
@@ -510,12 +594,86 @@ pub struct WorkspaceClaimResponse {
 )]
 async fn claim_workspace(
     RequireAdmin(auth): RequireAdmin,
-    State(state): State<AppState>,
-    Json(_req): Json<WorkspaceClaimRequest>,
+    State(_state): State<AppState>,
+    Json(req): Json<WorkspaceClaimRequest>,
 ) -> Result<Json<WorkspaceClaimResponse>, AppError> {
     let workspace_id = auth.workspace_id();
+    let _claim_token = require_non_empty_trimmed_max(&req.claim_token, "claim_token", 256)?;
+    Err(AppError::NotImplemented(format!(
+        "workspace claim tokens are not implemented for workspace {}",
+        workspace_id
+    )))
+}
 
-    // Verify workspace exists
+#[utoipa::path(
+    get,
+    path = "/v1/billing/status",
+    tag = "admin",
+    responses(
+        (status = 200, description = "Current workspace billing status", body = BillingStatusResponse),
+    ),
+)]
+async fn billing_status(
+    RequireAdmin(auth): RequireAdmin,
+    State(state): State<AppState>,
+) -> Result<Json<BillingStatusResponse>, AppError> {
+    let workspace_id = auth.workspace_id();
+    let status = tokio::task::spawn_blocking({
+        let layout = state.layout.clone();
+        move || {
+            let ws_store = WorkspaceStore::open(&layout, workspace_id)
+                .map_err(|e| AppError::NotFound(format!("workspace not found: {e}")))?;
+            match ws_store.read_json::<Subscription>("billing/subscription.json") {
+                Ok(subscription) => Ok::<_, AppError>(BillingStatusResponse {
+                    workspace_id,
+                    plan: subscription.plan().to_owned(),
+                    status: subscription.status().to_owned(),
+                    current_period_end: subscription.current_period_end().map(ToOwned::to_owned),
+                }),
+                Err(crate::git::error::GitStorageError::NotFound(_)) => Ok(BillingStatusResponse {
+                    workspace_id,
+                    plan: "free".to_owned(),
+                    status: "active".to_owned(),
+                    current_period_end: None,
+                }),
+                Err(err) => Err(AppError::Internal(format!(
+                    "read billing subscription: {err}"
+                ))),
+            }
+        }
+    })
+    .await
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+    Ok(Json(status))
+}
+
+#[utoipa::path(
+    get,
+    path = "/v1/billing/plans",
+    tag = "admin",
+    responses(
+        (status = 200, description = "Available billing plans", body = BillingPlansResponse),
+    ),
+)]
+async fn billing_plans_handler(RequireAdmin(_auth): RequireAdmin) -> Json<BillingPlansResponse> {
+    Json(BillingPlansResponse {
+        plans: billing_plans(),
+    })
+}
+
+#[utoipa::path(
+    post,
+    path = "/v1/billing/portal",
+    tag = "admin",
+    responses(
+        (status = 200, description = "Billing portal URL", body = BillingPortalResponse),
+    ),
+)]
+async fn billing_portal(
+    RequireAdmin(auth): RequireAdmin,
+    State(state): State<AppState>,
+) -> Result<Json<BillingPortalResponse>, AppError> {
+    let workspace_id = auth.workspace_id();
     tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
@@ -527,9 +685,74 @@ async fn claim_workspace(
     .await
     .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
 
-    Ok(Json(WorkspaceClaimResponse {
-        workspace_id,
-        claimed: true,
+    Ok(Json(BillingPortalResponse {
+        portal_url: billing_portal_url(workspace_id),
+    }))
+}
+
+#[utoipa::path(
+    post,
+    path = "/v1/billing/checkout",
+    tag = "admin",
+    request_body = BillingCheckoutRequest,
+    responses(
+        (status = 200, description = "Billing checkout URL", body = BillingCheckoutResponse),
+    ),
+)]
+async fn billing_checkout(
+    RequireAdmin(auth): RequireAdmin,
+    State(state): State<AppState>,
+    Json(req): Json<BillingCheckoutRequest>,
+) -> Result<Json<BillingCheckoutResponse>, AppError> {
+    let workspace_id = auth.workspace_id();
+    let plan = normalize_slug(&req.plan_id, "plan_id", 32)?;
+    if !billing_plans()
+        .iter()
+        .any(|candidate| candidate.plan_id == plan)
+    {
+        return Err(AppError::BadRequest(format!(
+            "unsupported plan_id: {}",
+            req.plan_id
+        )));
+    }
+
+    tokio::task::spawn_blocking({
+        let layout = state.layout.clone();
+        let plan = plan.clone();
+        move || {
+            let ws_store = WorkspaceStore::open(&layout, workspace_id)
+                .map_err(|e| AppError::NotFound(format!("workspace not found: {e}")))?;
+            let mut subscription =
+                match ws_store.read_json::<Subscription>("billing/subscription.json") {
+                    Ok(existing) => existing,
+                    Err(crate::git::error::GitStorageError::NotFound(_)) => {
+                        Subscription::new(SubscriptionId::new(), workspace_id, plan.clone())
+                    }
+                    Err(err) => {
+                        return Err(AppError::Internal(format!(
+                            "read billing subscription: {err}"
+                        )));
+                    }
+                };
+            subscription.set_plan(plan.clone());
+            subscription.set_status("pending_checkout".to_owned());
+            ws_store
+                .write_json(
+                    "billing/subscription.json",
+                    &subscription,
+                    &format!("Start billing checkout for {plan}"),
+                )
+                .map_err(|e| AppError::Internal(format!("commit: {e}")))?;
+            Ok::<_, AppError>(())
+        }
+    })
+    .await
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+
+    Ok(Json(BillingCheckoutResponse {
+        checkout_url: billing_checkout_url(workspace_id, &plan),
+        plan,
+        status: "pending_checkout".to_owned(),
     }))
 }
 
@@ -547,10 +770,11 @@ async fn claim_workspace(
     ),
 )]
 async fn workspace_status_by_path(
-    RequireAdmin(_auth): RequireAdmin,
+    RequireAdmin(auth): RequireAdmin,
     State(state): State<AppState>,
     Path(workspace_id): Path<WorkspaceId>,
 ) -> Result<Json<WorkspaceStatusResponse>, AppError> {
+    ensure_workspace_access(auth.workspace_id(), workspace_id)?;
     let response = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
@@ -590,10 +814,11 @@ async fn workspace_status_by_path(
     ),
 )]
 async fn workspace_entities_by_path(
-    RequireAdmin(_auth): RequireAdmin,
+    RequireAdmin(auth): RequireAdmin,
     State(state): State<AppState>,
     Path(workspace_id): Path<WorkspaceId>,
 ) -> Result<Json<Vec<WorkspaceEntitySummary>>, AppError> {
+    ensure_workspace_access(auth.workspace_id(), workspace_id)?;
     let entities = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
@@ -634,10 +859,11 @@ pub struct WorkspaceContactSummary {
     ),
 )]
 async fn workspace_contacts(
-    RequireAdmin(_auth): RequireAdmin,
+    RequireAdmin(auth): RequireAdmin,
     State(state): State<AppState>,
     Path(workspace_id): Path<WorkspaceId>,
 ) -> Result<Json<Vec<WorkspaceContactSummary>>, AppError> {
+    ensure_workspace_access(auth.workspace_id(), workspace_id)?;
     let contacts = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
@@ -738,6 +964,7 @@ async fn get_digest(
 
 #[derive(Serialize, utoipa::ToSchema)]
 pub struct ServiceTokenResponse {
+    pub api_key_id: ApiKeyId,
     pub token: String,
     pub token_type: String,
     pub expires_in: u64,
@@ -751,13 +978,50 @@ pub struct ServiceTokenResponse {
         (status = 200, description = "Get a service token", body = ServiceTokenResponse),
     ),
 )]
-async fn get_service_token(RequireAdmin(_auth): RequireAdmin) -> Json<ServiceTokenResponse> {
-    let token = format!("svc_{}", uuid::Uuid::new_v4().simple());
-    Json(ServiceTokenResponse {
-        token,
-        token_type: "Bearer".to_owned(),
-        expires_in: 3600,
+async fn get_service_token(
+    RequireAdmin(auth): RequireAdmin,
+    State(state): State<AppState>,
+) -> Result<Json<ServiceTokenResponse>, AppError> {
+    let workspace_id = auth.workspace_id();
+    state.enforce_creation_rate_limit("admin.service_token.create", workspace_id, 10, 60)?;
+
+    let response = tokio::task::spawn_blocking({
+        let layout = state.layout.clone();
+        move || {
+            let ws_store = WorkspaceStore::open(&layout, workspace_id)
+                .map_err(|e| AppError::NotFound(format!("workspace not found: {e}")))?;
+            let expires_in = 3600u64;
+            let scope_set = ScopeSet::from_vec(vec![Scope::Admin]);
+            let expires_at = Utc::now() + Duration::seconds(expires_in as i64);
+            let (raw_key, record) = generate_api_key(
+                workspace_id,
+                format!("service-token-{}", Utc::now().timestamp()),
+                scope_set,
+                Some(expires_at),
+                None,
+                None,
+            )
+            .map_err(|e| AppError::Internal(format!("generate service token: {e}")))?;
+            let key_id = record.key_id();
+            ws_store
+                .write_json(
+                    &format!("api-keys/{}.json", key_id),
+                    &record,
+                    &format!("Create service token {key_id}"),
+                )
+                .map_err(|e| AppError::Internal(format!("commit service token: {e}")))?;
+            Ok::<_, AppError>(ServiceTokenResponse {
+                api_key_id: key_id,
+                token: raw_key,
+                token_type: "Bearer".to_owned(),
+                expires_in,
+            })
+        }
     })
+    .await
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+
+    Ok(Json(response))
 }
 
 #[derive(Serialize, utoipa::ToSchema)]
@@ -792,6 +1056,10 @@ async fn get_jwks(RequireAdmin(_auth): RequireAdmin) -> Json<JwksResponse> {
         get_config,
         link_workspace,
         claim_workspace,
+        billing_status,
+        billing_plans_handler,
+        billing_portal,
+        billing_checkout,
         workspace_status_by_path,
         workspace_entities_by_path,
         workspace_contacts,
@@ -814,6 +1082,12 @@ async fn get_jwks(RequireAdmin(_auth): RequireAdmin) -> Json<JwksResponse> {
         WorkspaceLinkResponse,
         WorkspaceClaimRequest,
         WorkspaceClaimResponse,
+        BillingStatusResponse,
+        BillingPlanResponse,
+        BillingPlansResponse,
+        BillingCheckoutRequest,
+        BillingPortalResponse,
+        BillingCheckoutResponse,
         WorkspaceContactSummary,
         DigestSummary,
         DigestTriggerResponse,
@@ -837,6 +1111,10 @@ pub fn admin_routes() -> Router<AppState> {
         .route("/v1/config", get(get_config))
         .route("/v1/workspaces/link", post(link_workspace))
         .route("/v1/workspaces/claim", post(claim_workspace))
+        .route("/v1/billing/status", get(billing_status))
+        .route("/v1/billing/plans", get(billing_plans_handler))
+        .route("/v1/billing/portal", post(billing_portal))
+        .route("/v1/billing/checkout", post(billing_checkout))
         // Workspace by path param (Python-compatible)
         .route(
             "/v1/workspaces/{workspace_id}/status",

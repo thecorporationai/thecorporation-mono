@@ -15,6 +15,7 @@ export interface CorpConfig {
   };
   active_entity_id: string;
   active_entity_ids?: Record<string, string>;
+  last_references?: Record<string, string>;
   [key: string]: unknown;
 }
 

@@ -2,7 +2,7 @@
 //!
 //! Stored as `corp.json` in the entity's git repository.
 
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 
 use super::error::FormationError;
@@ -48,6 +48,8 @@ struct RawEntity {
     service_agreement_document_id: Option<DocumentId>,
     #[serde(default)]
     service_agreement_notes: Option<String>,
+    #[serde(default)]
+    dissolution_effective_date: Option<NaiveDate>,
     created_at: DateTime<Utc>,
 }
 
@@ -72,6 +74,7 @@ impl TryFrom<RawEntity> for Entity {
             service_agreement_contract_id: raw.service_agreement_contract_id,
             service_agreement_document_id: raw.service_agreement_document_id,
             service_agreement_notes: raw.service_agreement_notes,
+            dissolution_effective_date: raw.dissolution_effective_date,
             created_at: raw.created_at,
         })
     }
@@ -98,6 +101,7 @@ pub struct Entity {
     service_agreement_contract_id: Option<ContractId>,
     service_agreement_document_id: Option<DocumentId>,
     service_agreement_notes: Option<String>,
+    dissolution_effective_date: Option<NaiveDate>,
     created_at: DateTime<Utc>,
 }
 
@@ -132,6 +136,7 @@ impl Entity {
             service_agreement_contract_id: None,
             service_agreement_document_id: None,
             service_agreement_notes: None,
+            dissolution_effective_date: None,
             created_at: Utc::now(),
         })
     }
@@ -204,8 +209,11 @@ impl Entity {
     }
 
     /// Dissolve the entity — transitions from Active to Dissolved.
-    pub fn dissolve(&mut self) -> Result<(), FormationError> {
-        self.advance_status(FormationStatus::Dissolved)
+    pub fn dissolve(&mut self, effective_date: Option<NaiveDate>) -> Result<(), FormationError> {
+        self.advance_status(FormationStatus::Dissolved)?;
+        self.dissolution_effective_date =
+            Some(effective_date.unwrap_or_else(|| Utc::now().date_naive()));
+        Ok(())
     }
 
     pub fn record_service_agreement_execution(
@@ -261,6 +269,10 @@ impl Entity {
 
     pub fn formation_date(&self) -> Option<DateTime<Utc>> {
         self.formation_date
+    }
+
+    pub fn dissolution_effective_date(&self) -> Option<NaiveDate> {
+        self.dissolution_effective_date
     }
 
     pub fn set_formation_date(&mut self, date: DateTime<Utc>) {

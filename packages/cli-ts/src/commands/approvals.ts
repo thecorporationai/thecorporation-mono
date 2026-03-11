@@ -4,7 +4,7 @@ export async function approvalsListCommand(_opts: { json?: boolean }): Promise<v
   printError(
     "Approvals are managed through governance meetings.\n" +
     "  Use: corp governance convene ... to schedule a board meeting\n" +
-    "  Use: corp governance vote <meeting-id> <item-id> ... to cast votes"
+    "  Use: corp governance vote <meeting-ref> <item-ref> ... to cast votes"
   );
   process.exit(1);
 }
@@ -16,7 +16,7 @@ export async function approvalsRespondCommand(
 ): Promise<void> {
   printError(
     "Approvals are managed through governance meetings.\n" +
-    "  Use: corp governance vote <meeting-id> <item-id> --voter <id> --vote yea"
+    "  Use: corp governance vote <meeting-ref> <item-ref> --voter <contact-ref> --vote for"
   );
   process.exit(1);
 }

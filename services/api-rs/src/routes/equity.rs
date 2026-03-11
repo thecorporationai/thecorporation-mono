@@ -14,6 +14,10 @@ use sha2::{Digest, Sha256};
 use std::collections::{HashMap, HashSet};
 
 use super::AppState;
+use super::validation::{
+    reject_dangerous_param_keys, require_non_empty_trimmed_max, require_safe_single_line_max,
+    validate_not_too_far_past,
+};
 use crate::auth::{RequireEquityRead, RequireEquityWrite};
 use crate::domain::contacts::contact::Contact;
 use crate::domain::contacts::types::{ContactCategory, ContactType};
@@ -778,6 +782,9 @@ pub struct SafeNoteResponse {
 }
 
 const MAX_FMV_PER_SHARE_CENTS: i64 = 10_000_000;
+const MAX_HOLDER_NAME_LEN: usize = 256;
+const MAX_ROUND_NAME_LEN: usize = 200;
+const MAX_INSTRUMENT_SYMBOL_LEN: usize = 32;
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -1022,6 +1029,88 @@ fn hash_json<T: Serialize>(value: &T) -> String {
     hex::encode(hasher.finalize())
 }
 
+fn validate_holder_name(name: &str) -> Result<String, AppError> {
+    require_safe_single_line_max(name, "name", MAX_HOLDER_NAME_LEN)
+}
+
+fn validate_round_name(name: &str) -> Result<String, AppError> {
+    require_safe_single_line_max(name, "name", MAX_ROUND_NAME_LEN)
+}
+
+fn validate_instrument_symbol(symbol: &str) -> Result<String, AppError> {
+    let trimmed = require_non_empty_trimmed_max(symbol, "symbol", MAX_INSTRUMENT_SYMBOL_LEN)?;
+    if !trimmed
+        .chars()
+        .all(|ch| ch.is_ascii_alphanumeric() || ch == '_' || ch == '-')
+    {
+        return Err(AppError::BadRequest(
+            "symbol must use only letters, numbers, '_' or '-'".to_owned(),
+        ));
+    }
+    Ok(trimmed)
+}
+
+fn ensure_equity_resolution_unused(
+    store: &EntityStore<'_>,
+    resolution_id: ResolutionId,
+) -> Result<(), AppError> {
+    for round in read_all::<EquityRound>(store)? {
+        if round.board_approval_resolution_id() == Some(resolution_id) {
+            return Err(AppError::Conflict(format!(
+                "resolution {} is already bound to equity round {}",
+                resolution_id,
+                round.equity_round_id()
+            )));
+        }
+    }
+    for workflow in read_all::<FundraisingWorkflow>(store)? {
+        if workflow.board_approval_resolution_id() == Some(resolution_id) {
+            return Err(AppError::Conflict(format!(
+                "resolution {} is already bound to fundraising workflow {}",
+                resolution_id,
+                workflow.fundraising_workflow_id()
+            )));
+        }
+    }
+    for workflow in read_all::<TransferWorkflow>(store)? {
+        if workflow.board_approval_resolution_id() == Some(resolution_id) {
+            return Err(AppError::Conflict(format!(
+                "resolution {} is already bound to transfer workflow {}",
+                resolution_id,
+                workflow.transfer_workflow_id()
+            )));
+        }
+    }
+    for transfer in read_all::<ShareTransfer>(store)? {
+        if transfer.board_approval_resolution_id() == Some(resolution_id) {
+            return Err(AppError::Conflict(format!(
+                "resolution {} is already bound to share transfer {}",
+                resolution_id,
+                transfer.transfer_id()
+            )));
+        }
+    }
+    for note in read_all::<SafeNote>(store)? {
+        if note.board_approval_resolution_id() == Some(resolution_id) {
+            return Err(AppError::Conflict(format!(
+                "resolution {} is already bound to SAFE note {}",
+                resolution_id,
+                note.safe_note_id()
+            )));
+        }
+    }
+    for valuation in read_all::<Valuation>(store)? {
+        if valuation.board_approval_resolution_id() == Some(resolution_id) {
+            return Err(AppError::Conflict(format!(
+                "resolution {} is already bound to valuation {}",
+                resolution_id,
+                valuation.valuation_id()
+            )));
+        }
+    }
+    Ok(())
+}
+
 fn infer_issuer(
     entity_id: EntityId,
     legal_entities: &[LegalEntity],
@@ -1043,10 +1132,7 @@ fn infer_issuer(
         })
         .map(|le| le.legal_entity_id())
         .ok_or_else(|| {
-            AppError::NotFound(
-                "no legal entity linked to this entity_id; create one via POST /v1/equity/entities"
-                    .to_owned(),
-            )
+            AppError::NotFound("no linked legal entity exists for this entity".to_owned())
         })
 }
 
@@ -1651,6 +1737,7 @@ fn validate_board_resolution_for_round(
             resolution_id
         )));
     }
+    ensure_equity_resolution_unused(store, resolution_id)?;
 
     Ok(())
 }
@@ -1696,6 +1783,7 @@ fn validate_resolution_for_equity_workflow(
             resolution_id
         )));
     }
+    ensure_equity_resolution_unused(store, resolution_id)?;
 
     Ok(())
 }
@@ -2354,9 +2442,7 @@ async fn create_holder(
     State(state): State<AppState>,
     Json(req): Json<CreateHolderRequest>,
 ) -> Result<Json<HolderResponse>, AppError> {
-    if req.name.trim().is_empty() {
-        return Err(AppError::BadRequest("holder name is required".to_owned()));
-    }
+    let holder_name = validate_holder_name(&req.name)?;
 
     let workspace_id = auth.workspace_id();
     let entity_id = req.entity_id;
@@ -2367,13 +2453,14 @@ async fn create_holder(
 
     let holder = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let holder_name = holder_name.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
             let holder = Holder::new(
                 HolderId::new(),
                 req.contact_id,
                 req.linked_entity_id,
-                req.name,
+                holder_name,
                 req.holder_type,
                 req.external_reference,
             );
@@ -2529,16 +2616,18 @@ async fn create_instrument(
     State(state): State<AppState>,
     Json(req): Json<CreateInstrumentRequest>,
 ) -> Result<Json<InstrumentResponse>, AppError> {
-    if req.symbol.trim().is_empty() {
+    let symbol = validate_instrument_symbol(&req.symbol)?;
+    if req.authorized_units.is_some_and(|v| v <= 0) {
         return Err(AppError::BadRequest(
-            "instrument symbol is required".to_owned(),
+            "authorized_units must be positive when provided".to_owned(),
         ));
     }
-    if req.authorized_units.is_some_and(|v| v < 0) {
+    if req.issue_price_cents.is_some_and(|v| v < 0) {
         return Err(AppError::BadRequest(
-            "authorized_units cannot be negative".to_owned(),
+            "issue_price_cents cannot be negative".to_owned(),
         ));
     }
+    reject_dangerous_param_keys(&req.terms)?;
 
     let workspace_id = auth.workspace_id();
     let entity_id = req.entity_id;
@@ -2549,6 +2638,7 @@ async fn create_instrument(
 
     let instrument = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let symbol = symbol.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
             let entities = read_all::<LegalEntity>(&store)?;
@@ -2564,7 +2654,7 @@ async fn create_instrument(
             let instrument = Instrument::new(
                 InstrumentId::new(),
                 req.issuer_legal_entity_id,
-                req.symbol,
+                symbol,
                 req.kind,
                 req.authorized_units,
                 req.issue_price_cents,
@@ -2713,6 +2803,7 @@ async fn create_round(
     State(state): State<AppState>,
     Json(req): Json<CreateRoundRequest>,
 ) -> Result<Json<RoundResponse>, AppError> {
+    let round_name = validate_round_name(&req.name)?;
     let workspace_id = auth.workspace_id();
     let entity_id = req.entity_id;
     if !auth.allows_entity(entity_id) {
@@ -2722,6 +2813,7 @@ async fn create_round(
 
     let round = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let round_name = round_name.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
             let entities = read_all::<LegalEntity>(&store)?;
@@ -2746,7 +2838,7 @@ async fn create_round(
             let round = EquityRound::new(
                 EquityRoundId::new(),
                 req.issuer_legal_entity_id,
-                req.name,
+                round_name,
                 req.pre_money_cents,
                 req.round_price_cents,
                 req.target_raise_cents,
@@ -3656,6 +3748,7 @@ async fn create_fundraising_workflow(
     State(state): State<AppState>,
     Json(req): Json<CreateFundraisingWorkflowRequest>,
 ) -> Result<Json<FundraisingWorkflowResponse>, AppError> {
+    let round_name = validate_round_name(&req.name)?;
     let workspace_id = auth.workspace_id();
     let entity_id = req.entity_id;
     if !auth.allows_entity(entity_id) {
@@ -3670,6 +3763,7 @@ async fn create_fundraising_workflow(
 
     let workflow = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let round_name = round_name.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
             let entities = read_all::<LegalEntity>(&store)?;
@@ -3701,7 +3795,7 @@ async fn create_fundraising_workflow(
             let round = EquityRound::new(
                 EquityRoundId::new(),
                 req.issuer_legal_entity_id,
-                req.name,
+                round_name,
                 req.pre_money_cents,
                 req.round_price_cents,
                 req.target_raise_cents,
@@ -6014,6 +6108,7 @@ async fn start_staged_round(
     State(state): State<AppState>,
     Json(req): Json<StartStagedRoundRequest>,
 ) -> Result<Json<RoundResponse>, AppError> {
+    let round_name = validate_round_name(&req.name)?;
     let workspace_id = auth.workspace_id();
     let entity_id = req.entity_id;
     if !auth.allows_entity(entity_id) {
@@ -6022,6 +6117,7 @@ async fn start_staged_round(
 
     let round = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let round_name = round_name.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
 
@@ -6039,7 +6135,7 @@ async fn start_staged_round(
             let round = EquityRound::new(
                 EquityRoundId::new(),
                 req.issuer_legal_entity_id,
-                req.name,
+                round_name,
                 req.pre_money_cents,
                 req.round_price_cents,
                 req.target_raise_cents,
@@ -6080,6 +6176,42 @@ async fn start_staged_round(
     .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
 
     Ok(Json(round_to_response(&round)))
+}
+
+#[utoipa::path(
+    get,
+    path = "/v1/entities/{entity_id}/equity-rounds",
+    tag = "equity",
+    params(
+        ("entity_id" = EntityId, Path, description = "Entity ID"),
+    ),
+    responses(
+        (status = 200, description = "List of equity rounds", body = Vec<RoundResponse>),
+        (status = 404, description = "Entity not found"),
+    ),
+)]
+async fn list_equity_rounds(
+    RequireEquityRead(auth): RequireEquityRead,
+    State(state): State<AppState>,
+    Path(entity_id): Path<EntityId>,
+) -> Result<Json<Vec<RoundResponse>>, AppError> {
+    let workspace_id = auth.workspace_id();
+    if !auth.allows_entity(entity_id) {
+        return Err(AppError::Forbidden("entity access denied".to_owned()));
+    }
+
+    let rounds = tokio::task::spawn_blocking({
+        let layout = state.layout.clone();
+        move || {
+            let store = open_store(&layout, workspace_id, entity_id)?;
+            let all = read_all::<EquityRound>(&store)?;
+            Ok::<_, AppError>(all.iter().map(round_to_response).collect::<Vec<_>>())
+        }
+    })
+    .await
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+
+    Ok(Json(rounds))
 }
 
 #[utoipa::path(
@@ -6863,6 +6995,12 @@ async fn create_valuation(
             "effective_date cannot be in the future".to_owned(),
         ));
     }
+    let max_days_past = if req.valuation_type == ValuationType::FourOhNineA {
+        365
+    } else {
+        730
+    };
+    validate_not_too_far_past("effective_date", req.effective_date, max_days_past)?;
     if req.valuation_type == ValuationType::FourOhNineA {
         if req.fmv_per_share_cents.is_none() {
             return Err(AppError::BadRequest(
@@ -7240,6 +7378,7 @@ async fn approve_valuation(
                         resolution_id
                     )));
                 }
+                ensure_equity_resolution_unused(&store, resolution_id)?;
             }
             valuation
                 .approve(req.resolution_id)
@@ -7473,6 +7612,7 @@ async fn list_legacy_share_transfers(
         adjust_position,
         create_round,
         start_staged_round,
+        list_equity_rounds,
         add_round_security,
         issue_staged_round,
         apply_round_terms,
@@ -7605,6 +7745,10 @@ pub fn equity_routes() -> Router<AppState> {
         .route("/v1/equity/positions/adjust", post(adjust_position))
         .route("/v1/equity/rounds", post(create_round))
         .route("/v1/equity/rounds/staged", post(start_staged_round))
+        .route(
+            "/v1/entities/{entity_id}/equity-rounds",
+            get(list_equity_rounds),
+        )
         .route(
             "/v1/equity/rounds/{round_id}/securities",
             post(add_round_security),

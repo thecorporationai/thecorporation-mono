@@ -106,6 +106,7 @@ fn validate_member_email(email: &str) -> Result<String, FormationError> {
         || normalized.chars().any(char::is_whitespace)
         || normalized.contains(',')
         || normalized.matches('@').count() != 1
+        || normalized.len() > 320
     {
         return Err(FormationError::Validation(
             "member email must be a valid single address".to_owned(),
@@ -133,17 +134,39 @@ fn validate_member_inputs(members: &[MemberInput]) -> Result<(), FormationError>
     let mut specified_ownership_total = 0.0_f64;
 
     for member in members {
-        if member.name.trim().is_empty() {
-            return Err(FormationError::Validation(
-                "member name cannot be empty".to_owned(),
-            ));
-        }
+        Contact::validate_name(&member.name).map_err(FormationError::Validation)?;
         if let Some(email) = member.email.as_deref() {
             let normalized = validate_member_email(email)?;
             if !seen_emails.insert(normalized.clone()) {
                 return Err(FormationError::Validation(format!(
                     "duplicate member email: {normalized}"
                 )));
+            }
+        }
+        if let Some(address) = member.address.as_ref() {
+            for (field, value, max_len) in [
+                ("address.street", address.street.as_str(), 256usize),
+                ("address.city", address.city.as_str(), 128usize),
+                ("address.state", address.state.as_str(), 64usize),
+                ("address.zip", address.zip.as_str(), 32usize),
+            ] {
+                if value.trim().is_empty() {
+                    return Err(FormationError::Validation(format!(
+                        "{field} cannot be empty"
+                    )));
+                }
+                if value.len() > max_len {
+                    return Err(FormationError::Validation(format!(
+                        "{field} must be at most {max_len} characters"
+                    )));
+                }
+            }
+            if let Some(street2) = address.street2.as_deref()
+                && street2.len() > 256
+            {
+                return Err(FormationError::Validation(
+                    "address.street2 must be at most 256 characters".to_owned(),
+                ));
             }
         }
         if let Some(ownership_pct) = member.ownership_pct {

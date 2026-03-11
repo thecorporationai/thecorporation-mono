@@ -1,11 +1,40 @@
-import { requireConfig, resolveEntityId } from "../config.js";
+import { requireConfig } from "../config.js";
 import { CorpAPIClient } from "../api-client.js";
-import { printError, printWriteResult } from "../output.js";
+import { printDeadlinesTable, printError, printJson, printTaxFilingsTable, printWriteResult } from "../output.js";
+import { ReferenceResolver } from "../references.js";
 
 function normalizeRecurrence(recurrence?: string): string | undefined {
   if (!recurrence) return undefined;
   if (recurrence === "yearly") return "annual";
   return recurrence;
+}
+
+export async function taxFilingsCommand(opts: { entityId?: string; json?: boolean }): Promise<void> {
+  const cfg = requireConfig("api_url", "api_key", "workspace_id");
+  const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
+  const resolver = new ReferenceResolver(client, cfg);
+  try {
+    const eid = await resolver.resolveEntity(opts.entityId);
+    const filings = await client.listTaxFilings(eid);
+    await resolver.stabilizeRecords("tax_filing", filings, eid);
+    if (opts.json) printJson(filings);
+    else if (filings.length === 0) console.log("No tax filings found.");
+    else printTaxFilingsTable(filings);
+  } catch (err) { printError(`Failed to fetch tax filings: ${err}`); process.exit(1); }
+}
+
+export async function taxDeadlinesCommand(opts: { entityId?: string; json?: boolean }): Promise<void> {
+  const cfg = requireConfig("api_url", "api_key", "workspace_id");
+  const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
+  const resolver = new ReferenceResolver(client, cfg);
+  try {
+    const eid = await resolver.resolveEntity(opts.entityId);
+    const deadlines = await client.listDeadlines(eid);
+    await resolver.stabilizeRecords("deadline", deadlines, eid);
+    if (opts.json) printJson(deadlines);
+    else if (deadlines.length === 0) console.log("No deadlines found.");
+    else printDeadlinesTable(deadlines);
+  } catch (err) { printError(`Failed to fetch deadlines: ${err}`); process.exit(1); }
 }
 
 export async function taxFileCommand(opts: {
@@ -15,11 +44,18 @@ export async function taxFileCommand(opts: {
   json?: boolean;
 }): Promise<void> {
   const cfg = requireConfig("api_url", "api_key", "workspace_id");
-  const eid = resolveEntityId(cfg, opts.entityId);
   const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
+  const resolver = new ReferenceResolver(client, cfg);
   try {
+    const eid = await resolver.resolveEntity(opts.entityId);
     const result = await client.fileTaxDocument({ entity_id: eid, document_type: opts.type, tax_year: opts.year });
-    printWriteResult(result, `Tax document filed: ${result.filing_id ?? "OK"}`, opts.json);
+    await resolver.stabilizeRecord("tax_filing", result, eid);
+    resolver.rememberFromRecord("tax_filing", result, eid);
+    printWriteResult(result, `Tax document filed: ${result.filing_id ?? "OK"}`, {
+      jsonOnly: opts.json,
+      referenceKind: "tax_filing",
+      showReuseHint: true,
+    });
   } catch (err) { printError(`Failed to file tax document: ${err}`); process.exit(1); }
 }
 
@@ -32,9 +68,10 @@ export async function taxDeadlineCommand(opts: {
   json?: boolean;
 }): Promise<void> {
   const cfg = requireConfig("api_url", "api_key", "workspace_id");
-  const eid = resolveEntityId(cfg, opts.entityId);
   const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
+  const resolver = new ReferenceResolver(client, cfg);
   try {
+    const eid = await resolver.resolveEntity(opts.entityId);
     const payload: Record<string, unknown> = {
       entity_id: eid, deadline_type: opts.type, due_date: opts.dueDate,
       description: opts.description,
@@ -42,6 +79,12 @@ export async function taxDeadlineCommand(opts: {
     const recurrence = normalizeRecurrence(opts.recurrence);
     if (recurrence) payload.recurrence = recurrence;
     const result = await client.trackDeadline(payload);
-    printWriteResult(result, `Deadline tracked: ${result.deadline_id ?? "OK"}`, opts.json);
+    await resolver.stabilizeRecord("deadline", result, eid);
+    resolver.rememberFromRecord("deadline", result, eid);
+    printWriteResult(result, `Deadline tracked: ${result.deadline_id ?? "OK"}`, {
+      jsonOnly: opts.json,
+      referenceKind: "deadline",
+      showReuseHint: true,
+    });
   } catch (err) { printError(`Failed to track deadline: ${err}`); process.exit(1); }
 }

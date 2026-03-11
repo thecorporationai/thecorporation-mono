@@ -31,6 +31,29 @@ pub fn require_non_empty_trimmed_max(
     Ok(trimmed)
 }
 
+pub fn require_safe_single_line_max(
+    value: &str,
+    field: &str,
+    max_len: usize,
+) -> Result<String, AppError> {
+    let trimmed = require_non_empty_trimmed_max(value, field, max_len)?;
+    if trimmed.contains('<')
+        || trimmed.contains('>')
+        || trimmed.contains("{{")
+        || trimmed.contains("}}")
+        || trimmed.contains("--")
+        || trimmed.contains("/*")
+        || trimmed.contains("*/")
+        || trimmed.contains(';')
+        || trimmed.chars().any(|ch| ch == '\n' || ch == '\r')
+    {
+        return Err(AppError::BadRequest(format!(
+            "{field} cannot contain markup, template syntax, control sequences, or newlines"
+        )));
+    }
+    Ok(trimmed)
+}
+
 pub fn normalize_slug(value: &str, field: &str, max_len: usize) -> Result<String, AppError> {
     let normalized = require_non_empty_trimmed_max(value, field, max_len)?.to_ascii_lowercase();
     if !normalized
@@ -109,9 +132,7 @@ pub fn validate_non_negative_json_f64(
     if let Some(val) = params.get(field) {
         if let Some(n) = val.as_f64() {
             if n < 0.0 {
-                return Err(AppError::BadRequest(format!(
-                    "{field} cannot be negative"
-                )));
+                return Err(AppError::BadRequest(format!("{field} cannot be negative")));
             }
         }
     }
@@ -189,5 +210,13 @@ mod tests {
     fn validate_max_len_rejects_long_values() {
         assert!(validate_max_len("short", "field", 100).is_ok());
         assert!(validate_max_len(&"x".repeat(101), "field", 100).is_err());
+    }
+
+    #[test]
+    fn require_safe_single_line_max_rejects_markup_and_control_sequences() {
+        assert!(require_safe_single_line_max("Board Name", "title", 100).is_ok());
+        assert!(require_safe_single_line_max("<script>", "title", 100).is_err());
+        assert!(require_safe_single_line_max("{{7*7}}", "title", 100).is_err());
+        assert!(require_safe_single_line_max("Robert'); DROP TABLE --", "title", 100).is_err());
     }
 }

@@ -33,17 +33,28 @@ impl GovernanceBody {
         quorum_rule: QuorumThreshold,
         voting_method: VotingMethod,
     ) -> Result<Self, GovernanceError> {
-        if name.is_empty() || name.len() > MAX_BODY_NAME_LEN {
+        let trimmed = name.trim();
+        if trimmed.is_empty() || trimmed.len() > MAX_BODY_NAME_LEN {
             return Err(GovernanceError::Validation(format!(
                 "body name must be between 1 and {MAX_BODY_NAME_LEN} characters, got {}",
-                name.len()
+                trimmed.len()
             )));
+        }
+        if trimmed.contains('<')
+            || trimmed.contains('>')
+            || trimmed.contains("{{")
+            || trimmed.contains("}}")
+            || trimmed.chars().any(|ch| ch == '\n' || ch == '\r')
+        {
+            return Err(GovernanceError::Validation(
+                "body name cannot contain markup, template syntax, or newlines".to_owned(),
+            ));
         }
         Ok(Self {
             body_id,
             entity_id,
             body_type,
-            name,
+            name: trimmed.to_owned(),
             quorum_rule,
             voting_method,
             status: BodyStatus::Active,
@@ -144,6 +155,19 @@ mod tests {
             long,
             QuorumThreshold::Unanimous,
             VotingMethod::PerUnit,
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn rejects_markup_and_template_name() {
+        let result = GovernanceBody::new(
+            GovernanceBodyId::new(),
+            EntityId::new(),
+            BodyType::BoardOfDirectors,
+            "<script>{{7*7}}</script>".into(),
+            QuorumThreshold::Majority,
+            VotingMethod::PerCapita,
         );
         assert!(result.is_err());
     }

@@ -11,7 +11,9 @@ use chrono::{NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 
 use super::AppState;
-use super::validation::{require_non_empty_trimmed_max, validate_max_len, validate_reasonable_year};
+use super::validation::{
+    normalize_slug, require_non_empty_trimmed_max, validate_max_len, validate_reasonable_year,
+};
 use crate::auth::RequireAdmin;
 use crate::domain::formation::{
     contractor::{ClassificationResult, ContractorClassification, RiskLevel},
@@ -19,6 +21,7 @@ use crate::domain::formation::{
     escalation::ComplianceEscalation,
     evidence_link::ComplianceEvidenceLink,
     tax_filing::{TaxFiling, TaxFilingStatus},
+    types::FormationStatus,
 };
 use crate::domain::governance::incident::{GovernanceIncident, IncidentSeverity, IncidentStatus};
 use crate::domain::governance::trigger::{GovernanceTriggerSource, GovernanceTriggerType};
@@ -240,7 +243,7 @@ fn classify_contractor_inputs(
     let provides_tools = req
         .provides_tools
         .or_else(|| json_bool(&req.factors, "provides_tools"));
-    if provides_tools == Some(false) {
+    if provides_tools == Some(true) {
         score += 2;
         flags.push("company_provides_tools".to_owned());
     }
@@ -261,6 +264,22 @@ fn classify_contractor_inputs(
     };
 
     (risk_level, flags, classification)
+}
+
+fn ensure_entity_ready_for_compliance(
+    store: &EntityStore<'_>,
+    action: &str,
+) -> Result<(), AppError> {
+    let entity = store
+        .read_entity("main")
+        .map_err(|e| AppError::Internal(format!("read entity: {e}")))?;
+    if entity.formation_status() != FormationStatus::Active {
+        return Err(AppError::BadRequest(format!(
+            "{action} requires an active entity, current status is {}",
+            entity.formation_status()
+        )));
+    }
+    Ok(())
 }
 
 #[derive(Deserialize, utoipa::ToSchema)]
@@ -353,8 +372,17 @@ pub struct ResolveEscalationWithEvidenceResponse {
 fn open_store<'a>(
     layout: &'a crate::store::RepoLayout,
     workspace_id: WorkspaceId,
+    allowed_entity_ids: Option<&[EntityId]>,
     entity_id: EntityId,
 ) -> Result<EntityStore<'a>, AppError> {
+    if let Some(ids) = allowed_entity_ids
+        && !ids.contains(&entity_id)
+    {
+        return Err(AppError::Forbidden(format!(
+            "principal is not authorized for entity {}",
+            entity_id
+        )));
+    }
     EntityStore::open(layout, workspace_id, entity_id).map_err(|e| match e {
         crate::git::error::GitStorageError::RepoNotFound(_) => {
             AppError::NotFound(format!("entity {} not found", entity_id))
@@ -375,6 +403,31 @@ fn deadline_to_response(deadline: &Deadline) -> DeadlineResponse {
         status: deadline.status(),
         completed_at: deadline.completed_at().map(|t| t.to_rfc3339()),
         created_at: deadline.created_at().to_rfc3339(),
+    }
+}
+
+fn tax_filing_to_response(filing: &TaxFiling) -> TaxFilingResponse {
+    TaxFilingResponse {
+        filing_id: filing.filing_id(),
+        entity_id: filing.entity_id(),
+        document_type: filing.document_type().to_owned(),
+        tax_year: filing.tax_year(),
+        document_id: filing.document_id(),
+        status: filing.status(),
+        created_at: filing.created_at().to_rfc3339(),
+    }
+}
+
+fn classification_to_response(classification: &ContractorClassification) -> ClassificationResponse {
+    ClassificationResponse {
+        classification_id: classification.classification_id(),
+        entity_id: classification.entity_id(),
+        contractor_name: classification.contractor_name().to_owned(),
+        state: classification.state().to_owned(),
+        risk_level: classification.risk_level(),
+        flags: classification.flags().to_vec(),
+        classification: classification.classification(),
+        created_at: classification.created_at().to_rfc3339(),
     }
 }
 
@@ -447,6 +500,7 @@ async fn file_tax_document(
     Json(req): Json<FileTaxDocumentRequest>,
 ) -> Result<Json<TaxFilingResponse>, AppError> {
     let workspace_id = auth.workspace_id();
+    let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = req.entity_id;
     state.enforce_creation_rate_limit("compliance.tax_filing.create", workspace_id, 60, 60)?;
     validate_tax_document_type(&req.document_type)?;
@@ -455,7 +509,8 @@ async fn file_tax_document(
     let filing = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
+            ensure_entity_ready_for_compliance(&store, "tax filing")?;
             let document_type = canonical_tax_document_type(&req.document_type).to_owned();
             let existing_ids = store
                 .list_ids::<TaxFiling>("main")
@@ -527,22 +582,24 @@ async fn create_deadline(
     Json(req): Json<CreateDeadlineRequest>,
 ) -> Result<Json<DeadlineResponse>, AppError> {
     let workspace_id = auth.workspace_id();
+    let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = req.entity_id;
     state.enforce_creation_rate_limit("compliance.deadline.create", workspace_id, 120, 60)?;
-    require_non_empty_trimmed_max(&req.deadline_type, "deadline_type", 128)?;
+    let deadline_type = normalize_slug(&req.deadline_type, "deadline_type", 128)?;
     require_non_empty_trimmed_max(&req.description, "description", 2000)?;
-    validate_deadline_recurrence(&req.deadline_type, req.recurrence)?;
+    validate_deadline_recurrence(&deadline_type, req.recurrence)?;
 
     let deadline = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let deadline_type = deadline_type.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
 
             let deadline_id = DeadlineId::new();
             let deadline = Deadline::new(
                 deadline_id,
                 entity_id,
-                req.deadline_type,
+                deadline_type,
                 req.due_date,
                 req.description,
                 req.recurrence,
@@ -569,6 +626,132 @@ async fn create_deadline(
 }
 
 #[utoipa::path(
+    get,
+    path = "/v1/entities/{entity_id}/tax-filings",
+    tag = "compliance",
+    params(("entity_id" = EntityId, Path, description = "Entity ID")),
+    responses(
+        (status = 200, description = "List of tax filings", body = Vec<TaxFilingResponse>),
+    ),
+)]
+async fn list_tax_filings(
+    RequireAdmin(auth): RequireAdmin,
+    State(state): State<AppState>,
+    Path(entity_id): Path<EntityId>,
+) -> Result<Json<Vec<TaxFilingResponse>>, AppError> {
+    let workspace_id = auth.workspace_id();
+    let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
+
+    let filings = tokio::task::spawn_blocking({
+        let layout = state.layout.clone();
+        move || {
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
+            let ids = store
+                .list_ids::<TaxFiling>("main")
+                .map_err(|e| AppError::Internal(format!("list tax filings: {e}")))?;
+
+            let mut results = Vec::new();
+            for id in ids {
+                let filing = store
+                    .read::<TaxFiling>("main", id)
+                    .map_err(|e| AppError::Internal(format!("read tax filing {id}: {e}")))?;
+                results.push(tax_filing_to_response(&filing));
+            }
+            Ok::<_, AppError>(results)
+        }
+    })
+    .await
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+
+    Ok(Json(filings))
+}
+
+#[utoipa::path(
+    get,
+    path = "/v1/entities/{entity_id}/deadlines",
+    tag = "compliance",
+    params(("entity_id" = EntityId, Path, description = "Entity ID")),
+    responses(
+        (status = 200, description = "List of deadlines", body = Vec<DeadlineResponse>),
+    ),
+)]
+async fn list_deadlines(
+    RequireAdmin(auth): RequireAdmin,
+    State(state): State<AppState>,
+    Path(entity_id): Path<EntityId>,
+) -> Result<Json<Vec<DeadlineResponse>>, AppError> {
+    let workspace_id = auth.workspace_id();
+    let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
+
+    let deadlines = tokio::task::spawn_blocking({
+        let layout = state.layout.clone();
+        move || {
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
+            let ids = store
+                .list_ids::<Deadline>("main")
+                .map_err(|e| AppError::Internal(format!("list deadlines: {e}")))?;
+
+            let mut results = Vec::new();
+            for id in ids {
+                let deadline = store
+                    .read::<Deadline>("main", id)
+                    .map_err(|e| AppError::Internal(format!("read deadline {id}: {e}")))?;
+                results.push(deadline_to_response(&deadline));
+            }
+            Ok::<_, AppError>(results)
+        }
+    })
+    .await
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+
+    Ok(Json(deadlines))
+}
+
+#[utoipa::path(
+    get,
+    path = "/v1/entities/{entity_id}/contractor-classifications",
+    tag = "compliance",
+    params(("entity_id" = EntityId, Path, description = "Entity ID")),
+    responses(
+        (status = 200, description = "List of contractor classifications", body = Vec<ClassificationResponse>),
+    ),
+)]
+async fn list_contractor_classifications(
+    RequireAdmin(auth): RequireAdmin,
+    State(state): State<AppState>,
+    Path(entity_id): Path<EntityId>,
+) -> Result<Json<Vec<ClassificationResponse>>, AppError> {
+    let workspace_id = auth.workspace_id();
+    let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
+
+    let classifications = tokio::task::spawn_blocking({
+        let layout = state.layout.clone();
+        move || {
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
+            let ids = store
+                .list_ids::<ContractorClassification>("main")
+                .map_err(|e| AppError::Internal(format!("list contractor classifications: {e}")))?;
+
+            let mut results = Vec::new();
+            for id in ids {
+                let classification =
+                    store
+                        .read::<ContractorClassification>("main", id)
+                        .map_err(|e| {
+                            AppError::Internal(format!("read contractor classification {id}: {e}"))
+                        })?;
+                results.push(classification_to_response(&classification));
+            }
+            Ok::<_, AppError>(results)
+        }
+    })
+    .await
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+
+    Ok(Json(classifications))
+}
+
+#[utoipa::path(
     post,
     path = "/v1/contractors/classify",
     tag = "compliance",
@@ -584,6 +767,7 @@ async fn classify_contractor(
     Json(req): Json<ClassifyContractorRequest>,
 ) -> Result<Json<ClassificationResponse>, AppError> {
     let workspace_id = auth.workspace_id();
+    let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = req.entity_id;
     state.enforce_creation_rate_limit(
         "compliance.contractor_classification.create",
@@ -614,7 +798,7 @@ async fn classify_contractor(
         let layout = state.layout.clone();
         let contractor_name = req.contractor_name.trim().to_owned();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
 
             let classification_id = ClassificationId::new();
             let classification = ContractorClassification::new(
@@ -671,12 +855,13 @@ async fn scan_compliance_escalations(
     Json(req): Json<ScanComplianceRequest>,
 ) -> Result<Json<ComplianceScanResponse>, AppError> {
     let workspace_id = auth.workspace_id();
+    let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = req.entity_id;
 
     let response = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
             let deadline_ids = store
                 .list_ids::<Deadline>("main")
                 .map_err(|e| AppError::Internal(format!("list deadlines: {e}")))?;
@@ -843,11 +1028,12 @@ async fn list_entity_escalations(
     Path(entity_id): Path<EntityId>,
 ) -> Result<Json<Vec<ComplianceEscalationResponse>>, AppError> {
     let workspace_id = auth.workspace_id();
+    let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
     let escalations = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
             let ids = store
                 .list_ids::<ComplianceEscalation>("main")
                 .map_err(|e| AppError::Internal(format!("list escalations: {e}")))?;
@@ -887,12 +1073,13 @@ async fn resolve_escalation_with_evidence(
     Json(req): Json<ResolveEscalationWithEvidenceRequest>,
 ) -> Result<Json<ResolveEscalationWithEvidenceResponse>, AppError> {
     let workspace_id = auth.workspace_id();
+    let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = req.entity_id;
 
     let response = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
             let mut escalation = store
                 .read::<ComplianceEscalation>("main", escalation_id)
                 .map_err(|_| {
@@ -1033,8 +1220,17 @@ async fn resolve_escalation_with_evidence(
 pub fn compliance_routes() -> Router<AppState> {
     Router::new()
         .route("/v1/tax/filings", post(file_tax_document))
+        .route(
+            "/v1/entities/{entity_id}/tax-filings",
+            get(list_tax_filings),
+        )
         .route("/v1/deadlines", post(create_deadline))
+        .route("/v1/entities/{entity_id}/deadlines", get(list_deadlines))
         .route("/v1/contractors/classify", post(classify_contractor))
+        .route(
+            "/v1/entities/{entity_id}/contractor-classifications",
+            get(list_contractor_classifications),
+        )
         .route(
             "/v1/compliance/escalations/scan",
             post(scan_compliance_escalations),
@@ -1053,8 +1249,11 @@ pub fn compliance_routes() -> Router<AppState> {
 #[openapi(
     paths(
         file_tax_document,
+        list_tax_filings,
         create_deadline,
+        list_deadlines,
         classify_contractor,
+        list_contractor_classifications,
         scan_compliance_escalations,
         list_entity_escalations,
         resolve_escalation_with_evidence,
@@ -1118,7 +1317,7 @@ mod tests {
             hours_per_week: Some(40),
             exclusive_client: Some(true),
             duration_months: Some(18),
-            provides_tools: Some(false),
+            provides_tools: Some(true),
             factors: serde_json::json!({}),
         };
         let (risk_level, flags, classification) = classify_contractor_inputs(&req);

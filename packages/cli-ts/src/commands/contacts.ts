@@ -1,15 +1,18 @@
-import { requireConfig, resolveEntityId } from "../config.js";
+import { requireConfig } from "../config.js";
 import { CorpAPIClient } from "../api-client.js";
-import { printContactsTable, printError, printJson, printWriteResult } from "../output.js";
+import { printContactsTable, printError, printJson, printReferenceSummary, printWriteResult } from "../output.js";
+import { ReferenceResolver } from "../references.js";
 import chalk from "chalk";
 import type { ApiRecord } from "../types.js";
 
 export async function contactsListCommand(opts: { entityId?: string; json?: boolean }): Promise<void> {
   const cfg = requireConfig("api_url", "api_key", "workspace_id");
-  const eid = resolveEntityId(cfg, opts.entityId);
   const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
+  const resolver = new ReferenceResolver(client, cfg);
   try {
+    const eid = await resolver.resolveEntity(opts.entityId);
     const contacts = await client.listContacts(eid);
+    await resolver.stabilizeRecords("contact", contacts, eid);
     if (opts.json) printJson(contacts);
     else if (contacts.length === 0) console.log("No contacts found.");
     else printContactsTable(contacts);
@@ -21,20 +24,23 @@ export async function contactsListCommand(opts: { entityId?: string; json?: bool
 
 export async function contactsShowCommand(contactId: string, opts: { entityId?: string; json?: boolean }): Promise<void> {
   const cfg = requireConfig("api_url", "api_key", "workspace_id");
-  const eid = resolveEntityId(cfg, opts.entityId);
   const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
+  const resolver = new ReferenceResolver(client, cfg);
   try {
-    const profile = await client.getContactProfile(contactId, eid);
+    const eid = await resolver.resolveEntity(opts.entityId);
+    const resolvedContactId = await resolver.resolveContact(eid, contactId);
+    const profile = await client.getContactProfile(resolvedContactId, eid);
+    const contact = await resolver.stabilizeRecord("contact", (profile.contact ?? profile) as ApiRecord, eid);
     if (opts.json) {
       printJson(profile);
     } else {
-      const contact = (profile.contact ?? profile) as ApiRecord;
       console.log(chalk.cyan("─".repeat(40)));
       console.log(chalk.cyan.bold("  Contact Profile"));
       console.log(chalk.cyan("─".repeat(40)));
       console.log(`  ${chalk.bold("Name:")} ${contact.name ?? "N/A"}`);
       console.log(`  ${chalk.bold("Email:")} ${contact.email ?? "N/A"}`);
       console.log(`  ${chalk.bold("Category:")} ${contact.category ?? "N/A"}`);
+      printReferenceSummary("contact", contact, { showReuseHint: true });
       if (contact.phone) console.log(`  ${chalk.bold("Phone:")} ${contact.phone}`);
       if (contact.notes) console.log(`  ${chalk.bold("Notes:")} ${contact.notes}`);
       const holdings = profile.equity_holdings as ApiRecord[] | undefined;
@@ -66,9 +72,10 @@ export async function contactsAddCommand(opts: {
   json?: boolean;
 }): Promise<void> {
   const cfg = requireConfig("api_url", "api_key", "workspace_id");
-  const eid = resolveEntityId(cfg, opts.entityId);
   const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
+  const resolver = new ReferenceResolver(client, cfg);
   try {
+    const eid = await resolver.resolveEntity(opts.entityId);
     const data: ApiRecord = {
       entity_id: eid,
       contact_type: opts.type ?? "individual",
@@ -81,10 +88,12 @@ export async function contactsAddCommand(opts: {
     if (opts.mailingAddress ?? opts.address) data.mailing_address = opts.mailingAddress ?? opts.address;
     if (opts.capTableAccess) data.cap_table_access = opts.capTableAccess;
     const result = await client.createContact(data);
+    await resolver.stabilizeRecord("contact", result, eid);
+    resolver.rememberFromRecord("contact", result, eid);
     printWriteResult(
       result,
       `Contact created: ${result.contact_id ?? result.id ?? "OK"}`,
-      opts.json,
+      { jsonOnly: opts.json, referenceKind: "contact", showReuseHint: true },
     );
   } catch (err) {
     printError(`Failed to create contact: ${err}`);
@@ -108,9 +117,11 @@ export async function contactsEditCommand(
   }
 ): Promise<void> {
   const cfg = requireConfig("api_url", "api_key", "workspace_id");
-  const eid = resolveEntityId(cfg, opts.entityId);
   const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
+  const resolver = new ReferenceResolver(client, cfg);
   try {
+    const eid = await resolver.resolveEntity(opts.entityId);
+    const resolvedContactId = await resolver.resolveContact(eid, contactId);
     const data: ApiRecord = { entity_id: eid };
     let hasUpdates = false;
     if (opts.name != null) {
@@ -145,7 +156,8 @@ export async function contactsEditCommand(
       console.log("No fields to update.");
       return;
     }
-    const result = await client.updateContact(contactId, data);
+    const result = await client.updateContact(resolvedContactId, data);
+    resolver.remember("contact", resolvedContactId, eid);
     printWriteResult(result, "Contact updated.", opts.json);
   } catch (err) {
     printError(`Failed to update contact: ${err}`);

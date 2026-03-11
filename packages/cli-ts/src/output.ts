@@ -1,6 +1,12 @@
 import chalk from "chalk";
 import Table from "cli-table3";
 import type { ApiRecord } from "./types.js";
+import {
+  getReferenceAlias,
+  getReferenceId,
+  shortId,
+  type ResourceKind,
+} from "./references.js";
 
 const URGENCY_COLORS: Record<string, (s: string) => string> = {
   overdue: chalk.red.bold,
@@ -36,16 +42,72 @@ export function printDryRun(operation: string, payload: unknown): void {
   });
 }
 
+type WriteResultOptions =
+  | boolean
+  | {
+      jsonOnly?: boolean;
+      referenceKind?: ResourceKind;
+      referenceLabel?: string;
+      showReuseHint?: boolean;
+    };
+
+function normalizeWriteResultOptions(options?: WriteResultOptions): {
+  jsonOnly?: boolean;
+  referenceKind?: ResourceKind;
+  referenceLabel?: string;
+  showReuseHint?: boolean;
+} {
+  if (typeof options === "boolean") {
+    return { jsonOnly: options };
+  }
+  return options ?? {};
+}
+
+function formatReferenceCell(kind: ResourceKind, record: ApiRecord): string {
+  const id = getReferenceId(kind, record);
+  if (!id) return "";
+  const alias = getReferenceAlias(kind, record);
+  return alias ? `${alias} [${shortId(id)}]` : shortId(id);
+}
+
+export function printReferenceSummary(
+  kind: ResourceKind,
+  record: ApiRecord,
+  opts: { label?: string; showReuseHint?: boolean } = {},
+): void {
+  const id = getReferenceId(kind, record);
+  if (!id) return;
+  const alias = getReferenceAlias(kind, record);
+  const token = alias ? `${alias} [${shortId(id)}]` : shortId(id);
+  console.log(`  ${chalk.bold(opts.label ?? "Ref:")} ${token}`);
+  console.log(`  ${chalk.bold("ID:")} ${id}`);
+  if (opts.showReuseHint) {
+    console.log(`  ${chalk.bold("Reuse:")} @last:${kind}`);
+  }
+}
+
 export function printWriteResult(
   result: unknown,
   successMessage: string,
-  jsonOnly?: boolean,
+  options?: WriteResultOptions,
 ): void {
-  if (jsonOnly) {
+  const normalized = normalizeWriteResultOptions(options);
+  if (normalized.jsonOnly) {
     printJson(result);
     return;
   }
   printSuccess(successMessage);
+  if (
+    normalized.referenceKind
+    && typeof result === "object"
+    && result !== null
+    && !Array.isArray(result)
+  ) {
+    printReferenceSummary(normalized.referenceKind, result as ApiRecord, {
+      label: normalized.referenceLabel,
+      showReuseHint: normalized.showReuseHint,
+    });
+  }
   printJson(result);
 }
 
@@ -104,9 +166,15 @@ function date(val: unknown): string {
 // --- Domain tables ---
 
 export function printEntitiesTable(entities: ApiRecord[]): void {
-  const table = makeTable("Entities", ["ID", "Name", "Type", "Jurisdiction", "Status"]);
+  const table = makeTable("Entities", ["Ref", "Name", "Type", "Jurisdiction", "Status"]);
   for (const e of entities) {
-    table.push([s(e.entity_id, 12), s(e.legal_name ?? e.name), s(e.entity_type), s(e.jurisdiction), s(e.formation_status ?? e.status)]);
+    table.push([
+      formatReferenceCell("entity", e),
+      s(e.legal_name ?? e.name),
+      s(e.entity_type),
+      s(e.jurisdiction),
+      s(e.formation_status ?? e.status),
+    ]);
   }
   console.log(table.toString());
 }
@@ -122,10 +190,10 @@ export function printObligationsTable(obligations: ApiRecord[]): void {
 }
 
 export function printContactsTable(contacts: ApiRecord[]): void {
-  const table = makeTable("Contacts", ["ID", "Name", "Email", "Category", "Entity"]);
+  const table = makeTable("Contacts", ["Ref", "Name", "Email", "Category", "Entity"]);
   for (const c of contacts) {
     table.push([
-      s(c.contact_id ?? c.id, 12),
+      formatReferenceCell("contact", c),
       s(c.name),
       s(c.email),
       s(c.category),
@@ -139,9 +207,10 @@ export function printCapTable(data: ApiRecord): void {
   const accessLevel = s(data.access_level) || "admin";
   const instruments = (data.instruments ?? []) as ApiRecord[];
   if (instruments.length > 0) {
-    const table = makeTable("Cap Table — Instruments", ["Symbol", "Kind", "Authorized", "Issued", "Diluted"]);
+    const table = makeTable("Cap Table — Instruments", ["Ref", "Symbol", "Kind", "Authorized", "Issued", "Diluted"]);
     for (const instrument of instruments) {
       table.push([
+        formatReferenceCell("instrument", instrument),
         s(instrument.symbol),
         s(instrument.kind),
         s(instrument.authorized_units ?? "unlimited"),
@@ -175,11 +244,16 @@ export function printCapTable(data: ApiRecord): void {
 
   const shareClasses = (data.share_classes ?? []) as ApiRecord[];
   if (shareClasses.length > 0) {
-    const cols = ["Class", "Authorized", "Outstanding"];
+    const cols = ["Ref", "Class", "Authorized", "Outstanding"];
     if (accessLevel !== "summary") cols.push("Holders");
     const table = makeTable("Cap Table — Share Classes", cols);
     for (const sc of shareClasses) {
-      const row = [s(sc.class_code ?? sc.name), s(sc.authorized), s(sc.outstanding)];
+      const row = [
+        formatReferenceCell("share_class", sc),
+        s(sc.class_code ?? sc.name),
+        s(sc.authorized),
+        s(sc.outstanding),
+      ];
       if (accessLevel !== "summary") {
         const holders = (sc.holders ?? []) as ApiRecord[];
         row.push(holders.map((h) => `${h.name ?? "?"}(${h.percentage ?? "?"}%)`).join(", "));
@@ -218,10 +292,10 @@ export function printCapTable(data: ApiRecord): void {
 }
 
 export function printSafesTable(safes: ApiRecord[]): void {
-  const table = makeTable("SAFE Notes", ["ID", "Investor", "Amount", "Cap", "Discount", "Date"]);
+  const table = makeTable("SAFE Notes", ["Ref", "Investor", "Amount", "Cap", "Discount", "Date"]);
   for (const s_ of safes) {
     table.push([
-      s(s_.safe_note_id ?? s_.safe_id ?? s_.id, 12),
+      formatReferenceCell("safe_note", s_),
       s(s_.investor_name ?? s_.investor),
       money(s_.principal_amount_cents ?? s_.investment_amount ?? s_.amount, false),
       money(s_.valuation_cap_cents ?? s_.valuation_cap ?? s_.cap, false),
@@ -233,24 +307,151 @@ export function printSafesTable(safes: ApiRecord[]): void {
 }
 
 export function printTransfersTable(transfers: ApiRecord[]): void {
-  const table = makeTable("Share Transfers", ["ID", "From", "To", "Shares", "Class", "Date"]);
+  const table = makeTable("Share Transfers", ["Ref", "From", "To", "Shares", "Type", "Status"]);
   for (const t of transfers) {
     table.push([
-      s(t.transfer_id ?? t.id, 12),
+      formatReferenceCell("share_transfer", t),
       s(t.from_holder ?? t.from),
       s(t.to_holder ?? t.to),
-      s(t.shares),
-      s(t.share_class),
-      s(t.date ?? t.transfer_date),
+      s(t.shares ?? t.share_count),
+      s(t.transfer_type),
+      s(t.status),
+    ]);
+  }
+  console.log(table.toString());
+}
+
+export function printInstrumentsTable(instruments: ApiRecord[]): void {
+  const table = makeTable("Instruments", ["Ref", "Symbol", "Kind", "Authorized", "Issued", "Status"]);
+  for (const instrument of instruments) {
+    table.push([
+      formatReferenceCell("instrument", instrument),
+      s(instrument.symbol),
+      s(instrument.kind),
+      s(instrument.authorized_units ?? "unlimited"),
+      s(instrument.issued_units),
+      s(instrument.status),
+    ]);
+  }
+  console.log(table.toString());
+}
+
+export function printShareClassesTable(shareClasses: ApiRecord[]): void {
+  const table = makeTable("Share Classes", ["Ref", "Class", "Authorized", "Outstanding"]);
+  for (const shareClass of shareClasses) {
+    table.push([
+      formatReferenceCell("share_class", shareClass),
+      s(shareClass.class_code ?? shareClass.name ?? shareClass.share_class),
+      s(shareClass.authorized),
+      s(shareClass.outstanding),
+    ]);
+  }
+  console.log(table.toString());
+}
+
+export function printRoundsTable(rounds: ApiRecord[]): void {
+  const table = makeTable("Equity Rounds", ["Ref", "Name", "Status", "Issuer", "Created"]);
+  for (const round of rounds) {
+    table.push([
+      formatReferenceCell("round", round),
+      s(round.name),
+      s(round.status),
+      s(round.issuer_legal_entity_id),
+      date(round.created_at),
+    ]);
+  }
+  console.log(table.toString());
+}
+
+export function printInvoicesTable(invoices: ApiRecord[]): void {
+  const table = makeTable("Invoices", ["Ref", "Customer", "Amount", "Due", "Status"]);
+  for (const invoice of invoices) {
+    table.push([
+      formatReferenceCell("invoice", invoice),
+      s(invoice.customer_name),
+      money(invoice.amount_cents),
+      date(invoice.due_date),
+      s(invoice.status),
+    ]);
+  }
+  console.log(table.toString());
+}
+
+export function printBankAccountsTable(accounts: ApiRecord[]): void {
+  const table = makeTable("Bank Accounts", ["Ref", "Bank", "Type", "Status", "Created"]);
+  for (const account of accounts) {
+    table.push([
+      formatReferenceCell("bank_account", account),
+      s(account.bank_name),
+      s(account.account_type),
+      s(account.status),
+      date(account.created_at),
+    ]);
+  }
+  console.log(table.toString());
+}
+
+export function printPaymentsTable(payments: ApiRecord[]): void {
+  const table = makeTable("Payments", ["Ref", "Recipient", "Amount", "Method", "Status"]);
+  for (const payment of payments) {
+    table.push([
+      formatReferenceCell("payment", payment),
+      s(payment.recipient),
+      money(payment.amount_cents),
+      s(payment.payment_method),
+      s(payment.status),
+    ]);
+  }
+  console.log(table.toString());
+}
+
+export function printPayrollRunsTable(runs: ApiRecord[]): void {
+  const table = makeTable("Payroll Runs", ["Ref", "Start", "End", "Status", "Created"]);
+  for (const run of runs) {
+    table.push([
+      formatReferenceCell("payroll_run", run),
+      date(run.pay_period_start),
+      date(run.pay_period_end),
+      s(run.status),
+      date(run.created_at),
+    ]);
+  }
+  console.log(table.toString());
+}
+
+export function printDistributionsTable(distributions: ApiRecord[]): void {
+  const table = makeTable("Distributions", ["Ref", "Type", "Amount", "Status", "Description"]);
+  for (const distribution of distributions) {
+    table.push([
+      formatReferenceCell("distribution", distribution),
+      s(distribution.distribution_type),
+      money(distribution.total_amount_cents),
+      s(distribution.status),
+      s(distribution.description),
+    ]);
+  }
+  console.log(table.toString());
+}
+
+export function printReconciliationsTable(reconciliations: ApiRecord[]): void {
+  const table = makeTable("Reconciliations", ["Ref", "As Of", "Debits", "Credits", "Status"]);
+  for (const reconciliation of reconciliations) {
+    table.push([
+      formatReferenceCell("reconciliation", reconciliation),
+      date(reconciliation.as_of_date),
+      money(reconciliation.total_debits_cents),
+      money(reconciliation.total_credits_cents),
+      s(reconciliation.status),
     ]);
   }
   console.log(table.toString());
 }
 
 export function printValuationsTable(valuations: ApiRecord[]): void {
-  const table = makeTable("Valuations", ["Date", "Type", "Valuation", "PPS"]);
+  const table = makeTable("Valuations", ["Ref", "Date", "Type", "Valuation", "PPS"]);
   for (const v of valuations) {
     table.push([
+      formatReferenceCell("valuation", v),
       date(v.effective_date ?? v.valuation_date ?? v.date),
       s(v.valuation_type ?? v.type),
       money(v.enterprise_value_cents ?? v.enterprise_value ?? v.valuation),
@@ -260,11 +461,53 @@ export function printValuationsTable(valuations: ApiRecord[]): void {
   console.log(table.toString());
 }
 
+export function printTaxFilingsTable(filings: ApiRecord[]): void {
+  const table = makeTable("Tax Filings", ["Ref", "Type", "Year", "Status", "Document"]);
+  for (const filing of filings) {
+    table.push([
+      formatReferenceCell("tax_filing", filing),
+      s(filing.document_type),
+      s(filing.tax_year),
+      s(filing.status),
+      s(filing.document_id, 12),
+    ]);
+  }
+  console.log(table.toString());
+}
+
+export function printDeadlinesTable(deadlines: ApiRecord[]): void {
+  const table = makeTable("Deadlines", ["Ref", "Type", "Due", "Status", "Description"]);
+  for (const deadline of deadlines) {
+    table.push([
+      formatReferenceCell("deadline", deadline),
+      s(deadline.deadline_type),
+      date(deadline.due_date),
+      s(deadline.status),
+      s(deadline.description),
+    ]);
+  }
+  console.log(table.toString());
+}
+
+export function printClassificationsTable(classifications: ApiRecord[]): void {
+  const table = makeTable("Contractor Classifications", ["Ref", "Contractor", "State", "Risk", "Result"]);
+  for (const classification of classifications) {
+    table.push([
+      formatReferenceCell("classification", classification),
+      s(classification.contractor_name),
+      s(classification.state),
+      s(classification.risk_level),
+      s(classification.classification),
+    ]);
+  }
+  console.log(table.toString());
+}
+
 export function printGovernanceTable(bodies: ApiRecord[]): void {
-  const table = makeTable("Governance Bodies", ["ID", "Body", "Type", "Seats", "Meetings"]);
+  const table = makeTable("Governance Bodies", ["Ref", "Body", "Type", "Seats", "Meetings"]);
   for (const b of bodies) {
     table.push([
-      s(b.body_id ?? b.id, 12),
+      formatReferenceCell("body", b),
       s(b.name),
       s(b.body_type ?? b.type),
       s(b.seat_count ?? b.seats),
@@ -275,18 +518,23 @@ export function printGovernanceTable(bodies: ApiRecord[]): void {
 }
 
 export function printSeatsTable(seats: ApiRecord[]): void {
-  const table = makeTable("Seats", ["Seat", "Holder", "Role", "Status"]);
+  const table = makeTable("Seats", ["Ref", "Holder", "Role", "Status"]);
   for (const st of seats) {
-    table.push([s(st.seat_name ?? st.title), s(st.holder_name ?? st.holder), s(st.role), s(st.status)]);
+    table.push([
+      formatReferenceCell("seat", st),
+      s(st.holder_name ?? st.holder),
+      s(st.role),
+      s(st.status),
+    ]);
   }
   console.log(table.toString());
 }
 
 export function printMeetingsTable(meetings: ApiRecord[]): void {
-  const table = makeTable("Meetings", ["ID", "Title", "Date", "Status", "Resolutions"]);
+  const table = makeTable("Meetings", ["Ref", "Title", "Date", "Status", "Resolutions"]);
   for (const m of meetings) {
     table.push([
-      s(m.meeting_id ?? m.id, 12),
+      formatReferenceCell("meeting", m),
       s(m.title ?? m.name),
       s(m.scheduled_date ?? m.meeting_date ?? m.date),
       s(m.status),
@@ -297,10 +545,10 @@ export function printMeetingsTable(meetings: ApiRecord[]): void {
 }
 
 export function printResolutionsTable(resolutions: ApiRecord[]): void {
-  const table = makeTable("Resolutions", ["ID", "Title", "Type", "Status", "For", "Against"]);
+  const table = makeTable("Resolutions", ["Ref", "Title", "Type", "Status", "For", "Against"]);
   for (const r of resolutions) {
     table.push([
-      s(r.resolution_id ?? r.id, 12),
+      formatReferenceCell("resolution", r),
       s(r.title),
       s(r.resolution_type ?? r.type),
       s(r.status),
@@ -311,13 +559,26 @@ export function printResolutionsTable(resolutions: ApiRecord[]): void {
   console.log(table.toString());
 }
 
+export function printAgendaItemsTable(items: ApiRecord[]): void {
+  const table = makeTable("Agenda Items", ["Ref", "Title", "Status", "Type"]);
+  for (const item of items) {
+    table.push([
+      formatReferenceCell("agenda_item", item),
+      s(item.title),
+      s(item.status),
+      s(item.item_type ?? item.type),
+    ]);
+  }
+  console.log(table.toString());
+}
+
 export function printDocumentsTable(docs: ApiRecord[]): void {
-  const table = makeTable("Documents", ["ID", "Title", "Type", "Date", "Status", "Signatures"]);
+  const table = makeTable("Documents", ["Ref", "Title", "Type", "Date", "Status", "Signatures"]);
   for (const d of docs) {
     const sigs = d.signatures;
     const sigStr = Array.isArray(sigs) ? `${sigs.length} signed` : s(sigs);
     table.push([
-      s(d.document_id ?? d.id, 12),
+      formatReferenceCell("document", d),
       s(d.title ?? d.name),
       s(d.document_type ?? d.type),
       s(d.date ?? d.created_at),
@@ -329,7 +590,7 @@ export function printDocumentsTable(docs: ApiRecord[]): void {
 }
 
 export function printWorkItemsTable(items: ApiRecord[]): void {
-  const table = makeTable("Work Items", ["ID", "Title", "Category", "Status", "Deadline", "Claimed By"]);
+  const table = makeTable("Work Items", ["Ref", "Title", "Category", "Status", "Deadline", "Claimed By"]);
   for (const w of items) {
     const status = s(w.effective_status ?? w.status);
     const colored =
@@ -338,7 +599,7 @@ export function printWorkItemsTable(items: ApiRecord[]): void {
       status === "cancelled" ? chalk.dim(status) :
       status;
     table.push([
-      s(w.work_item_id ?? w.id, 12),
+      formatReferenceCell("work_item", w),
       s(w.title),
       s(w.category),
       colored,
@@ -350,12 +611,12 @@ export function printWorkItemsTable(items: ApiRecord[]): void {
 }
 
 export function printAgentsTable(agents: ApiRecord[]): void {
-  const table = makeTable("Agents", ["ID", "Name", "Status", "Model"]);
+  const table = makeTable("Agents", ["Ref", "Name", "Status", "Model"]);
   for (const a of agents) {
     const status = s(a.status);
     const colored =
       status === "active" ? chalk.green(status) : status === "paused" ? chalk.yellow(status) : status;
-    table.push([s(a.agent_id ?? a.id, 12), s(a.name), colored, s(a.model)]);
+    table.push([formatReferenceCell("agent", a), s(a.name), colored, s(a.model)]);
   }
   console.log(table.toString());
 }

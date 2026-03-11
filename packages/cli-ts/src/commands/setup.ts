@@ -1,5 +1,5 @@
 import { input, confirm } from "@inquirer/prompts";
-import { loadConfig, saveConfig } from "../config.js";
+import { loadConfig, saveConfig, validateApiUrl } from "../config.js";
 import { provisionWorkspace } from "../api-client.js";
 import { printSuccess, printError } from "../output.js";
 
@@ -84,7 +84,12 @@ export async function setupCommand(): Promise<void> {
   // Determine API URL
   const customUrl = process.env.CORP_API_URL;
   if (customUrl) {
-    cfg.api_url = customUrl.replace(/\/+$/, "");
+    try {
+      cfg.api_url = validateApiUrl(customUrl);
+    } catch (err) {
+      printError(`Invalid CORP_API_URL: ${err}`);
+      process.exit(1);
+    }
     console.log(`Using API: ${cfg.api_url}\n`);
   } else {
     cfg.api_url = CLOUD_API_URL;
@@ -188,6 +193,7 @@ export async function setupCommand(): Promise<void> {
   }
 
   saveConfig(cfg);
-  console.log("\nConfig saved to ~/.corp/config.json");
+  console.log("\nSettings saved to ~/.corp/config.json");
+  console.log("Credentials saved to ~/.corp/auth.json");
   console.log("Run 'corp status' to verify your connection.");
 }

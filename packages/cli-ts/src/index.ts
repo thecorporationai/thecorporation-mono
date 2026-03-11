@@ -76,7 +76,7 @@ configCmd
   .option("--force", "Allow updating a security-sensitive config key")
   .action(async (key: string, value: string, opts: { force?: boolean }) => {
     const { configSetCommand } = await import("./commands/config.js");
-    configSetCommand(key, value, opts);
+    await configSetCommand(key, value, opts);
   });
 configCmd
   .command("get <key>")
@@ -91,6 +91,29 @@ configCmd
   .action(async () => {
     const { configListCommand } = await import("./commands/config.js");
     configListCommand();
+  });
+
+program
+  .command("resolve <kind> <ref>")
+  .description("Resolve a human-friendly reference to a canonical ID")
+  .option("--entity-id <ref>", "Entity reference for entity-scoped resources")
+  .option("--body-id <ref>", "Governance body reference for body-scoped resources")
+  .option("--meeting-id <ref>", "Meeting reference for meeting-scoped resources")
+  .action(async (kind: string, ref: string, opts) => {
+    const { resolveCommand } = await import("./commands/resolve.js");
+    await resolveCommand(kind, ref, opts);
+  });
+
+program
+  .command("find <kind> <query>")
+  .description("List matching references for a resource kind")
+  .option("--entity-id <ref>", "Entity reference for entity-scoped resources")
+  .option("--body-id <ref>", "Governance body reference for body-scoped resources")
+  .option("--meeting-id <ref>", "Meeting reference for meeting-scoped resources")
+  .option("--json", "Output as JSON")
+  .action(async (kind: string, query: string, opts) => {
+    const { findCommand } = await import("./commands/find.js");
+    await findCommand(kind, query, opts);
   });
 
 // --- obligations ---
@@ -155,7 +178,7 @@ const entitiesCmd = program
     await entitiesCommand(opts);
   });
 entitiesCmd
-  .command("show <entity-id>")
+  .command("show <entity-ref>")
   .option("--json", "Output as JSON")
   .description("Show entity detail")
   .action(async (entityId: string, opts, cmd) => {
@@ -167,7 +190,7 @@ entitiesCmd
     });
   });
 entitiesCmd
-  .command("convert <entity-id>")
+  .command("convert <entity-ref>")
   .requiredOption("--to <type>", "Target entity type (llc, c_corp)")
   .option("--jurisdiction <jurisdiction>", "New jurisdiction")
   .description("Convert entity to a different type")
@@ -176,7 +199,7 @@ entitiesCmd
     await entitiesConvertCommand(entityId, opts);
   });
 entitiesCmd
-  .command("dissolve <entity-id>")
+  .command("dissolve <entity-ref>")
   .requiredOption("--reason <reason>", "Dissolution reason")
   .option("--effective-date <date>", "Effective date (ISO 8601)")
   .description("Dissolve an entity")
@@ -189,14 +212,14 @@ entitiesCmd
 const contactsCmd = program
   .command("contacts")
   .description("Contact management")
-  .option("--entity-id <id>", "Entity ID (overrides active entity)")
+  .option("--entity-id <ref>", "Entity reference (ID, short ID, @last, or unique name)")
   .option("--json", "Output as JSON")
   .action(async (opts) => {
     const { contactsListCommand } = await import("./commands/contacts.js");
     await contactsListCommand(opts);
   });
 contactsCmd
-  .command("show <contact-id>")
+  .command("show <contact-ref>")
   .option("--json", "Output as JSON")
   .description("Show contact detail/profile")
   .action(async (contactId: string, opts, cmd) => {
@@ -231,7 +254,7 @@ contactsCmd
     });
   });
 contactsCmd
-  .command("edit <contact-id>")
+  .command("edit <contact-ref>")
   .option("--name <name>", "Contact name")
   .option("--email <email>", "Contact email")
   .option("--category <category>", "Contact category")
@@ -256,7 +279,7 @@ contactsCmd
 const capTableCmd = program
   .command("cap-table")
   .description("Cap table, equity grants, SAFEs, transfers, and valuations")
-  .option("--entity-id <id>", "Entity ID (overrides active entity)")
+  .option("--entity-id <ref>", "Entity reference (ID, short ID, @last, or unique name)")
   .option("--json", "Output as JSON")
   .action(async (opts) => {
     const { capTableCommand } = await import("./commands/cap-table.js");
@@ -272,6 +295,21 @@ capTableCmd.command("transfers").description("Share transfers").action(async (_o
   const { transfersCommand } = await import("./commands/cap-table.js");
   await transfersCommand(parent);
 });
+capTableCmd.command("instruments").description("Cap table instruments").action(async (_opts, cmd) => {
+  const parent = cmd.parent!.opts();
+  const { instrumentsCommand } = await import("./commands/cap-table.js");
+  await instrumentsCommand(parent);
+});
+capTableCmd.command("share-classes").description("Share classes").action(async (_opts, cmd) => {
+  const parent = cmd.parent!.opts();
+  const { shareClassesCommand } = await import("./commands/cap-table.js");
+  await shareClassesCommand(parent);
+});
+capTableCmd.command("rounds").description("Staged equity rounds").action(async (_opts, cmd) => {
+  const parent = cmd.parent!.opts();
+  const { roundsCommand } = await import("./commands/cap-table.js");
+  await roundsCommand(parent);
+});
 capTableCmd.command("valuations").description("Valuations history").action(async (_opts, cmd) => {
   const parent = cmd.parent!.opts();
   const { valuationsCommand } = await import("./commands/cap-table.js");
@@ -286,7 +324,7 @@ capTableCmd
   .command("create-instrument")
   .requiredOption("--kind <kind>", "Instrument kind (common_equity, preferred_equity, membership_unit, option_grant, safe)")
   .requiredOption("--symbol <symbol>", "Instrument symbol")
-  .option("--issuer-legal-entity-id <id>", "Issuer legal entity ID (auto-detected from the cap table if omitted)")
+  .option("--issuer-legal-entity-id <ref>", "Issuer legal entity reference (ID, short ID, @last, or unique name)")
   .option("--authorized-units <n>", "Authorized units", parseInt)
   .option("--issue-price-cents <n>", "Issue price in cents", parseInt)
   .option("--terms-json <json>", "JSON object of instrument terms")
@@ -308,9 +346,9 @@ capTableCmd
   .requiredOption("--shares <n>", "Number of shares", parseInt)
   .requiredOption("--recipient <name>", "Recipient name")
   .option("--email <email>", "Recipient email (auto-creates contact if needed)")
-  .option("--instrument-id <id>", "Instrument ID (auto-detected from cap table if omitted)")
-  .option("--meeting-id <id>", "Board meeting ID required when a board approval already exists or is being recorded")
-  .option("--resolution-id <id>", "Board resolution ID required when issuing under a board-governed entity")
+  .option("--instrument-id <ref>", "Instrument reference (ID, short ID, symbol, or @last)")
+  .option("--meeting-id <ref>", "Board meeting reference required when a board approval already exists or is being recorded")
+  .option("--resolution-id <ref>", "Board resolution reference required when issuing under a board-governed entity")
   .option("--json", "Output as JSON")
   .option("--dry-run", "Show the request without creating the round")
   .description("Issue an equity grant (creates a round, adds security, and issues it)")
@@ -329,8 +367,8 @@ capTableCmd
   .requiredOption("--amount <n>", "Principal amount in cents", parseInt)
   .option("--safe-type <type>", "SAFE type", "post_money")
   .requiredOption("--valuation-cap <n>", "Valuation cap in cents", parseInt)
-  .option("--meeting-id <id>", "Board meeting ID required when issuing under a board-governed entity")
-  .option("--resolution-id <id>", "Board resolution ID required when issuing under a board-governed entity")
+  .option("--meeting-id <ref>", "Board meeting reference required when issuing under a board-governed entity")
+  .option("--resolution-id <ref>", "Board resolution reference required when issuing under a board-governed entity")
   .option("--json", "Output as JSON")
   .option("--dry-run", "Show the request without creating the round")
   .description("Issue a SAFE note")
@@ -345,10 +383,10 @@ capTableCmd
   });
 capTableCmd
   .command("transfer")
-  .requiredOption("--from <id>", "Source contact ID (from_contact_id)")
-  .requiredOption("--to <id>", "Destination contact ID (to_contact_id)")
+  .requiredOption("--from <ref>", "Source contact reference (from_contact_id)")
+  .requiredOption("--to <ref>", "Destination contact reference (to_contact_id)")
   .requiredOption("--shares <n>", "Number of shares to transfer", parseInt)
-  .requiredOption("--share-class-id <id>", "Share class ID")
+  .requiredOption("--share-class-id <ref>", "Share class reference")
   .requiredOption("--governing-doc-type <type>", "Governing doc type (bylaws, operating_agreement, shareholder_agreement, other)")
   .requiredOption("--transferee-rights <rights>", "Transferee rights (full_member, economic_only, limited)")
   .option("--prepare-intent-id <id>", "Prepare intent ID (auto-created if omitted)")
@@ -388,7 +426,7 @@ capTableCmd
 capTableCmd
   .command("start-round")
   .requiredOption("--name <name>", "Round name")
-  .requiredOption("--issuer-legal-entity-id <id>", "Issuer legal entity ID")
+  .requiredOption("--issuer-legal-entity-id <ref>", "Issuer legal entity reference")
   .option("--json", "Output as JSON")
   .option("--dry-run", "Show the request without creating the round")
   .description("Start a staged equity round")
@@ -403,11 +441,11 @@ capTableCmd
   });
 capTableCmd
   .command("add-security")
-  .requiredOption("--round-id <id>", "Round ID")
-  .requiredOption("--instrument-id <id>", "Instrument ID")
+  .requiredOption("--round-id <ref>", "Round reference")
+  .requiredOption("--instrument-id <ref>", "Instrument reference")
   .requiredOption("--quantity <n>", "Number of shares/units", parseInt)
   .requiredOption("--recipient-name <name>", "Recipient display name")
-  .option("--holder-id <id>", "Existing holder ID")
+  .option("--holder-id <ref>", "Existing holder reference")
   .option("--email <email>", "Recipient email (to find or create holder)")
   .option("--principal-cents <n>", "Principal amount in cents", parseInt)
   .option("--grant-type <type>", "Grant type")
@@ -425,11 +463,11 @@ capTableCmd
   });
 capTableCmd
   .command("issue-round")
-  .option("--meeting-id <id>", "Board meeting ID required when issuing under a board-governed entity")
-  .option("--resolution-id <id>", "Board resolution ID required when issuing under a board-governed entity")
+  .option("--meeting-id <ref>", "Board meeting reference required when issuing under a board-governed entity")
+  .option("--resolution-id <ref>", "Board resolution reference required when issuing under a board-governed entity")
   .option("--json", "Output as JSON")
   .option("--dry-run", "Show the request without issuing the round")
-  .requiredOption("--round-id <id>", "Round ID")
+  .requiredOption("--round-id <ref>", "Round reference")
   .description("Issue all securities and close a staged round")
   .action(async (opts, cmd) => {
     const parent = cmd.parent!.opts();
@@ -460,7 +498,7 @@ capTableCmd
     });
   });
 capTableCmd
-  .command("submit-valuation <valuation-id>")
+  .command("submit-valuation <valuation-ref>")
   .option("--json", "Output as JSON")
   .option("--dry-run", "Show the request without submitting the valuation")
   .description("Submit a valuation for board approval")
@@ -475,8 +513,8 @@ capTableCmd
     });
   });
 capTableCmd
-  .command("approve-valuation <valuation-id>")
-  .option("--resolution-id <id>", "Resolution ID from the board vote")
+  .command("approve-valuation <valuation-ref>")
+  .option("--resolution-id <ref>", "Resolution reference from the board vote")
   .option("--json", "Output as JSON")
   .option("--dry-run", "Show the request without approving the valuation")
   .description("Approve a valuation")
@@ -495,8 +533,21 @@ capTableCmd
 const financeCmd = program
   .command("finance")
   .description("Invoicing, payroll, payments, banking")
-  .option("--entity-id <id>", "Entity ID (overrides active entity)")
+  .option("--entity-id <ref>", "Entity reference (ID, short ID, @last, or unique name)")
   .option("--json", "Output as JSON");
+financeCmd
+  .command("invoices")
+  .option("--json", "Output as JSON")
+  .description("List invoices")
+  .action(async (opts, cmd) => {
+    const parent = cmd.parent!.opts();
+    const { financeInvoicesCommand } = await import("./commands/finance.js");
+    await financeInvoicesCommand({
+      ...opts,
+      entityId: parent.entityId,
+      json: inheritOption(opts.json, parent.json),
+    });
+  });
 financeCmd
   .command("invoice")
   .requiredOption("--customer <name>", "Customer name")
@@ -515,6 +566,19 @@ financeCmd
     });
   });
 financeCmd
+  .command("payroll-runs")
+  .option("--json", "Output as JSON")
+  .description("List payroll runs")
+  .action(async (opts, cmd) => {
+    const parent = cmd.parent!.opts();
+    const { financePayrollRunsCommand } = await import("./commands/finance.js");
+    await financePayrollRunsCommand({
+      ...opts,
+      entityId: parent.entityId,
+      json: inheritOption(opts.json, parent.json),
+    });
+  });
+financeCmd
   .command("payroll")
   .requiredOption("--period-start <date>", "Pay period start")
   .requiredOption("--period-end <date>", "Pay period end")
@@ -524,6 +588,19 @@ financeCmd
     const parent = cmd.parent!.opts();
     const { financePayrollCommand } = await import("./commands/finance.js");
     await financePayrollCommand({
+      ...opts,
+      entityId: parent.entityId,
+      json: inheritOption(opts.json, parent.json),
+    });
+  });
+financeCmd
+  .command("payments")
+  .option("--json", "Output as JSON")
+  .description("List payments")
+  .action(async (opts, cmd) => {
+    const parent = cmd.parent!.opts();
+    const { financePaymentsCommand } = await import("./commands/finance.js");
+    await financePaymentsCommand({
       ...opts,
       entityId: parent.entityId,
       json: inheritOption(opts.json, parent.json),
@@ -546,6 +623,19 @@ financeCmd
     });
   });
 financeCmd
+  .command("bank-accounts")
+  .option("--json", "Output as JSON")
+  .description("List bank accounts")
+  .action(async (opts, cmd) => {
+    const parent = cmd.parent!.opts();
+    const { financeBankAccountsCommand } = await import("./commands/finance.js");
+    await financeBankAccountsCommand({
+      ...opts,
+      entityId: parent.entityId,
+      json: inheritOption(opts.json, parent.json),
+    });
+  });
+financeCmd
   .command("open-account")
   .option("--institution <name>", "Banking institution", "Mercury")
   .option("--json", "Output as JSON")
@@ -554,6 +644,19 @@ financeCmd
     const parent = cmd.parent!.opts();
     const { financeOpenAccountCommand } = await import("./commands/finance.js");
     await financeOpenAccountCommand({
+      ...opts,
+      entityId: parent.entityId,
+      json: inheritOption(opts.json, parent.json),
+    });
+  });
+financeCmd
+  .command("classifications")
+  .option("--json", "Output as JSON")
+  .description("List contractor classifications")
+  .action(async (opts, cmd) => {
+    const parent = cmd.parent!.opts();
+    const { financeClassificationsCommand } = await import("./commands/finance.js");
+    await financeClassificationsCommand({
       ...opts,
       entityId: parent.entityId,
       json: inheritOption(opts.json, parent.json),
@@ -579,6 +682,19 @@ financeCmd
     });
   });
 financeCmd
+  .command("reconciliations")
+  .option("--json", "Output as JSON")
+  .description("List reconciliations")
+  .action(async (opts, cmd) => {
+    const parent = cmd.parent!.opts();
+    const { financeReconciliationsCommand } = await import("./commands/finance.js");
+    await financeReconciliationsCommand({
+      ...opts,
+      entityId: parent.entityId,
+      json: inheritOption(opts.json, parent.json),
+    });
+  });
+financeCmd
   .command("reconcile")
   .requiredOption("--start-date <date>", "Period start")
   .requiredOption("--end-date <date>", "Period end")
@@ -593,12 +709,25 @@ financeCmd
       json: inheritOption(opts.json, parent.json),
     });
   });
+financeCmd
+  .command("distributions")
+  .option("--json", "Output as JSON")
+  .description("List distributions")
+  .action(async (opts, cmd) => {
+    const parent = cmd.parent!.opts();
+    const { financeDistributionsCommand } = await import("./commands/finance.js");
+    await financeDistributionsCommand({
+      ...opts,
+      entityId: parent.entityId,
+      json: inheritOption(opts.json, parent.json),
+    });
+  });
 
 // --- governance ---
 const governanceCmd = program
   .command("governance")
   .description("Governance bodies, seats, meetings, resolutions")
-  .option("--entity-id <id>", "Entity ID (overrides active entity)")
+  .option("--entity-id <ref>", "Entity reference (overrides active entity)")
   .option("--json", "Output as JSON")
   .action(async (opts) => {
     const { governanceListCommand } = await import("./commands/governance.js");
@@ -623,8 +752,8 @@ governanceCmd
     });
   });
 governanceCmd
-  .command("add-seat <body-id>")
-  .requiredOption("--holder <contact-id>", "Contact ID for the seat holder")
+  .command("add-seat <body-ref>")
+  .requiredOption("--holder <contact-ref>", "Contact reference for the seat holder")
   .option("--role <role>", "Seat role (chair, member, officer, observer)", "member")
   .option("--json", "Output as JSON")
   .option("--dry-run", "Show the request without adding the seat")
@@ -639,7 +768,7 @@ governanceCmd
     });
   });
 governanceCmd
-  .command("seats <body-id>")
+  .command("seats <body-ref>")
   .description("Seats for a governance body")
   .action(async (bodyId: string, _opts, cmd) => {
     const parent = cmd.parent!.opts();
@@ -647,7 +776,7 @@ governanceCmd
     await governanceSeatsCommand(bodyId, parent);
   });
 governanceCmd
-  .command("meetings <body-id>")
+  .command("meetings <body-ref>")
   .description("Meetings for a governance body")
   .action(async (bodyId: string, _opts, cmd) => {
     const parent = cmd.parent!.opts();
@@ -655,7 +784,7 @@ governanceCmd
     await governanceMeetingsCommand(bodyId, parent);
   });
 governanceCmd
-  .command("resolutions <meeting-id>")
+  .command("resolutions <meeting-ref>")
   .description("Resolutions for a meeting")
   .action(async (meetingId: string, _opts, cmd) => {
     const parent = cmd.parent!.opts();
@@ -664,7 +793,7 @@ governanceCmd
   });
 governanceCmd
   .command("convene")
-  .requiredOption("--body <id>", "Governance body ID")
+  .requiredOption("--body <ref>", "Governance body reference")
   .requiredOption("--type <type>", "Meeting type (board_meeting, shareholder_meeting, member_meeting, written_consent)")
   .requiredOption("--title <title>", "Meeting title")
   .option("--date <date>", "Meeting date (ISO 8601)")
@@ -683,8 +812,8 @@ governanceCmd
     });
   });
 governanceCmd
-  .command("open <meeting-id>")
-  .requiredOption("--present-seat <id>", "Seat ID present at the meeting (repeatable)", (v: string, a?: string[]) => [...(a ?? []), v])
+  .command("open <meeting-ref>")
+  .requiredOption("--present-seat <ref>", "Seat reference present at the meeting (repeatable)", (v: string, a?: string[]) => [...(a ?? []), v])
   .option("--json", "Output as JSON")
   .option("--dry-run", "Show the request without opening the meeting")
   .description("Open a scheduled meeting for voting")
@@ -698,8 +827,8 @@ governanceCmd
     });
   });
 governanceCmd
-  .command("vote <meeting-id> <item-id>")
-  .requiredOption("--voter <id>", "Voter contact UUID")
+  .command("vote <meeting-ref> <item-ref>")
+  .requiredOption("--voter <ref>", "Voter contact reference")
   .addOption(new Option("--vote <value>", "Vote (for, against, abstain, recusal)").choices(["for", "against", "abstain", "recusal"]).makeOptionMandatory())
   .option("--json", "Output as JSON")
   .option("--dry-run", "Show the request without casting the vote")
@@ -714,7 +843,7 @@ governanceCmd
     });
   });
 governanceCmd
-  .command("notice <meeting-id>")
+  .command("notice <meeting-ref>")
   .option("--json", "Output as JSON")
   .option("--dry-run", "Show the request without sending notices")
   .description("Send meeting notice")
@@ -728,7 +857,7 @@ governanceCmd
     });
   });
 governanceCmd
-  .command("adjourn <meeting-id>")
+  .command("adjourn <meeting-ref>")
   .option("--json", "Output as JSON")
   .option("--dry-run", "Show the request without adjourning the meeting")
   .description("Adjourn a meeting")
@@ -742,7 +871,21 @@ governanceCmd
     });
   });
 governanceCmd
-  .command("cancel <meeting-id>")
+  .command("reopen <meeting-ref>")
+  .option("--json", "Output as JSON")
+  .option("--dry-run", "Show the request without re-opening the meeting")
+  .description("Re-open an adjourned meeting")
+  .action(async (meetingId: string, opts, cmd) => {
+    const parent = cmd.parent!.opts();
+    const { reopenMeetingCommand } = await import("./commands/governance.js");
+    await reopenMeetingCommand(meetingId, {
+      ...opts,
+      entityId: parent.entityId,
+      json: inheritOption(opts.json, parent.json),
+    });
+  });
+governanceCmd
+  .command("cancel <meeting-ref>")
   .option("--json", "Output as JSON")
   .option("--dry-run", "Show the request without cancelling the meeting")
   .description("Cancel a meeting")
@@ -756,7 +899,7 @@ governanceCmd
     });
   });
 governanceCmd
-  .command("agenda-items <meeting-id>")
+  .command("agenda-items <meeting-ref>")
   .description("List agenda items for a meeting")
   .action(async (meetingId: string, _opts, cmd) => {
     const parent = cmd.parent!.opts();
@@ -764,7 +907,7 @@ governanceCmd
     await listAgendaItemsCommand(meetingId, { entityId: parent.entityId, json: parent.json });
   });
 governanceCmd
-  .command("finalize-item <meeting-id> <item-id>")
+  .command("finalize-item <meeting-ref> <item-ref>")
   .requiredOption("--status <status>", "Status: voted, discussed, tabled, withdrawn")
   .option("--json", "Output as JSON")
   .option("--dry-run", "Show the request without finalizing the item")
@@ -779,7 +922,7 @@ governanceCmd
     });
   });
 governanceCmd
-  .command("resolve <meeting-id> <item-id>")
+  .command("resolve <meeting-ref> <item-ref>")
   .requiredOption("--text <resolution_text>", "Resolution text")
   .option("--json", "Output as JSON")
   .option("--dry-run", "Show the request without computing the resolution")
@@ -795,7 +938,7 @@ governanceCmd
   });
 governanceCmd
   .command("written-consent")
-  .requiredOption("--body <id>", "Governance body ID")
+  .requiredOption("--body <ref>", "Governance body reference")
   .requiredOption("--title <title>", "Title")
   .requiredOption("--description <desc>", "Description")
   .option("--json", "Output as JSON")
@@ -815,15 +958,15 @@ governanceCmd
 const documentsCmd = program
   .command("documents")
   .description("Documents and signing")
-  .option("--entity-id <id>", "Entity ID (overrides active entity)")
+  .option("--entity-id <ref>", "Entity reference (ID, short ID, @last, or unique name)")
   .option("--json", "Output as JSON")
   .action(async (opts) => {
     const { documentsListCommand } = await import("./commands/documents.js");
     await documentsListCommand(opts);
   });
 documentsCmd
-  .command("signing-link <doc-id>")
-  .option("--entity-id <id>", "Entity ID (overrides active entity and parent command)")
+  .command("signing-link <doc-ref>")
+  .option("--entity-id <ref>", "Entity reference (overrides active entity and parent command)")
   .description("Get a signing link for a document")
   .action(async (docId: string, opts, cmd) => {
     const parent = cmd.parent!.opts();
@@ -867,7 +1010,21 @@ documentsCmd
 const taxCmd = program
   .command("tax")
   .description("Tax filings and deadline tracking")
-  .option("--entity-id <id>", "Entity ID (overrides active entity)");
+  .option("--entity-id <ref>", "Entity reference (ID, short ID, @last, or unique name)")
+  .option("--json", "Output as JSON");
+taxCmd
+  .command("filings")
+  .option("--json", "Output as JSON")
+  .description("List tax filings")
+  .action(async (opts, cmd) => {
+    const parent = cmd.parent!.opts();
+    const { taxFilingsCommand } = await import("./commands/tax.js");
+    await taxFilingsCommand({
+      ...opts,
+      entityId: parent.entityId,
+      json: inheritOption(opts.json, parent.json),
+    });
+  });
 taxCmd
   .command("file")
   .addOption(new Option("--type <type>", `Document type (${TAX_DOCUMENT_TYPE_CHOICES.join(", ")})`).choices([...TAX_DOCUMENT_TYPE_CHOICES]).makeOptionMandatory())
@@ -878,6 +1035,19 @@ taxCmd
     const parent = cmd.parent!.opts();
     const { taxFileCommand } = await import("./commands/tax.js");
     await taxFileCommand({
+      ...opts,
+      entityId: parent.entityId,
+      json: inheritOption(opts.json, parent.json),
+    });
+  });
+taxCmd
+  .command("deadlines")
+  .option("--json", "Output as JSON")
+  .description("List tracked deadlines")
+  .action(async (opts, cmd) => {
+    const parent = cmd.parent!.opts();
+    const { taxDeadlinesCommand } = await import("./commands/tax.js");
+    await taxDeadlinesCommand({
       ...opts,
       entityId: parent.entityId,
       json: inheritOption(opts.json, parent.json),
@@ -910,7 +1080,7 @@ const agentsCmd = program
     const { agentsListCommand } = await import("./commands/agents.js");
     await agentsListCommand(opts);
   });
-agentsCmd.command("show <agent-id>").option("--json", "Output as JSON").description("Show agent detail")
+agentsCmd.command("show <agent-ref>").option("--json", "Output as JSON").description("Show agent detail")
   .action(async (agentId: string, opts, cmd) => {
     const parent = cmd.parent!.opts();
     const { agentsShowCommand } = await import("./commands/agents.js");
@@ -931,7 +1101,7 @@ agentsCmd.command("create").requiredOption("--name <name>", "Agent name")
       json: inheritOption(opts.json, parent.json),
     });
   });
-agentsCmd.command("pause <agent-id>").option("--json", "Output as JSON").description("Pause an agent")
+agentsCmd.command("pause <agent-ref>").option("--json", "Output as JSON").description("Pause an agent")
   .action(async (agentId: string, opts, cmd) => {
     const parent = cmd.parent!.opts();
     const { agentsPauseCommand } = await import("./commands/agents.js");
@@ -939,7 +1109,7 @@ agentsCmd.command("pause <agent-id>").option("--json", "Output as JSON").descrip
       json: inheritOption(opts.json, parent.json),
     });
   });
-agentsCmd.command("resume <agent-id>").option("--json", "Output as JSON").description("Resume a paused agent")
+agentsCmd.command("resume <agent-ref>").option("--json", "Output as JSON").description("Resume a paused agent")
   .action(async (agentId: string, opts, cmd) => {
     const parent = cmd.parent!.opts();
     const { agentsResumeCommand } = await import("./commands/agents.js");
@@ -947,7 +1117,7 @@ agentsCmd.command("resume <agent-id>").option("--json", "Output as JSON").descri
       json: inheritOption(opts.json, parent.json),
     });
   });
-agentsCmd.command("delete <agent-id>").option("--json", "Output as JSON").description("Delete an agent")
+agentsCmd.command("delete <agent-ref>").option("--json", "Output as JSON").description("Delete an agent")
   .action(async (agentId: string, opts, cmd) => {
     const parent = cmd.parent!.opts();
     const { agentsDeleteCommand } = await import("./commands/agents.js");
@@ -955,7 +1125,7 @@ agentsCmd.command("delete <agent-id>").option("--json", "Output as JSON").descri
       json: inheritOption(opts.json, parent.json),
     });
   });
-agentsCmd.command("message <agent-id>").option("--body <text>", "Message text")
+agentsCmd.command("message <agent-ref>").option("--body <text>", "Message text")
   .option("--body-file <path>", "Read the message body from a file")
   .option("--json", "Output as JSON")
   .description("Send a message to an agent")
@@ -967,7 +1137,7 @@ agentsCmd.command("message <agent-id>").option("--body <text>", "Message text")
       json: inheritOption(opts.json, parent.json),
     });
   });
-agentsCmd.command("skill <agent-id>").requiredOption("--name <name>", "Skill name")
+agentsCmd.command("skill <agent-ref>").requiredOption("--name <name>", "Skill name")
   .requiredOption("--description <desc>", "Skill description").option("--instructions <text>", "Instructions")
   .option("--instructions-file <path>", "Read skill instructions from a file")
   .option("--json", "Output as JSON")
@@ -985,7 +1155,7 @@ agentsCmd.command("skill <agent-id>").requiredOption("--name <name>", "Skill nam
 const workItemsCmd = program
   .command("work-items")
   .description("Long-term work item coordination")
-  .option("--entity-id <id>", "Entity ID (overrides active entity)")
+  .option("--entity-id <ref>", "Entity reference (ID, short ID, @last, or unique name)")
   .option("--json", "Output as JSON")
   .option("--status <status>", "Filter by status (open, claimed, completed, cancelled)")
   .option("--category <category>", "Filter by category")
@@ -994,7 +1164,7 @@ const workItemsCmd = program
     await workItemsListCommand(opts);
   });
 workItemsCmd
-  .command("show <item-id>")
+  .command("show <item-ref>")
   .option("--json", "Output as JSON")
   .description("Show work item detail")
   .action(async (itemId: string, opts, cmd) => {
@@ -1027,7 +1197,7 @@ workItemsCmd
     });
   });
 workItemsCmd
-  .command("claim <item-id>")
+  .command("claim <item-ref>")
   .option("--by <name>", "Agent or user claiming the item")
   .option("--claimer <name>", "Alias for --by")
   .option("--ttl <seconds>", "Auto-release TTL in seconds", parseInt)
@@ -1049,7 +1219,7 @@ workItemsCmd
     });
   });
 workItemsCmd
-  .command("complete <item-id>")
+  .command("complete <item-ref>")
   .option("--by <name>", "Agent or user completing the item")
   .option("--completed-by <name>", "Alias for --by")
   .option("--result <text>", "Completion result or notes")
@@ -1072,7 +1242,7 @@ workItemsCmd
     });
   });
 workItemsCmd
-  .command("release <item-id>")
+  .command("release <item-ref>")
   .option("--json", "Output as JSON")
   .description("Release a claimed work item")
   .action(async (itemId: string, opts, cmd) => {
@@ -1084,7 +1254,7 @@ workItemsCmd
     });
   });
 workItemsCmd
-  .command("cancel <item-id>")
+  .command("cancel <item-ref>")
   .option("--json", "Output as JSON")
   .description("Cancel a work item")
   .action(async (itemId: string, opts, cmd) => {
@@ -1128,7 +1298,7 @@ program
     printError(
       "Approvals are managed through governance meetings.\n" +
       "  Use: corp governance convene ... to schedule a board meeting\n" +
-      "  Use: corp governance vote <meeting-id> <item-id> ... to cast votes"
+      "  Use: corp governance vote <meeting-ref> <item-ref> ... to cast votes"
     );
   });
 
@@ -1179,7 +1349,7 @@ formCmd.command("create")
       dryRun: inheritOption(opts.dryRun, cmd.parent!.opts().dryRun),
     });
   });
-formCmd.command("add-founder <entity-id>")
+formCmd.command("add-founder <entity-ref>")
   .description("Add a founder to a pending entity (staged flow step 2)")
   .requiredOption("--name <name>", "Founder name")
   .requiredOption("--email <email>", "Founder email")
@@ -1198,7 +1368,7 @@ formCmd.command("add-founder <entity-id>")
       dryRun: inheritOption(opts.dryRun, cmd.parent!.opts().dryRun),
     });
   });
-formCmd.command("finalize <entity-id>")
+formCmd.command("finalize <entity-ref>")
   .description("Finalize formation and generate documents + cap table (staged flow step 3)")
   .option("--authorized-shares <count>", "Authorized shares for corporations")
   .option("--par-value <value>", "Par value per share, e.g. 0.0001")

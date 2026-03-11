@@ -14,7 +14,8 @@ use serde::{Deserialize, Serialize};
 use super::AppState;
 use super::validation::{require_non_empty_trimmed, validate_max_len, validate_not_too_far_past};
 use crate::auth::{RequireExecutionRead, RequireExecutionWrite};
-use crate::domain::ids::{EntityId, WorkItemId, WorkspaceId};
+use crate::domain::contacts::contact::Contact;
+use crate::domain::ids::{ContactId, EntityId, WorkItemId, WorkspaceId};
 use crate::domain::work_items::types::WorkItemStatus;
 use crate::domain::work_items::work_item::WorkItem;
 use crate::error::AppError;
@@ -54,6 +55,71 @@ fn validate_category(category: &str) -> Result<String, AppError> {
         ));
     }
     Ok(trimmed.to_owned())
+}
+
+fn validate_title(title: &str) -> Result<String, AppError> {
+    let trimmed = require_non_empty_trimmed(title, "title")?;
+    validate_max_len(&trimmed, "title", 1000)?;
+    if trimmed.contains('<')
+        || trimmed.contains('>')
+        || trimmed.contains("{{")
+        || trimmed.contains("}}")
+        || trimmed.chars().any(|ch| ch == '\n' || ch == '\r')
+    {
+        return Err(AppError::BadRequest(
+            "title cannot contain markup, template syntax, or newlines".to_owned(),
+        ));
+    }
+    Ok(trimmed)
+}
+
+fn resolve_contact_actor(
+    store: &EntityStore<'_>,
+    entity_id: EntityId,
+    raw: &str,
+    field: &str,
+) -> Result<String, AppError> {
+    let trimmed = require_non_empty_trimmed(raw, field)?;
+    validate_max_len(&trimmed, field, 256)?;
+
+    if let Ok(contact_id) = trimmed.parse::<ContactId>() {
+        let contact = store.read::<Contact>("main", contact_id).map_err(|_| {
+            AppError::BadRequest(format!("{field} must reference an existing entity contact"))
+        })?;
+        if contact.entity_id() != entity_id {
+            return Err(AppError::BadRequest(format!(
+                "{field} must reference a contact on the same entity"
+            )));
+        }
+        return Ok(contact.name().to_owned());
+    }
+
+    let mut matches = Vec::new();
+    for contact_id in store.list_ids::<Contact>("main").unwrap_or_default() {
+        let contact = match store.read::<Contact>("main", contact_id) {
+            Ok(contact) => contact,
+            Err(_) => continue,
+        };
+        if contact.entity_id() != entity_id {
+            continue;
+        }
+        let matches_name = contact.name().eq_ignore_ascii_case(trimmed.as_str());
+        let matches_email = contact
+            .email()
+            .is_some_and(|email| email.eq_ignore_ascii_case(trimmed.as_str()));
+        if matches_name || matches_email {
+            matches.push(contact.name().to_owned());
+        }
+    }
+    match matches.len() {
+        1 => Ok(matches.remove(0)),
+        0 => Err(AppError::BadRequest(format!(
+            "{field} must reference an existing entity contact"
+        ))),
+        _ => Err(AppError::Conflict(format!(
+            "{field} matches multiple entity contacts"
+        ))),
+    }
 }
 
 // ── Request types ───────────────────────────────────────────────────
@@ -174,13 +240,9 @@ async fn create_work_item(
         return Err(AppError::Forbidden("entity access denied".to_owned()));
     }
     state.enforce_creation_rate_limit("work_items.create", workspace_id, 60, 60)?;
-    let title = require_non_empty_trimmed(&req.title, "title")?;
-    validate_max_len(&title, "title", 1000)?;
+    let title = validate_title(&req.title)?;
     if let Some(deadline) = req.deadline {
         validate_not_too_far_past("deadline", deadline, 365)?;
-    }
-    if let Some(ref created_by) = req.created_by {
-        validate_max_len(created_by, "created_by", 256)?;
     }
     let category = validate_category(&req.category)?;
 
@@ -190,6 +252,11 @@ async fn create_work_item(
         let title = title.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
+            let created_by = req
+                .created_by
+                .as_deref()
+                .map(|value| resolve_contact_actor(&store, entity_id, value, "created_by"))
+                .transpose()?;
             let work_item_id = WorkItemId::new();
             let metadata = req
                 .metadata
@@ -203,7 +270,7 @@ async fn create_work_item(
                 req.deadline,
                 req.asap,
                 metadata,
-                req.created_by,
+                created_by,
             );
 
             let path = format!("workitems/{}.json", work_item_id);
@@ -356,13 +423,12 @@ async fn claim_work_item(
         return Err(AppError::Forbidden("entity access denied".to_owned()));
     }
 
-    require_non_empty_trimmed(&req.claimed_by, "claimed_by")?;
-    validate_max_len(&req.claimed_by, "claimed_by", 256)?;
-
     let work_item = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
+            let claimed_by =
+                resolve_contact_actor(&store, entity_id, &req.claimed_by, "claimed_by")?;
             let mut w = store
                 .read::<WorkItem>("main", work_item_id)
                 .map_err(|_| AppError::NotFound(format!("work item {} not found", work_item_id)))?;
@@ -370,7 +436,7 @@ async fn claim_work_item(
             // Auto-release expired claims before attempting to claim
             w.auto_release_expired_claim(Utc::now());
 
-            w.claim(req.claimed_by, req.ttl_seconds)?;
+            w.claim(claimed_by, req.ttl_seconds)?;
 
             let path = format!("workitems/{}.json", work_item_id);
             store
@@ -417,27 +483,26 @@ async fn complete_work_item(
         return Err(AppError::Forbidden("entity access denied".to_owned()));
     }
 
-    require_non_empty_trimmed(&req.completed_by, "completed_by")?;
-    validate_max_len(&req.completed_by, "completed_by", 256)?;
-
     let work_item = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
+            let completed_by =
+                resolve_contact_actor(&store, entity_id, &req.completed_by, "completed_by")?;
             let mut w = store
                 .read::<WorkItem>("main", work_item_id)
                 .map_err(|_| AppError::NotFound(format!("work item {} not found", work_item_id)))?;
             w.auto_release_expired_claim(Utc::now());
             if let Some(claimed_by) = w.claimed_by()
-                && claimed_by != req.completed_by
+                && claimed_by != completed_by
             {
                 return Err(AppError::Conflict(format!(
                     "work item is claimed by {} and cannot be completed by {}",
-                    claimed_by, req.completed_by
+                    claimed_by, completed_by
                 )));
             }
 
-            w.complete(req.completed_by, req.result)?;
+            w.complete(completed_by, req.result)?;
 
             let path = format!("workitems/{}.json", work_item_id);
             store

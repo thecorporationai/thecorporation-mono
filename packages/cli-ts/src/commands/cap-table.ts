@@ -1,9 +1,22 @@
-import { requireConfig, resolveEntityId } from "../config.js";
+import { requireConfig } from "../config.js";
 import { CorpAPIClient } from "../api-client.js";
 import {
-  printCapTable, printSafesTable, printTransfersTable,
-  printValuationsTable, printDryRun, printError, printSuccess, printJson, printWriteResult,
+  printCapTable,
+  printDryRun,
+  printError,
+  printInstrumentsTable,
+  printJson,
+  printReferenceSummary,
+  printRoundsTable,
+  printSafesTable,
+  printShareClassesTable,
+  printSuccess,
+  printTransfersTable,
+  printValuationsTable,
+  printWriteResult,
 } from "../output.js";
+import { ReferenceResolver, shortId } from "../references.js";
+import type { ApiRecord } from "../types.js";
 import chalk from "chalk";
 
 type CapTableInstrument = {
@@ -130,7 +143,7 @@ async function ensureIssuancePreflight(
     const msg = String(err);
     if (msg.includes("404")) {
       throw new Error(
-        "Stock option issuances require a current approved 409A valuation. Create and approve one first with: corp cap-table create-valuation --type four_oh_nine_a --date YYYY-MM-DD --methodology <method>; corp cap-table submit-valuation <id>; corp cap-table approve-valuation <id> --resolution-id <resolution-id>",
+        "Stock option issuances require a current approved 409A valuation. Create and approve one first with: corp cap-table create-valuation --type four_oh_nine_a --date YYYY-MM-DD --methodology <method>; corp cap-table submit-valuation <valuation-ref>; corp cap-table approve-valuation <valuation-ref> --resolution-id <resolution-ref>",
       );
     }
     throw err;
@@ -139,10 +152,15 @@ async function ensureIssuancePreflight(
 
 export async function capTableCommand(opts: { entityId?: string; json?: boolean }): Promise<void> {
   const cfg = requireConfig("api_url", "api_key", "workspace_id");
-  const eid = resolveEntityId(cfg, opts.entityId);
   const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
+  const resolver = new ReferenceResolver(client, cfg);
   try {
+    const eid = await resolver.resolveEntity(opts.entityId);
     const data = await client.getCapTable(eid);
+    const instruments = Array.isArray(data.instruments) ? data.instruments as ApiRecord[] : [];
+    const shareClasses = Array.isArray(data.share_classes) ? data.share_classes as ApiRecord[] : [];
+    await resolver.stabilizeRecords("instrument", instruments, eid);
+    await resolver.stabilizeRecords("share_class", shareClasses, eid);
     if (opts.json) { printJson(data); return; }
     if ((data.access_level as string) === "none") {
       printError("You do not have access to this entity's cap table.");
@@ -161,10 +179,12 @@ export async function capTableCommand(opts: { entityId?: string; json?: boolean 
 
 export async function safesCommand(opts: { entityId?: string; json?: boolean }): Promise<void> {
   const cfg = requireConfig("api_url", "api_key", "workspace_id");
-  const eid = resolveEntityId(cfg, opts.entityId);
   const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
+  const resolver = new ReferenceResolver(client, cfg);
   try {
+    const eid = await resolver.resolveEntity(opts.entityId);
     const safes = await client.getSafeNotes(eid);
+    await resolver.stabilizeRecords("safe_note", safes, eid);
     if (opts.json) printJson(safes);
     else if (safes.length === 0) console.log("No SAFE notes found.");
     else printSafesTable(safes);
@@ -176,10 +196,12 @@ export async function safesCommand(opts: { entityId?: string; json?: boolean }):
 
 export async function transfersCommand(opts: { entityId?: string; json?: boolean }): Promise<void> {
   const cfg = requireConfig("api_url", "api_key", "workspace_id");
-  const eid = resolveEntityId(cfg, opts.entityId);
   const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
+  const resolver = new ReferenceResolver(client, cfg);
   try {
+    const eid = await resolver.resolveEntity(opts.entityId);
     const transfers = await client.getShareTransfers(eid);
+    await resolver.stabilizeRecords("share_transfer", transfers, eid);
     if (opts.json) printJson(transfers);
     else if (transfers.length === 0) console.log("No share transfers found.");
     else printTransfersTable(transfers);
@@ -189,12 +211,69 @@ export async function transfersCommand(opts: { entityId?: string; json?: boolean
   }
 }
 
+export async function instrumentsCommand(opts: { entityId?: string; json?: boolean }): Promise<void> {
+  const cfg = requireConfig("api_url", "api_key", "workspace_id");
+  const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
+  const resolver = new ReferenceResolver(client, cfg);
+  try {
+    const eid = await resolver.resolveEntity(opts.entityId);
+    const capTable = await client.getCapTable(eid);
+    const instruments = Array.isArray(capTable.instruments) ? capTable.instruments as Record<string, unknown>[] : [];
+    await resolver.stabilizeRecords("instrument", instruments as ApiRecord[], eid);
+    if (opts.json) printJson(instruments);
+    else if (instruments.length === 0) console.log("No instruments found.");
+    else printInstrumentsTable(instruments);
+  } catch (err) {
+    printError(`Failed to fetch instruments: ${err}`);
+    process.exit(1);
+  }
+}
+
+export async function shareClassesCommand(opts: { entityId?: string; json?: boolean }): Promise<void> {
+  const cfg = requireConfig("api_url", "api_key", "workspace_id");
+  const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
+  const resolver = new ReferenceResolver(client, cfg);
+  try {
+    const eid = await resolver.resolveEntity(opts.entityId);
+    const capTable = await client.getCapTable(eid);
+    const shareClasses = Array.isArray(capTable.share_classes)
+      ? capTable.share_classes as Record<string, unknown>[]
+      : [];
+    await resolver.stabilizeRecords("share_class", shareClasses as ApiRecord[], eid);
+    if (opts.json) printJson(shareClasses);
+    else if (shareClasses.length === 0) console.log("No share classes found.");
+    else printShareClassesTable(shareClasses);
+  } catch (err) {
+    printError(`Failed to fetch share classes: ${err}`);
+    process.exit(1);
+  }
+}
+
+export async function roundsCommand(opts: { entityId?: string; json?: boolean }): Promise<void> {
+  const cfg = requireConfig("api_url", "api_key", "workspace_id");
+  const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
+  const resolver = new ReferenceResolver(client, cfg);
+  try {
+    const eid = await resolver.resolveEntity(opts.entityId);
+    const rounds = await client.listEquityRounds(eid);
+    await resolver.stabilizeRecords("round", rounds, eid);
+    if (opts.json) printJson(rounds);
+    else if (rounds.length === 0) console.log("No rounds found.");
+    else printRoundsTable(rounds);
+  } catch (err) {
+    printError(`Failed to fetch rounds: ${err}`);
+    process.exit(1);
+  }
+}
+
 export async function valuationsCommand(opts: { entityId?: string; json?: boolean }): Promise<void> {
   const cfg = requireConfig("api_url", "api_key", "workspace_id");
-  const eid = resolveEntityId(cfg, opts.entityId);
   const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
+  const resolver = new ReferenceResolver(client, cfg);
   try {
+    const eid = await resolver.resolveEntity(opts.entityId);
     const valuations = await client.getValuations(eid);
+    await resolver.stabilizeRecords("valuation", valuations, eid);
     if (opts.json) printJson(valuations);
     else if (valuations.length === 0) console.log("No valuations found.");
     else printValuationsTable(valuations);
@@ -206,10 +285,12 @@ export async function valuationsCommand(opts: { entityId?: string; json?: boolea
 
 export async function fourOhNineACommand(opts: { entityId?: string; json?: boolean }): Promise<void> {
   const cfg = requireConfig("api_url", "api_key", "workspace_id");
-  const eid = resolveEntityId(cfg, opts.entityId);
   const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
+  const resolver = new ReferenceResolver(client, cfg);
   try {
+    const eid = await resolver.resolveEntity(opts.entityId);
     const data = await client.getCurrent409a(eid);
+    await resolver.stabilizeRecord("valuation", data, eid);
     if (opts.json) printJson(data);
     else if (!data || Object.keys(data).length === 0) console.log("No 409A valuation found.");
     else print409a(data);
@@ -237,9 +318,10 @@ export async function issueEquityCommand(opts: {
   dryRun?: boolean;
 }): Promise<void> {
   const cfg = requireConfig("api_url", "api_key", "workspace_id");
-  const eid = resolveEntityId(cfg, opts.entityId);
   const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
+  const resolver = new ReferenceResolver(client, cfg);
   try {
+    const eid = await resolver.resolveEntity(opts.entityId);
     if (opts.dryRun) {
       printDryRun("cap_table.issue_equity", {
         entity_id: eid,
@@ -268,18 +350,25 @@ export async function issueEquityCommand(opts: {
       printError("No instruments found on cap table. Create one with: corp cap-table create-instrument --kind common_equity --symbol COMMON --authorized-units <shares>");
       process.exit(1);
     }
-    const instrument = resolveInstrumentForGrant(instruments, opts.grantType, opts.instrumentId);
+    const explicitInstrumentId = opts.instrumentId
+      ? await resolver.resolveInstrument(eid, opts.instrumentId)
+      : undefined;
+    const instrument = resolveInstrumentForGrant(instruments, opts.grantType, explicitInstrumentId);
     const instrumentId = instrument.instrument_id;
     if (!opts.instrumentId) {
       console.log(`Using instrument: ${instrument.symbol} (${instrument.kind})`);
     }
+    const meetingId = opts.meetingId ? await resolver.resolveMeeting(eid, opts.meetingId) : undefined;
+    const resolutionId = opts.resolutionId
+      ? await resolver.resolveResolution(eid, opts.resolutionId, meetingId)
+      : undefined;
     await ensureIssuancePreflight(
       client,
       eid,
       opts.grantType,
       instrument,
-      opts.meetingId,
-      opts.resolutionId,
+      meetingId,
+      resolutionId,
     );
 
     // 1. Start a staged round
@@ -288,6 +377,7 @@ export async function issueEquityCommand(opts: {
       name: `${opts.grantType} grant — ${opts.recipient}`,
       issuer_legal_entity_id: issuerLegalEntityId,
     });
+    await resolver.stabilizeRecord("round", round, eid);
     const roundId = (round.round_id ?? round.equity_round_id) as string;
 
     // 2. Add the security
@@ -303,15 +393,17 @@ export async function issueEquityCommand(opts: {
 
     // 3. Issue the round
     const issuePayload: Record<string, unknown> = { entity_id: eid };
-    if (opts.meetingId) issuePayload.meeting_id = opts.meetingId;
-    if (opts.resolutionId) issuePayload.resolution_id = opts.resolutionId;
+    if (meetingId) issuePayload.meeting_id = meetingId;
+    if (resolutionId) issuePayload.resolution_id = resolutionId;
     const result = await client.issueRound(roundId, issuePayload);
+    resolver.rememberFromRecord("round", round, eid);
 
     if (opts.json) {
       printJson(result);
       return;
     }
     printSuccess(`Equity issued: ${opts.shares} shares (${opts.grantType}) to ${opts.recipient}`);
+    printReferenceSummary("round", round, { label: "Round Ref:", showReuseHint: true });
     printJson(result);
   } catch (err) {
     printError(`Failed to issue equity: ${err}`);
@@ -332,9 +424,10 @@ export async function issueSafeCommand(opts: {
   dryRun?: boolean;
 }): Promise<void> {
   const cfg = requireConfig("api_url", "api_key", "workspace_id");
-  const eid = resolveEntityId(cfg, opts.entityId);
   const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
+  const resolver = new ReferenceResolver(client, cfg);
   try {
+    const eid = await resolver.resolveEntity(opts.entityId);
     if (opts.dryRun) {
       printDryRun("cap_table.issue_safe", {
         entity_id: eid,
@@ -349,13 +442,17 @@ export async function issueSafeCommand(opts: {
       return;
     }
 
+    const meetingId = opts.meetingId ? await resolver.resolveMeeting(eid, opts.meetingId) : undefined;
+    const resolutionId = opts.resolutionId
+      ? await resolver.resolveResolution(eid, opts.resolutionId, meetingId)
+      : undefined;
     await ensureIssuancePreflight(
       client,
       eid,
       opts.safeType,
       undefined,
-      opts.meetingId,
-      opts.resolutionId,
+      meetingId,
+      resolutionId,
     );
 
     const body: Record<string, unknown> = {
@@ -366,14 +463,17 @@ export async function issueSafeCommand(opts: {
       safe_type: opts.safeType,
     };
     if (opts.email) body.email = opts.email;
-    if (opts.meetingId) body.meeting_id = opts.meetingId;
-    if (opts.resolutionId) body.resolution_id = opts.resolutionId;
+    if (meetingId) body.meeting_id = meetingId;
+    if (resolutionId) body.resolution_id = resolutionId;
     const result = await client.createSafeNote(body);
+    await resolver.stabilizeRecord("safe_note", result, eid);
+    resolver.rememberFromRecord("safe_note", result, eid);
     if (opts.json) {
       printJson(result);
       return;
     }
     printSuccess(`SAFE issued: $${(opts.amount / 100).toLocaleString()} to ${opts.investor}`);
+    printReferenceSummary("safe_note", result, { showReuseHint: true });
     printJson(result);
   } catch (err) {
     printError(`Failed to issue SAFE: ${err}`);
@@ -397,23 +497,27 @@ export async function transferSharesCommand(opts: {
   dryRun?: boolean;
 }): Promise<void> {
   const cfg = requireConfig("api_url", "api_key", "workspace_id");
-  const eid = resolveEntityId(cfg, opts.entityId);
   const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
+  const resolver = new ReferenceResolver(client, cfg);
   try {
+    const eid = await resolver.resolveEntity(opts.entityId);
+    const fromContactId = await resolver.resolveContact(eid, opts.from);
+    const toContactId = await resolver.resolveContact(eid, opts.to);
+    const shareClassId = await resolver.resolveShareClass(eid, opts.shareClassId);
     if (opts.pricePerShareCents != null && opts.pricePerShareCents < 0) {
       throw new Error("price-per-share-cents cannot be negative");
     }
-    if (opts.from === opts.to) {
+    if (fromContactId === toContactId) {
       throw new Error("--from and --to must be different contacts");
     }
     if (opts.dryRun) {
       printDryRun("cap_table.transfer_shares", {
         entity_id: eid,
-        from_contact_id: opts.from,
-        to_contact_id: opts.to,
+        from_contact_id: fromContactId,
+        to_contact_id: toContactId,
         share_count: opts.shares,
         transfer_type: opts.type,
-        share_class_id: opts.shareClassId,
+        share_class_id: shareClassId,
         governing_doc_type: opts.governingDocType,
         transferee_rights: opts.transfereeRights,
         prepare_intent_id: opts.prepareIntentId,
@@ -428,7 +532,7 @@ export async function transferSharesCommand(opts: {
       const intent = await client.createExecutionIntent({
         entity_id: eid,
         intent_type: "equity.transfer.prepare",
-        description: `Transfer ${opts.shares} shares from ${opts.from} to ${opts.to}`,
+        description: `Transfer ${opts.shares} shares from ${fromContactId} to ${toContactId}`,
       });
       intentId = (intent.intent_id ?? intent.id) as string;
       await client.evaluateIntent(intentId, eid);
@@ -436,9 +540,9 @@ export async function transferSharesCommand(opts: {
     }
     const body: Record<string, unknown> = {
       entity_id: eid,
-      share_class_id: opts.shareClassId,
-      from_contact_id: opts.from,
-      to_contact_id: opts.to,
+      share_class_id: shareClassId,
+      from_contact_id: fromContactId,
+      to_contact_id: toContactId,
       transfer_type: opts.type,
       share_count: opts.shares,
       governing_doc_type: opts.governingDocType,
@@ -448,7 +552,14 @@ export async function transferSharesCommand(opts: {
     if (opts.pricePerShareCents != null) body.price_per_share_cents = opts.pricePerShareCents;
     if (opts.relationship) body.relationship_to_holder = opts.relationship;
     const result = await client.transferShares(body);
-    printWriteResult(result, `Transfer workflow created: ${result.workflow_id ?? "OK"}`, opts.json);
+    await resolver.stabilizeRecord("share_transfer", result, eid);
+    resolver.rememberFromRecord("share_transfer", result, eid);
+    printWriteResult(result, `Transfer workflow created: ${result.transfer_workflow_id ?? "OK"}`, {
+      jsonOnly: opts.json,
+      referenceKind: "share_transfer",
+      referenceLabel: "Transfer Ref:",
+      showReuseHint: true,
+    });
   } catch (err) {
     printError(`Failed to create transfer workflow: ${err}`);
     process.exit(1);
@@ -464,9 +575,10 @@ export async function distributeCommand(opts: {
   dryRun?: boolean;
 }): Promise<void> {
   const cfg = requireConfig("api_url", "api_key", "workspace_id");
-  const eid = resolveEntityId(cfg, opts.entityId);
   const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
+  const resolver = new ReferenceResolver(client, cfg);
   try {
+    const eid = await resolver.resolveEntity(opts.entityId);
     const payload = {
       entity_id: eid, total_amount_cents: opts.amount, distribution_type: opts.type,
       description: opts.description,
@@ -476,7 +588,13 @@ export async function distributeCommand(opts: {
       return;
     }
     const result = await client.calculateDistribution(payload);
-    printWriteResult(result, `Distribution calculated: ${result.distribution_id ?? "OK"}`, opts.json);
+    await resolver.stabilizeRecord("distribution", result, eid);
+    resolver.rememberFromRecord("distribution", result, eid);
+    printWriteResult(result, `Distribution calculated: ${result.distribution_id ?? "OK"}`, {
+      jsonOnly: opts.json,
+      referenceKind: "distribution",
+      showReuseHint: true,
+    });
   } catch (err) {
     printError(`Failed to calculate distribution: ${err}`);
     process.exit(1);
@@ -491,20 +609,28 @@ export async function startRoundCommand(opts: {
   dryRun?: boolean;
 }): Promise<void> {
   const cfg = requireConfig("api_url", "api_key", "workspace_id");
-  const eid = resolveEntityId(cfg, opts.entityId);
   const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
+  const resolver = new ReferenceResolver(client, cfg);
   try {
+    const eid = await resolver.resolveEntity(opts.entityId);
+    const issuerLegalEntityId = await resolver.resolveEntity(opts.issuerLegalEntityId);
     const payload = {
       entity_id: eid,
       name: opts.name,
-      issuer_legal_entity_id: opts.issuerLegalEntityId,
+      issuer_legal_entity_id: issuerLegalEntityId,
     };
     if (opts.dryRun) {
       printDryRun("cap_table.start_round", payload);
       return;
     }
     const result = await client.startEquityRound(payload);
-    printWriteResult(result, `Round started: ${result.round_id ?? "OK"}`, opts.json);
+    await resolver.stabilizeRecord("round", result, eid);
+    resolver.rememberFromRecord("round", result, eid);
+    printWriteResult(result, `Round started: ${result.round_id ?? "OK"}`, {
+      jsonOnly: opts.json,
+      referenceKind: "round",
+      showReuseHint: true,
+    });
   } catch (err) {
     printError(`Failed to start round: ${err}`);
     process.exit(1);
@@ -523,9 +649,10 @@ export async function createInstrumentCommand(opts: {
   dryRun?: boolean;
 }): Promise<void> {
   const cfg = requireConfig("api_url", "api_key", "workspace_id");
-  const eid = resolveEntityId(cfg, opts.entityId);
   const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
+  const resolver = new ReferenceResolver(client, cfg);
   try {
+    const eid = await resolver.resolveEntity(opts.entityId);
     let issuerLegalEntityId = opts.issuerLegalEntityId;
     if (!issuerLegalEntityId) {
       const capTable = await client.getCapTable(eid);
@@ -534,6 +661,7 @@ export async function createInstrumentCommand(opts: {
     if (!issuerLegalEntityId) {
       throw new Error("No issuer legal entity found. Has this entity been formed with a cap table?");
     }
+    issuerLegalEntityId = await resolver.resolveEntity(issuerLegalEntityId);
 
     const terms = opts.termsJson ? JSON.parse(opts.termsJson) as Record<string, unknown> : {};
     const payload: Record<string, unknown> = {
@@ -550,7 +678,13 @@ export async function createInstrumentCommand(opts: {
       return;
     }
     const result = await client.createInstrument(payload);
-    printWriteResult(result, `Instrument created: ${result.instrument_id ?? "OK"}`, opts.json);
+    await resolver.stabilizeRecord("instrument", result, eid);
+    resolver.rememberFromRecord("instrument", result, eid);
+    printWriteResult(result, `Instrument created: ${result.instrument_id ?? "OK"}`, {
+      jsonOnly: opts.json,
+      referenceKind: "instrument",
+      showReuseHint: true,
+    });
   } catch (err) {
     printError(`Failed to create instrument: ${err}`);
     process.exit(1);
@@ -571,24 +705,27 @@ export async function addSecurityCommand(opts: {
   dryRun?: boolean;
 }): Promise<void> {
   const cfg = requireConfig("api_url", "api_key", "workspace_id");
-  const eid = resolveEntityId(cfg, opts.entityId);
   const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
+  const resolver = new ReferenceResolver(client, cfg);
   try {
+    const eid = await resolver.resolveEntity(opts.entityId);
+    const roundId = await resolver.resolveRound(eid, opts.roundId);
+    const instrumentId = await resolver.resolveInstrument(eid, opts.instrumentId);
     const body: Record<string, unknown> = {
       entity_id: eid,
-      instrument_id: opts.instrumentId,
+      instrument_id: instrumentId,
       quantity: opts.quantity,
       recipient_name: opts.recipientName,
     };
-    if (opts.holderId) body.holder_id = opts.holderId;
+    if (opts.holderId) body.holder_id = await resolver.resolveContact(eid, opts.holderId);
     if (opts.email) body.email = opts.email;
     if (opts.principalCents) body.principal_cents = opts.principalCents;
     if (opts.grantType) body.grant_type = opts.grantType;
     if (opts.dryRun) {
-      printDryRun("cap_table.add_security", { round_id: opts.roundId, ...body });
+      printDryRun("cap_table.add_security", { round_id: roundId, ...body });
       return;
     }
-    const result = await client.addRoundSecurity(opts.roundId, body);
+    const result = await client.addRoundSecurity(roundId, body);
     printWriteResult(result, `Security added for ${opts.recipientName}`, opts.json);
   } catch (err) {
     printError(`Failed to add security: ${err}`);
@@ -605,28 +742,45 @@ export async function issueRoundCommand(opts: {
   dryRun?: boolean;
 }): Promise<void> {
   const cfg = requireConfig("api_url", "api_key", "workspace_id");
-  const eid = resolveEntityId(cfg, opts.entityId);
   const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
+  const resolver = new ReferenceResolver(client, cfg);
   try {
+    const eid = await resolver.resolveEntity(opts.entityId);
+    const roundId = await resolver.resolveRound(eid, opts.roundId);
+    const meetingId = opts.meetingId ? await resolver.resolveMeeting(eid, opts.meetingId) : undefined;
+    const resolutionId = opts.resolutionId
+      ? await resolver.resolveResolution(eid, opts.resolutionId, meetingId)
+      : undefined;
     if (opts.dryRun) {
       printDryRun("cap_table.issue_round", {
         entity_id: eid,
-        round_id: opts.roundId,
-        meeting_id: opts.meetingId,
-        resolution_id: opts.resolutionId,
+        round_id: roundId,
+        meeting_id: meetingId,
+        resolution_id: resolutionId,
       });
       return;
     }
-    if ((!opts.meetingId || !opts.resolutionId) && await entityHasActiveBoard(client, eid)) {
+    if ((!meetingId || !resolutionId) && await entityHasActiveBoard(client, eid)) {
       throw new Error(
         "Board approval is required before issuing this round. Pass --meeting-id and --resolution-id from a passed board vote.",
       );
     }
     const body: Record<string, unknown> = { entity_id: eid };
-    if (opts.meetingId) body.meeting_id = opts.meetingId;
-    if (opts.resolutionId) body.resolution_id = opts.resolutionId;
-    const result = await client.issueRound(opts.roundId, body);
-    printWriteResult(result, "Round issued and closed", opts.json);
+    if (meetingId) body.meeting_id = meetingId;
+    if (resolutionId) body.resolution_id = resolutionId;
+    const result = await client.issueRound(roundId, body);
+    resolver.remember("round", roundId, eid);
+    const roundMatch = (await resolver.find("round", shortId(roundId), { entityId: eid }))
+      .find((match) => match.id === roundId);
+    if (opts.json) {
+      printJson(result);
+      return;
+    }
+    printSuccess("Round issued and closed");
+    if (roundMatch) {
+      printReferenceSummary("round", roundMatch.raw, { showReuseHint: true });
+    }
+    printJson(result);
   } catch (err) {
     printError(`Failed to issue round: ${err}`);
     process.exit(1);
@@ -644,9 +798,10 @@ export async function createValuationCommand(opts: {
   dryRun?: boolean;
 }): Promise<void> {
   const cfg = requireConfig("api_url", "api_key", "workspace_id");
-  const eid = resolveEntityId(cfg, opts.entityId);
   const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
+  const resolver = new ReferenceResolver(client, cfg);
   try {
+    const eid = await resolver.resolveEntity(opts.entityId);
     const body: Record<string, unknown> = {
       entity_id: eid,
       valuation_type: opts.type,
@@ -660,7 +815,13 @@ export async function createValuationCommand(opts: {
       return;
     }
     const result = await client.createValuation(body);
-    printWriteResult(result, `Valuation created: ${result.valuation_id ?? "OK"}`, opts.json);
+    await resolver.stabilizeRecord("valuation", result, eid);
+    resolver.rememberFromRecord("valuation", result, eid);
+    printWriteResult(result, `Valuation created: ${result.valuation_id ?? "OK"}`, {
+      jsonOnly: opts.json,
+      referenceKind: "valuation",
+      showReuseHint: true,
+    });
   } catch (err) {
     printError(`Failed to create valuation: ${err}`);
     process.exit(1);
@@ -674,21 +835,47 @@ export async function submitValuationCommand(opts: {
   dryRun?: boolean;
 }): Promise<void> {
   const cfg = requireConfig("api_url", "api_key", "workspace_id");
-  const eid = resolveEntityId(cfg, opts.entityId);
   const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
+  const resolver = new ReferenceResolver(client, cfg);
   try {
+    const eid = await resolver.resolveEntity(opts.entityId);
+    const valuationId = await resolver.resolveValuation(eid, opts.valuationId);
     if (opts.dryRun) {
-      printDryRun("cap_table.submit_valuation", { entity_id: eid, valuation_id: opts.valuationId });
+      printDryRun("cap_table.submit_valuation", { entity_id: eid, valuation_id: valuationId });
       return;
     }
-    const result = await client.submitValuationForApproval(opts.valuationId, eid);
+    const result = await client.submitValuationForApproval(valuationId, eid);
+    await resolver.stabilizeRecord("valuation", result, eid);
+    resolver.remember("valuation", valuationId, eid);
+    if (result.meeting_id) resolver.remember("meeting", String(result.meeting_id), eid);
+    if (result.agenda_item_id) resolver.remember("agenda_item", String(result.agenda_item_id), eid);
     if (opts.json) {
       printJson(result);
       return;
     }
-    printSuccess(`Valuation submitted for approval: ${result.valuation_id ?? "OK"}`);
-    if (result.meeting_id) console.log(`  Meeting: ${result.meeting_id}`);
-    if (result.agenda_item_id) console.log(`  Agenda Item: ${result.agenda_item_id}`);
+    printSuccess(`Valuation submitted for approval: ${result.valuation_id ?? valuationId ?? "OK"}`);
+    printReferenceSummary("valuation", result, { showReuseHint: true });
+    if (result.meeting_id) {
+      const meetingMatch = (await resolver.find("meeting", shortId(String(result.meeting_id)), { entityId: eid }))
+        .find((match) => match.id === String(result.meeting_id));
+      if (meetingMatch) {
+        printReferenceSummary("meeting", meetingMatch.raw, { label: "Meeting Ref:" });
+      } else {
+        printReferenceSummary("meeting", { meeting_id: result.meeting_id }, { label: "Meeting Ref:" });
+      }
+    }
+    if (result.agenda_item_id) {
+      const agendaMatch = (await resolver.find("agenda_item", shortId(String(result.agenda_item_id)), {
+        entityId: eid,
+        meetingId: result.meeting_id ? String(result.meeting_id) : undefined,
+      }))
+        .find((match) => match.id === String(result.agenda_item_id));
+      if (agendaMatch) {
+        printReferenceSummary("agenda_item", agendaMatch.raw, { label: "Agenda Ref:" });
+      } else {
+        printReferenceSummary("agenda_item", { agenda_item_id: result.agenda_item_id }, { label: "Agenda Ref:" });
+      }
+    }
     printJson(result);
   } catch (err) {
     const msg = String(err);
@@ -709,23 +896,32 @@ export async function approveValuationCommand(opts: {
   dryRun?: boolean;
 }): Promise<void> {
   const cfg = requireConfig("api_url", "api_key", "workspace_id");
-  const eid = resolveEntityId(cfg, opts.entityId);
   const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
+  const resolver = new ReferenceResolver(client, cfg);
   try {
+    const eid = await resolver.resolveEntity(opts.entityId);
+    const valuationId = await resolver.resolveValuation(eid, opts.valuationId);
+    const resolutionId = opts.resolutionId
+      ? await resolver.resolveResolution(eid, opts.resolutionId)
+      : undefined;
     if (opts.dryRun) {
       printDryRun("cap_table.approve_valuation", {
         entity_id: eid,
-        valuation_id: opts.valuationId,
-        resolution_id: opts.resolutionId,
+        valuation_id: valuationId,
+        resolution_id: resolutionId,
       });
       return;
     }
-    const result = await client.approveValuation(opts.valuationId, eid, opts.resolutionId);
-    printWriteResult(result, `Valuation approved: ${result.valuation_id ?? "OK"}`, opts.json);
+    const result = await client.approveValuation(valuationId, eid, resolutionId);
+    await resolver.stabilizeRecord("valuation", result, eid);
+    printWriteResult(result, `Valuation approved: ${result.valuation_id ?? valuationId ?? "OK"}`, {
+      jsonOnly: opts.json,
+      referenceKind: "valuation",
+    });
   } catch (err) {
     const msg = String(err);
     if (msg.includes("400")) {
-      printError(`Bad request — a --resolution-id from a board vote may be required. Submit for approval first: corp cap-table submit-valuation <id>`);
+      printError(`Bad request — a --resolution-id from a board vote may be required. Submit for approval first: corp cap-table submit-valuation <valuation-ref>`);
     } else {
       printError(`Failed to approve valuation: ${err}`);
     }

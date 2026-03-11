@@ -16,6 +16,7 @@ use crate::domain::contacts::{
     contact::Contact,
     types::{CapTableAccess, ContactCategory, ContactStatus, ContactType},
 };
+use crate::domain::formation::types::FormationStatus;
 use crate::domain::ids::{ContactId, EntityId, WorkspaceId};
 use crate::error::AppError;
 use crate::store::entity_store::EntityStore;
@@ -91,6 +92,21 @@ fn open_store<'a>(
     })
 }
 
+fn ensure_entity_allows_contact_mutation(
+    store: &EntityStore<'_>,
+    action: &str,
+) -> Result<(), AppError> {
+    let entity = store
+        .read_entity("main")
+        .map_err(|e| AppError::Internal(format!("read entity: {e}")))?;
+    if entity.formation_status() == FormationStatus::Dissolved {
+        return Err(AppError::BadRequest(format!(
+            "{action} is not allowed for dissolved entities"
+        )));
+    }
+    Ok(())
+}
+
 fn normalize_email(email: &str) -> String {
     email.trim().to_ascii_lowercase()
 }
@@ -161,6 +177,7 @@ async fn create_contact(
         let name = name.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
+            ensure_entity_allows_contact_mutation(&store, "contact creation")?;
             let contact_ids = store
                 .list_ids::<Contact>("main")
                 .map_err(|e| AppError::Internal(format!("list contacts: {e}")))?;
@@ -365,6 +382,7 @@ async fn update_contact(
         let name = name.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
+            ensure_entity_allows_contact_mutation(&store, "contact updates")?;
             let mut contact = store
                 .read::<Contact>("main", contact_id)
                 .map_err(|_| AppError::NotFound(format!("contact {} not found", contact_id)))?;
@@ -612,6 +630,7 @@ async fn update_notification_prefs(
         let layout = state.layout.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
+            ensure_entity_allows_contact_mutation(&store, "notification preference updates")?;
             let path = format!("contacts/{}/notification-prefs.json", contact_id);
 
             // Read existing or create defaults
