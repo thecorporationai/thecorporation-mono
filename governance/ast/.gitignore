@@ -1,2 +1,2 @@
-# governance-ast.json is assembled from split files by assemble.py
-# but must be committed since include_str! requires it at compile time
+# Assembled at build time from split files by assemble.py
+governance-ast.json
