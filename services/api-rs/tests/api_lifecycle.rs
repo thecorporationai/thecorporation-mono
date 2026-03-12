@@ -433,6 +433,19 @@ async fn advance_entity_to_active(app: &Router, entity_id: &str, token: &str) {
     assert_eq!(body["formation_status"], "active");
 }
 
+async fn ensure_entity_active(app: &Router, entity_id: &str, token: &str) {
+    let (status, body) = get_json(app, &format!("/v1/formations/{entity_id}"), token).await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "get formation status failed: {body}"
+    );
+    if body["formation_status"] == "active" {
+        return;
+    }
+    advance_entity_to_active(app, entity_id, token).await;
+}
+
 async fn create_round_with_terms(app: &Router, entity_id: &str, token: &str) -> (String, String) {
     let (status, legal_entity) = post_json(
         app,
@@ -513,6 +526,8 @@ async fn create_round_with_terms(app: &Router, entity_id: &str, token: &str) -> 
 }
 
 async fn ensure_board_body(app: &Router, entity_id: &str, token: &str) -> String {
+    ensure_entity_active(app, entity_id, token).await;
+
     let (status, bodies) = get_json(
         app,
         &format!("/v1/governance-bodies?entity_id={entity_id}"),
@@ -557,6 +572,7 @@ async fn create_resolution_for_body(
     body_type: &str,
     vote_values: &[&str],
 ) -> (String, String) {
+    ensure_entity_active(app, entity_id, token).await;
     let e_query = format!("entity_id={entity_id}");
     let unique = uuid::Uuid::new_v4()
         .to_string()
@@ -1351,6 +1367,7 @@ async fn test_equity_lifecycle() {
     let tmp = TempDir::new().unwrap();
     let app = build_app(&tmp);
     let (ws_id, entity_id, token) = create_entity(&app).await;
+    advance_entity_to_active(&app, &entity_id, &token).await;
 
     // 1. Create operating legal entity linked to formation entity.
     let (status, legal_entity) = post_json(
@@ -2132,6 +2149,7 @@ async fn test_governance_lifecycle() {
     let tmp = TempDir::new().unwrap();
     let app = build_app(&tmp);
     let (ws_id, entity_id, token) = create_entity(&app).await;
+    advance_entity_to_active(&app, &entity_id, &token).await;
     let _ = ws_id;
 
     // 1. Create contacts for board members
@@ -3024,7 +3042,6 @@ async fn test_board_approve_round_validation_guards() {
         create_round_with_terms(&app, &entity_id, &token).await;
 
     // Creating an LLC body type on a C-Corp entity is now rejected at creation time
-    let e_query = format!("entity_id={entity_id}");
     let (status, _llc_body_err) = post_json(
         &app,
         "/v1/governance-bodies",
@@ -3948,6 +3965,7 @@ async fn test_compliance_lifecycle() {
     let tmp = TempDir::new().unwrap();
     let app = build_app(&tmp);
     let (ws_id, entity_id, token) = create_entity(&app).await;
+    advance_entity_to_active(&app, &entity_id, &token).await;
     let _ = ws_id;
 
     // 1. File tax document
@@ -5509,6 +5527,7 @@ async fn test_cancel_meeting_rejects_pending_valuation_approval() {
     let (_ws_id, entity_id, token) = create_entity(&app).await;
     let _body_id = ensure_board_body(&app, &entity_id, &token).await;
     let e_query = format!("entity_id={entity_id}");
+    let effective_date = chrono::Utc::now().date_naive().to_string();
 
     let (status, valuation) = post_json(
         &app,
@@ -5516,7 +5535,7 @@ async fn test_cancel_meeting_rejects_pending_valuation_approval() {
         json!({
             "entity_id": entity_id,
             "valuation_type": "four_oh_nine_a",
-            "effective_date": "2026-03-01",
+            "effective_date": effective_date,
             "fmv_per_share_cents": 100,
             "enterprise_value_cents": 500000000,
             "methodology": "market",
@@ -5596,7 +5615,7 @@ async fn test_safe_notes_issue_and_list_first_class_records() {
 async fn test_safe_notes_require_explicit_governance_artifacts_when_board_exists() {
     let tmp = TempDir::new().unwrap();
     let app = build_app(&tmp);
-    let (_ws_id, entity_id, token) = create_pending_entity(&app).await;
+    let (_ws_id, entity_id, token) = create_entity(&app).await;
     let (meeting_id, resolution_id) = create_resolution_for_body(
         &app,
         &entity_id,

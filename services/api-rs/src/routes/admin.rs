@@ -80,8 +80,13 @@ async fn list_workspaces(
     let summaries = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         move || {
-            let ws_store = WorkspaceStore::open(&layout, workspace_id)
-                .map_err(|e| AppError::NotFound(format!("workspace not found: {e}")))?;
+            let ws_store = match WorkspaceStore::open(&layout, workspace_id) {
+                Ok(store) => store,
+                Err(crate::git::error::GitStorageError::RepoNotFound(_)) => {
+                    return Ok::<_, AppError>(Vec::new());
+                }
+                Err(error) => return Err(AppError::Internal(format!("open workspace: {error}"))),
+            };
             let name = ws_store
                 .read_workspace()
                 .map(|r| r.name)
@@ -117,8 +122,13 @@ async fn list_audit_events(
         let layout = state.layout.clone();
         move || {
             let mut events = Vec::new();
-            let ws_store = WorkspaceStore::open(&layout, workspace_id)
-                .map_err(|e| AppError::NotFound(format!("workspace not found: {e}")))?;
+            let ws_store = match WorkspaceStore::open(&layout, workspace_id) {
+                Ok(store) => store,
+                Err(crate::git::error::GitStorageError::RepoNotFound(_)) => {
+                    return Ok::<_, AppError>(Vec::new());
+                }
+                Err(error) => return Err(AppError::Internal(format!("open workspace: {error}"))),
+            };
             if let Ok(log_entries) = ws_store.repo().recent_commits("main", 50) {
                 for (oid, message, timestamp) in log_entries {
                     events.push(AuditEvent {
