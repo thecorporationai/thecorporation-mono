@@ -286,6 +286,8 @@ async fn list_workspace_entities(
 pub struct DemoSeedRequest {
     #[serde(default = "default_scenario")]
     pub scenario: String,
+    #[serde(default)]
+    pub name: Option<String>,
 }
 
 fn default_scenario() -> String {
@@ -296,6 +298,8 @@ fn default_scenario() -> String {
 pub struct DemoSeedResponse {
     pub workspace_id: WorkspaceId,
     pub scenario: String,
+    pub entity_id: EntityId,
+    pub legal_name: String,
     pub entities_created: usize,
     pub message: String,
 }
@@ -318,8 +322,9 @@ async fn demo_seed(
     state.enforce_creation_rate_limit("admin.demo_seed.create", workspace_id, 5, 60)?;
     let scenario = req.scenario.clone();
 
-    let entities_created = tokio::task::spawn_blocking({
+    let (entity_id, legal_name, entities_created) = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let requested_name = req.name.clone();
         move || {
             // Initialize workspace if it doesn't exist
             let ws_store = match WorkspaceStore::open(&layout, workspace_id) {
@@ -330,7 +335,7 @@ async fn demo_seed(
 
             // Create a demo entity based on scenario
             let entity_id = EntityId::new();
-            let (entity_type, legal_name) = match scenario.as_str() {
+            let (entity_type, default_name) = match scenario.as_str() {
                 "startup" => (
                     crate::domain::formation::types::EntityType::CCorp,
                     "Demo Startup Inc.",
@@ -345,11 +350,12 @@ async fn demo_seed(
                     "Demo Entity",
                 ),
             };
+            let legal_name = requested_name.unwrap_or_else(|| default_name.to_owned());
 
             let entity = crate::domain::formation::entity::Entity::new(
                 entity_id,
                 workspace_id,
-                legal_name.to_owned(),
+                legal_name.clone(),
                 entity_type,
                 crate::domain::formation::types::Jurisdiction::new("US-DE").unwrap(),
                 None,
@@ -391,7 +397,7 @@ async fn demo_seed(
                 )
                 .map_err(|e| AppError::Internal(format!("commit: {e}")))?;
 
-            Ok::<_, AppError>(1usize)
+            Ok::<_, AppError>((entity_id, legal_name, 1usize))
         }
     })
     .await
@@ -400,6 +406,8 @@ async fn demo_seed(
     Ok(Json(DemoSeedResponse {
         workspace_id,
         scenario: req.scenario,
+        entity_id,
+        legal_name,
         entities_created,
         message: format!("Created {} demo entities", entities_created),
     }))

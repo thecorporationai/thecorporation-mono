@@ -5,6 +5,7 @@ import {
   printClassificationsTable,
   printDistributionsTable,
   printError,
+  printFinanceSummaryPanel,
   printInvoicesTable,
   printJson,
   printPaymentsTable,
@@ -13,6 +14,127 @@ import {
   printWriteResult,
 } from "../output.js";
 import { ReferenceResolver } from "../references.js";
+import type { ApiRecord } from "../types.js";
+
+function numeric(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+function sumAmounts(records: ApiRecord[], candidates: string[]): number {
+  return records.reduce((sum, record) => {
+    for (const key of candidates) {
+      if (typeof record[key] === "number" && Number.isFinite(record[key])) {
+        return sum + Number(record[key]);
+      }
+    }
+    return sum;
+  }, 0);
+}
+
+function latestDate(records: ApiRecord[], candidates: string[]): string | undefined {
+  const values = records
+    .flatMap((record) => candidates.map((key) => record[key]))
+    .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+    .map((value) => ({ raw: value, time: new Date(value).getTime() }))
+    .filter((value) => Number.isFinite(value.time))
+    .sort((a, b) => b.time - a.time);
+  return values[0]?.raw;
+}
+
+function countByStatus(records: ApiRecord[], statuses: string[]): number {
+  const expected = new Set(statuses.map((status) => status.toLowerCase()));
+  return records.filter((record) => expected.has(String(record.status ?? "").toLowerCase())).length;
+}
+
+function countByField(records: ApiRecord[], field: string, values: string[]): number {
+  const expected = new Set(values.map((value) => value.toLowerCase()));
+  return records.filter((record) => expected.has(String(record[field] ?? "").toLowerCase())).length;
+}
+
+export async function financeSummaryCommand(opts: { entityId?: string; json?: boolean }): Promise<void> {
+  const cfg = requireConfig("api_url", "api_key", "workspace_id");
+  const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
+  const resolver = new ReferenceResolver(client, cfg);
+  try {
+    const eid = await resolver.resolveEntity(opts.entityId);
+    const [
+      invoices,
+      accounts,
+      payments,
+      payrollRuns,
+      distributions,
+      reconciliations,
+      classifications,
+    ] = await Promise.all([
+      client.listInvoices(eid),
+      client.listBankAccounts(eid),
+      client.listPayments(eid),
+      client.listPayrollRuns(eid),
+      client.listDistributions(eid),
+      client.listReconciliations(eid),
+      client.listContractorClassifications(eid),
+    ]);
+
+    await Promise.all([
+      resolver.stabilizeRecords("invoice", invoices, eid),
+      resolver.stabilizeRecords("bank_account", accounts, eid),
+      resolver.stabilizeRecords("payment", payments, eid),
+      resolver.stabilizeRecords("payroll_run", payrollRuns, eid),
+      resolver.stabilizeRecords("distribution", distributions, eid),
+      resolver.stabilizeRecords("reconciliation", reconciliations, eid),
+      resolver.stabilizeRecords("classification", classifications, eid),
+    ]);
+
+    const summary: ApiRecord = {
+      entity_id: eid,
+      invoices: {
+        count: invoices.length,
+        open_count: invoices.length - countByStatus(invoices, ["paid", "cancelled", "void"]),
+        overdue_count: countByStatus(invoices, ["overdue"]),
+        total_amount_cents: sumAmounts(invoices, ["amount_cents", "total_amount_cents"]),
+        latest_due_date: latestDate(invoices, ["due_date", "created_at"]),
+      },
+      bank_accounts: {
+        count: accounts.length,
+        active_count: countByStatus(accounts, ["active", "approved", "open"]),
+      },
+      payments: {
+        count: payments.length,
+        pending_count: countByStatus(payments, ["pending", "submitted", "queued"]),
+        total_amount_cents: sumAmounts(payments, ["amount_cents"]),
+        latest_submitted_at: latestDate(payments, ["submitted_at", "created_at"]),
+      },
+      payroll_runs: {
+        count: payrollRuns.length,
+        latest_period_end: latestDate(payrollRuns, ["pay_period_end", "created_at"]),
+      },
+      distributions: {
+        count: distributions.length,
+        total_amount_cents: sumAmounts(distributions, ["amount_cents", "distribution_amount_cents"]),
+        latest_declared_at: latestDate(distributions, ["declared_at", "created_at"]),
+      },
+      reconciliations: {
+        count: reconciliations.length,
+        balanced_count: reconciliations.filter((record) => record.is_balanced === true).length,
+        latest_as_of_date: latestDate(reconciliations, ["as_of_date", "created_at"]),
+      },
+      contractor_classifications: {
+        count: classifications.length,
+        high_risk_count: countByField(classifications, "risk_level", ["high"]),
+        medium_risk_count: countByField(classifications, "risk_level", ["medium"]),
+      },
+    };
+
+    if (opts.json) {
+      printJson(summary);
+      return;
+    }
+    printFinanceSummaryPanel(summary);
+  } catch (err) {
+    printError(`Failed to fetch finance summary: ${err}`);
+    process.exit(1);
+  }
+}
 
 export async function financeInvoicesCommand(opts: { entityId?: string; json?: boolean }): Promise<void> {
   const cfg = requireConfig("api_url", "api_key", "workspace_id");

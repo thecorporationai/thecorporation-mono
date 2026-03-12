@@ -4,6 +4,21 @@ import { printReferenceSummary, printWorkItemsTable, printError, printJson, prin
 import { ReferenceResolver } from "../references.js";
 import chalk from "chalk";
 
+function actorLabel(record: Record<string, unknown>, key: "claimed_by" | "completed_by" | "created_by"): string | undefined {
+  const actor = record[`${key}_actor`];
+  if (actor && typeof actor === "object" && !Array.isArray(actor)) {
+    const label = (actor as Record<string, unknown>).label;
+    const actorType = (actor as Record<string, unknown>).actor_type;
+    if (typeof label === "string" && label.trim()) {
+      return typeof actorType === "string" && actorType.trim()
+        ? `${label} (${actorType})`
+        : label;
+    }
+  }
+  const legacy = record[key];
+  return typeof legacy === "string" && legacy.trim() ? legacy : undefined;
+}
+
 export async function workItemsListCommand(opts: { entityId?: string; json?: boolean; status?: string; category?: string }): Promise<void> {
   const cfg = requireConfig("api_url", "api_key", "workspace_id");
   const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
@@ -41,13 +56,16 @@ export async function workItemsShowCommand(workItemId: string, opts: { entityId?
     if (w.description) console.log(`  ${chalk.bold("Description:")} ${w.description}`);
     if (w.deadline) console.log(`  ${chalk.bold("Deadline:")} ${w.deadline}`);
     if (w.asap) console.log(`  ${chalk.bold("Priority:")} ${chalk.red.bold("ASAP")}`);
-    if (w.claimed_by) console.log(`  ${chalk.bold("Claimed by:")} ${w.claimed_by}`);
+    const claimedBy = actorLabel(w, "claimed_by");
+    const completedBy = actorLabel(w, "completed_by");
+    const createdBy = actorLabel(w, "created_by");
+    if (claimedBy) console.log(`  ${chalk.bold("Claimed by:")} ${claimedBy}`);
     if (w.claimed_at) console.log(`  ${chalk.bold("Claimed at:")} ${w.claimed_at}`);
     if (w.claim_ttl_seconds) console.log(`  ${chalk.bold("Claim TTL:")} ${w.claim_ttl_seconds}s`);
-    if (w.completed_by) console.log(`  ${chalk.bold("Completed by:")} ${w.completed_by}`);
+    if (completedBy) console.log(`  ${chalk.bold("Completed by:")} ${completedBy}`);
     if (w.completed_at) console.log(`  ${chalk.bold("Completed at:")} ${w.completed_at}`);
     if (w.result) console.log(`  ${chalk.bold("Result:")} ${w.result}`);
-    if (w.created_by) console.log(`  ${chalk.bold("Created by:")} ${w.created_by}`);
+    if (createdBy) console.log(`  ${chalk.bold("Created by:")} ${createdBy}`);
     console.log(`  ${chalk.bold("Created at:")} ${w.created_at ?? "N/A"}`);
     console.log(chalk.cyan("─".repeat(40)));
   } catch (err) { printError(`Failed to fetch work item: ${err}`); process.exit(1); }
@@ -70,7 +88,7 @@ export async function workItemsCreateCommand(opts: {
     if (opts.description) data.description = opts.description;
     if (opts.deadline) data.deadline = opts.deadline;
     if (opts.asap) data.asap = true;
-    if (opts.createdBy) data.created_by = await resolver.resolveContact(eid, opts.createdBy);
+    if (opts.createdBy) data.created_by_actor = await resolver.resolveWorkItemActor(eid, opts.createdBy);
     const result = await client.createWorkItem(eid, data);
     await resolver.stabilizeRecord("work_item", result, eid);
     resolver.rememberFromRecord("work_item", result, eid);
@@ -92,7 +110,7 @@ export async function workItemsClaimCommand(workItemId: string, opts: {
     const eid = await resolver.resolveEntity(opts.entityId);
     const resolvedWorkItemId = await resolver.resolveWorkItem(eid, workItemId);
     const data: Record<string, unknown> = {
-      claimed_by: await resolver.resolveContact(eid, opts.claimedBy),
+      claimed_by_actor: await resolver.resolveWorkItemActor(eid, opts.claimedBy),
     };
     if (opts.ttl != null) data.ttl_seconds = opts.ttl;
     const result = await client.claimWorkItem(eid, resolvedWorkItemId, data);
@@ -110,7 +128,7 @@ export async function workItemsCompleteCommand(workItemId: string, opts: {
     const eid = await resolver.resolveEntity(opts.entityId);
     const resolvedWorkItemId = await resolver.resolveWorkItem(eid, workItemId);
     const data: Record<string, unknown> = {
-      completed_by: await resolver.resolveContact(eid, opts.completedBy),
+      completed_by_actor: await resolver.resolveWorkItemActor(eid, opts.completedBy),
     };
     if (opts.result) data.result = opts.result;
     const result = await client.completeWorkItem(eid, resolvedWorkItemId, data);

@@ -340,6 +340,38 @@ export class ReferenceResolver {
     return this.resolve("contact", ref, { entityId });
   }
 
+  async resolveWorkItemActor(
+    entityId: string,
+    ref: string,
+  ): Promise<{ actor_type: "contact" | "agent"; actor_id: string }> {
+    const trimmed = validateReferenceInput(ref, "actor reference");
+    const [contactResult, agentResult] = await Promise.allSettled([
+      this.resolveContact(entityId, trimmed),
+      this.resolveAgent(trimmed),
+    ]);
+
+    const contactId =
+      contactResult.status === "fulfilled" ? contactResult.value : undefined;
+    const agentId =
+      agentResult.status === "fulfilled" ? agentResult.value : undefined;
+
+    if (contactId && agentId && contactId !== agentId) {
+      throw new Error(
+        `Actor reference '${trimmed}' is ambiguous between a contact and an agent. Use a unique ref or explicit @last:contact / @last:agent.`,
+      );
+    }
+    if (contactId) {
+      return { actor_type: "contact", actor_id: contactId };
+    }
+    if (agentId) {
+      return { actor_type: "agent", actor_id: agentId };
+    }
+
+    throw new Error(
+      `No matching contact or agent found for '${trimmed}'. Try 'corp find contact <query>' or 'corp find agent <query>'.`,
+    );
+  }
+
   async resolveShareTransfer(entityId: string, ref: string): Promise<string> {
     return this.resolve("share_transfer", ref, { entityId });
   }

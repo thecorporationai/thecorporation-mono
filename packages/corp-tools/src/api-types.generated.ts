@@ -303,6 +303,70 @@ export type paths = {
         patch?: never;
         trace?: never;
     };
+    "/v1/billing/checkout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["billing_checkout"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/billing/plans": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["billing_plans_handler"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/billing/portal": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["billing_portal"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/billing/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["billing_status"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/branches": {
         parameters: {
             query?: never;
@@ -849,6 +913,22 @@ export type paths = {
         patch?: never;
         trace?: never;
     };
+    "/v1/entities/{entity_id}/contractor-classifications": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_contractor_classifications"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/entities/{entity_id}/convert": {
         parameters: {
             query?: never;
@@ -881,6 +961,22 @@ export type paths = {
         patch?: never;
         trace?: never;
     };
+    "/v1/entities/{entity_id}/deadlines": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_deadlines"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/entities/{entity_id}/dissolve": {
         parameters: {
             query?: never;
@@ -891,6 +987,38 @@ export type paths = {
         get?: never;
         put?: never;
         post: operations["dissolve_entity"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/entities/{entity_id}/distributions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_distributions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/entities/{entity_id}/equity-rounds": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_equity_rounds"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1249,6 +1377,70 @@ export type paths = {
         patch?: never;
         trace?: never;
     };
+    "/v1/entities/{entity_id}/payments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_payments"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/entities/{entity_id}/payroll-runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_payroll_runs"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/entities/{entity_id}/reconciliations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_reconciliations"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/entities/{entity_id}/safe-notes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_safe_notes"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/entities/{entity_id}/share-transfers": {
         parameters: {
             query?: never;
@@ -1289,6 +1481,22 @@ export type paths = {
             cookie?: never;
         };
         get: operations["get_stripe_account"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/entities/{entity_id}/tax-filings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_tax_filings"];
         put?: never;
         post?: never;
         delete?: never;
@@ -3335,6 +3543,22 @@ export type paths = {
         patch?: never;
         trace?: never;
     };
+    "/v1/meetings/{meeting_id}/reopen": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["reopen_meeting"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/meetings/{meeting_id}/resolutions": {
         parameters: {
             query?: never;
@@ -3521,6 +3745,38 @@ export type paths = {
         get: operations["get_receipt"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/references/sync": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["sync_references"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/safe-notes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["create_safe_note"];
         delete?: never;
         options?: never;
         head?: never;
@@ -4275,6 +4531,34 @@ export type components = {
          * @enum {string}
          */
         BankAccountType: "checking" | "savings";
+        BillingCheckoutRequest: {
+            entity_id?: null | components["schemas"]["EntityId"];
+            plan_id: string;
+        };
+        BillingCheckoutResponse: {
+            checkout_url: string;
+            plan: string;
+            status: string;
+        };
+        BillingPlanResponse: {
+            interval: string;
+            name: string;
+            plan_id: string;
+            /** Format: int64 */
+            price_cents: number;
+        };
+        BillingPlansResponse: {
+            plans: components["schemas"]["BillingPlanResponse"][];
+        };
+        BillingPortalResponse: {
+            portal_url: string;
+        };
+        BillingStatusResponse: {
+            current_period_end?: string | null;
+            plan: string;
+            status: string;
+            workspace_id: components["schemas"]["WorkspaceId"];
+        };
         BindApprovalArtifactRequest: {
             approval_artifact_id: components["schemas"]["ApprovalArtifactId"];
             entity_id: components["schemas"]["EntityId"];
@@ -4415,7 +4699,8 @@ export type components = {
             entity_id: components["schemas"]["EntityId"];
         };
         ClaimWorkItemRequest: {
-            claimed_by: string;
+            claimed_by?: string | null;
+            claimed_by_actor?: null | components["schemas"]["WorkItemActorRefRequest"];
             /** Format: int64 */
             ttl_seconds?: number | null;
         };
@@ -4438,8 +4723,14 @@ export type components = {
         ClassificationResult: "independent" | "employee" | "uncertain";
         ClassifyContractorRequest: {
             contractor_name: string;
+            /** Format: int32 */
+            duration_months?: number | null;
             entity_id: components["schemas"]["EntityId"];
+            exclusive_client?: boolean | null;
             factors?: Record<string, never>;
+            /** Format: int32 */
+            hours_per_week?: number | null;
+            provides_tools?: boolean | null;
             state?: string;
         };
         CompanyAddress: {
@@ -4455,7 +4746,8 @@ export type components = {
             required_signers?: string[];
         };
         CompleteWorkItemRequest: {
-            completed_by: string;
+            completed_by?: string | null;
+            completed_by_actor?: null | components["schemas"]["WorkItemActorRefRequest"];
             result?: string | null;
         };
         /** Format: uuid */
@@ -4677,6 +4969,7 @@ export type components = {
             branch: string;
         };
         CreateContactRequest: {
+            cap_table_access?: null | components["schemas"]["CapTableAccess"];
             category: components["schemas"]["ContactCategory"];
             contact_type: components["schemas"]["ContactType"];
             email?: string | null;
@@ -4684,6 +4977,7 @@ export type components = {
             mailing_address?: string | null;
             name: string;
             notes?: string | null;
+            phone?: string | null;
         };
         CreateControlLinkRequest: {
             child_legal_entity_id: components["schemas"]["LegalEntityId"];
@@ -4904,6 +5198,24 @@ export type components = {
             /** Format: int64 */
             target_raise_cents?: number | null;
         };
+        CreateSafeNoteRequest: {
+            conversion_unit_type?: string | null;
+            /** Format: double */
+            discount_rate?: number | null;
+            document_id?: null | components["schemas"]["DocumentId"];
+            email?: string | null;
+            entity_id: components["schemas"]["EntityId"];
+            investor_contact_id?: null | components["schemas"]["ContactId"];
+            investor_name: string;
+            meeting_id?: null | components["schemas"]["MeetingId"];
+            /** Format: int64 */
+            principal_amount_cents: number;
+            pro_rata_rights?: boolean;
+            resolution_id?: null | components["schemas"]["ResolutionId"];
+            safe_type?: null | components["schemas"]["SafeType"];
+            /** Format: int64 */
+            valuation_cap_cents?: number | null;
+        };
         CreateSeatRequest: {
             /** Format: date */
             appointed_date?: string | null;
@@ -4960,6 +5272,7 @@ export type components = {
             asap?: boolean;
             category: string;
             created_by?: string | null;
+            created_by_actor?: null | components["schemas"]["WorkItemActorRefRequest"];
             /** Format: date */
             deadline?: string | null;
             description?: string | null;
@@ -5032,10 +5345,13 @@ export type components = {
             schedule: components["schemas"]["DelegationSchedule"];
         };
         DemoSeedRequest: {
+            name?: string | null;
             scenario?: string;
         };
         DemoSeedResponse: {
             entities_created: number;
+            entity_id: components["schemas"]["EntityId"];
+            legal_name: string;
             message: string;
             scenario: string;
             workspace_id: components["schemas"]["WorkspaceId"];
@@ -5070,6 +5386,8 @@ export type components = {
             name: string;
         };
         DissolveEntityRequest: {
+            /** Format: date */
+            effective_date?: string | null;
             reason?: string | null;
         };
         /** Format: uuid */
@@ -5233,12 +5551,15 @@ export type components = {
         FinalizePendingFormationRequest: {
             /** Format: int64 */
             authorized_shares?: number | null;
+            /** Format: int32 */
+            board_size?: number | null;
             company_address?: null | components["schemas"]["Address"];
             fiscal_year_end?: string | null;
             formation_date?: string | null;
             incorporator_address?: string | null;
             incorporator_name?: string | null;
             par_value?: string | null;
+            principal_name?: string | null;
             registered_agent_address?: string | null;
             registered_agent_name?: string | null;
             right_of_first_refusal?: boolean | null;
@@ -5755,6 +6076,8 @@ export type components = {
         InvoiceStatus: "draft" | "sent" | "paid" | "voided";
         IssueStagedRoundRequest: {
             entity_id: components["schemas"]["EntityId"];
+            meeting_id?: null | components["schemas"]["MeetingId"];
+            resolution_id?: null | components["schemas"]["ResolutionId"];
         };
         IssueStagedRoundResponse: {
             agenda_item_id?: null | components["schemas"]["AgendaItemId"];
@@ -5783,9 +6106,10 @@ export type components = {
          */
         JournalEntryStatus: "draft" | "posted" | "voided";
         /**
-         * @description A validated jurisdiction (e.g., "Delaware", "California").
+         * @description A validated jurisdiction (e.g., "Delaware", "US-DE").
          *
-         *     Guarantees: non-empty, at most 200 characters.
+         *     Guarantees: non-empty, at most 200 characters, and matches a supported US
+         *     state or DC jurisdiction name/code.
          */
         Jurisdiction: string;
         JwksResponse: {
@@ -6207,7 +6531,11 @@ export type components = {
         ReconcileLedgerRequest: {
             /** Format: date */
             as_of_date?: string | null;
+            /** Format: date */
+            end_date?: string | null;
             entity_id: components["schemas"]["EntityId"];
+            /** Format: date */
+            start_date?: string | null;
         };
         /** Format: uuid */
         ReconciliationId: string;
@@ -6274,6 +6602,17 @@ export type components = {
          * @enum {string}
          */
         Recurrence: "one_time" | "monthly" | "quarterly" | "annual";
+        ReferenceHandleRecord: {
+            created_at: string;
+            entity_id?: null | components["schemas"]["EntityId"];
+            handle: string;
+            kind: components["schemas"]["ReferenceKind"];
+            label: string;
+            resource_id: string;
+            updated_at: string;
+        };
+        /** @enum {string} */
+        ReferenceKind: "entity" | "contact" | "share_transfer" | "invoice" | "bank_account" | "payment" | "payroll_run" | "distribution" | "reconciliation" | "tax_filing" | "deadline" | "classification" | "body" | "meeting" | "seat" | "agenda_item" | "resolution" | "document" | "work_item" | "agent" | "valuation" | "safe_note" | "instrument" | "share_class" | "round";
         RegisteredAgentConsentEvidenceRequest: {
             evidence_type?: string | null;
             evidence_uri: string;
@@ -6370,6 +6709,44 @@ export type components = {
             conversion_precedence: components["schemas"]["InstrumentKind"][];
             rule_set_id: components["schemas"]["EquityRuleSetId"];
         };
+        /** Format: uuid */
+        SafeNoteId: string;
+        SafeNoteResponse: {
+            /** Format: int64 */
+            conversion_price_cents?: number | null;
+            /** Format: int64 */
+            conversion_shares?: number | null;
+            conversion_unit_type: string;
+            converted_at?: string | null;
+            created_at: string;
+            /** Format: double */
+            discount_rate?: number | null;
+            document_id?: null | components["schemas"]["DocumentId"];
+            entity_id: components["schemas"]["EntityId"];
+            investor_contact_id?: null | components["schemas"]["ContactId"];
+            investor_name: string;
+            issued_at: string;
+            meeting_id?: null | components["schemas"]["MeetingId"];
+            /** Format: int64 */
+            principal_amount_cents: number;
+            pro_rata_rights: boolean;
+            resolution_id?: null | components["schemas"]["ResolutionId"];
+            safe_note_id: components["schemas"]["SafeNoteId"];
+            safe_type: components["schemas"]["SafeType"];
+            status: components["schemas"]["SafeStatus"];
+            /** Format: int64 */
+            valuation_cap_cents?: number | null;
+        };
+        /**
+         * @description Lifecycle status of a SAFE note.
+         * @enum {string}
+         */
+        SafeStatus: "issued" | "converted" | "cancelled";
+        /**
+         * @description Type of SAFE note.
+         * @enum {string}
+         */
+        SafeType: "post_money" | "pre_money" | "mfn";
         /**
          * @description Per-agent sandbox (container) configuration.
          *
@@ -6464,6 +6841,7 @@ export type components = {
             metadata?: Record<string, never>;
         };
         ServiceTokenResponse: {
+            api_key_id: components["schemas"]["ApiKeyId"];
             /** Format: int64 */
             expires_in: number;
             token: string;
@@ -6597,6 +6975,18 @@ export type components = {
         };
         SubmitValuationForApprovalRequest: {
             entity_id: components["schemas"]["EntityId"];
+        };
+        SyncReferenceItem: {
+            label: string;
+            resource_id: string;
+        };
+        SyncReferencesRequest: {
+            entity_id?: null | components["schemas"]["EntityId"];
+            items: components["schemas"]["SyncReferenceItem"][];
+            kind: components["schemas"]["ReferenceKind"];
+        };
+        SyncReferencesResponse: {
+            references: components["schemas"]["ReferenceHandleRecord"][];
         };
         SystemHealth: {
             git_storage: string;
@@ -6840,6 +7230,17 @@ export type components = {
          * @enum {string}
          */
         VotingMethod: "per_capita" | "per_unit";
+        WorkItemActorRefRequest: {
+            actor_id: string;
+            actor_type: components["schemas"]["WorkItemActorTypeValue"];
+        };
+        WorkItemActorResponse: {
+            actor_id: string;
+            actor_type: components["schemas"]["WorkItemActorTypeValue"];
+            label: string;
+        };
+        /** @enum {string} */
+        WorkItemActorTypeValue: "contact" | "agent";
         /** Format: uuid */
         WorkItemId: string;
         WorkItemResponse: {
@@ -6849,10 +7250,13 @@ export type components = {
             claim_ttl_seconds?: number | null;
             claimed_at?: string | null;
             claimed_by?: string | null;
+            claimed_by_actor?: null | components["schemas"]["WorkItemActorResponse"];
             completed_at?: string | null;
             completed_by?: string | null;
+            completed_by_actor?: null | components["schemas"]["WorkItemActorResponse"];
             created_at: string;
             created_by?: string | null;
+            created_by_actor?: null | components["schemas"]["WorkItemActorResponse"];
             /** Format: date */
             deadline?: string | null;
             description: string;
@@ -7499,6 +7903,90 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["BankAccountResponse"];
+                };
+            };
+        };
+    };
+    billing_checkout: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BillingCheckoutRequest"];
+            };
+        };
+        responses: {
+            /** @description Billing checkout URL */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BillingCheckoutResponse"];
+                };
+            };
+        };
+    };
+    billing_plans_handler: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Available billing plans */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BillingPlansResponse"];
+                };
+            };
+        };
+    };
+    billing_portal: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Billing portal URL */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BillingPortalResponse"];
+                };
+            };
+        };
+    };
+    billing_status: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Current workspace billing status */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BillingStatusResponse"];
                 };
             };
         };
@@ -8578,6 +9066,29 @@ export interface operations {
             };
         };
     };
+    list_contractor_classifications: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Entity ID */
+                entity_id: components["schemas"]["EntityId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description List of contractor classifications */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClassificationResponse"][];
+                };
+            };
+        };
+    };
     convert_entity: {
         parameters: {
             query?: never;
@@ -8642,6 +9153,29 @@ export interface operations {
             };
         };
     };
+    list_deadlines: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Entity ID */
+                entity_id: components["schemas"]["EntityId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description List of deadlines */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeadlineResponse"][];
+                };
+            };
+        };
+    };
     dissolve_entity: {
         parameters: {
             query?: never;
@@ -8664,6 +9198,59 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Entity not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    list_distributions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Entity ID */
+                entity_id: components["schemas"]["EntityId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description List of distributions */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DistributionResponse"][];
+                };
+            };
+        };
+    };
+    list_equity_rounds: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Entity ID */
+                entity_id: components["schemas"]["EntityId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description List of equity rounds */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RoundResponse"][];
+                };
             };
             /** @description Entity not found */
             404: {
@@ -9294,6 +9881,105 @@ export interface operations {
             };
         };
     };
+    list_payments: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Entity ID */
+                entity_id: components["schemas"]["EntityId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description List of payments */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaymentResponse"][];
+                };
+            };
+        };
+    };
+    list_payroll_runs: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Entity ID */
+                entity_id: components["schemas"]["EntityId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description List of payroll runs */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PayrollRunResponse"][];
+                };
+            };
+        };
+    };
+    list_reconciliations: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Entity ID */
+                entity_id: components["schemas"]["EntityId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description List of reconciliations */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReconciliationResponse"][];
+                };
+            };
+        };
+    };
+    list_safe_notes: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Entity ID */
+                entity_id: components["schemas"]["EntityId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description List SAFE notes */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SafeNoteResponse"][];
+                };
+            };
+            /** @description Entity not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     list_legacy_share_transfers: {
         parameters: {
             query?: never;
@@ -9354,6 +10040,29 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["StripeAccountResponse"];
+                };
+            };
+        };
+    };
+    list_tax_filings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Entity ID */
+                entity_id: components["schemas"]["EntityId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description List of tax filings */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaxFilingResponse"][];
                 };
             };
         };
@@ -13641,6 +14350,38 @@ export interface operations {
             };
         };
     };
+    reopen_meeting: {
+        parameters: {
+            query: {
+                entity_id: components["schemas"]["EntityId"];
+            };
+            header?: never;
+            path: {
+                /** @description Meeting ID */
+                meeting_id: components["schemas"]["MeetingId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Re-opened meeting */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeetingResponse"];
+                };
+            };
+            /** @description Meeting not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     list_resolutions: {
         parameters: {
             query: {
@@ -14019,6 +14760,61 @@ export interface operations {
             };
             /** @description Receipt not found */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    sync_references: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SyncReferencesRequest"];
+            };
+        };
+        responses: {
+            /** @description Reference handles ensured */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SyncReferencesResponse"];
+                };
+            };
+        };
+    };
+    create_safe_note: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateSafeNoteRequest"];
+            };
+        };
+        responses: {
+            /** @description SAFE note issued */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SafeNoteResponse"];
+                };
+            };
+            /** @description Invalid request */
+            400: {
                 headers: {
                     [name: string]: unknown;
                 };

@@ -30,7 +30,15 @@ export async function feedbackCommand(message: string, opts: FeedbackOptions): P
     }
     console.log(`\n${chalk.green("✓")} Feedback submitted (${chalk.dim(result.feedback_id)})`);
   } catch (err: any) {
-    printError("Failed to submit feedback", err);
+    const detail = String(err);
+    if (detail.includes("404")) {
+      printError(
+        `Failed to submit feedback: ${detail}\n` +
+        "  This server does not expose /v1/feedback. Local api-rs dev servers currently do not support feedback submission.",
+      );
+    } else {
+      printError(`Failed to submit feedback: ${detail}`);
+    }
     process.exit(1);
   }
 }

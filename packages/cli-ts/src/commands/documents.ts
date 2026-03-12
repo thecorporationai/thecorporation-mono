@@ -2,6 +2,7 @@ import { requireConfig } from "../config.js";
 import { CorpAPIClient } from "../api-client.js";
 import { printDocumentsTable, printError, printReferenceSummary, printSuccess, printJson, printWriteResult } from "../output.js";
 import { ReferenceResolver } from "../references.js";
+import { autoSignFormationDocument, autoSignFormationDocuments } from "../formation-automation.js";
 
 const HUMANS_APP_ORIGIN = "https://humans.thecorporation.ai";
 
@@ -115,9 +116,96 @@ function coerceParamValue(raw: string): unknown {
   return raw;
 }
 
+export async function documentsSignCommand(docId: string, opts: {
+  entityId?: string;
+  signerName?: string;
+  signerRole?: string;
+  signerEmail?: string;
+  signatureText?: string;
+  json?: boolean;
+}): Promise<void> {
+  const cfg = requireConfig("api_url", "api_key", "workspace_id");
+  const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
+  const resolver = new ReferenceResolver(client, cfg);
+  try {
+    const eid = await resolver.resolveEntity(opts.entityId);
+    const resolvedDocumentId = await resolver.resolveDocument(eid, docId);
+
+    if (opts.signerName || opts.signerRole || opts.signerEmail || opts.signatureText) {
+      if (!opts.signerName || !opts.signerRole || !opts.signerEmail) {
+        throw new Error("Manual signing requires --signer-name, --signer-role, and --signer-email.");
+      }
+      const result = await client.signDocument(resolvedDocumentId, eid, {
+        signer_name: opts.signerName,
+        signer_role: opts.signerRole,
+        signer_email: opts.signerEmail,
+        signature_text: opts.signatureText ?? opts.signerName,
+      });
+      await resolver.stabilizeRecord("document", { document_id: resolvedDocumentId, title: docId }, eid);
+      printWriteResult(result, `Document ${resolvedDocumentId} signed.`, opts.json);
+      return;
+    }
+
+    const result = await autoSignFormationDocument(client, eid, resolvedDocumentId);
+    await resolver.stabilizeRecord("document", result.document, eid);
+    resolver.rememberFromRecord("document", result.document, eid);
+    if (opts.json) {
+      printJson({
+        document_id: resolvedDocumentId,
+        signatures_added: result.signatures_added,
+        document: result.document,
+      });
+      return;
+    }
+    printSuccess(
+      result.signatures_added > 0
+        ? `Applied ${result.signatures_added} signature(s) to ${resolvedDocumentId}.`
+        : `No signatures were needed for ${resolvedDocumentId}.`,
+    );
+    printReferenceSummary("document", result.document, { showReuseHint: true });
+    printJson(result.document);
+  } catch (err) {
+    printError(`Failed to sign document: ${err}`);
+    process.exit(1);
+  }
+}
+
+export async function documentsSignAllCommand(opts: {
+  entityId?: string;
+  json?: boolean;
+}): Promise<void> {
+  const cfg = requireConfig("api_url", "api_key", "workspace_id");
+  const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
+  const resolver = new ReferenceResolver(client, cfg);
+  try {
+    const eid = await resolver.resolveEntity(opts.entityId);
+    const result = await autoSignFormationDocuments(client, resolver, eid);
+    if (opts.json) {
+      printJson(result);
+      return;
+    }
+    printSuccess(
+      `Processed ${result.documents_seen} formation document(s); added ${result.signatures_added} signature(s) across ${result.documents_signed} document(s).`,
+    );
+    printJson(result.documents.map((document) => ({
+      document_id: document.document_id,
+      title: document.title,
+      status: document.status,
+      signatures: Array.isArray(document.signatures) ? document.signatures.length : document.signatures,
+    })));
+  } catch (err) {
+    printError(`Failed to sign formation documents: ${err}`);
+    process.exit(1);
+  }
+}
+
 export async function documentsPreviewPdfCommand(opts: {
   entityId?: string; documentId: string;
 }): Promise<void> {
+  if (!opts.documentId || opts.documentId.trim().length === 0) {
+    printError("preview-pdf requires --definition-id (or deprecated alias --document-id)");
+    process.exit(1);
+  }
   const cfg = requireConfig("api_url", "api_key", "workspace_id");
   const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
   const resolver = new ReferenceResolver(client, cfg);

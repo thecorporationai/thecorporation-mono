@@ -135,6 +135,32 @@ export function printStatusPanel(data: ApiRecord): void {
   console.log(chalk.blue("─".repeat(50)));
 }
 
+export function printFinanceSummaryPanel(data: ApiRecord): void {
+  const invoices = (data.invoices ?? {}) as ApiRecord;
+  const bankAccounts = (data.bank_accounts ?? {}) as ApiRecord;
+  const payments = (data.payments ?? {}) as ApiRecord;
+  const payrollRuns = (data.payroll_runs ?? {}) as ApiRecord;
+  const distributions = (data.distributions ?? {}) as ApiRecord;
+  const reconciliations = (data.reconciliations ?? {}) as ApiRecord;
+  const classifications = (data.contractor_classifications ?? {}) as ApiRecord;
+
+  console.log(chalk.green("─".repeat(54)));
+  console.log(chalk.green.bold("  Finance Summary"));
+  console.log(chalk.green("─".repeat(54)));
+  console.log(`  ${chalk.bold("Entity:")} ${s(data.entity_id) || "N/A"}`);
+  console.log(`  ${chalk.bold("Invoices:")} ${s(invoices.count)} total, ${s(invoices.open_count)} open, ${money(invoices.total_amount_cents)}`);
+  if (invoices.latest_due_date) {
+    console.log(`  ${chalk.bold("Invoice Horizon:")} next due ${date(invoices.latest_due_date)}`);
+  }
+  console.log(`  ${chalk.bold("Bank Accounts:")} ${s(bankAccounts.active_count)}/${s(bankAccounts.count)} active`);
+  console.log(`  ${chalk.bold("Payments:")} ${s(payments.count)} total, ${s(payments.pending_count)} pending, ${money(payments.total_amount_cents)}`);
+  console.log(`  ${chalk.bold("Payroll Runs:")} ${s(payrollRuns.count)} total${payrollRuns.latest_period_end ? `, latest ${date(payrollRuns.latest_period_end)}` : ""}`);
+  console.log(`  ${chalk.bold("Distributions:")} ${s(distributions.count)} total, ${money(distributions.total_amount_cents)}`);
+  console.log(`  ${chalk.bold("Reconciliations:")} ${s(reconciliations.balanced_count)}/${s(reconciliations.count)} balanced`);
+  console.log(`  ${chalk.bold("Contractors:")} ${s(classifications.count)} classifications, ${s(classifications.high_risk_count)} high risk`);
+  console.log(chalk.green("─".repeat(54)));
+}
+
 // --- Generic table helper ---
 
 function makeTable(title: string, columns: string[]): Table.Table {
@@ -161,6 +187,18 @@ function date(val: unknown): string {
   if (!str) return "";
   const parsed = new Date(str);
   return Number.isNaN(parsed.getTime()) ? str : parsed.toISOString().slice(0, 10);
+}
+
+function actorLabel(record: ApiRecord, field: "claimed_by" | "completed_by" | "created_by"): string {
+  const actor = record[`${field}_actor`];
+  if (actor && typeof actor === "object" && !Array.isArray(actor)) {
+    const label = s((actor as ApiRecord).label);
+    const actorType = s((actor as ApiRecord).actor_type);
+    if (label) {
+      return actorType ? `${label} (${actorType})` : label;
+    }
+  }
+  return s(record[field]);
 }
 
 // --- Domain tables ---
@@ -604,7 +642,7 @@ export function printWorkItemsTable(items: ApiRecord[]): void {
       s(w.category),
       colored,
       w.asap ? chalk.red.bold("ASAP") : s(w.deadline ?? ""),
-      s(w.claimed_by ?? ""),
+      actorLabel(w, "claimed_by"),
     ]);
   }
   console.log(table.toString());

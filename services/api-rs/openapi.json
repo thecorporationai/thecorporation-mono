@@ -729,6 +729,96 @@
         }
       }
     },
+    "/v1/billing/checkout": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "operationId": "billing_checkout",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BillingCheckoutRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Billing checkout URL",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BillingCheckoutResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/billing/plans": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "operationId": "billing_plans_handler",
+        "responses": {
+          "200": {
+            "description": "Available billing plans",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BillingPlansResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/billing/portal": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "operationId": "billing_portal",
+        "responses": {
+          "200": {
+            "description": "Billing portal URL",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BillingPortalResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/billing/status": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "operationId": "billing_status",
+        "responses": {
+          "200": {
+            "description": "Current workspace billing status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BillingStatusResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/branches": {
       "get": {
         "tags": [
@@ -2031,6 +2121,40 @@
         }
       }
     },
+    "/v1/entities/{entity_id}/contractor-classifications": {
+      "get": {
+        "tags": [
+          "compliance"
+        ],
+        "operationId": "list_contractor_classifications",
+        "parameters": [
+          {
+            "name": "entity_id",
+            "in": "path",
+            "description": "Entity ID",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/EntityId"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of contractor classifications",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ClassificationResponse"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/entities/{entity_id}/convert": {
       "post": {
         "tags": [
@@ -2109,6 +2233,40 @@
         }
       }
     },
+    "/v1/entities/{entity_id}/deadlines": {
+      "get": {
+        "tags": [
+          "compliance"
+        ],
+        "operationId": "list_deadlines",
+        "parameters": [
+          {
+            "name": "entity_id",
+            "in": "path",
+            "description": "Entity ID",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/EntityId"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of deadlines",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/DeadlineResponse"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/entities/{entity_id}/dissolve": {
       "post": {
         "tags": [
@@ -2139,6 +2297,77 @@
         "responses": {
           "200": {
             "description": "Entity dissolved"
+          },
+          "404": {
+            "description": "Entity not found"
+          }
+        }
+      }
+    },
+    "/v1/entities/{entity_id}/distributions": {
+      "get": {
+        "tags": [
+          "treasury"
+        ],
+        "operationId": "list_distributions",
+        "parameters": [
+          {
+            "name": "entity_id",
+            "in": "path",
+            "description": "Entity ID",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/EntityId"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of distributions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/DistributionResponse"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/entities/{entity_id}/equity-rounds": {
+      "get": {
+        "tags": [
+          "equity"
+        ],
+        "operationId": "list_equity_rounds",
+        "parameters": [
+          {
+            "name": "entity_id",
+            "in": "path",
+            "description": "Entity ID",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/EntityId"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of equity rounds",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/RoundResponse"
+                  }
+                }
+              }
+            }
           },
           "404": {
             "description": "Entity not found"
@@ -2975,6 +3204,145 @@
         }
       }
     },
+    "/v1/entities/{entity_id}/payments": {
+      "get": {
+        "tags": [
+          "treasury"
+        ],
+        "operationId": "list_payments",
+        "parameters": [
+          {
+            "name": "entity_id",
+            "in": "path",
+            "description": "Entity ID",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/EntityId"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of payments",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/PaymentResponse"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/entities/{entity_id}/payroll-runs": {
+      "get": {
+        "tags": [
+          "treasury"
+        ],
+        "operationId": "list_payroll_runs",
+        "parameters": [
+          {
+            "name": "entity_id",
+            "in": "path",
+            "description": "Entity ID",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/EntityId"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of payroll runs",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/PayrollRunResponse"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/entities/{entity_id}/reconciliations": {
+      "get": {
+        "tags": [
+          "treasury"
+        ],
+        "operationId": "list_reconciliations",
+        "parameters": [
+          {
+            "name": "entity_id",
+            "in": "path",
+            "description": "Entity ID",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/EntityId"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of reconciliations",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ReconciliationResponse"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/entities/{entity_id}/safe-notes": {
+      "get": {
+        "tags": [
+          "equity"
+        ],
+        "operationId": "list_safe_notes",
+        "parameters": [
+          {
+            "name": "entity_id",
+            "in": "path",
+            "description": "Entity ID",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/EntityId"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List SAFE notes",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SafeNoteResponse"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Entity not found"
+          }
+        }
+      }
+    },
     "/v1/entities/{entity_id}/share-transfers": {
       "get": {
         "tags": [
@@ -3051,6 +3419,40 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/StripeAccountResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/entities/{entity_id}/tax-filings": {
+      "get": {
+        "tags": [
+          "compliance"
+        ],
+        "operationId": "list_tax_filings",
+        "parameters": [
+          {
+            "name": "entity_id",
+            "in": "path",
+            "description": "Entity ID",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/EntityId"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of tax filings",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/TaxFilingResponse"
+                  }
                 }
               }
             }
@@ -8389,6 +8791,48 @@
         }
       }
     },
+    "/v1/meetings/{meeting_id}/reopen": {
+      "post": {
+        "tags": [
+          "governance"
+        ],
+        "operationId": "reopen_meeting",
+        "parameters": [
+          {
+            "name": "meeting_id",
+            "in": "path",
+            "description": "Meeting ID",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/MeetingId"
+            }
+          },
+          {
+            "name": "entity_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/EntityId"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Re-opened meeting",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeetingResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Meeting not found"
+          }
+        }
+      }
+    },
     "/v1/meetings/{meeting_id}/resolutions": {
       "get": {
         "tags": [
@@ -8897,6 +9341,74 @@
           },
           "404": {
             "description": "Receipt not found"
+          }
+        }
+      }
+    },
+    "/v1/references/sync": {
+      "post": {
+        "tags": [
+          "references"
+        ],
+        "operationId": "sync_references",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SyncReferencesRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Reference handles ensured",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SyncReferencesResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
+    "/v1/safe-notes": {
+      "post": {
+        "tags": [
+          "equity"
+        ],
+        "operationId": "create_safe_note",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateSafeNoteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "SAFE note issued",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SafeNoteResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request"
           }
         }
       }
@@ -10901,6 +11413,120 @@
           "savings"
         ]
       },
+      "BillingCheckoutRequest": {
+        "type": "object",
+        "required": [
+          "plan_id"
+        ],
+        "properties": {
+          "entity_id": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/EntityId"
+              }
+            ]
+          },
+          "plan_id": {
+            "type": "string"
+          }
+        }
+      },
+      "BillingCheckoutResponse": {
+        "type": "object",
+        "required": [
+          "checkout_url",
+          "plan",
+          "status"
+        ],
+        "properties": {
+          "checkout_url": {
+            "type": "string"
+          },
+          "plan": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        }
+      },
+      "BillingPlanResponse": {
+        "type": "object",
+        "required": [
+          "plan_id",
+          "name",
+          "price_cents",
+          "interval"
+        ],
+        "properties": {
+          "interval": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "plan_id": {
+            "type": "string"
+          },
+          "price_cents": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "BillingPlansResponse": {
+        "type": "object",
+        "required": [
+          "plans"
+        ],
+        "properties": {
+          "plans": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BillingPlanResponse"
+            }
+          }
+        }
+      },
+      "BillingPortalResponse": {
+        "type": "object",
+        "required": [
+          "portal_url"
+        ],
+        "properties": {
+          "portal_url": {
+            "type": "string"
+          }
+        }
+      },
+      "BillingStatusResponse": {
+        "type": "object",
+        "required": [
+          "workspace_id",
+          "plan",
+          "status"
+        ],
+        "properties": {
+          "current_period_end": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "plan": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "workspace_id": {
+            "$ref": "#/components/schemas/WorkspaceId"
+          }
+        }
+      },
       "BindApprovalArtifactRequest": {
         "type": "object",
         "required": [
@@ -11303,12 +11929,22 @@
       },
       "ClaimWorkItemRequest": {
         "type": "object",
-        "required": [
-          "claimed_by"
-        ],
         "properties": {
           "claimed_by": {
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "claimed_by_actor": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/WorkItemActorRefRequest"
+              }
+            ]
           },
           "ttl_seconds": {
             "type": [
@@ -11386,11 +12022,39 @@
           "contractor_name": {
             "type": "string"
           },
+          "duration_months": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
           "entity_id": {
             "$ref": "#/components/schemas/EntityId"
           },
+          "exclusive_client": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
           "factors": {
             "type": "object"
+          },
+          "hours_per_week": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "provides_tools": {
+            "type": [
+              "boolean",
+              "null"
+            ]
           },
           "state": {
             "type": "string"
@@ -11452,12 +12116,22 @@
       },
       "CompleteWorkItemRequest": {
         "type": "object",
-        "required": [
-          "completed_by"
-        ],
         "properties": {
           "completed_by": {
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "completed_by_actor": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/WorkItemActorRefRequest"
+              }
+            ]
           },
           "result": {
             "type": [
@@ -12317,6 +12991,16 @@
           "category"
         ],
         "properties": {
+          "cap_table_access": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/CapTableAccess"
+              }
+            ]
+          },
           "category": {
             "$ref": "#/components/schemas/ContactCategory"
           },
@@ -12342,6 +13026,12 @@
             "type": "string"
           },
           "notes": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "phone": {
             "type": [
               "string",
               "null"
@@ -13288,6 +13978,106 @@
         },
         "additionalProperties": false
       },
+      "CreateSafeNoteRequest": {
+        "type": "object",
+        "required": [
+          "entity_id",
+          "investor_name",
+          "principal_amount_cents"
+        ],
+        "properties": {
+          "conversion_unit_type": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "discount_rate": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "document_id": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/DocumentId"
+              }
+            ]
+          },
+          "email": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "entity_id": {
+            "$ref": "#/components/schemas/EntityId"
+          },
+          "investor_contact_id": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ContactId"
+              }
+            ]
+          },
+          "investor_name": {
+            "type": "string"
+          },
+          "meeting_id": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/MeetingId"
+              }
+            ]
+          },
+          "principal_amount_cents": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "pro_rata_rights": {
+            "type": "boolean"
+          },
+          "resolution_id": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ResolutionId"
+              }
+            ]
+          },
+          "safe_type": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/SafeType"
+              }
+            ]
+          },
+          "valuation_cap_cents": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          }
+        },
+        "additionalProperties": false
+      },
       "CreateSeatRequest": {
         "type": "object",
         "required": [
@@ -13515,6 +14305,16 @@
               "null"
             ]
           },
+          "created_by_actor": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/WorkItemActorRefRequest"
+              }
+            ]
+          },
           "deadline": {
             "type": [
               "string",
@@ -13712,6 +14512,12 @@
       "DemoSeedRequest": {
         "type": "object",
         "properties": {
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "scenario": {
             "type": "string"
           }
@@ -13722,6 +14528,8 @@
         "required": [
           "workspace_id",
           "scenario",
+          "entity_id",
+          "legal_name",
           "entities_created",
           "message"
         ],
@@ -13729,6 +14537,12 @@
           "entities_created": {
             "type": "integer",
             "minimum": 0
+          },
+          "entity_id": {
+            "$ref": "#/components/schemas/EntityId"
+          },
+          "legal_name": {
+            "type": "string"
           },
           "message": {
             "type": "string"
@@ -13851,6 +14665,13 @@
       "DissolveEntityRequest": {
         "type": "object",
         "properties": {
+          "effective_date": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date"
+          },
           "reason": {
             "type": [
               "string",
@@ -14434,6 +15255,14 @@
             ],
             "format": "int64"
           },
+          "board_size": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
           "company_address": {
             "oneOf": [
               {
@@ -14469,6 +15298,12 @@
             ]
           },
           "par_value": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "principal_name": {
             "type": [
               "string",
               "null"
@@ -16582,6 +17417,26 @@
         "properties": {
           "entity_id": {
             "$ref": "#/components/schemas/EntityId"
+          },
+          "meeting_id": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/MeetingId"
+              }
+            ]
+          },
+          "resolution_id": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ResolutionId"
+              }
+            ]
           }
         },
         "additionalProperties": false
@@ -16681,7 +17536,7 @@
       },
       "Jurisdiction": {
         "type": "string",
-        "description": "A validated jurisdiction (e.g., \"Delaware\", \"California\").\n\nGuarantees: non-empty, at most 200 characters."
+        "description": "A validated jurisdiction (e.g., \"Delaware\", \"US-DE\").\n\nGuarantees: non-empty, at most 200 characters, and matches a supported US\nstate or DC jurisdiction name/code."
       },
       "JwksResponse": {
         "type": "object",
@@ -18156,8 +19011,22 @@
             ],
             "format": "date"
           },
+          "end_date": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date"
+          },
           "entity_id": {
             "$ref": "#/components/schemas/EntityId"
+          },
+          "start_date": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date"
           }
         }
       },
@@ -18388,6 +19257,77 @@
           "monthly",
           "quarterly",
           "annual"
+        ]
+      },
+      "ReferenceHandleRecord": {
+        "type": "object",
+        "required": [
+          "kind",
+          "resource_id",
+          "handle",
+          "label",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "created_at": {
+            "type": "string"
+          },
+          "entity_id": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/EntityId"
+              }
+            ]
+          },
+          "handle": {
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/ReferenceKind"
+          },
+          "label": {
+            "type": "string"
+          },
+          "resource_id": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string"
+          }
+        }
+      },
+      "ReferenceKind": {
+        "type": "string",
+        "enum": [
+          "entity",
+          "contact",
+          "share_transfer",
+          "invoice",
+          "bank_account",
+          "payment",
+          "payroll_run",
+          "distribution",
+          "reconciliation",
+          "tax_filing",
+          "deadline",
+          "classification",
+          "body",
+          "meeting",
+          "seat",
+          "agenda_item",
+          "resolution",
+          "document",
+          "work_item",
+          "agent",
+          "valuation",
+          "safe_note",
+          "instrument",
+          "share_class",
+          "round"
         ]
       },
       "RegisteredAgentConsentEvidenceRequest": {
@@ -18781,6 +19721,150 @@
           }
         }
       },
+      "SafeNoteId": {
+        "type": "string",
+        "format": "uuid"
+      },
+      "SafeNoteResponse": {
+        "type": "object",
+        "required": [
+          "safe_note_id",
+          "entity_id",
+          "investor_name",
+          "principal_amount_cents",
+          "safe_type",
+          "pro_rata_rights",
+          "status",
+          "conversion_unit_type",
+          "issued_at",
+          "created_at"
+        ],
+        "properties": {
+          "conversion_price_cents": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "conversion_shares": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "conversion_unit_type": {
+            "type": "string"
+          },
+          "converted_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "discount_rate": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "document_id": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/DocumentId"
+              }
+            ]
+          },
+          "entity_id": {
+            "$ref": "#/components/schemas/EntityId"
+          },
+          "investor_contact_id": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ContactId"
+              }
+            ]
+          },
+          "investor_name": {
+            "type": "string"
+          },
+          "issued_at": {
+            "type": "string"
+          },
+          "meeting_id": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/MeetingId"
+              }
+            ]
+          },
+          "principal_amount_cents": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "pro_rata_rights": {
+            "type": "boolean"
+          },
+          "resolution_id": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ResolutionId"
+              }
+            ]
+          },
+          "safe_note_id": {
+            "$ref": "#/components/schemas/SafeNoteId"
+          },
+          "safe_type": {
+            "$ref": "#/components/schemas/SafeType"
+          },
+          "status": {
+            "$ref": "#/components/schemas/SafeStatus"
+          },
+          "valuation_cap_cents": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          }
+        }
+      },
+      "SafeStatus": {
+        "type": "string",
+        "description": "Lifecycle status of a SAFE note.",
+        "enum": [
+          "issued",
+          "converted",
+          "cancelled"
+        ]
+      },
+      "SafeType": {
+        "type": "string",
+        "description": "Type of SAFE note.",
+        "enum": [
+          "post_money",
+          "pre_money",
+          "mfn"
+        ]
+      },
       "SandboxConfig": {
         "type": "object",
         "description": "Per-agent sandbox (container) configuration.\n\nNumeric resource limits are validated positive — a container with\nzero memory or zero CPU cannot start, so we reject at parse time.",
@@ -19107,11 +20191,15 @@
       "ServiceTokenResponse": {
         "type": "object",
         "required": [
+          "api_key_id",
           "token",
           "token_type",
           "expires_in"
         ],
         "properties": {
+          "api_key_id": {
+            "$ref": "#/components/schemas/ApiKeyId"
+          },
           "expires_in": {
             "type": "integer",
             "format": "int64",
@@ -19593,6 +20681,65 @@
           }
         },
         "additionalProperties": false
+      },
+      "SyncReferenceItem": {
+        "type": "object",
+        "required": [
+          "resource_id",
+          "label"
+        ],
+        "properties": {
+          "label": {
+            "type": "string"
+          },
+          "resource_id": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "SyncReferencesRequest": {
+        "type": "object",
+        "required": [
+          "kind",
+          "items"
+        ],
+        "properties": {
+          "entity_id": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/EntityId"
+              }
+            ]
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SyncReferenceItem"
+            }
+          },
+          "kind": {
+            "$ref": "#/components/schemas/ReferenceKind"
+          }
+        },
+        "additionalProperties": false
+      },
+      "SyncReferencesResponse": {
+        "type": "object",
+        "required": [
+          "references"
+        ],
+        "properties": {
+          "references": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReferenceHandleRecord"
+            }
+          }
+        }
       },
       "SystemHealth": {
         "type": "object",
@@ -20563,6 +21710,48 @@
           "per_unit"
         ]
       },
+      "WorkItemActorRefRequest": {
+        "type": "object",
+        "required": [
+          "actor_type",
+          "actor_id"
+        ],
+        "properties": {
+          "actor_id": {
+            "type": "string"
+          },
+          "actor_type": {
+            "$ref": "#/components/schemas/WorkItemActorTypeValue"
+          }
+        },
+        "additionalProperties": false
+      },
+      "WorkItemActorResponse": {
+        "type": "object",
+        "required": [
+          "actor_type",
+          "actor_id",
+          "label"
+        ],
+        "properties": {
+          "actor_id": {
+            "type": "string"
+          },
+          "actor_type": {
+            "$ref": "#/components/schemas/WorkItemActorTypeValue"
+          },
+          "label": {
+            "type": "string"
+          }
+        }
+      },
+      "WorkItemActorTypeValue": {
+        "type": "string",
+        "enum": [
+          "contact",
+          "agent"
+        ]
+      },
       "WorkItemId": {
         "type": "string",
         "format": "uuid"
@@ -20608,6 +21797,16 @@
               "null"
             ]
           },
+          "claimed_by_actor": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/WorkItemActorResponse"
+              }
+            ]
+          },
           "completed_at": {
             "type": [
               "string",
@@ -20620,6 +21819,16 @@
               "null"
             ]
           },
+          "completed_by_actor": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/WorkItemActorResponse"
+              }
+            ]
+          },
           "created_at": {
             "type": "string"
           },
@@ -20627,6 +21836,16 @@
             "type": [
               "string",
               "null"
+            ]
+          },
+          "created_by_actor": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/WorkItemActorResponse"
+              }
             ]
           },
           "deadline": {
@@ -21014,6 +22233,10 @@
     {
       "name": "llm_proxy",
       "description": "LLM proxy"
+    },
+    {
+      "name": "references",
+      "description": "Stable human-readable resource handles"
     },
     {
       "name": "secret_proxies",

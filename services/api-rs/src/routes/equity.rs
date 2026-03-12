@@ -54,7 +54,7 @@ use crate::domain::execution::{
 use crate::domain::formation::{
     document::Document,
     entity::Entity,
-    types::{DocumentType, EntityType},
+    types::{DocumentType, EntityType, FormationStatus},
 };
 use crate::domain::governance::policy_engine::evaluate_intent as evaluate_governance_intent;
 use crate::domain::governance::{
@@ -814,6 +814,22 @@ fn read_all<T: StoredEntity>(store: &EntityStore<'_>) -> Result<Vec<T>, AppError
         out.push(rec);
     }
     Ok(out)
+}
+
+fn ensure_entity_is_active_for_governance(
+    store: &EntityStore<'_>,
+    action: &str,
+) -> Result<(), AppError> {
+    let entity = store
+        .read_entity("main")
+        .map_err(|e| AppError::Internal(format!("read entity: {e}")))?;
+    if entity.formation_status() != FormationStatus::Active {
+        return Err(AppError::BadRequest(format!(
+            "{action} requires an active entity, current status is {}",
+            entity.formation_status()
+        )));
+    }
+    Ok(())
 }
 
 fn normalized_grant_type(grant_type: Option<&str>) -> Option<String> {
@@ -7196,6 +7212,7 @@ async fn submit_valuation_for_approval(
         let layout = state.layout.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
+            ensure_entity_is_active_for_governance(&store, "valuation approval submission")?;
 
             // Read and transition the valuation.
             let mut valuation = store

@@ -33,6 +33,8 @@ pub struct CreateContactRequest {
     pub email: Option<String>,
     #[serde(default)]
     pub mailing_address: Option<String>,
+    #[serde(default)]
+    pub phone: Option<String>,
     pub category: ContactCategory,
     #[serde(default)]
     pub cap_table_access: Option<CapTableAccess>,
@@ -162,8 +164,12 @@ async fn create_contact(
     }
     state.enforce_creation_rate_limit("contacts.create", workspace_id, 250, 60)?;
     reject_blank_optional(req.mailing_address.as_deref(), "mailing_address")?;
+    reject_blank_optional(req.phone.as_deref(), "phone")?;
     if let Some(ref addr) = req.mailing_address {
         validate_max_len(addr, "mailing_address", 1000)?;
+    }
+    if let Some(ref phone) = req.phone {
+        validate_max_len(phone, "phone", 64)?;
     }
     let name = require_non_empty_trimmed(&req.name, "name")?;
     validate_max_len(&name, "name", 256)?;
@@ -213,6 +219,11 @@ async fn create_contact(
                 && !mailing_address.trim().is_empty()
             {
                 contact.set_mailing_address(Some(mailing_address));
+            }
+            if let Some(phone) = req.phone
+                && !phone.trim().is_empty()
+            {
+                contact.set_phone(phone);
             }
             if let Some(notes) = req.notes
                 && !notes.trim().is_empty()
@@ -375,6 +386,10 @@ async fn update_contact(
         return Err(AppError::BadRequest("email cannot be empty".to_owned()));
     }
     reject_blank_optional(req.mailing_address.as_deref(), "mailing_address")?;
+    reject_blank_optional(req.phone.as_deref(), "phone")?;
+    if let Some(ref phone) = req.phone {
+        validate_max_len(phone, "phone", 64)?;
+    }
     let normalized_email = req.email.as_deref().map(validate_email).transpose()?;
 
     let contact = tokio::task::spawn_blocking({

@@ -121,6 +121,7 @@ test("config set rejects security-sensitive keys without --force", () => {
   const result = runCli(["config", "set", "api_key", "sk_test_new"]);
   assert.notEqual(result.status, 0, result.stdout);
   assert.match(result.stderr, /security-sensitive key/i);
+  assert.match(result.stderr, /controls authentication or API routing/i);
 });
 
 test("config set persists credentials in auth.json instead of config.json", () => {

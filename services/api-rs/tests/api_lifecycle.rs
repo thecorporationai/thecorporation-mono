@@ -2633,6 +2633,7 @@ async fn test_contacts() {
             "contact_type": "individual",
             "name": "Jane Attorney",
             "email": "jane@lawfirm.com",
+            "phone": "555-0101",
             "category": "law_firm",
         }),
         &token,
@@ -2641,6 +2642,7 @@ async fn test_contacts() {
     assert_eq!(status, StatusCode::OK, "create contact 1: {c1}");
     assert_eq!(c1["name"], "Jane Attorney");
     assert_eq!(c1["contact_type"], "individual");
+    assert_eq!(c1["phone"], "555-0101");
 
     let (status, c2) = post_json(
         &app,
@@ -5571,6 +5573,51 @@ async fn test_cancel_meeting_rejects_pending_valuation_approval() {
         status,
         StatusCode::CONFLICT,
         "cancelling linked approval meeting should fail: {cancelled}"
+    );
+}
+
+#[tokio::test]
+async fn test_submit_valuation_for_approval_requires_active_entity() {
+    let tmp = TempDir::new().unwrap();
+    let app = build_app(&tmp);
+    let (_ws_id, entity_id, token) = create_entity(&app).await;
+    let effective_date = chrono::Utc::now().date_naive().to_string();
+
+    let (status, valuation) = post_json(
+        &app,
+        "/v1/valuations",
+        json!({
+            "entity_id": entity_id,
+            "valuation_type": "four_oh_nine_a",
+            "effective_date": effective_date,
+            "fmv_per_share_cents": 100,
+            "enterprise_value_cents": 500000000,
+            "methodology": "market",
+        }),
+        &token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "create valuation: {valuation}");
+    let valuation_id = valuation["valuation_id"].as_str().unwrap();
+
+    let (status, submitted) = post_json(
+        &app,
+        &format!("/v1/valuations/{valuation_id}/submit-for-approval"),
+        json!({ "entity_id": entity_id }),
+        &token,
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::BAD_REQUEST,
+        "submit valuation for approval should reject non-active entities: {submitted}"
+    );
+    assert!(
+        submitted["error"]["detail"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("requires an active entity"),
+        "unexpected error detail: {submitted}"
     );
 }
 

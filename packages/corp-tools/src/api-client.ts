@@ -302,6 +302,12 @@ export class CorpAPIClient {
 
   // --- Documents ---
   getEntityDocuments(entityId: string) { return this.get(`/v1/formations/${pathSegment(entityId)}/documents`) as Promise<DocumentResponse[]>; }
+  getDocument(documentId: string, entityId: string) {
+    return this.get(`/v1/documents/${pathSegment(documentId)}`, { entity_id: entityId }) as Promise<DocumentResponse>;
+  }
+  signDocument(documentId: string, entityId: string, data: ApiRecord) {
+    return this.postWithParams(`/v1/documents/${pathSegment(documentId)}/sign`, data, { entity_id: entityId }) as Promise<ApiRecord>;
+  }
   generateContract(data: ApiRecord) { return this.post("/v1/contracts", data) as Promise<ApiRecord>; }
   getSigningLink(documentId: string, entityId: string) {
     return this.get(`/v1/sign/${pathSegment(documentId)}`, { entity_id: entityId }) as Promise<ApiRecord>;
@@ -364,13 +370,37 @@ export class CorpAPIClient {
   createPendingEntity(data: ApiRecord) { return this.post("/v1/formations/pending", data) as Promise<PendingFormationResponse>; }
   addFounder(entityId: string, data: ApiRecord) { return this.post(`/v1/formations/${pathSegment(entityId)}/founders`, data) as Promise<AddFounderResponse>; }
   finalizeFormation(entityId: string, data: ApiRecord = {}) { return this.post(`/v1/formations/${pathSegment(entityId)}/finalize`, data) as Promise<FormationWithCapTableResponse>; }
+  markFormationDocumentsSigned(entityId: string) {
+    return this.post(`/v1/formations/${pathSegment(entityId)}/mark-documents-signed`) as Promise<ApiRecord>;
+  }
+  getFormationGates(entityId: string) {
+    return this.get(`/v1/formations/${pathSegment(entityId)}/gates`) as Promise<ApiRecord>;
+  }
+  recordFilingAttestation(entityId: string, data: ApiRecord) {
+    return this.post(`/v1/formations/${pathSegment(entityId)}/filing-attestation`, data) as Promise<ApiRecord>;
+  }
+  addRegisteredAgentConsentEvidence(entityId: string, data: ApiRecord) {
+    return this.post(`/v1/formations/${pathSegment(entityId)}/registered-agent-consent-evidence`, data) as Promise<ApiRecord>;
+  }
+  submitFiling(entityId: string) {
+    return this.post(`/v1/formations/${pathSegment(entityId)}/submit-filing`) as Promise<ApiRecord>;
+  }
+  confirmFiling(entityId: string, data: ApiRecord) {
+    return this.post(`/v1/formations/${pathSegment(entityId)}/filing-confirmation`, data) as Promise<ApiRecord>;
+  }
+  applyEin(entityId: string) {
+    return this.post(`/v1/formations/${pathSegment(entityId)}/apply-ein`) as Promise<ApiRecord>;
+  }
+  confirmEin(entityId: string, data: ApiRecord) {
+    return this.post(`/v1/formations/${pathSegment(entityId)}/ein-confirmation`, data) as Promise<ApiRecord>;
+  }
 
   // --- Human obligations ---
   getHumanObligations() { return this.get(`/v1/workspaces/${pathSegment(this.workspaceId)}/human-obligations`) as Promise<ObligationResponse[]>; }
   getSignerToken(obligationId: string) { return this.post(`/v1/human-obligations/${pathSegment(obligationId)}/signer-token`) as Promise<ApiRecord>; }
 
   // --- Demo ---
-  seedDemo(name: string) { return this.post("/v1/demo/seed", { name, workspace_id: this.workspaceId }) as Promise<ApiRecord>; }
+  seedDemo(data: ApiRecord) { return this.post("/v1/demo/seed", data) as Promise<ApiRecord>; }
 
   // --- Entities writes ---
   convertEntity(entityId: string, data: ApiRecord) {

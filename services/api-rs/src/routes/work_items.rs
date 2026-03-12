@@ -14,12 +14,14 @@ use serde::{Deserialize, Serialize};
 use super::AppState;
 use super::validation::{require_non_empty_trimmed, validate_max_len, validate_not_too_far_past};
 use crate::auth::{RequireExecutionRead, RequireExecutionWrite};
+use crate::domain::agents::{agent::Agent, types::AgentStatus};
 use crate::domain::contacts::contact::Contact;
-use crate::domain::ids::{ContactId, EntityId, WorkItemId, WorkspaceId};
+use crate::domain::ids::{AgentId, ContactId, EntityId, WorkItemId, WorkspaceId};
 use crate::domain::work_items::types::WorkItemStatus;
-use crate::domain::work_items::work_item::WorkItem;
+use crate::domain::work_items::work_item::{WorkItem, WorkItemActor, WorkItemActorType};
 use crate::error::AppError;
 use crate::store::entity_store::EntityStore;
+use crate::store::workspace_store::WorkspaceStore;
 
 // ── Helpers ─────────────────────────────────────────────────────────
 
@@ -78,7 +80,7 @@ fn resolve_contact_actor(
     entity_id: EntityId,
     raw: &str,
     field: &str,
-) -> Result<String, AppError> {
+) -> Result<WorkItemActor, AppError> {
     let trimmed = require_non_empty_trimmed(raw, field)?;
     validate_max_len(&trimmed, field, 256)?;
 
@@ -91,7 +93,11 @@ fn resolve_contact_actor(
                 "{field} must reference a contact on the same entity"
             )));
         }
-        return Ok(contact.name().to_owned());
+        return Ok(WorkItemActor::new(
+            WorkItemActorType::Contact,
+            contact.contact_id().to_string(),
+            contact.name().to_owned(),
+        ));
     }
 
     let mut matches = Vec::new();
@@ -108,7 +114,11 @@ fn resolve_contact_actor(
             .email()
             .is_some_and(|email| email.eq_ignore_ascii_case(trimmed.as_str()));
         if matches_name || matches_email {
-            matches.push(contact.name().to_owned());
+            matches.push(WorkItemActor::new(
+                WorkItemActorType::Contact,
+                contact.contact_id().to_string(),
+                contact.name().to_owned(),
+            ));
         }
     }
     match matches.len() {
@@ -119,6 +129,242 @@ fn resolve_contact_actor(
         _ => Err(AppError::Conflict(format!(
             "{field} matches multiple entity contacts"
         ))),
+    }
+}
+
+fn validate_agent_actor(
+    agent: &Agent,
+    entity_id: EntityId,
+    field: &str,
+) -> Result<(), AppError> {
+    if agent.status() == AgentStatus::Disabled {
+        return Err(AppError::BadRequest(format!(
+            "{field} must reference an active or paused workspace agent"
+        )));
+    }
+    if let Some(agent_entity_id) = agent.entity_id()
+        && agent_entity_id != entity_id
+    {
+        return Err(AppError::BadRequest(format!(
+            "{field} must reference an agent bound to the same entity or the workspace"
+        )));
+    }
+    Ok(())
+}
+
+fn load_agent_actor_by_id(
+    workspace_store: &WorkspaceStore<'_>,
+    entity_id: EntityId,
+    agent_id: AgentId,
+    field: &str,
+) -> Result<WorkItemActor, AppError> {
+    let path = format!("agents/{}.json", agent_id);
+    let agent = workspace_store.read_json::<Agent>(&path).map_err(|_| {
+        AppError::BadRequest(format!("{field} must reference an existing workspace agent"))
+    })?;
+    validate_agent_actor(&agent, entity_id, field)?;
+    Ok(WorkItemActor::new(
+        WorkItemActorType::Agent,
+        agent.agent_id().to_string(),
+        agent.name().to_owned(),
+    ))
+}
+
+fn lookup_agent_actor(
+    layout: &crate::store::RepoLayout,
+    workspace_id: WorkspaceId,
+    entity_id: EntityId,
+    raw: &str,
+    field: &str,
+) -> Result<Option<WorkItemActor>, AppError> {
+    let trimmed = require_non_empty_trimmed(raw, field)?;
+    validate_max_len(&trimmed, field, 256)?;
+
+    let workspace_store = WorkspaceStore::open(layout, workspace_id).map_err(|e| match e {
+        crate::git::error::GitStorageError::RepoNotFound(_) => {
+            AppError::NotFound(format!("workspace {} not found", workspace_id))
+        }
+        other => AppError::Internal(other.to_string()),
+    })?;
+
+    if let Ok(agent_id) = trimmed.parse::<AgentId>() {
+        return load_agent_actor_by_id(&workspace_store, entity_id, agent_id, field).map(Some);
+    }
+
+    let mut matches = Vec::new();
+    for agent_id in workspace_store
+        .list_ids_in_dir_pub::<AgentId>("agents")
+        .unwrap_or_default()
+    {
+        let path = format!("agents/{}.json", agent_id);
+        let agent = match workspace_store.read_json::<Agent>(&path) {
+            Ok(agent) => agent,
+            Err(_) => continue,
+        };
+        if !agent.name().eq_ignore_ascii_case(trimmed.as_str()) {
+            continue;
+        }
+        validate_agent_actor(&agent, entity_id, field)?;
+        matches.push(WorkItemActor::new(
+            WorkItemActorType::Agent,
+            agent.agent_id().to_string(),
+            agent.name().to_owned(),
+        ));
+    }
+
+    match matches.len() {
+        0 => Ok(None),
+        1 => Ok(Some(matches.remove(0))),
+        _ => Err(AppError::Conflict(format!(
+            "{field} matches multiple workspace agents"
+        ))),
+    }
+}
+
+fn resolve_legacy_actor(
+    layout: &crate::store::RepoLayout,
+    store: &EntityStore<'_>,
+    workspace_id: WorkspaceId,
+    entity_id: EntityId,
+    raw: &str,
+    field: &str,
+) -> Result<WorkItemActor, AppError> {
+    let contact_match = match resolve_contact_actor(store, entity_id, raw, field) {
+        Ok(actor) => Some(actor),
+        Err(AppError::BadRequest(_)) => None,
+        Err(err) => return Err(err),
+    };
+    let agent_match = lookup_agent_actor(layout, workspace_id, entity_id, raw, field)?;
+
+    match (contact_match, agent_match) {
+        (Some(contact), None) => Ok(contact),
+        (None, Some(agent)) => Ok(agent),
+        (Some(_), Some(_)) => Err(AppError::Conflict(format!(
+            "{field} is ambiguous between a contact and an agent; pass an explicit typed actor"
+        ))),
+        (None, None) => Err(AppError::BadRequest(format!(
+            "{field} must reference an existing entity contact or workspace agent"
+        ))),
+    }
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, utoipa::ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum WorkItemActorTypeValue {
+    Contact,
+    Agent,
+}
+
+impl From<WorkItemActorTypeValue> for WorkItemActorType {
+    fn from(value: WorkItemActorTypeValue) -> Self {
+        match value {
+            WorkItemActorTypeValue::Contact => WorkItemActorType::Contact,
+            WorkItemActorTypeValue::Agent => WorkItemActorType::Agent,
+        }
+    }
+}
+
+impl From<WorkItemActorType> for WorkItemActorTypeValue {
+    fn from(value: WorkItemActorType) -> Self {
+        match value {
+            WorkItemActorType::Contact => WorkItemActorTypeValue::Contact,
+            WorkItemActorType::Agent => WorkItemActorTypeValue::Agent,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, utoipa::ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct WorkItemActorRefRequest {
+    pub actor_type: WorkItemActorTypeValue,
+    pub actor_id: String,
+}
+
+#[derive(Clone, Debug, Serialize, utoipa::ToSchema)]
+pub struct WorkItemActorResponse {
+    pub actor_type: WorkItemActorTypeValue,
+    pub actor_id: String,
+    pub label: String,
+}
+
+fn resolve_explicit_actor(
+    layout: &crate::store::RepoLayout,
+    store: &EntityStore<'_>,
+    workspace_id: WorkspaceId,
+    entity_id: EntityId,
+    actor: &WorkItemActorRefRequest,
+    field: &str,
+) -> Result<WorkItemActor, AppError> {
+    let actor_id = require_non_empty_trimmed(&actor.actor_id, &format!("{field}.actor_id"))?;
+    validate_max_len(&actor_id, &format!("{field}.actor_id"), 256)?;
+
+    match actor.actor_type {
+        WorkItemActorTypeValue::Contact => {
+            let contact_id = actor_id.parse::<ContactId>().map_err(|_| {
+                AppError::BadRequest(format!("{field}.actor_id must be a contact UUID"))
+            })?;
+            let contact = store.read::<Contact>("main", contact_id).map_err(|_| {
+                AppError::BadRequest(format!("{field} must reference an existing entity contact"))
+            })?;
+            if contact.entity_id() != entity_id {
+                return Err(AppError::BadRequest(format!(
+                    "{field} must reference a contact on the same entity"
+                )));
+            }
+            Ok(WorkItemActor::new(
+                WorkItemActorType::Contact,
+                contact.contact_id().to_string(),
+                contact.name().to_owned(),
+            ))
+        }
+        WorkItemActorTypeValue::Agent => {
+            let agent_id = actor_id.parse::<AgentId>().map_err(|_| {
+                AppError::BadRequest(format!("{field}.actor_id must be an agent UUID"))
+            })?;
+            let workspace_store = WorkspaceStore::open(layout, workspace_id).map_err(|e| match e {
+                crate::git::error::GitStorageError::RepoNotFound(_) => {
+                    AppError::NotFound(format!("workspace {} not found", workspace_id))
+                }
+                other => AppError::Internal(other.to_string()),
+            })?;
+            load_agent_actor_by_id(&workspace_store, entity_id, agent_id, field)
+        }
+    }
+}
+
+fn resolve_actor_input(
+    layout: &crate::store::RepoLayout,
+    store: &EntityStore<'_>,
+    workspace_id: WorkspaceId,
+    entity_id: EntityId,
+    raw: Option<&str>,
+    actor: Option<&WorkItemActorRefRequest>,
+    field: &str,
+    required: bool,
+) -> Result<Option<WorkItemActor>, AppError> {
+    if raw.is_some() && actor.is_some() {
+        return Err(AppError::BadRequest(format!(
+            "{field} cannot include both a legacy string reference and a typed actor"
+        )));
+    }
+    if let Some(actor) = actor {
+        return resolve_explicit_actor(layout, store, workspace_id, entity_id, actor, field)
+            .map(Some);
+    }
+    if let Some(raw) = raw {
+        return resolve_legacy_actor(layout, store, workspace_id, entity_id, raw, field).map(Some);
+    }
+    if required {
+        return Err(AppError::BadRequest(format!("{field} is required")));
+    }
+    Ok(None)
+}
+
+fn actor_to_response(actor: &WorkItemActor) -> WorkItemActorResponse {
+    WorkItemActorResponse {
+        actor_type: actor.actor_type().into(),
+        actor_id: actor.actor_id().to_owned(),
+        label: actor.label().to_owned(),
     }
 }
 
@@ -139,12 +385,17 @@ pub struct CreateWorkItemRequest {
     pub metadata: Option<serde_json::Value>,
     #[serde(default)]
     pub created_by: Option<String>,
+    #[serde(default)]
+    pub created_by_actor: Option<WorkItemActorRefRequest>,
 }
 
 #[derive(Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ClaimWorkItemRequest {
-    pub claimed_by: String,
+    #[serde(default)]
+    pub claimed_by: Option<String>,
+    #[serde(default)]
+    pub claimed_by_actor: Option<WorkItemActorRefRequest>,
     #[serde(default)]
     pub ttl_seconds: Option<u64>,
 }
@@ -152,7 +403,10 @@ pub struct ClaimWorkItemRequest {
 #[derive(Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct CompleteWorkItemRequest {
-    pub completed_by: String,
+    #[serde(default)]
+    pub completed_by: Option<String>,
+    #[serde(default)]
+    pub completed_by_actor: Option<WorkItemActorRefRequest>,
     #[serde(default)]
     pub result: Option<String>,
 }
@@ -169,16 +423,19 @@ pub struct WorkItemResponse {
     pub deadline: Option<NaiveDate>,
     pub asap: bool,
     pub claimed_by: Option<String>,
+    pub claimed_by_actor: Option<WorkItemActorResponse>,
     pub claimed_at: Option<String>,
     pub claim_ttl_seconds: Option<u64>,
     pub status: WorkItemStatus,
     pub effective_status: WorkItemStatus,
     pub completed_at: Option<String>,
     pub completed_by: Option<String>,
+    pub completed_by_actor: Option<WorkItemActorResponse>,
     pub result: Option<String>,
     pub metadata: serde_json::Value,
     pub created_at: String,
     pub created_by: Option<String>,
+    pub created_by_actor: Option<WorkItemActorResponse>,
 }
 
 fn work_item_to_response(w: &WorkItem) -> WorkItemResponse {
@@ -192,16 +449,19 @@ fn work_item_to_response(w: &WorkItem) -> WorkItemResponse {
         deadline: w.deadline(),
         asap: w.asap(),
         claimed_by: w.claimed_by().map(|s| s.to_owned()),
+        claimed_by_actor: w.claimed_by_actor().map(actor_to_response),
         claimed_at: w.claimed_at().map(|dt| dt.to_rfc3339()),
         claim_ttl_seconds: w.claim_ttl_seconds(),
         status: w.status(),
         effective_status: w.effective_status(now),
         completed_at: w.completed_at().map(|dt| dt.to_rfc3339()),
         completed_by: w.completed_by().map(|s| s.to_owned()),
+        completed_by_actor: w.completed_by_actor().map(actor_to_response),
         result: w.result().map(|s| s.to_owned()),
         metadata: w.metadata().clone(),
         created_at: w.created_at().to_rfc3339(),
         created_by: w.created_by().map(|s| s.to_owned()),
+        created_by_actor: w.created_by_actor().map(actor_to_response),
     }
 }
 
@@ -252,11 +512,16 @@ async fn create_work_item(
         let title = title.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
-            let created_by = req
-                .created_by
-                .as_deref()
-                .map(|value| resolve_contact_actor(&store, entity_id, value, "created_by"))
-                .transpose()?;
+            let created_by = resolve_actor_input(
+                &layout,
+                &store,
+                workspace_id,
+                entity_id,
+                req.created_by.as_deref(),
+                req.created_by_actor.as_ref(),
+                "created_by",
+                false,
+            )?;
             let work_item_id = WorkItemId::new();
             let metadata = req
                 .metadata
@@ -427,8 +692,17 @@ async fn claim_work_item(
         let layout = state.layout.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
-            let claimed_by =
-                resolve_contact_actor(&store, entity_id, &req.claimed_by, "claimed_by")?;
+            let claimed_by = resolve_actor_input(
+                &layout,
+                &store,
+                workspace_id,
+                entity_id,
+                req.claimed_by.as_deref(),
+                req.claimed_by_actor.as_ref(),
+                "claimed_by",
+                true,
+            )?
+            .expect("required actor should exist");
             let mut w = store
                 .read::<WorkItem>("main", work_item_id)
                 .map_err(|_| AppError::NotFound(format!("work item {} not found", work_item_id)))?;
@@ -487,18 +761,28 @@ async fn complete_work_item(
         let layout = state.layout.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id)?;
-            let completed_by =
-                resolve_contact_actor(&store, entity_id, &req.completed_by, "completed_by")?;
+            let completed_by = resolve_actor_input(
+                &layout,
+                &store,
+                workspace_id,
+                entity_id,
+                req.completed_by.as_deref(),
+                req.completed_by_actor.as_ref(),
+                "completed_by",
+                true,
+            )?
+            .expect("required actor should exist");
             let mut w = store
                 .read::<WorkItem>("main", work_item_id)
                 .map_err(|_| AppError::NotFound(format!("work item {} not found", work_item_id)))?;
             w.auto_release_expired_claim(Utc::now());
             if let Some(claimed_by) = w.claimed_by()
-                && claimed_by != completed_by
+                && !w.is_claimed_by_actor(&completed_by)
             {
                 return Err(AppError::Conflict(format!(
                     "work item is claimed by {} and cannot be completed by {}",
-                    claimed_by, completed_by
+                    claimed_by,
+                    completed_by.label()
                 )));
             }
 

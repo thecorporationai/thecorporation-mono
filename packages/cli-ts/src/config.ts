@@ -377,7 +377,10 @@ function requireSupportedConfigKey(dotPath: string): void {
 
 function validateSensitiveConfigUpdate(dotPath: string, forceSensitive = false): void {
   if (SENSITIVE_CONFIG_KEYS.has(dotPath) && !forceSensitive) {
-    throw new Error(`refusing to update security-sensitive key '${dotPath}' without --force`);
+    throw new Error(
+      `refusing to update security-sensitive key '${dotPath}' without --force; ` +
+      "this key controls authentication or API routing, so explicit confirmation is required",
+    );
   }
 }
 

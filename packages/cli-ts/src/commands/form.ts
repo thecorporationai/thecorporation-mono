@@ -9,6 +9,7 @@ import { printDryRun, printError, printJson, printReferenceSummary, printSuccess
 import { ReferenceResolver } from "../references.js";
 import type { ApiRecord } from "../types.js";
 import { EntityType, OfficerTitle } from "@thecorporation/corp-tools";
+import { activateFormationEntity } from "../formation-automation.js";
 
 // ── Types ──────────────────────────────────────────────────────
 
@@ -712,6 +713,16 @@ interface FormFinalizeOptions {
   json?: boolean;
 }
 
+interface FormActivateOptions {
+  evidenceUri?: string;
+  evidenceType?: string;
+  filingId?: string;
+  receiptReference?: string;
+  ein?: string;
+  dryRun?: boolean;
+  json?: boolean;
+}
+
 export async function formAddFounderCommand(entityId: string, opts: FormAddFounderOptions): Promise<void> {
   const cfg = requireConfig("api_url", "api_key", "workspace_id");
   const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
@@ -830,6 +841,61 @@ export async function formFinalizeCommand(entityId: string, opts: FormFinalizeOp
     }
   } catch (err) {
     printError(`Failed to finalize formation: ${err}`);
+    process.exit(1);
+  }
+}
+
+export async function formActivateCommand(entityId: string, opts: FormActivateOptions): Promise<void> {
+  const cfg = requireConfig("api_url", "api_key", "workspace_id");
+  const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
+  const resolver = new ReferenceResolver(client, cfg);
+
+  try {
+    const resolvedEntityId = await resolveEntityRefForFormCommand(resolver, entityId, opts.dryRun);
+    const payload: ApiRecord = { entity_id: resolvedEntityId };
+    if (opts.evidenceUri) payload.evidence_uri = opts.evidenceUri;
+    if (opts.evidenceType) payload.evidence_type = opts.evidenceType;
+    if (opts.filingId) payload.filing_id = opts.filingId;
+    if (opts.receiptReference) payload.receipt_reference = opts.receiptReference;
+    if (opts.ein) payload.ein = opts.ein;
+
+    if (opts.dryRun) {
+      printDryRun("formation.activate", payload);
+      return;
+    }
+
+    const result = await activateFormationEntity(client, resolver, resolvedEntityId, {
+      evidenceUri: opts.evidenceUri,
+      evidenceType: opts.evidenceType,
+      filingId: opts.filingId,
+      receiptReference: opts.receiptReference,
+      ein: opts.ein,
+    });
+    const formation = await client.getFormation(resolvedEntityId);
+    await resolver.stabilizeRecord("entity", formation as ApiRecord);
+    resolver.rememberFromRecord("entity", formation as ApiRecord);
+
+    if (opts.json) {
+      printJson({
+        ...result,
+        formation,
+      });
+      return;
+    }
+
+    printSuccess(`Formation advanced to ${result.final_status}.`);
+    printReferenceSummary("entity", formation as ApiRecord, { showReuseHint: true });
+    if (result.steps.length > 0) {
+      console.log("  Steps:");
+      for (const step of result.steps) {
+        console.log(`    - ${step}`);
+      }
+    }
+    console.log(`  Signatures added: ${result.signatures_added}`);
+    console.log(`  Documents updated: ${result.documents_signed}`);
+    printJson(formation);
+  } catch (err) {
+    printError(`Failed to activate formation: ${err}`);
     process.exit(1);
   }
 }

@@ -202,11 +202,20 @@ export type ReconciliationStatus = (typeof ReconciliationStatus)[number];
 export const Recurrence = ["one_time","monthly","quarterly","annual"] as const;
 export type Recurrence = (typeof Recurrence)[number];
 
+export const ReferenceKind = ["entity","contact","share_transfer","invoice","bank_account","payment","payroll_run","distribution","reconciliation","tax_filing","deadline","classification","body","meeting","seat","agenda_item","resolution","document","work_item","agent","valuation","safe_note","instrument","share_class","round"] as const;
+export type ReferenceKind = (typeof ReferenceKind)[number];
+
 export const ResolutionType = ["ordinary","special","unanimous_written_consent"] as const;
 export type ResolutionType = (typeof ResolutionType)[number];
 
 export const RiskLevel = ["low","medium","high"] as const;
 export type RiskLevel = (typeof RiskLevel)[number];
+
+export const SafeStatus = ["issued","converted","cancelled"] as const;
+export type SafeStatus = (typeof SafeStatus)[number];
+
+export const SafeType = ["post_money","pre_money","mfn"] as const;
+export type SafeType = (typeof SafeType)[number];
 
 export const Scope = ["formation_create","formation_read","formation_sign","equity_read","equity_write","equity_transfer","governance_read","governance_write","governance_vote","treasury_read","treasury_write","treasury_approve","contacts_read","contacts_write","execution_read","execution_write","branch_create","branch_merge","branch_delete","admin","internal_worker_read","internal_worker_write","secrets_manage","all"] as const;
 export type Scope = (typeof Scope)[number];
@@ -252,6 +261,9 @@ export type VoteValue = (typeof VoteValue)[number];
 
 export const VotingMethod = ["per_capita","per_unit"] as const;
 export type VotingMethod = (typeof VotingMethod)[number];
+
+export const WorkItemActorTypeValue = ["contact","agent"] as const;
+export type WorkItemActorTypeValue = (typeof WorkItemActorTypeValue)[number];
 
 export const WorkItemStatus = ["open","claimed","completed","cancelled"] as const;
 export type WorkItemStatus = (typeof WorkItemStatus)[number];

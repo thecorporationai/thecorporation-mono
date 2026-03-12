@@ -297,7 +297,30 @@ export async function fourOhNineACommand(opts: { entityId?: string; json?: boole
   } catch (err) {
     const msg = String(err);
     if (msg.includes("404")) {
-      console.log("No 409A valuation found for this entity. Create one with:\n  corp cap-table create-valuation --type four_oh_nine_a --date YYYY-MM-DD --methodology <method>");
+      try {
+        const eid = await resolver.resolveEntity(opts.entityId);
+        const valuations = await client.getValuations(eid);
+        const pending409a = valuations
+          .filter((valuation) => valuation.valuation_type === "four_oh_nine_a")
+          .find((valuation) => valuation.status === "pending_approval");
+        if (pending409a) {
+          const effectiveDate = pending409a.effective_date ?? "unknown date";
+          console.log(
+            `No current approved 409A valuation found. A 409A valuation is pending approval (${effectiveDate}).\n` +
+            "  Complete board approval, then re-run: corp cap-table 409a",
+          );
+        } else {
+          console.log(
+            "No 409A valuation found for this entity. Create one with:\n" +
+            "  corp cap-table create-valuation --type four_oh_nine_a --date YYYY-MM-DD --methodology <method>",
+          );
+        }
+      } catch {
+        console.log(
+          "No 409A valuation found for this entity. Create one with:\n" +
+          "  corp cap-table create-valuation --type four_oh_nine_a --date YYYY-MM-DD --methodology <method>",
+        );
+      }
     } else {
       printError(`Failed to fetch 409A valuation: ${err}`);
     }

@@ -23,6 +23,12 @@ const TAX_DOCUMENT_TYPE_CHOICES = [
   "w2",
   "form_w2",
 ] as const;
+const FINALIZE_ITEM_STATUS_CHOICES = [
+  "discussed",
+  "voted",
+  "tabled",
+  "withdrawn",
+] as const;
 
 const program = new Command();
 program
@@ -534,7 +540,11 @@ const financeCmd = program
   .command("finance")
   .description("Invoicing, payroll, payments, banking")
   .option("--entity-id <ref>", "Entity reference (ID, short ID, @last, or unique name)")
-  .option("--json", "Output as JSON");
+  .option("--json", "Output as JSON")
+  .action(async (opts) => {
+    const { financeSummaryCommand } = await import("./commands/finance.js");
+    await financeSummaryCommand(opts);
+  });
 financeCmd
   .command("invoices")
   .option("--json", "Output as JSON")
@@ -908,7 +918,14 @@ governanceCmd
   });
 governanceCmd
   .command("finalize-item <meeting-ref> <item-ref>")
-  .requiredOption("--status <status>", "Status: voted, discussed, tabled, withdrawn")
+  .addOption(
+    new Option(
+      "--status <status>",
+      `Status (${FINALIZE_ITEM_STATUS_CHOICES.join(", ")})`,
+    )
+      .choices([...FINALIZE_ITEM_STATUS_CHOICES])
+      .makeOptionMandatory(),
+  )
   .option("--json", "Output as JSON")
   .option("--dry-run", "Show the request without finalizing the item")
   .description("Finalize an agenda item")
@@ -974,6 +991,38 @@ documentsCmd
     await documentsSigningLinkCommand(docId, { entityId: opts.entityId ?? parent.entityId });
   });
 documentsCmd
+  .command("sign <doc-ref>")
+  .option("--entity-id <ref>", "Entity reference (overrides active entity and parent command)")
+  .option("--signer-name <name>", "Manual signer name")
+  .option("--signer-role <role>", "Manual signer role")
+  .option("--signer-email <email>", "Manual signer email")
+  .option("--signature-text <text>", "Manual signature text (defaults to signer name)")
+  .option("--json", "Output as JSON")
+  .description("Sign a formation document, or auto-sign all missing required signatures")
+  .action(async (docId: string, opts, cmd) => {
+    const parent = cmd.parent!.opts();
+    const { documentsSignCommand } = await import("./commands/documents.js");
+    await documentsSignCommand(docId, {
+      ...opts,
+      entityId: opts.entityId ?? parent.entityId,
+      json: inheritOption(opts.json, parent.json),
+    });
+  });
+documentsCmd
+  .command("sign-all")
+  .option("--entity-id <ref>", "Entity reference (overrides active entity and parent command)")
+  .option("--json", "Output as JSON")
+  .description("Auto-sign all outstanding formation documents for an entity")
+  .action(async (opts, cmd) => {
+    const parent = cmd.parent!.opts();
+    const { documentsSignAllCommand } = await import("./commands/documents.js");
+    await documentsSignAllCommand({
+      ...opts,
+      entityId: opts.entityId ?? parent.entityId,
+      json: inheritOption(opts.json, parent.json),
+    });
+  });
+documentsCmd
   .command("generate")
   .requiredOption("--template <type>", "Template type (consulting_agreement, employment_offer, contractor_agreement, nda, custom)")
   .requiredOption("--counterparty <name>", "Counterparty name")
@@ -993,7 +1042,7 @@ documentsCmd
   });
 documentsCmd
   .command("preview-pdf")
-  .requiredOption("--definition-id <id>", "AST document definition ID (e.g. 'bylaws')")
+  .option("--definition-id <id>", "AST document definition ID (e.g. 'bylaws')")
   .option("--document-id <id>", "Deprecated alias for --definition-id")
   .description("Validate and print the authenticated PDF preview URL for a governance document")
   .action(async (opts, cmd) => {
@@ -1294,12 +1343,8 @@ program
   .command("approvals")
   .description("Approvals are managed through governance meetings and execution intents")
   .action(async () => {
-    const { printError } = await import("./output.js");
-    printError(
-      "Approvals are managed through governance meetings.\n" +
-      "  Use: corp governance convene ... to schedule a board meeting\n" +
-      "  Use: corp governance vote <meeting-ref> <item-ref> ... to cast votes"
-    );
+    const { approvalsListCommand } = await import("./commands/approvals.js");
+    await approvalsListCommand({});
   });
 
 // --- form ---
@@ -1342,11 +1387,13 @@ formCmd.command("create")
   .option("--json", "Output as JSON")
   .option("--dry-run", "Show the request without creating the pending entity")
   .action(async (opts, cmd) => {
+    const parent = cmd.parent!.opts();
     const { formCreateCommand } = await import("./commands/form.js");
     await formCreateCommand({
       ...opts,
-      json: inheritOption(opts.json, cmd.parent!.opts().json),
-      dryRun: inheritOption(opts.dryRun, cmd.parent!.opts().dryRun),
+      jurisdiction: inheritOption(opts.jurisdiction, parent.jurisdiction),
+      json: inheritOption(opts.json, parent.json),
+      dryRun: inheritOption(opts.dryRun, parent.dryRun),
     });
   });
 formCmd.command("add-founder <entity-ref>")
@@ -1394,6 +1441,23 @@ formCmd.command("finalize <entity-ref>")
       dryRun: inheritOption(opts.dryRun, cmd.parent!.opts().dryRun),
     });
   });
+formCmd.command("activate <entity-ref>")
+  .description("Programmatically sign formation documents and advance an entity to active")
+  .option("--evidence-uri <uri>", "Registered-agent consent evidence URI placeholder")
+  .option("--evidence-type <type>", "Registered-agent consent evidence type", "generated")
+  .option("--filing-id <id>", "External filing identifier to record")
+  .option("--receipt-reference <ref>", "External receipt reference to record")
+  .option("--ein <ein>", "EIN to confirm (defaults to a deterministic simulated EIN)")
+  .option("--json", "Output as JSON")
+  .option("--dry-run", "Show the activation plan without mutating")
+  .action(async (entityId: string, opts, cmd) => {
+    const { formActivateCommand } = await import("./commands/form.js");
+    await formActivateCommand(entityId, {
+      ...opts,
+      json: inheritOption(opts.json, cmd.parent!.opts().json),
+      dryRun: inheritOption(opts.dryRun, cmd.parent!.opts().dryRun),
+    });
+  });
 
 // --- api-keys ---
 program
@@ -1408,8 +1472,11 @@ program
 // --- demo ---
 program
   .command("demo")
-  .description("Seed a fully-populated demo corporation")
+  .description("Create a usable demo workspace environment")
   .requiredOption("--name <name>", "Corporation name")
+  .option("--scenario <scenario>", "Scenario to create (startup, llc, restaurant)", "startup")
+  .option("--minimal", "Use the minimal server-side demo seed instead of the full CLI workflow")
+  .option("--json", "Output as JSON")
   .action(async (opts) => {
     const { demoCommand } = await import("./commands/demo.js");
     await demoCommand(opts);
