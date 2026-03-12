@@ -165,11 +165,12 @@ describe("CorpAPIClient HTTP methods", () => {
     expect(capturedRequests[0].url).toBe("http://localhost:8000/v1/formations");
   });
 
-  it("seedDemo sends workspace_id in body", async () => {
-    await client.seedDemo("demo-corp");
+  it("seedDemo sends name in body", async () => {
+    await client.seedDemo({ name: "demo-corp" });
     const body = JSON.parse(capturedRequests[0].body!);
     expect(body.name).toBe("demo-corp");
-    expect(body.workspace_id).toBe("ws_test");
+    expect(capturedRequests[0].method).toBe("POST");
+    expect(capturedRequests[0].url).toBe("http://localhost:8000/v1/demo/seed");
   });
 
   it("throws SessionExpiredError on 401", async () => {
