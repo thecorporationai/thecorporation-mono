@@ -1118,6 +1118,16 @@ async fn get_jwks(RequireAdmin(_auth): RequireAdmin) -> Json<JwksResponse> {
 )]
 pub struct AdminApi;
 
+/// Stub billing routes for standalone api-rs (no Stripe).
+/// api-corp overrides these with real Stripe-backed handlers.
+pub fn admin_billing_routes() -> Router<AppState> {
+    Router::new()
+        .route("/v1/billing/status", get(billing_status))
+        .route("/v1/billing/plans", get(billing_plans_handler))
+        .route("/v1/billing/portal", post(billing_portal))
+        .route("/v1/billing/checkout", post(billing_checkout))
+}
+
 pub fn admin_routes() -> Router<AppState> {
     Router::new()
         .route("/v1/admin/workspaces", get(list_workspaces))
@@ -1129,10 +1139,6 @@ pub fn admin_routes() -> Router<AppState> {
         .route("/v1/config", get(get_config))
         .route("/v1/workspaces/link", post(link_workspace))
         .route("/v1/workspaces/claim", post(claim_workspace))
-        .route("/v1/billing/status", get(billing_status))
-        .route("/v1/billing/plans", get(billing_plans_handler))
-        .route("/v1/billing/portal", post(billing_portal))
-        .route("/v1/billing/checkout", post(billing_checkout))
         // Workspace by path param (Python-compatible)
         .route(
             "/v1/workspaces/{workspace_id}/status",
