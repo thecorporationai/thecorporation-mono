@@ -36,6 +36,10 @@ pub enum Scope {
     ExecutionRead,
     ExecutionWrite,
 
+    // ── Services ────────────────────────────────────────────────────
+    ServicesRead,
+    ServicesWrite,
+
     // ── Branch management ─────────────────────────────────────────────
     BranchCreate,
     BranchMerge,

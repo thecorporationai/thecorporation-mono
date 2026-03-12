@@ -675,6 +675,40 @@ export function printApprovalsTable(approvals: ApiRecord[]): void {
   console.log(table.toString());
 }
 
+export function printServiceCatalogTable(items: ApiRecord[]): void {
+  const table = makeTable("Service Catalog", ["Slug", "Name", "Price", "Type"]);
+  for (const item of items) {
+    table.push([
+      s(item.slug),
+      s(item.name),
+      money(item.amount_cents),
+      s(item.price_type),
+    ]);
+  }
+  console.log(table.toString());
+}
+
+export function printServiceRequestsTable(requests: ApiRecord[]): void {
+  const table = makeTable("Service Requests", ["Ref", "Service", "Amount", "Status", "Created"]);
+  for (const r of requests) {
+    const status = s(r.status);
+    const colored =
+      status === "fulfilled" ? chalk.green(status) :
+      status === "paid" ? chalk.cyan(status) :
+      status === "checkout" ? chalk.yellow(status) :
+      status === "failed" ? chalk.dim(status) :
+      status;
+    table.push([
+      formatReferenceCell("service_request", r),
+      s(r.service_slug),
+      money(r.amount_cents),
+      colored,
+      date(r.created_at),
+    ]);
+  }
+  console.log(table.toString());
+}
+
 export function printBillingPanel(status: ApiRecord, plans: ApiRecord[]): void {
   const plan = s(status.plan ?? status.tier) || "free";
   const subStatus = s(status.status) || "active";

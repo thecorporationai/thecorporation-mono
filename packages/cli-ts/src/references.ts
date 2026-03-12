@@ -32,7 +32,8 @@ export type ResourceKind =
   | "safe_note"
   | "instrument"
   | "share_class"
-  | "round";
+  | "round"
+  | "service_request";
 
 export type MatchRecord = {
   id: string;
@@ -76,6 +77,7 @@ const RESOURCE_KINDS = [
   "instrument",
   "share_class",
   "round",
+  "service_request",
 ] as const satisfies readonly ResourceKind[];
 
 const VALID_RESOURCE_KINDS = new Set<ResourceKind>(RESOURCE_KINDS);
@@ -237,6 +239,10 @@ export function describeReferenceRecord(kind: ResourceKind, record: ApiRecord): 
       labelFields: ["class_code", "name", "share_class"],
     },
     round: { idFields: ["round_id", "equity_round_id", "id"], labelFields: ["name"] },
+    service_request: {
+      idFields: ["request_id", "service_request_id", "id"],
+      labelFields: ["service_slug", "status"],
+    },
   };
   const spec = specs[kind];
   const id = extractId(record, spec.idFields);
@@ -314,6 +320,7 @@ export class ReferenceResolver {
   private readonly valuationsCache = new Map<string, ApiRecord[]>();
   private readonly safeNotesCache = new Map<string, ApiRecord[]>();
   private readonly roundsCache = new Map<string, ApiRecord[]>();
+  private readonly serviceRequestsCache = new Map<string, ApiRecord[]>();
   private readonly capTableCache = new Map<string, ApiRecord>();
   private agentsCache?: ApiRecord[];
 
@@ -466,6 +473,10 @@ export class ReferenceResolver {
 
   async resolveRound(entityId: string, ref: string): Promise<string> {
     return this.resolve("round", ref, { entityId });
+  }
+
+  async resolveServiceRequest(entityId: string, ref: string): Promise<string> {
+    return this.resolve("service_request", ref, { entityId });
   }
 
   async find(
@@ -688,6 +699,8 @@ export class ReferenceResolver {
         return this.listShareClasses(scope.entityId);
       case "round":
         return this.listRounds(scope.entityId);
+      case "service_request":
+        return this.listServiceRequestRecords(scope.entityId);
       }
     })();
     return this.attachStableHandles(kind, records, scope.entityId);
@@ -990,5 +1003,14 @@ export class ReferenceResolver {
   private async listShareClasses(entityId?: string): Promise<ApiRecord[]> {
     const capTable = await this.getCapTable(entityId);
     return Array.isArray(capTable.share_classes) ? (capTable.share_classes as ApiRecord[]) : [];
+  }
+
+  private async listServiceRequestRecords(entityId?: string): Promise<ApiRecord[]> {
+    if (!entityId) throw new Error("An entity context is required to resolve service requests.");
+    const cached = this.serviceRequestsCache.get(entityId);
+    if (cached) return cached;
+    const requests = (await this.client.listServiceRequests(entityId)) as ApiRecord[];
+    this.serviceRequestsCache.set(entityId, requests);
+    return requests;
   }
 }

@@ -306,6 +306,7 @@ async fn run_server(skip_validation: bool) {
         .merge(routes::references::references_routes())
         .merge(routes::secret_proxies::secret_proxy_routes())
         .merge(routes::work_items::work_items_routes())
+        .merge(routes::services::services_routes())
         .merge(routes::admin::admin_routes())
         .merge(routes::admin::admin_billing_routes())
         .with_state(state)

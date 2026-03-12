@@ -1315,6 +1315,91 @@ workItemsCmd
     });
   });
 
+// --- services ---
+const servicesCmd = program
+  .command("services")
+  .description("Service catalog and fulfillment")
+  .option("--entity-id <ref>", "Entity reference (ID, short ID, @last, or unique name)")
+  .option("--json", "Output as JSON");
+servicesCmd
+  .command("catalog")
+  .option("--json", "Output as JSON")
+  .description("List the service catalog")
+  .action(async (opts, cmd) => {
+    const parent = cmd.parent!.opts();
+    const { servicesCatalogCommand } = await import("./commands/services.js");
+    await servicesCatalogCommand({
+      json: inheritOption(opts.json, parent.json),
+    });
+  });
+servicesCmd
+  .command("buy <slug>")
+  .option("--json", "Output as JSON")
+  .option("--dry-run", "Show the request without executing")
+  .description("Purchase a service from the catalog")
+  .action(async (slug: string, opts, cmd) => {
+    const parent = cmd.parent!.opts();
+    const { servicesBuyCommand } = await import("./commands/services.js");
+    await servicesBuyCommand(slug, {
+      ...opts,
+      entityId: parent.entityId,
+      json: inheritOption(opts.json, parent.json),
+    });
+  });
+servicesCmd
+  .command("list")
+  .option("--json", "Output as JSON")
+  .description("List service requests for an entity")
+  .action(async (opts, cmd) => {
+    const parent = cmd.parent!.opts();
+    const { servicesListCommand } = await import("./commands/services.js");
+    await servicesListCommand({
+      ...opts,
+      entityId: parent.entityId,
+      json: inheritOption(opts.json, parent.json),
+    });
+  });
+servicesCmd
+  .command("show <ref>")
+  .option("--json", "Output as JSON")
+  .description("Show service request detail")
+  .action(async (ref_: string, opts, cmd) => {
+    const parent = cmd.parent!.opts();
+    const { servicesShowCommand } = await import("./commands/services.js");
+    await servicesShowCommand(ref_, {
+      ...opts,
+      entityId: parent.entityId,
+      json: inheritOption(opts.json, parent.json),
+    });
+  });
+servicesCmd
+  .command("fulfill <ref>")
+  .option("--note <note>", "Fulfillment note")
+  .option("--json", "Output as JSON")
+  .description("Mark a service request as fulfilled (operator)")
+  .action(async (ref_: string, opts, cmd) => {
+    const parent = cmd.parent!.opts();
+    const { servicesFulfillCommand } = await import("./commands/services.js");
+    await servicesFulfillCommand(ref_, {
+      ...opts,
+      entityId: parent.entityId,
+      json: inheritOption(opts.json, parent.json),
+    });
+  });
+servicesCmd
+  .command("cancel <ref>")
+  .option("--json", "Output as JSON")
+  .description("Cancel a service request")
+  .action(async (ref_: string, opts, cmd) => {
+    const parent = cmd.parent!.opts();
+    const { servicesCancelCommand } = await import("./commands/services.js");
+    await servicesCancelCommand(ref_, {
+      ...opts,
+      entityId: parent.entityId,
+      json: inheritOption(opts.json, parent.json),
+    });
+  });
+
 // --- billing ---
 const billingCmd = program
   .command("billing")

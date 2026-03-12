@@ -447,6 +447,15 @@ export class CorpAPIClient {
   // --- Config ---
   getConfig() { return this.get("/v1/config") as Promise<ApiRecord>; }
 
+  // --- Services ---
+  listServiceCatalog() { return this.get("/v1/services/catalog") as Promise<ApiRecord[]>; }
+  createServiceRequest(data: ApiRecord) { return this.post("/v1/services/requests", data) as Promise<ApiRecord>; }
+  getServiceRequest(id: string, entityId: string) { return this.get(`/v1/services/requests/${pathSegment(id)}`, { entity_id: entityId }) as Promise<ApiRecord>; }
+  listServiceRequests(entityId: string) { return this.get(`/v1/entities/${pathSegment(entityId)}/service-requests`) as Promise<ApiRecord[]>; }
+  beginServiceCheckout(id: string, data: ApiRecord) { return this.post(`/v1/services/requests/${pathSegment(id)}/checkout`, data) as Promise<ApiRecord>; }
+  fulfillServiceRequest(id: string, data: ApiRecord) { return this.post(`/v1/services/requests/${pathSegment(id)}/fulfill`, data) as Promise<ApiRecord>; }
+  cancelServiceRequest(id: string, data: ApiRecord) { return this.post(`/v1/services/requests/${pathSegment(id)}/cancel`, data) as Promise<ApiRecord>; }
+
   // --- Feedback ---
   submitFeedback(message: string, category?: string, email?: string) {
     return this.post("/v1/feedback", { message, category, email }) as Promise<{ feedback_id: string; submitted_at: string }>;

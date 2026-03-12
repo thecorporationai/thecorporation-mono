@@ -6,7 +6,7 @@ use std::fmt;
 // ── PriceType ──────────────────────────────────────────────────────────
 
 /// How a service item is priced.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum PriceType {
     /// One-time payment (e.g., incorporation filing).
@@ -30,7 +30,7 @@ impl fmt::Display for PriceType {
 // ── ServiceRequestStatus ───────────────────────────────────────────────
 
 /// Lifecycle status of a fulfillment service request.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ServiceRequestStatus {
     /// Request created, awaiting payment.

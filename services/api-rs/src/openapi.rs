@@ -31,6 +31,7 @@ pub fn openapi_spec() -> utoipa::openapi::OpenApi {
         routes::secret_proxies::SecretProxiesApi::openapi(),
         routes::agent_executions::AgentExecutionsApi::openapi(),
         routes::work_items::WorkItemsApi::openapi(),
+        routes::services::ServicesApi::openapi(),
     ];
 
     for module_doc in modules {
@@ -74,6 +75,7 @@ pub fn openapi_spec() -> utoipa::openapi::OpenApi {
         (name = "secret_proxies", description = "Secret proxy configurations"),
         (name = "agent_executions", description = "Agent execution queue"),
         (name = "work_items", description = "Long-term work item coordination"),
+        (name = "services", description = "Service catalog and fulfillment"),
     ),
 )]
 struct ApiDoc;

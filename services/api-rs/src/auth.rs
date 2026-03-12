@@ -113,6 +113,10 @@ define_scoped_extractor!(RequireContactsWrite, Scope::ContactsWrite);
 define_scoped_extractor!(RequireExecutionRead, Scope::ExecutionRead);
 define_scoped_extractor!(RequireExecutionWrite, Scope::ExecutionWrite);
 
+// Services
+define_scoped_extractor!(RequireServicesRead, Scope::ServicesRead);
+define_scoped_extractor!(RequireServicesWrite, Scope::ServicesWrite);
+
 // Branches
 define_scoped_extractor!(RequireBranchCreate, Scope::BranchCreate);
 define_scoped_extractor!(RequireBranchMerge, Scope::BranchMerge);

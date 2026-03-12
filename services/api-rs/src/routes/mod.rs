@@ -14,6 +14,7 @@ pub mod llm_proxy;
 pub mod references;
 pub mod secret_proxies;
 pub mod secrets_proxy;
+pub mod services;
 pub mod treasury;
 pub mod validation;
 pub mod work_items;

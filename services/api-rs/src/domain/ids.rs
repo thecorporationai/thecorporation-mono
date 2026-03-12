@@ -30,6 +30,12 @@ macro_rules! define_id {
                 Self(id)
             }
 
+            /// Const-compatible constructor for static/const contexts.
+            #[inline]
+            pub const fn from_uuid_const(id: Uuid) -> Self {
+                Self(id)
+            }
+
             /// Borrow the inner UUID.
             #[inline]
             pub fn as_uuid(&self) -> &Uuid {
