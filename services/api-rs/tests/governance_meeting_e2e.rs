@@ -98,6 +98,166 @@ async fn get_json(app: &Router, path: &str, token: &str) -> (StatusCode, Value) 
     (status, value)
 }
 
+async fn sign_all_formation_documents(
+    app: &Router,
+    entity_id: &str,
+    token: &str,
+    signer_name: &str,
+    signer_email: &str,
+) {
+    let (status, docs) =
+        get_json(app, &format!("/v1/formations/{entity_id}/documents"), token).await;
+    assert_eq!(status, StatusCode::OK, "list formation documents failed: {docs}");
+    let docs = docs.as_array().expect("documents array");
+    for doc in docs {
+        let doc_id = doc["document_id"].as_str().expect("document_id");
+        let (status, full_doc) = get_json(
+            app,
+            &format!("/v1/documents/{doc_id}?entity_id={entity_id}"),
+            token,
+        )
+        .await;
+        assert_eq!(
+            status,
+            StatusCode::OK,
+            "get document {doc_id} failed: {full_doc}"
+        );
+
+        let signer_role = full_doc["content"]["signature_requirements"]
+            .as_array()
+            .and_then(|arr| arr.first())
+            .and_then(|req| req["role"].as_str())
+            .unwrap_or("incorporator");
+
+        let (status, body) = post_json(
+            app,
+            &format!("/v1/documents/{doc_id}/sign?entity_id={entity_id}"),
+            json!({
+                "signer_name": signer_name,
+                "signer_role": signer_role,
+                "signer_email": signer_email,
+                "signature_text": signer_name,
+            }),
+            token,
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "sign document {doc_id} failed: {body}");
+    }
+}
+
+async fn satisfy_filing_gates(
+    app: &Router,
+    entity_id: &str,
+    token: &str,
+    signer_name: &str,
+    signer_role: &str,
+    signer_email: &str,
+) {
+    let (status, attestation) = post_json(
+        app,
+        &format!("/v1/formations/{entity_id}/filing-attestation"),
+        json!({
+            "signer_name": signer_name,
+            "signer_role": signer_role,
+            "signer_email": signer_email,
+            "consent_text": "I attest the filing information is accurate.",
+        }),
+        token,
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "record filing attestation failed: {attestation}"
+    );
+
+    let (status, evidence) = post_json(
+        app,
+        &format!("/v1/formations/{entity_id}/registered-agent-consent-evidence"),
+        json!({
+            "evidence_uri": "s3://formation/ra-consent.pdf",
+            "evidence_type": "registered_agent_consent_pdf",
+            "notes": "registered agent engagement executed"
+        }),
+        token,
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "record registered-agent consent evidence failed: {evidence}"
+    );
+}
+
+async fn advance_entity_to_active(app: &Router, entity_id: &str, token: &str) {
+    sign_all_formation_documents(app, entity_id, token, "Alice Director", "alice@test.com").await;
+
+    let (status, body) = post_json(
+        app,
+        &format!("/v1/formations/{entity_id}/mark-documents-signed"),
+        json!({}),
+        token,
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "mark documents signed failed: {body}"
+    );
+
+    satisfy_filing_gates(
+        app,
+        entity_id,
+        token,
+        "Alice Director",
+        "director",
+        "alice@test.com",
+    )
+    .await;
+
+    let (status, body) = post_json(
+        app,
+        &format!("/v1/formations/{entity_id}/submit-filing"),
+        json!({}),
+        token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "submit filing failed: {body}");
+
+    let (status, body) = post_json(
+        app,
+        &format!("/v1/formations/{entity_id}/filing-confirmation"),
+        json!({
+            "external_filing_id": "DE-STATE-ACTIVE",
+            "receipt_reference": "RCPT-ACTIVE"
+        }),
+        token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "confirm filing failed: {body}");
+
+    let (status, body) = post_json(
+        app,
+        &format!("/v1/formations/{entity_id}/apply-ein"),
+        json!({}),
+        token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "apply ein failed: {body}");
+
+    let (status, body) = post_json(
+        app,
+        &format!("/v1/formations/{entity_id}/ein-confirmation"),
+        json!({
+            "ein": "12-3456789"
+        }),
+        token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "confirm ein failed: {body}");
+    assert_eq!(body["formation_status"], "active");
+}
+
 async fn create_entity(app: &Router) -> (String, String) {
     let ws_id = WorkspaceId::new();
     let token = make_token(ws_id);
@@ -147,6 +307,8 @@ async fn create_entity(app: &Router) -> (String, String) {
     .await;
     assert_eq!(status, StatusCode::OK, "create entity failed: {body}");
     let entity_id = body["entity_id"].as_str().expect("entity_id").to_owned();
+
+    advance_entity_to_active(app, &entity_id, &token).await;
 
     // Create contacts for board members
     let (status, c1) = post_json(
