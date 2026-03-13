@@ -792,8 +792,9 @@ fn open_store<'a>(
     layout: &'a crate::store::RepoLayout,
     workspace_id: WorkspaceId,
     entity_id: EntityId,
+    valkey_client: Option<&redis::Client>,
 ) -> Result<EntityStore<'a>, AppError> {
-    EntityStore::open(layout, workspace_id, entity_id).map_err(|e| match e {
+    EntityStore::open(layout, workspace_id, entity_id, valkey_client).map_err(|e| match e {
         crate::git::error::GitStorageError::RepoNotFound(_) => {
             AppError::NotFound(format!("entity {} not found", entity_id))
         }
@@ -2469,9 +2470,10 @@ async fn create_holder(
 
     let holder = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         let holder_name = holder_name.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_id, valkey_client.as_ref())?;
             let holder = Holder::new(
                 HolderId::new(),
                 req.contact_id,
@@ -2528,8 +2530,9 @@ async fn create_legal_entity(
 
     let legal_entity = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_id, valkey_client.as_ref())?;
             let le = LegalEntity::new(
                 LegalEntityId::new(),
                 workspace_id,
@@ -2578,8 +2581,9 @@ async fn create_control_link(
 
     let link = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_id, valkey_client.as_ref())?;
             let entities = read_all::<LegalEntity>(&store)?;
             let known: HashSet<LegalEntityId> =
                 entities.iter().map(|e| e.legal_entity_id()).collect();
@@ -2654,9 +2658,10 @@ async fn create_instrument(
 
     let instrument = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         let symbol = symbol.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_id, valkey_client.as_ref())?;
             let entities = read_all::<LegalEntity>(&store)?;
             if !entities
                 .iter()
@@ -2717,8 +2722,9 @@ async fn adjust_position(
 
     let position = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_id, valkey_client.as_ref())?;
 
             let holders = read_all::<Holder>(&store)?;
             if !holders.iter().any(|h| h.holder_id() == req.holder_id) {
@@ -2829,9 +2835,10 @@ async fn create_round(
 
     let round = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         let round_name = round_name.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_id, valkey_client.as_ref())?;
             let entities = read_all::<LegalEntity>(&store)?;
             if !entities
                 .iter()
@@ -2907,8 +2914,9 @@ async fn apply_round_terms(
 
     let rules = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_id, valkey_client.as_ref())?;
             let mut round = store
                 .read::<EquityRound>("main", round_id)
                 .map_err(|_| AppError::NotFound(format!("equity round {} not found", round_id)))?;
@@ -2979,8 +2987,9 @@ async fn board_approve_round(
 
     let round = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_id, valkey_client.as_ref())?;
             let mut round = store
                 .read::<EquityRound>("main", round_id)
                 .map_err(|_| AppError::NotFound(format!("equity round {} not found", round_id)))?;
@@ -3039,8 +3048,9 @@ async fn accept_round(
 
     let round = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_id, valkey_client.as_ref())?;
             let mut round = store
                 .read::<EquityRound>("main", round_id)
                 .map_err(|_| AppError::NotFound(format!("equity round {} not found", round_id)))?;
@@ -3120,8 +3130,9 @@ async fn create_transfer_workflow(
 
     let workflow = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_id, valkey_client.as_ref())?;
             store
                 .read::<ShareClass>("main", req.share_class_id)
                 .map_err(|_| AppError::BadRequest("share_class_id does not exist".to_owned()))?;
@@ -3226,8 +3237,9 @@ async fn generate_transfer_workflow_docs(
 
     let workflow = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_id, valkey_client.as_ref())?;
             let mut workflow = store
                 .read::<TransferWorkflow>("main", workflow_id)
                 .map_err(|_| {
@@ -3299,8 +3311,9 @@ async fn submit_transfer_workflow_for_review(
 
     let workflow = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_id, valkey_client.as_ref())?;
             let mut workflow = store
                 .read::<TransferWorkflow>("main", workflow_id)
                 .map_err(|_| {
@@ -3386,8 +3399,9 @@ async fn record_transfer_workflow_review(
 
     let workflow = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_id, valkey_client.as_ref())?;
             let mut workflow = store
                 .read::<TransferWorkflow>("main", workflow_id)
                 .map_err(|_| {
@@ -3465,8 +3479,9 @@ async fn record_transfer_workflow_rofr(
 
     let workflow = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_id, valkey_client.as_ref())?;
             let mut workflow = store
                 .read::<TransferWorkflow>("main", workflow_id)
                 .map_err(|_| {
@@ -3544,8 +3559,9 @@ async fn record_transfer_workflow_board_approval(
 
     let workflow = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_id, valkey_client.as_ref())?;
             let mut workflow = store
                 .read::<TransferWorkflow>("main", workflow_id)
                 .map_err(|_| {
@@ -3631,8 +3647,9 @@ async fn record_transfer_workflow_execution(
 
     let workflow = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_id, valkey_client.as_ref())?;
             let mut workflow = store
                 .read::<TransferWorkflow>("main", workflow_id)
                 .map_err(|_| {
@@ -3728,8 +3745,9 @@ async fn get_transfer_workflow(
 
     let workflow = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_id, valkey_client.as_ref())?;
             let workflow = store
                 .read::<TransferWorkflow>("main", workflow_id)
                 .map_err(|_| {
@@ -3779,9 +3797,10 @@ async fn create_fundraising_workflow(
 
     let workflow = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         let round_name = round_name.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_id, valkey_client.as_ref())?;
             let entities = read_all::<LegalEntity>(&store)?;
             if !entities
                 .iter()
@@ -3896,8 +3915,9 @@ async fn apply_fundraising_workflow_terms(
 
     let workflow = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_id, valkey_client.as_ref())?;
             let mut workflow = store
                 .read::<FundraisingWorkflow>("main", workflow_id)
                 .map_err(|_| {
@@ -3987,8 +4007,9 @@ async fn generate_fundraising_board_packet(
 
     let workflow = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_id, valkey_client.as_ref())?;
             let mut workflow = store
                 .read::<FundraisingWorkflow>("main", workflow_id)
                 .map_err(|_| {
@@ -4069,8 +4090,9 @@ async fn record_fundraising_workflow_board_approval(
 
     let workflow = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_id, valkey_client.as_ref())?;
             let mut workflow = store
                 .read::<FundraisingWorkflow>("main", workflow_id)
                 .map_err(|_| {
@@ -4159,8 +4181,9 @@ async fn record_fundraising_workflow_acceptance(
 
     let workflow = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_id, valkey_client.as_ref())?;
             let mut workflow = store
                 .read::<FundraisingWorkflow>("main", workflow_id)
                 .map_err(|_| {
@@ -4256,8 +4279,9 @@ async fn generate_fundraising_closing_packet(
 
     let workflow = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_id, valkey_client.as_ref())?;
             let mut workflow = store
                 .read::<FundraisingWorkflow>("main", workflow_id)
                 .map_err(|_| {
@@ -4338,8 +4362,9 @@ async fn record_fundraising_workflow_close(
 
     let workflow = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_id, valkey_client.as_ref())?;
             let mut workflow = store
                 .read::<FundraisingWorkflow>("main", workflow_id)
                 .map_err(|_| {
@@ -4435,8 +4460,9 @@ async fn get_fundraising_workflow(
 
     let workflow = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_id, valkey_client.as_ref())?;
             let workflow = store
                 .read::<FundraisingWorkflow>("main", workflow_id)
                 .map_err(|_| {
@@ -4483,8 +4509,9 @@ async fn prepare_transfer_workflow_execution(
 
     let response = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_id, valkey_client.as_ref())?;
             let mut workflow = store
                 .read::<TransferWorkflow>("main", workflow_id)
                 .map_err(|_| {
@@ -4598,8 +4625,9 @@ async fn prepare_fundraising_workflow_execution(
 
     let response = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_id, valkey_client.as_ref())?;
             let mut workflow = store
                 .read::<FundraisingWorkflow>("main", workflow_id)
                 .map_err(|_| {
@@ -4710,8 +4738,9 @@ async fn compile_transfer_workflow_packet(
 
     let packet = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_id, valkey_client.as_ref())?;
             let mut workflow = store
                 .read::<TransferWorkflow>("main", workflow_id)
                 .map_err(|_| {
@@ -4810,8 +4839,9 @@ async fn compile_fundraising_workflow_packet(
 
     let packet = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_id, valkey_client.as_ref())?;
             let mut workflow = store
                 .read::<FundraisingWorkflow>("main", workflow_id)
                 .map_err(|_| {
@@ -4941,8 +4971,9 @@ async fn start_transfer_workflow_signatures(
     }
     let packet = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_id, valkey_client.as_ref())?;
             let mut workflow = store
                 .read::<TransferWorkflow>("main", workflow_id)
                 .map_err(|_| {
@@ -5013,8 +5044,9 @@ async fn start_fundraising_workflow_signatures(
     }
     let packet = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_id, valkey_client.as_ref())?;
             let mut workflow = store
                 .read::<FundraisingWorkflow>("main", workflow_id)
                 .map_err(|_| {
@@ -5091,8 +5123,9 @@ async fn record_transfer_workflow_signature(
 
     let packet = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_id, valkey_client.as_ref())?;
             let mut workflow = store
                 .read::<TransferWorkflow>("main", workflow_id)
                 .map_err(|_| {
@@ -5177,8 +5210,9 @@ async fn record_fundraising_workflow_signature(
 
     let packet = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_id, valkey_client.as_ref())?;
             let mut workflow = store
                 .read::<FundraisingWorkflow>("main", workflow_id)
                 .map_err(|_| {
@@ -5258,8 +5292,9 @@ async fn finalize_transfer_workflow(
 
     let workflow = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_id, valkey_client.as_ref())?;
             let mut workflow = store
                 .read::<TransferWorkflow>("main", workflow_id)
                 .map_err(|_| {
@@ -5373,8 +5408,9 @@ async fn finalize_fundraising_workflow(
 
     let workflow = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_id, valkey_client.as_ref())?;
             let mut workflow = store
                 .read::<FundraisingWorkflow>("main", workflow_id)
                 .map_err(|_| {
@@ -5501,8 +5537,9 @@ async fn get_workflow_status(
 
     let response = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_id, valkey_client.as_ref())?;
             if workflow_type == "transfer" {
                 let id = workflow_id
                     .parse::<uuid::Uuid>()
@@ -5588,8 +5625,9 @@ async fn get_cap_table(
 
     let response = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_id, valkey_client.as_ref())?;
             let holders = read_all::<Holder>(&store)?;
             let legal_entities = read_all::<LegalEntity>(&store)?;
             let instruments = read_all::<Instrument>(&store)?;
@@ -5638,8 +5676,9 @@ async fn preview_conversion(
 
     let preview = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_id, valkey_client.as_ref())?;
             let round = store
                 .read::<EquityRound>("main", req.round_id)
                 .map_err(|_| {
@@ -5709,8 +5748,9 @@ async fn execute_conversion(
 
     let result = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_id, valkey_client.as_ref())?;
             let mut round = store
                 .read::<EquityRound>("main", req.round_id)
                 .map_err(|_| {
@@ -5976,8 +6016,9 @@ async fn get_control_map(
 
     let response = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, query.entity_id)?;
+            let store = open_store(&layout, workspace_id, query.entity_id, valkey_client.as_ref())?;
             let links = read_all::<ControlLink>(&store)?;
             let entities = read_all::<LegalEntity>(&store)?;
             let entity_ids: HashSet<LegalEntityId> =
@@ -6046,8 +6087,9 @@ async fn get_dilution_preview(
 
     let response = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, query.entity_id)?;
+            let store = open_store(&layout, workspace_id, query.entity_id, valkey_client.as_ref())?;
             let round = store
                 .read::<EquityRound>("main", query.round_id)
                 .map_err(|_| {
@@ -6133,9 +6175,10 @@ async fn start_staged_round(
 
     let round = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         let round_name = round_name.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_id, valkey_client.as_ref())?;
 
             // Validate issuer legal entity exists
             let entities = read_all::<LegalEntity>(&store)?;
@@ -6218,8 +6261,9 @@ async fn list_equity_rounds(
 
     let rounds = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_id, valkey_client.as_ref())?;
             let all = read_all::<EquityRound>(&store)?;
             Ok::<_, AppError>(all.iter().map(round_to_response).collect::<Vec<_>>())
         }
@@ -6262,8 +6306,9 @@ async fn add_round_security(
 
     let security = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_id, valkey_client.as_ref())?;
 
             // Verify round exists and is Draft
             let round = store
@@ -6476,8 +6521,9 @@ async fn issue_staged_round(
 
     let (round, positions, board_meeting_id, board_agenda_item_id) = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_id, valkey_client.as_ref())?;
 
             // Read and validate round
             let mut round = store
@@ -6848,8 +6894,9 @@ async fn create_safe_note(
 
     let safe_note = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_id, valkey_client.as_ref())?;
             let (investor_contact_id, mut files) = resolve_or_prepare_investor_contact(
                 &store,
                 entity_id,
@@ -6942,8 +6989,9 @@ async fn list_safe_notes(
 
     let safe_notes = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_id, valkey_client.as_ref())?;
             let mut notes = read_all::<SafeNote>(&store)?;
             notes.sort_by_key(|note| note.created_at());
             Ok::<_, AppError>(
@@ -7032,8 +7080,9 @@ async fn create_valuation(
 
     let valuation = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_id, valkey_client.as_ref())?;
             let (entity, _profile) = entity_profile_for_docs(&store)?;
             if let Some(formation_date) = entity.formation_date()
                 && req.effective_date < formation_date.date_naive()
@@ -7130,8 +7179,9 @@ async fn list_valuations(
 
     let valuations = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_id, valkey_client.as_ref())?;
             let all = read_all::<Valuation>(&store)?;
             Ok::<_, AppError>(all.iter().map(valuation_to_response).collect::<Vec<_>>())
         }
@@ -7166,8 +7216,9 @@ async fn get_current_409a(
 
     let valuation = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_id, valkey_client.as_ref())?;
             let all = read_all::<Valuation>(&store)?;
             all.into_iter()
                 .find(|v| v.is_current_409a())
@@ -7210,8 +7261,9 @@ async fn submit_valuation_for_approval(
 
     let result = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_id, valkey_client.as_ref())?;
             ensure_entity_is_active_for_governance(&store, "valuation approval submission")?;
 
             // Read and transition the valuation.
@@ -7343,8 +7395,9 @@ async fn approve_valuation(
 
     let valuation = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_id, valkey_client.as_ref())?;
 
             let mut valuation = store
                 .read::<Valuation>("main", valuation_id)
@@ -7499,8 +7552,9 @@ async fn create_legacy_share_transfer(
 
     let transfer = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_id, valkey_client.as_ref())?;
             let from_contact = resolve_transfer_sender_contact(&store, &from_holder)?;
             let to_contact = resolve_contact_reference(&store, &to_holder)?;
             if from_contact.contact_id() == to_contact.contact_id() {
@@ -7581,8 +7635,9 @@ async fn list_legacy_share_transfers(
 
     let transfers = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_id, valkey_client.as_ref())?;
             let all = read_all::<ShareTransfer>(&store)?;
             Ok::<_, AppError>(
                 all.into_iter()

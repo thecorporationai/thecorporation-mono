@@ -158,8 +158,9 @@ async fn create_proxy(
 
     let config = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let ws_store = WorkspaceStore::open(&layout, workspace_id)
+            let ws_store = WorkspaceStore::open(&layout, workspace_id, valkey_client.as_ref())
                 .map_err(|e| AppError::NotFound(format!("workspace not found: {e}")))?;
 
             // Check if proxy already exists
@@ -177,21 +178,19 @@ async fn create_proxy(
             let empty_secrets = EncryptedSecrets::default();
 
             // Atomic commit: config + empty secrets
-            use crate::git::commit::{FileWrite, commit_files};
+            use crate::git::commit::FileWrite;
             let files = vec![
                 FileWrite::json(config_path(&req.name), &config)
                     .map_err(|e| AppError::Internal(format!("serialize config: {e}")))?,
                 FileWrite::json(secrets_path(&req.name), &empty_secrets)
                     .map_err(|e| AppError::Internal(format!("serialize secrets: {e}")))?,
             ];
-            commit_files(
-                ws_store.repo(),
-                "main",
-                &format!("Create secret proxy '{}'", req.name),
-                &files,
-                None,
-            )
-            .map_err(|e| AppError::Internal(format!("commit: {e}")))?;
+            ws_store
+                .commit_files(
+                    &format!("Create secret proxy '{}'", req.name),
+                    &files,
+                )
+                .map_err(|e| AppError::Internal(format!("commit: {e}")))?;
 
             Ok::<_, AppError>(config)
         }
@@ -230,8 +229,9 @@ async fn list_proxies(
 
     let proxies = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let ws_store = WorkspaceStore::open(&layout, workspace_id)
+            let ws_store = WorkspaceStore::open(&layout, workspace_id, valkey_client.as_ref())
                 .map_err(|e| AppError::NotFound(format!("workspace not found: {e}")))?;
 
             let names = ws_store
@@ -283,8 +283,9 @@ async fn get_proxy(
 
     let proxy = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let ws_store = WorkspaceStore::open(&layout, params.workspace_id)
+            let ws_store = WorkspaceStore::open(&layout, params.workspace_id, valkey_client.as_ref())
                 .map_err(|e| AppError::NotFound(format!("workspace not found: {e}")))?;
 
             let config: SecretProxyConfig = ws_store
@@ -337,8 +338,9 @@ async fn set_secrets(
 
     let names = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let ws_store = WorkspaceStore::open(&layout, params.workspace_id)
+            let ws_store = WorkspaceStore::open(&layout, params.workspace_id, valkey_client.as_ref())
                 .map_err(|e| AppError::NotFound(format!("workspace not found: {e}")))?;
 
             // Verify proxy exists
@@ -399,8 +401,9 @@ async fn list_secret_names(
 
     let names = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let ws_store = WorkspaceStore::open(&layout, params.workspace_id)
+            let ws_store = WorkspaceStore::open(&layout, params.workspace_id, valkey_client.as_ref())
                 .map_err(|e| AppError::NotFound(format!("workspace not found: {e}")))?;
 
             // Verify proxy exists
@@ -448,8 +451,9 @@ async fn resolve_secrets(
 
     let result = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let ws_store = WorkspaceStore::open(&layout, req.workspace_id)
+            let ws_store = WorkspaceStore::open(&layout, req.workspace_id, valkey_client.as_ref())
                 .map_err(|e| AppError::NotFound(format!("workspace not found: {e}")))?;
 
             let config: SecretProxyConfig = ws_store

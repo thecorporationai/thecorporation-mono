@@ -52,6 +52,20 @@ enum Command {
         #[arg(long)]
         out_dir: PathBuf,
     },
+    /// Dispatch a single HTTP request through the router without starting a server.
+    /// Body is read from stdin; raw response body is written to stdout.
+    Call {
+        /// HTTP method (GET, POST, PUT, DELETE, PATCH).
+        method: String,
+        /// Request path (e.g. /v1/health).
+        path: String,
+        /// Headers in "Key: Value" format. Can be repeated.
+        #[arg(long = "header", short = 'H')]
+        headers: Vec<String>,
+        /// Read request body from stdin.
+        #[arg(long)]
+        stdin: bool,
+    },
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
@@ -108,17 +122,21 @@ async fn main() {
                 }
             }
         }
+        Some(Command::Call {
+            method,
+            path,
+            headers,
+            stdin,
+        }) => {
+            call_oneshot(cli.skip_validation, method, path, headers, stdin).await;
+        }
         None => {
             run_server(cli.skip_validation).await;
         }
     }
 }
 
-async fn run_server(skip_validation: bool) {
-    tracing_subscriber::fmt()
-        .with_env_filter(EnvFilter::from_default_env())
-        .init();
-
+fn init_state(skip_validation: bool) -> routes::AppState {
     let data_dir = PathBuf::from("./data/repos");
 
     if skip_validation {
@@ -274,7 +292,35 @@ async fn run_server(skip_validation: bool) {
         panic!("INTERNAL_WORKER_TOKEN must be set");
     }
 
-    let state = routes::AppState {
+    // Storage backend: "git" (default) or "valkey"
+    let storage_backend = match std::env::var("STORAGE_BACKEND")
+        .unwrap_or_else(|_| "git".to_owned())
+        .to_lowercase()
+        .as_str()
+    {
+        "git" => store::StorageBackendKind::Git,
+        "valkey" | "redis" => store::StorageBackendKind::Valkey,
+        other => panic!("unknown STORAGE_BACKEND: {other} (expected \"git\" or \"valkey\")"),
+    };
+
+    // Sync Redis/Valkey client for corp-store operations (used inside spawn_blocking)
+    let valkey_client = match storage_backend {
+        store::StorageBackendKind::Valkey => {
+            let url = std::env::var("VALKEY_URL")
+                .or_else(|_| std::env::var("REDIS_URL"))
+                .unwrap_or_else(|_| panic!("VALKEY_URL or REDIS_URL must be set when STORAGE_BACKEND=valkey"));
+            let client = redis::Client::open(url.as_str())
+                .unwrap_or_else(|e| panic!("invalid Valkey URL: {e}"));
+            tracing::info!("storage backend: valkey");
+            Some(client)
+        }
+        store::StorageBackendKind::Git => {
+            tracing::info!("storage backend: git");
+            None
+        }
+    };
+
+    routes::AppState {
         layout,
         jwt_secret,
         commit_signer,
@@ -285,9 +331,13 @@ async fn run_server(skip_validation: bool) {
         llm_upstream_url,
         model_pricing,
         creation_rate_limiter: Arc::new(routes::CreationRateLimiter::default()),
-    };
+        storage_backend,
+        valkey_client,
+    }
+}
 
-    let app = Router::new()
+fn build_router(state: routes::AppState) -> Router {
+    Router::new()
         .route("/health", get(health))
         .route("/v1/openapi.json", get(openapi_json))
         .merge(routes::formation::formation_routes())
@@ -310,7 +360,16 @@ async fn run_server(skip_validation: bool) {
         .merge(routes::admin::admin_routes())
         .merge(routes::admin::admin_billing_routes())
         .with_state(state)
-        .layer(middleware::map_response(security_headers));
+        .layer(middleware::map_response(security_headers))
+}
+
+async fn run_server(skip_validation: bool) {
+    tracing_subscriber::fmt()
+        .with_env_filter(EnvFilter::from_default_env())
+        .init();
+
+    let state = init_state(skip_validation);
+    let app = build_router(state);
 
     let port: u16 = std::env::var("PORT")
         .ok()
@@ -333,6 +392,73 @@ async fn run_server(skip_validation: bool) {
             std::process::exit(1);
         })
         .unwrap();
+}
+
+async fn call_oneshot(
+    skip_validation: bool,
+    method: String,
+    path: String,
+    headers: Vec<String>,
+    read_stdin: bool,
+) {
+    use std::io::{Read as _, Write as _};
+    use tower::ServiceExt;
+
+    tracing_subscriber::fmt()
+        .with_env_filter(EnvFilter::from_default_env())
+        .with_writer(std::io::stderr)
+        .init();
+
+    let state = init_state(skip_validation);
+    let app = build_router(state);
+
+    // Read body from stdin only when explicitly requested.
+    let mut body = Vec::new();
+    if read_stdin {
+        std::io::stdin()
+            .read_to_end(&mut body)
+            .expect("failed to read stdin");
+    }
+
+    let method: axum::http::Method = method
+        .to_uppercase()
+        .parse()
+        .expect("invalid HTTP method");
+
+    let mut builder = axum::http::Request::builder().method(method).uri(&path);
+
+    for h in &headers {
+        if let Some((k, v)) = h.split_once(':') {
+            builder = builder.header(k.trim(), v.trim());
+        }
+    }
+
+    // Default to JSON content-type when body is present and no content-type header was set.
+    let has_content_type = headers
+        .iter()
+        .any(|h| h.to_lowercase().starts_with("content-type:"));
+    if !body.is_empty() && !has_content_type {
+        builder = builder.header("content-type", "application/json");
+    }
+
+    let request = builder
+        .body(axum::body::Body::from(body))
+        .expect("failed to build request");
+
+    let response = app.oneshot(request).await.expect("handler panicked");
+
+    let status = response.status();
+    eprintln!("HTTP {}", status.as_u16());
+
+    let body_bytes = axum::body::to_bytes(response.into_body(), 10 * 1024 * 1024)
+        .await
+        .expect("failed to read response body");
+
+    std::io::stdout()
+        .write_all(&body_bytes)
+        .expect("failed to write response");
+
+    std::process::exit(if status.is_success() { 0 } else { 1 });
 }
 
 async fn security_headers(mut response: Response) -> Response {

@@ -28,6 +28,9 @@ ssh-key = { version = "0.6", features = ["ed25519", "crypto"] }
 # Shared agent types (IDs, enums, config structs)
 agent-types = { path = "../../crates/agent-types", features = ["openapi"] }
 
+# Content-addressed Valkey store (alternative storage backend)
+corp-store = { path = "../../crates/corp-store" }
+
 # Types
 uuid = { version = "1", features = ["v4", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }

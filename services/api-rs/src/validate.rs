@@ -148,7 +148,7 @@ fn validate_workspace(layout: &RepoLayout, ws_id: WorkspaceId, stats: &mut Valid
     stats.workspaces += 1;
 
     // Open workspace store
-    let ws_store = match WorkspaceStore::open(layout, ws_id) {
+    let ws_store = match WorkspaceStore::open(layout, ws_id, None) {
         Ok(s) => s,
         Err(e) => {
             stats.push_error(
@@ -282,7 +282,7 @@ fn validate_entity(
     stats.entities += 1;
     let ctx = entity_id.to_string();
 
-    let store = match EntityStore::open(layout, ws_id, entity_id) {
+    let store = match EntityStore::open(layout, ws_id, entity_id, None) {
         Ok(s) => s,
         Err(e) => {
             stats.push_error(
@@ -508,7 +508,7 @@ mod tests {
         let entity_id = EntityId::new();
 
         // Create workspace
-        WorkspaceStore::init(&layout, ws_id, "Test Workspace").unwrap();
+        WorkspaceStore::init(&layout, ws_id, "Test Workspace", None).unwrap();
 
         // Create entity with a minimal valid corp.json
         let entity = serde_json::json!({
@@ -537,7 +537,7 @@ mod tests {
         let entity_id = EntityId::new();
 
         // Create workspace
-        WorkspaceStore::init(&layout, ws_id, "Test Workspace").unwrap();
+        WorkspaceStore::init(&layout, ws_id, "Test Workspace", None).unwrap();
 
         // Create entity with invalid JSON in corp.json
         let path = layout.entity_repo_path(ws_id, entity_id);

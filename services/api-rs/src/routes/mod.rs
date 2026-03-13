@@ -28,7 +28,7 @@ use axum::extract::FromRef;
 use crate::domain::ids::{EntityId, WorkspaceId};
 use crate::error::AppError;
 use crate::git::signing::CommitSigner;
-use crate::store::RepoLayout;
+use crate::store::{RepoLayout, StorageBackendKind};
 
 /// Query params requiring both workspace and entity identification.
 ///
@@ -72,6 +72,11 @@ pub struct AppState {
     pub model_pricing: HashMap<String, ModelPricing>,
     /// In-process throttle for bursty resource creation endpoints.
     pub creation_rate_limiter: Arc<CreationRateLimiter>,
+    /// Which storage backend is active (git or valkey).
+    pub storage_backend: StorageBackendKind,
+    /// Sync Redis/Valkey client for store operations inside `spawn_blocking`.
+    /// Required when `storage_backend` is `Valkey`, ignored for `Git`.
+    pub valkey_client: Option<redis::Client>,
 }
 
 #[derive(Default)]
@@ -124,6 +129,10 @@ pub struct ModelPricing {
     pub output: u64,
 }
 
+/// Wrapper for extracting the optional Valkey client via `FromRef`.
+#[derive(Clone)]
+pub struct ValkeyClient(pub Option<redis::Client>);
+
 impl FromRef<AppState> for Arc<RepoLayout> {
     fn from_ref(state: &AppState) -> Arc<RepoLayout> {
         state.layout.clone()
@@ -133,5 +142,11 @@ impl FromRef<AppState> for Arc<RepoLayout> {
 impl FromRef<AppState> for Arc<[u8]> {
     fn from_ref(state: &AppState) -> Arc<[u8]> {
         state.jwt_secret.clone()
+    }
+}
+
+impl FromRef<AppState> for ValkeyClient {
+    fn from_ref(state: &AppState) -> ValkeyClient {
+        ValkeyClient(state.valkey_client.clone())
     }
 }

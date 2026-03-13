@@ -49,6 +49,8 @@ fn build_app(tmp: &TempDir) -> Router {
         llm_upstream_url: "http://localhost:0".to_owned(),
         model_pricing: HashMap::new(),
         creation_rate_limiter: Arc::new(api_rs::routes::CreationRateLimiter::default()),
+        storage_backend: api_rs::store::StorageBackendKind::Git,
+        valkey_client: None,
     };
 
     Router::new()

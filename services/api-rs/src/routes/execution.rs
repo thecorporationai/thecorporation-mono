@@ -276,8 +276,9 @@ fn open_store<'a>(
     layout: &'a crate::store::RepoLayout,
     workspace_id: WorkspaceId,
     entity_id: EntityId,
+    valkey_client: Option<&redis::Client>,
 ) -> Result<EntityStore<'a>, AppError> {
-    EntityStore::open(layout, workspace_id, entity_id).map_err(|e| match e {
+    EntityStore::open(layout, workspace_id, entity_id, valkey_client).map_err(|e| match e {
         crate::git::error::GitStorageError::RepoNotFound(_) => {
             AppError::NotFound(format!("entity {} not found", entity_id))
         }
@@ -506,8 +507,9 @@ async fn create_intent(
 
     let intent = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_id, valkey_client.as_ref())?;
             let canonical_intent_type = canonicalize_intent_type(&req.intent_type);
             let mode = read_mode_or_default(&store, entity_id);
             let schedule = read_schedule_or_default(&store, entity_id);
@@ -575,8 +577,9 @@ async fn list_intents(
 
     let intents = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_id, valkey_client.as_ref())?;
             let ids = store
                 .list_ids::<Intent>("main")
                 .map_err(|e| AppError::Internal(format!("list intents: {e}")))?;
@@ -621,8 +624,9 @@ async fn evaluate_intent(
 
     let intent = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_id, valkey_client.as_ref())?;
             let mut intent = store
                 .read::<Intent>("main", intent_id)
                 .map_err(|_| AppError::NotFound(format!("intent {} not found", intent_id)))?;
@@ -698,8 +702,9 @@ async fn authorize_intent(
 
     let intent = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_id, valkey_client.as_ref())?;
             let mut intent = store
                 .read::<Intent>("main", intent_id)
                 .map_err(|_| AppError::NotFound(format!("intent {} not found", intent_id)))?;
@@ -785,8 +790,9 @@ async fn execute_intent(
 
     let intent = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_id, valkey_client.as_ref())?;
             let mut intent = store
                 .read::<Intent>("main", intent_id)
                 .map_err(|_| AppError::NotFound(format!("intent {} not found", intent_id)))?;
@@ -871,8 +877,9 @@ async fn cancel_intent(
 
     let intent = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_id, valkey_client.as_ref())?;
             let mut intent = store
                 .read::<Intent>("main", intent_id)
                 .map_err(|_| AppError::NotFound(format!("intent {} not found", intent_id)))?;
@@ -918,8 +925,9 @@ async fn create_approval_artifact(
 
     let artifact = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_id, valkey_client.as_ref())?;
             let canonical_intent_type = canonicalize_intent_type(&req.intent_type);
             let artifact = ApprovalArtifact::new(
                 ApprovalArtifactId::new(),
@@ -975,8 +983,9 @@ async fn list_approval_artifacts(
     let workspace_id = auth.workspace_id();
     let artifacts = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_id, valkey_client.as_ref())?;
             let ids = store
                 .list_ids::<ApprovalArtifact>("main")
                 .map_err(|e| AppError::Internal(format!("list approval artifacts: {e}")))?;
@@ -1018,8 +1027,9 @@ async fn bind_approval_artifact_to_intent(
 
     let intent = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_id, valkey_client.as_ref())?;
             // Ensure the approval artifact exists before binding.
             store
                 .read::<ApprovalArtifact>("main", req.approval_artifact_id)
@@ -1078,8 +1088,9 @@ async fn bind_document_request_to_intent(
 
     let intent = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_id, valkey_client.as_ref())?;
             let request = store
                 .read::<DocumentRequest>("main", req.request_id)
                 .map_err(|_| {
@@ -1142,8 +1153,9 @@ async fn create_obligation(
 
     let obligation = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_id, valkey_client.as_ref())?;
 
             let obligation_id = ObligationId::new();
             let obligation = Obligation::new(
@@ -1195,8 +1207,9 @@ async fn list_obligations(
 
     let obligations = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_id, valkey_client.as_ref())?;
             let ids = store
                 .list_ids::<Obligation>("main")
                 .map_err(|e| AppError::Internal(format!("list obligations: {e}")))?;
@@ -1241,8 +1254,9 @@ async fn fulfill_obligation(
 
     let obligation = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_id, valkey_client.as_ref())?;
             let mut obligation = store
                 .read::<Obligation>("main", obligation_id)
                 .map_err(|_| {
@@ -1294,8 +1308,9 @@ async fn waive_obligation(
 
     let obligation = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_id, valkey_client.as_ref())?;
             let mut obligation = store
                 .read::<Obligation>("main", obligation_id)
                 .map_err(|_| {
@@ -1347,8 +1362,9 @@ async fn expire_obligation(
 
     let obligation = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_id, valkey_client.as_ref())?;
             let mut obligation = store
                 .read::<Obligation>("main", obligation_id)
                 .map_err(|_| {
@@ -1427,8 +1443,9 @@ async fn get_receipt(
 
     let receipt = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_id, valkey_client.as_ref())?;
             store
                 .read::<Receipt>("main", receipt_id)
                 .map_err(|_| AppError::NotFound(format!("receipt {} not found", receipt_id)))
@@ -1464,8 +1481,9 @@ async fn list_receipts_by_intent(
 
     let receipts = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_id, valkey_client.as_ref())?;
             let ids = store
                 .list_ids::<Receipt>("main")
                 .map_err(|e| AppError::Internal(format!("list receipts: {e}")))?;
@@ -1514,8 +1532,9 @@ async fn get_packet(
 
     let packet = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_id, valkey_client.as_ref())?;
             let packet = store
                 .read::<TransactionPacket>("main", packet_id)
                 .map_err(|_| AppError::NotFound(format!("packet {} not found", packet_id)))?;
@@ -1552,8 +1571,9 @@ async fn list_entity_packets(
 
     let packets = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_id, valkey_client.as_ref())?;
             let ids = store
                 .list_ids::<TransactionPacket>("main")
                 .map_err(|e| AppError::Internal(format!("list packets: {e}")))?;
@@ -1605,8 +1625,9 @@ async fn assign_obligation(
 
     let obligation = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_id, valkey_client.as_ref())?;
             let mut obligation = store
                 .read::<Obligation>("main", obligation_id)
                 .map_err(|_| {
@@ -1662,8 +1683,9 @@ async fn obligations_summary(
 
     let summary = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_id, valkey_client.as_ref())?;
             let ids = store
                 .list_ids::<Obligation>("main")
                 .map_err(|e| AppError::Internal(format!("list obligations: {e}")))?;
@@ -1720,8 +1742,9 @@ async fn list_human_obligations(
 
     let obligations = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_id, valkey_client.as_ref())?;
             let ids = store
                 .list_ids::<Obligation>("main")
                 .map_err(|e| AppError::Internal(format!("list obligations: {e}")))?;
@@ -1761,12 +1784,13 @@ async fn list_global_human_obligations(
 
     let obligations = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
             let entity_ids = layout.list_entity_ids(workspace_id);
             let mut results = Vec::new();
 
             for entity_id in entity_ids {
-                if let Ok(store) = EntityStore::open(&layout, workspace_id, entity_id) {
+                if let Ok(store) = EntityStore::open(&layout, workspace_id, entity_id, valkey_client.as_ref()) {
                     if let Ok(ids) = store.list_ids::<Obligation>("main") {
                         for id in ids {
                             if let Ok(o) = store.read::<Obligation>("main", id) {
@@ -1910,8 +1934,9 @@ async fn create_document_request(
 
     let request = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_id, valkey_client.as_ref())?;
 
             // Verify obligation exists
             store
@@ -1970,8 +1995,9 @@ async fn list_document_requests(
 
     let requests = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_id, valkey_client.as_ref())?;
 
             let ids = store
                 .list_ids::<DocumentRequest>("main")
@@ -2061,8 +2087,9 @@ async fn update_document_request_status(
 ) -> Result<Json<DocumentRequestResponse>, AppError> {
     let result = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_id, valkey_client.as_ref())?;
             let path = format!("execution/document-requests/{}.json", request_id);
             let mut request: DocumentRequest = store.read_json("main", &path).map_err(|_| {
                 AppError::NotFound(format!("document request {} not found", request_id))
@@ -2115,6 +2142,7 @@ async fn global_obligations_summary(
 
     let summary = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
             let entity_ids = layout.list_entity_ids(workspace_id);
             let mut total = 0;
@@ -2124,7 +2152,7 @@ async fn global_obligations_summary(
             let mut expired = 0;
 
             for entity_id in entity_ids {
-                if let Ok(store) = EntityStore::open(&layout, workspace_id, entity_id) {
+                if let Ok(store) = EntityStore::open(&layout, workspace_id, entity_id, valkey_client.as_ref()) {
                     if let Ok(ids) = store.list_ids::<Obligation>("main") {
                         for id in ids {
                             if let Ok(o) = store.read::<Obligation>("main", id) {

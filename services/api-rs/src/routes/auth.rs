@@ -118,9 +118,10 @@ async fn provision_workspace(
 
     let (raw_key, key_id) = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         let name = req.name.clone();
         move || {
-            let ws_store = WorkspaceStore::init(&layout, workspace_id, &name)
+            let ws_store = WorkspaceStore::init(&layout, workspace_id, &name, valkey_client.as_ref())
                 .map_err(|e| AppError::Internal(format!("init workspace: {e}")))?;
 
             // Generate the first API key
@@ -176,12 +177,13 @@ async fn create_api_key(
 
     let (raw_key, record) = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         let name = req.name;
         let scopes = req.scopes;
         let contact_id = req.contact_id;
         let entity_ids = req.entity_ids;
         move || {
-            let ws_store = WorkspaceStore::open(&layout, workspace_id)
+            let ws_store = WorkspaceStore::open(&layout, workspace_id, valkey_client.as_ref())
                 .map_err(|e| AppError::NotFound(format!("workspace not found: {e}")))?;
 
             let scope_set = ScopeSet::from_vec(scopes.clone());
@@ -232,8 +234,9 @@ async fn list_api_keys(
 
     let keys = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let ws_store = WorkspaceStore::open(&layout, workspace_id)
+            let ws_store = WorkspaceStore::open(&layout, workspace_id, valkey_client.as_ref())
                 .map_err(|e| AppError::NotFound(format!("workspace not found: {e}")))?;
 
             let ids = ws_store
@@ -285,8 +288,9 @@ async fn revoke_api_key(
 
     tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let ws_store = WorkspaceStore::open(&layout, workspace_id)
+            let ws_store = WorkspaceStore::open(&layout, workspace_id, valkey_client.as_ref())
                 .map_err(|e| AppError::NotFound(format!("workspace not found: {e}")))?;
 
             let mut record = ws_store
@@ -328,8 +332,9 @@ async fn rotate_api_key(
 
     let (raw_key, new_record) = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let ws_store = WorkspaceStore::open(&layout, workspace_id)
+            let ws_store = WorkspaceStore::open(&layout, workspace_id, valkey_client.as_ref())
                 .map_err(|e| AppError::NotFound(format!("workspace not found: {e}")))?;
 
             // Read old key to get its metadata
@@ -418,9 +423,10 @@ async fn token_exchange(
     // Verify the API key against all workspace storage (workspace is derived from key record).
     let (workspace_id, scopes, contact_id, entity_ids, entity_id) = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
             for workspace_id in layout.list_workspace_ids() {
-                let ws_store = match WorkspaceStore::open(&layout, workspace_id) {
+                let ws_store = match WorkspaceStore::open(&layout, workspace_id, valkey_client.as_ref()) {
                     Ok(store) => store,
                     Err(_) => continue,
                 };

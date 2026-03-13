@@ -85,8 +85,9 @@ fn open_store<'a>(
     layout: &'a crate::store::RepoLayout,
     workspace_id: WorkspaceId,
     entity_id: EntityId,
+    valkey_client: Option<&redis::Client>,
 ) -> Result<EntityStore<'a>, AppError> {
-    EntityStore::open(layout, workspace_id, entity_id).map_err(|e| match e {
+    EntityStore::open(layout, workspace_id, entity_id, valkey_client).map_err(|e| match e {
         crate::git::error::GitStorageError::RepoNotFound(_) => {
             AppError::NotFound(format!("entity {} not found", entity_id))
         }
@@ -180,9 +181,10 @@ async fn create_contact(
 
     let contact = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         let name = name.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_id, valkey_client.as_ref())?;
             ensure_entity_allows_contact_mutation(&store, "contact creation")?;
             let contact_ids = store
                 .list_ids::<Contact>("main")
@@ -270,8 +272,9 @@ async fn list_contacts(
 
     let contacts = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_id, valkey_client.as_ref())?;
             let ids = store
                 .list_ids::<Contact>("main")
                 .map_err(|e| AppError::Internal(format!("list contacts: {e}")))?;
@@ -320,8 +323,9 @@ async fn get_contact(
 
     let contact = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_id, valkey_client.as_ref())?;
             store
                 .read::<Contact>("main", contact_id)
                 .map_err(|_| AppError::NotFound(format!("contact {} not found", contact_id)))
@@ -394,9 +398,10 @@ async fn update_contact(
 
     let contact = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         let name = name.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_id, valkey_client.as_ref())?;
             ensure_entity_allows_contact_mutation(&store, "contact updates")?;
             let mut contact = store
                 .read::<Contact>("main", contact_id)
@@ -503,8 +508,9 @@ async fn get_contact_profile(
 
     let contact = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_id, valkey_client.as_ref())?;
             store
                 .read::<Contact>("main", contact_id)
                 .map_err(|_| AppError::NotFound(format!("contact {} not found", contact_id)))
@@ -572,8 +578,9 @@ async fn get_notification_prefs(
 
     let prefs = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_id, valkey_client.as_ref())?;
 
             // Try to read existing prefs; create defaults if not found
             let path = format!("contacts/{}/notification-prefs.json", contact_id);
@@ -643,8 +650,9 @@ async fn update_notification_prefs(
 
     let prefs = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_id, valkey_client.as_ref())?;
             ensure_entity_allows_contact_mutation(&store, "notification preference updates")?;
             let path = format!("contacts/{}/notification-prefs.json", contact_id);
 

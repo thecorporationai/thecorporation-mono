@@ -29,8 +29,9 @@ fn open_store<'a>(
     layout: &'a crate::store::RepoLayout,
     workspace_id: WorkspaceId,
     entity_id: EntityId,
+    valkey_client: Option<&redis::Client>,
 ) -> Result<EntityStore<'a>, AppError> {
-    EntityStore::open(layout, workspace_id, entity_id).map_err(|e| match e {
+    EntityStore::open(layout, workspace_id, entity_id, valkey_client).map_err(|e| match e {
         crate::git::error::GitStorageError::RepoNotFound(_) => {
             AppError::NotFound(format!("entity {} not found", entity_id))
         }
@@ -176,11 +177,12 @@ fn lookup_agent_actor(
     entity_id: EntityId,
     raw: &str,
     field: &str,
+    valkey_client: Option<&redis::Client>,
 ) -> Result<Option<WorkItemActor>, AppError> {
     let trimmed = require_non_empty_trimmed(raw, field)?;
     validate_max_len(&trimmed, field, 256)?;
 
-    let workspace_store = WorkspaceStore::open(layout, workspace_id).map_err(|e| match e {
+    let workspace_store = WorkspaceStore::open(layout, workspace_id, valkey_client).map_err(|e| match e {
         crate::git::error::GitStorageError::RepoNotFound(_) => {
             AppError::NotFound(format!("workspace {} not found", workspace_id))
         }
@@ -228,13 +230,14 @@ fn resolve_legacy_actor(
     entity_id: EntityId,
     raw: &str,
     field: &str,
+    valkey_client: Option<&redis::Client>,
 ) -> Result<WorkItemActor, AppError> {
     let contact_match = match resolve_contact_actor(store, entity_id, raw, field) {
         Ok(actor) => Some(actor),
         Err(AppError::BadRequest(_)) => None,
         Err(err) => return Err(err),
     };
-    let agent_match = lookup_agent_actor(layout, workspace_id, entity_id, raw, field)?;
+    let agent_match = lookup_agent_actor(layout, workspace_id, entity_id, raw, field, valkey_client)?;
 
     match (contact_match, agent_match) {
         (Some(contact), None) => Ok(contact),
@@ -294,6 +297,7 @@ fn resolve_explicit_actor(
     entity_id: EntityId,
     actor: &WorkItemActorRefRequest,
     field: &str,
+    valkey_client: Option<&redis::Client>,
 ) -> Result<WorkItemActor, AppError> {
     let actor_id = require_non_empty_trimmed(&actor.actor_id, &format!("{field}.actor_id"))?;
     validate_max_len(&actor_id, &format!("{field}.actor_id"), 256)?;
@@ -321,7 +325,7 @@ fn resolve_explicit_actor(
             let agent_id = actor_id.parse::<AgentId>().map_err(|_| {
                 AppError::BadRequest(format!("{field}.actor_id must be an agent UUID"))
             })?;
-            let workspace_store = WorkspaceStore::open(layout, workspace_id).map_err(|e| match e {
+            let workspace_store = WorkspaceStore::open(layout, workspace_id, valkey_client).map_err(|e| match e {
                 crate::git::error::GitStorageError::RepoNotFound(_) => {
                     AppError::NotFound(format!("workspace {} not found", workspace_id))
                 }
@@ -341,6 +345,7 @@ fn resolve_actor_input(
     actor: Option<&WorkItemActorRefRequest>,
     field: &str,
     required: bool,
+    valkey_client: Option<&redis::Client>,
 ) -> Result<Option<WorkItemActor>, AppError> {
     if raw.is_some() && actor.is_some() {
         return Err(AppError::BadRequest(format!(
@@ -348,11 +353,11 @@ fn resolve_actor_input(
         )));
     }
     if let Some(actor) = actor {
-        return resolve_explicit_actor(layout, store, workspace_id, entity_id, actor, field)
+        return resolve_explicit_actor(layout, store, workspace_id, entity_id, actor, field, valkey_client)
             .map(Some);
     }
     if let Some(raw) = raw {
-        return resolve_legacy_actor(layout, store, workspace_id, entity_id, raw, field).map(Some);
+        return resolve_legacy_actor(layout, store, workspace_id, entity_id, raw, field, valkey_client).map(Some);
     }
     if required {
         return Err(AppError::BadRequest(format!("{field} is required")));
@@ -508,10 +513,11 @@ async fn create_work_item(
 
     let work_item = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         let category = category.clone();
         let title = title.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_id, valkey_client.as_ref())?;
             let created_by = resolve_actor_input(
                 &layout,
                 &store,
@@ -521,6 +527,7 @@ async fn create_work_item(
                 req.created_by_actor.as_ref(),
                 "created_by",
                 false,
+                valkey_client.as_ref(),
             )?;
             let work_item_id = WorkItemId::new();
             let metadata = req
@@ -582,8 +589,9 @@ async fn list_work_items(
 
     let items = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = match EntityStore::open(&layout, workspace_id, entity_id) {
+            let store = match EntityStore::open(&layout, workspace_id, entity_id, valkey_client.as_ref()) {
                 Ok(s) => s,
                 Err(crate::git::error::GitStorageError::RepoNotFound(_)) => {
                     return Ok(Vec::new());
@@ -649,8 +657,9 @@ async fn get_work_item(
 
     let work_item = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_id, valkey_client.as_ref())?;
             store
                 .read::<WorkItem>("main", work_item_id)
                 .map_err(|_| AppError::NotFound(format!("work item {} not found", work_item_id)))
@@ -690,8 +699,9 @@ async fn claim_work_item(
 
     let work_item = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_id, valkey_client.as_ref())?;
             let claimed_by = resolve_actor_input(
                 &layout,
                 &store,
@@ -701,6 +711,7 @@ async fn claim_work_item(
                 req.claimed_by_actor.as_ref(),
                 "claimed_by",
                 true,
+                valkey_client.as_ref(),
             )?
             .expect("required actor should exist");
             let mut w = store
@@ -759,8 +770,9 @@ async fn complete_work_item(
 
     let work_item = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_id, valkey_client.as_ref())?;
             let completed_by = resolve_actor_input(
                 &layout,
                 &store,
@@ -770,6 +782,7 @@ async fn complete_work_item(
                 req.completed_by_actor.as_ref(),
                 "completed_by",
                 true,
+                valkey_client.as_ref(),
             )?
             .expect("required actor should exist");
             let mut w = store
@@ -833,8 +846,9 @@ async fn release_work_item(
 
     let work_item = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_id, valkey_client.as_ref())?;
             let mut w = store
                 .read::<WorkItem>("main", work_item_id)
                 .map_err(|_| AppError::NotFound(format!("work item {} not found", work_item_id)))?;
@@ -886,8 +900,9 @@ async fn cancel_work_item(
 
     let work_item = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_id, valkey_client.as_ref())?;
             let mut w = store
                 .read::<WorkItem>("main", work_item_id)
                 .map_err(|_| AppError::NotFound(format!("work item {} not found", work_item_id)))?;

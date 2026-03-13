@@ -1,4 +1,6 @@
-//! Workspace store — reads and writes workspace-scoped data to `_workspace.git`.
+//! Workspace store — reads and writes workspace-scoped data to `_workspace.git` or Valkey.
+
+use std::cell::RefCell;
 
 use serde::Serialize;
 
@@ -18,9 +20,23 @@ pub struct WorkspaceRecord {
     pub created_at: String,
 }
 
-/// Operations on a workspace's git repo (`{data_dir}/{workspace_id}/_workspace.git`).
+/// Internal backend discriminant.
+enum Backend {
+    Git {
+        repo: CorpRepo,
+    },
+    Valkey {
+        con: RefCell<redis::Connection>,
+        ws: String,
+    },
+}
+
+/// The Valkey entity name for workspace repos (matches `_workspace.git` convention).
+const VALKEY_WORKSPACE_ENTITY: &str = "_workspace";
+
+/// Operations on a workspace's storage (`{data_dir}/{workspace_id}/_workspace.git` or Valkey).
 pub struct WorkspaceStore<'a> {
-    repo: CorpRepo,
+    backend: Backend,
     workspace_id: WorkspaceId,
     layout: &'a RepoLayout,
 }
@@ -31,35 +47,94 @@ impl<'a> WorkspaceStore<'a> {
         layout: &'a RepoLayout,
         workspace_id: WorkspaceId,
         name: &str,
+        valkey_client: Option<&redis::Client>,
     ) -> Result<Self, GitStorageError> {
-        let path = layout.workspace_repo_path(workspace_id);
-        let repo = CorpRepo::init(&path, None)?;
-
         let record = WorkspaceRecord {
             workspace_id,
             name: name.to_owned(),
             created_at: chrono::Utc::now().to_rfc3339(),
         };
 
-        let files = vec![FileWrite::json("workspace.json", &record)?];
-        commit_files(&repo, "main", "Initialize workspace", &files, None)?;
+        let backend = match valkey_client {
+            None => {
+                let path = layout.workspace_repo_path(workspace_id);
+                let repo = CorpRepo::init(&path, None)?;
+                let files = vec![FileWrite::json("workspace.json", &record)?];
+                commit_files(&repo, "main", "Initialize workspace", &files, None)?;
+                Backend::Git { repo }
+            }
+            Some(client) => {
+                let mut con = client
+                    .get_connection()
+                    .map_err(|e| GitStorageError::Git(e.to_string()))?;
+                let ws = workspace_id.to_string();
+                let vfiles =
+                    vec![corp_store::entry::FileWrite::json("workspace.json", &record)
+                        .map_err(|e| GitStorageError::SerializationError(e.to_string()))?];
+                corp_store::store::commit_files(
+                    &mut con,
+                    &ws,
+                    VALKEY_WORKSPACE_ENTITY,
+                    "main",
+                    "Initialize workspace",
+                    &vfiles,
+                    None,
+                    chrono::Utc::now(),
+                )?;
+                Backend::Valkey {
+                    con: RefCell::new(con),
+                    ws,
+                }
+            }
+        };
 
         Ok(Self {
-            repo,
+            backend,
             workspace_id,
             layout,
         })
     }
 
-    /// Open an existing workspace repo.
+    /// Open an existing workspace store.
     pub fn open(
         layout: &'a RepoLayout,
         workspace_id: WorkspaceId,
+        valkey_client: Option<&redis::Client>,
     ) -> Result<Self, GitStorageError> {
-        let path = layout.workspace_repo_path(workspace_id);
-        let repo = CorpRepo::open(&path)?;
+        let backend = match valkey_client {
+            None => {
+                let path = layout.workspace_repo_path(workspace_id);
+                let repo = CorpRepo::open(&path)?;
+                Backend::Git { repo }
+            }
+            Some(client) => {
+                let mut con = client
+                    .get_connection()
+                    .map_err(|e| GitStorageError::Git(e.to_string()))?;
+                let ws = workspace_id.to_string();
+                match corp_store::store::resolve_ref(
+                    &mut con,
+                    &ws,
+                    VALKEY_WORKSPACE_ENTITY,
+                    "main",
+                ) {
+                    Ok(_) => {}
+                    Err(corp_store::StoreError::RefNotFound(_)) => {
+                        return Err(GitStorageError::RepoNotFound(format!(
+                            "{ws}/_workspace"
+                        )));
+                    }
+                    Err(e) => return Err(GitStorageError::from(e)),
+                }
+                Backend::Valkey {
+                    con: RefCell::new(con),
+                    ws,
+                }
+            }
+        };
+
         Ok(Self {
-            repo,
+            backend,
             workspace_id,
             layout,
         })
@@ -67,7 +142,7 @@ impl<'a> WorkspaceStore<'a> {
 
     /// Read workspace metadata.
     pub fn read_workspace(&self) -> Result<WorkspaceRecord, GitStorageError> {
-        self.repo.read_json("main", "workspace.json")
+        self.dispatch_read_json("workspace.json")
     }
 
     /// Write any serializable value to a JSON path and commit it.
@@ -78,14 +153,12 @@ impl<'a> WorkspaceStore<'a> {
         message: &str,
     ) -> Result<(), GitStorageError> {
         let files = vec![FileWrite::json(path, value)?];
-        commit_files(&self.repo, "main", message, &files, None)?;
-        Ok(())
+        self.dispatch_commit(message, &files)
     }
 
     /// Read an API key record by ID.
     pub fn read_api_key(&self, key_id: ApiKeyId) -> Result<ApiKeyRecord, GitStorageError> {
-        self.repo
-            .read_json("main", &format!("api-keys/{}.json", key_id))
+        self.dispatch_read_json(&format!("api-keys/{}.json", key_id))
     }
 
     /// List all API key IDs.
@@ -100,19 +173,19 @@ impl<'a> WorkspaceStore<'a> {
             format!("api-keys/{}.json", key_id),
             &tombstone,
         )?];
-        commit_files(
-            &self.repo,
-            "main",
-            &format!("Revoke API key {key_id}"),
-            &files,
-            None,
-        )?;
-        Ok(())
+        self.dispatch_commit(&format!("Revoke API key {key_id}"), &files)
     }
 
-    /// Get the underlying repo.
+    /// Get the underlying repo (git backend only — panics in Valkey mode).
     pub fn repo(&self) -> &CorpRepo {
-        &self.repo
+        match &self.backend {
+            Backend::Git { repo } => repo,
+            Backend::Valkey { .. } => {
+                panic!(
+                    "repo() called on Valkey-backed WorkspaceStore — use dispatch methods instead"
+                )
+            }
+        }
     }
 
     /// Get the workspace ID.
@@ -125,7 +198,12 @@ impl<'a> WorkspaceStore<'a> {
         &self,
         path: &str,
     ) -> Result<T, GitStorageError> {
-        self.repo.read_json("main", path)
+        self.dispatch_read_json(path)
+    }
+
+    /// Commit raw file writes to the workspace repo.
+    pub fn commit_files(&self, message: &str, files: &[FileWrite]) -> Result<(), GitStorageError> {
+        self.dispatch_commit(message, files)
     }
 
     /// List UUID-style IDs from files in a directory (public).
@@ -138,7 +216,7 @@ impl<'a> WorkspaceStore<'a> {
 
     /// List subdirectory names in a directory (for non-UUID-keyed directories like `secrets/`).
     pub fn list_names_in_dir(&self, dir_path: &str) -> Result<Vec<String>, GitStorageError> {
-        let entries = match self.repo.list_dir("main", dir_path) {
+        let entries = match self.dispatch_list_dir(dir_path) {
             Ok(entries) => entries,
             Err(GitStorageError::NotFound(_)) => return Ok(Vec::new()),
             Err(e) => return Err(e),
@@ -152,7 +230,47 @@ impl<'a> WorkspaceStore<'a> {
 
     /// Check if a path exists in the repo.
     pub fn path_exists(&self, path: &str) -> Result<bool, GitStorageError> {
-        self.repo.path_exists("main", path)
+        match &self.backend {
+            Backend::Git { repo } => repo.path_exists("main", path),
+            Backend::Valkey { con, ws } => {
+                let mut con = con.borrow_mut();
+                Ok(corp_store::store::path_exists(
+                    &mut *con,
+                    ws,
+                    VALKEY_WORKSPACE_ENTITY,
+                    "main",
+                    path,
+                )?)
+            }
+        }
+    }
+
+    /// List directory entries.
+    pub fn list_dir(&self, dir_path: &str) -> Result<Vec<(String, bool)>, GitStorageError> {
+        self.dispatch_list_dir(dir_path)
+    }
+
+    /// Get recent commits for audit/logging purposes.
+    pub fn recent_commits(
+        &self,
+        limit: usize,
+    ) -> Result<Vec<(String, String, String)>, GitStorageError> {
+        match &self.backend {
+            Backend::Git { repo } => repo.recent_commits("main", limit),
+            Backend::Valkey { con, ws } => {
+                let mut con = con.borrow_mut();
+                let entries = corp_store::store::recent_commits(
+                    &mut *con,
+                    ws,
+                    VALKEY_WORKSPACE_ENTITY,
+                    limit,
+                )?;
+                Ok(entries
+                    .into_iter()
+                    .map(|e| (e.sha1, e.message, e.timestamp.to_rfc3339()))
+                    .collect())
+            }
+        }
     }
 
     /// List UUID-style IDs from files in a directory.
@@ -160,7 +278,7 @@ impl<'a> WorkspaceStore<'a> {
         &self,
         dir_path: &str,
     ) -> Result<Vec<T>, GitStorageError> {
-        let entries = match self.repo.list_dir("main", dir_path) {
+        let entries = match self.dispatch_list_dir(dir_path) {
             Ok(entries) => entries,
             Err(GitStorageError::NotFound(_)) => return Ok(Vec::new()),
             Err(e) => return Err(e),
@@ -177,5 +295,76 @@ impl<'a> WorkspaceStore<'a> {
             }
         }
         Ok(ids)
+    }
+
+    // ── Internal dispatch helpers ────────────────────────────────────
+
+    fn dispatch_read_json<T: serde::de::DeserializeOwned>(
+        &self,
+        path: &str,
+    ) -> Result<T, GitStorageError> {
+        match &self.backend {
+            Backend::Git { repo } => repo.read_json("main", path),
+            Backend::Valkey { con, ws } => {
+                let mut con = con.borrow_mut();
+                Ok(corp_store::store::read_json(
+                    &mut *con,
+                    ws,
+                    VALKEY_WORKSPACE_ENTITY,
+                    "main",
+                    path,
+                )?)
+            }
+        }
+    }
+
+    fn dispatch_commit(
+        &self,
+        message: &str,
+        files: &[FileWrite],
+    ) -> Result<(), GitStorageError> {
+        match &self.backend {
+            Backend::Git { repo } => {
+                commit_files(repo, "main", message, files, None)?;
+                Ok(())
+            }
+            Backend::Valkey { con, ws } => {
+                let mut con = con.borrow_mut();
+                let vfiles: Vec<corp_store::entry::FileWrite> = files
+                    .iter()
+                    .map(|f| corp_store::entry::FileWrite::new(&f.path, f.content.clone()))
+                    .collect();
+                corp_store::store::commit_files(
+                    &mut *con,
+                    ws,
+                    VALKEY_WORKSPACE_ENTITY,
+                    "main",
+                    message,
+                    &vfiles,
+                    None,
+                    chrono::Utc::now(),
+                )?;
+                Ok(())
+            }
+        }
+    }
+
+    fn dispatch_list_dir(
+        &self,
+        dir_path: &str,
+    ) -> Result<Vec<(String, bool)>, GitStorageError> {
+        match &self.backend {
+            Backend::Git { repo } => repo.list_dir("main", dir_path),
+            Backend::Valkey { con, ws } => {
+                let mut con = con.borrow_mut();
+                Ok(corp_store::store::list_dir(
+                    &mut *con,
+                    ws,
+                    VALKEY_WORKSPACE_ENTITY,
+                    "main",
+                    dir_path,
+                )?)
+            }
+        }
     }
 }

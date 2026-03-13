@@ -2084,7 +2084,7 @@ mod tests {
         .unwrap();
 
         // Open via EntityStore and verify reads work
-        let store = EntityStore::open(&layout, workspace_id, result.entity.entity_id()).unwrap();
+        let store = EntityStore::open(&layout, workspace_id, result.entity.entity_id(), None).unwrap();
 
         let entity = store.read_entity("main").unwrap();
         assert_eq!(entity.legal_name(), "Store Test LLC");
@@ -2490,7 +2490,7 @@ mod tests {
         )
         .unwrap();
         let entity_id = entity.entity_id();
-        let store = EntityStore::open(&layout, workspace_id, entity_id).unwrap();
+        let store = EntityStore::open(&layout, workspace_id, entity_id, None).unwrap();
 
         let body = GovernanceBody::new(
             GovernanceBodyId::new(),

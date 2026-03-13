@@ -50,3 +50,15 @@ impl From<git2::Error> for GitStorageError {
         GitStorageError::Git(e.message().to_owned())
     }
 }
+
+impl From<corp_store::StoreError> for GitStorageError {
+    fn from(e: corp_store::StoreError) -> Self {
+        match e {
+            corp_store::StoreError::NotFound(msg) => GitStorageError::NotFound(msg),
+            corp_store::StoreError::RefNotFound(msg) => GitStorageError::BranchNotFound(msg),
+            corp_store::StoreError::Json(e) => GitStorageError::SerializationError(e.to_string()),
+            corp_store::StoreError::Io(e) => GitStorageError::Io(e),
+            other => GitStorageError::Git(other.to_string()),
+        }
+    }
+}

@@ -315,8 +315,9 @@ async fn create_agent(
 
     let agent = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let ws_store = WorkspaceStore::open(&layout, workspace_id)
+            let ws_store = WorkspaceStore::open(&layout, workspace_id, valkey_client.as_ref())
                 .map_err(|e| AppError::NotFound(format!("workspace not found: {e}")))?;
 
             // Reject duplicate agent names within the workspace
@@ -382,8 +383,9 @@ async fn list_agents(
     let workspace_id = auth.workspace_id();
     let agents = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let ws_store = WorkspaceStore::open(&layout, workspace_id)
+            let ws_store = WorkspaceStore::open(&layout, workspace_id, valkey_client.as_ref())
                 .map_err(|e| AppError::NotFound(format!("workspace not found: {e}")))?;
 
             let ids: Vec<AgentId> = ws_store
@@ -429,8 +431,9 @@ async fn update_agent(
 
     let agent = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let ws_store = WorkspaceStore::open(&layout, workspace_id)
+            let ws_store = WorkspaceStore::open(&layout, workspace_id, valkey_client.as_ref())
                 .map_err(|e| AppError::NotFound(format!("workspace not found: {e}")))?;
 
             let path = format!("agents/{}.json", agent_id);
@@ -516,8 +519,9 @@ async fn add_agent_skill(
 
     let agent = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let ws_store = WorkspaceStore::open(&layout, workspace_id)
+            let ws_store = WorkspaceStore::open(&layout, workspace_id, valkey_client.as_ref())
                 .map_err(|e| AppError::NotFound(format!("workspace not found: {e}")))?;
 
             let path = format!("agents/{}.json", agent_id);
@@ -569,8 +573,9 @@ async fn send_agent_message(
 
     let (agent_status, budget_limit_cents) = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let ws_store = WorkspaceStore::open(&layout, workspace_id)
+            let ws_store = WorkspaceStore::open(&layout, workspace_id, valkey_client.as_ref())
                 .map_err(|e| AppError::NotFound(format!("workspace not found: {e}")))?;
             let agent_path = format!("agents/{}.json", agent_id);
             let agent: Agent = ws_store
@@ -601,10 +606,11 @@ async fn send_agent_message(
 
     let msg = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         let message_text = req.message.clone();
         let metadata = req.metadata.clone();
         move || {
-            let ws_store = WorkspaceStore::open(&layout, workspace_id)
+            let ws_store = WorkspaceStore::open(&layout, workspace_id, valkey_client.as_ref())
                 .map_err(|e| AppError::NotFound(format!("workspace not found: {e}")))?;
 
             // Verify agent exists
@@ -703,8 +709,9 @@ async fn get_agent_message_internal(
 
     let msg = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let ws_store = WorkspaceStore::open(&layout, workspace_id)
+            let ws_store = WorkspaceStore::open(&layout, workspace_id, valkey_client.as_ref())
                 .map_err(|e| AppError::NotFound(format!("workspace not found: {e}")))?;
 
             let agent_path = format!("agents/{}.json", agent_id);
@@ -901,8 +908,9 @@ async fn get_resolved_agent(
 
     let agent = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let ws_store = WorkspaceStore::open(&layout, workspace_id)
+            let ws_store = WorkspaceStore::open(&layout, workspace_id, valkey_client.as_ref())
                 .map_err(|e| AppError::NotFound(format!("workspace not found: {e}")))?;
 
             resolve::resolve_agent(&ws_store, agent_id)
@@ -936,8 +944,9 @@ async fn get_resolved_agent_internal(
 
     let agent = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let ws_store = WorkspaceStore::open(&layout, workspace_id)
+            let ws_store = WorkspaceStore::open(&layout, workspace_id, valkey_client.as_ref())
                 .map_err(|e| AppError::NotFound(format!("workspace not found: {e}")))?;
 
             resolve::resolve_agent(&ws_store, agent_id)
@@ -963,11 +972,12 @@ async fn list_active_agents_internal(
 ) -> Result<Json<Vec<InternalCronAgentResponse>>, AppError> {
     let results = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
             let mut out = Vec::new();
 
             for workspace_id in layout.list_workspace_ids() {
-                let ws_store = match WorkspaceStore::open(&layout, workspace_id) {
+                let ws_store = match WorkspaceStore::open(&layout, workspace_id, valkey_client.as_ref()) {
                     Ok(store) => store,
                     Err(_) => continue,
                 };
@@ -1048,10 +1058,11 @@ async fn mint_agent_token(
 
     let agent = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         let workspace_id = req.workspace_id;
         let agent_id = req.agent_id;
         move || {
-            let ws_store = WorkspaceStore::open(&layout, workspace_id)
+            let ws_store = WorkspaceStore::open(&layout, workspace_id, valkey_client.as_ref())
                 .map_err(|e| AppError::NotFound(format!("workspace not found: {e}")))?;
 
             resolve::resolve_agent(&ws_store, agent_id)

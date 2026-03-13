@@ -16,7 +16,7 @@ use super::AppState;
 use crate::auth::{RequireBranchCreate, RequireBranchDelete, RequireBranchMerge};
 use crate::error::AppError;
 use crate::git::branch_name::{BranchName, BranchNameError};
-use crate::git::merge::MergeResult;
+use crate::store::entity_store::MergeOutcome;
 
 // ── BranchTarget extractor ──────────────────────────────────────────────
 
@@ -184,12 +184,19 @@ async fn create_branch(
         let layout = state.layout.clone();
         let name = req.name.clone();
         let from = req.from.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store =
-                crate::store::entity_store::EntityStore::open(&layout, workspace_id, entity_id)
-                    .map_err(|e| AppError::Internal(e.to_string()))?;
+            let store = crate::store::entity_store::EntityStore::open(
+                &layout,
+                workspace_id,
+                entity_id,
+                valkey_client.as_ref(),
+            )
+            .map_err(|e| AppError::Internal(e.to_string()))?;
 
-            crate::git::branch::create_branch(store.repo(), &name, &from).map_err(AppError::from)
+            store
+                .create_branch(name.as_str(), from.as_str())
+                .map_err(AppError::from)
         }
     })
     .await
@@ -199,7 +206,7 @@ async fn create_branch(
         StatusCode::CREATED,
         Json(CreateBranchResponse {
             branch: info.name,
-            base_commit: info.head_oid.to_string(),
+            base_commit: info.head_oid,
         }),
     ))
 }
@@ -222,12 +229,17 @@ async fn list_branches(
 
     let branches = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store =
-                crate::store::entity_store::EntityStore::open(&layout, workspace_id, entity_id)
-                    .map_err(|e| AppError::Internal(e.to_string()))?;
+            let store = crate::store::entity_store::EntityStore::open(
+                &layout,
+                workspace_id,
+                entity_id,
+                valkey_client.as_ref(),
+            )
+            .map_err(|e| AppError::Internal(e.to_string()))?;
 
-            crate::git::branch::list_branches(store.repo()).map_err(AppError::from)
+            store.list_branches().map_err(AppError::from)
         }
     })
     .await
@@ -237,7 +249,7 @@ async fn list_branches(
         .into_iter()
         .map(|b| BranchListEntry {
             name: b.name,
-            head_oid: b.head_oid.to_string(),
+            head_oid: b.head_oid,
         })
         .collect();
 
@@ -273,43 +285,44 @@ async fn merge_branch(
     let result = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         let target = req.into.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store =
-                crate::store::entity_store::EntityStore::open(&layout, workspace_id, entity_id)
-                    .map_err(|e| AppError::Internal(e.to_string()))?;
+            let store = crate::store::entity_store::EntityStore::open(
+                &layout,
+                workspace_id,
+                entity_id,
+                valkey_client.as_ref(),
+            )
+            .map_err(|e| AppError::Internal(e.to_string()))?;
 
-            if squash {
-                crate::git::merge::merge_branch_squash(store.repo(), &source, &target, None)
-                    .map_err(AppError::from)
-            } else {
-                crate::git::merge::merge_branch(store.repo(), &source, &target, None)
-                    .map_err(AppError::from)
-            }
+            store
+                .merge_branch(source.as_str(), target.as_str(), squash)
+                .map_err(AppError::from)
         }
     })
     .await
     .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
 
     let response = match result {
-        MergeResult::FastForward { new_oid } => MergeBranchResponse {
+        MergeOutcome::FastForward { oid } => MergeBranchResponse {
             merged: true,
             strategy: "fast_forward".to_owned(),
-            commit: Some(new_oid.to_string()),
+            commit: Some(oid),
         },
-        MergeResult::AlreadyUpToDate => MergeBranchResponse {
+        MergeOutcome::AlreadyUpToDate => MergeBranchResponse {
             merged: true,
             strategy: "already_up_to_date".to_owned(),
             commit: None,
         },
-        MergeResult::ThreeWayMerge { new_oid } => MergeBranchResponse {
+        MergeOutcome::ThreeWayMerge { oid } => MergeBranchResponse {
             merged: true,
             strategy: "three_way".to_owned(),
-            commit: Some(new_oid.to_string()),
+            commit: Some(oid),
         },
-        MergeResult::Squash { new_oid } => MergeBranchResponse {
+        MergeOutcome::Squash { oid } => MergeBranchResponse {
             merged: true,
             strategy: "squash".to_owned(),
-            commit: Some(new_oid.to_string()),
+            commit: Some(oid),
         },
     };
 
@@ -340,12 +353,19 @@ async fn delete_branch_handler(
 
     tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store =
-                crate::store::entity_store::EntityStore::open(&layout, workspace_id, entity_id)
-                    .map_err(|e| AppError::Internal(e.to_string()))?;
+            let store = crate::store::entity_store::EntityStore::open(
+                &layout,
+                workspace_id,
+                entity_id,
+                valkey_client.as_ref(),
+            )
+            .map_err(|e| AppError::Internal(e.to_string()))?;
 
-            crate::git::branch::delete_branch(store.repo(), &branch).map_err(AppError::from)
+            store
+                .delete_branch(branch.as_str())
+                .map_err(AppError::from)
         }
     })
     .await

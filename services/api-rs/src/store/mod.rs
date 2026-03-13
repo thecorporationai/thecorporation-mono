@@ -6,6 +6,13 @@ use std::path::PathBuf;
 
 use crate::domain::ids::{EntityId, WorkspaceId};
 
+/// Which storage backend to use at runtime.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StorageBackendKind {
+    Git,
+    Valkey,
+}
+
 /// Manages the on-disk layout of git repos.
 ///
 /// Layout:
@@ -72,5 +79,58 @@ impl RepoLayout {
             }
         }
         ids
+    }
+}
+
+/// List workspace IDs using either filesystem scan or Valkey.
+pub fn list_workspace_ids(
+    layout: &RepoLayout,
+    backend: StorageBackendKind,
+    valkey_client: Option<&redis::Client>,
+) -> Vec<WorkspaceId> {
+    match backend {
+        StorageBackendKind::Git => layout.list_workspace_ids(),
+        StorageBackendKind::Valkey => {
+            let client = valkey_client.expect("valkey client required for Valkey backend");
+            let mut con = match client.get_connection() {
+                Ok(c) => c,
+                Err(e) => {
+                    tracing::error!("valkey connection failed: {e}");
+                    return Vec::new();
+                }
+            };
+            corp_store::store::list_workspaces(&mut con)
+                .unwrap_or_default()
+                .into_iter()
+                .filter_map(|s| s.parse().ok())
+                .collect()
+        }
+    }
+}
+
+/// List entity IDs in a workspace using either filesystem scan or Valkey.
+pub fn list_entity_ids(
+    layout: &RepoLayout,
+    backend: StorageBackendKind,
+    valkey_client: Option<&redis::Client>,
+    workspace_id: WorkspaceId,
+) -> Vec<EntityId> {
+    match backend {
+        StorageBackendKind::Git => layout.list_entity_ids(workspace_id),
+        StorageBackendKind::Valkey => {
+            let client = valkey_client.expect("valkey client required for Valkey backend");
+            let mut con = match client.get_connection() {
+                Ok(c) => c,
+                Err(e) => {
+                    tracing::error!("valkey connection failed: {e}");
+                    return Vec::new();
+                }
+            };
+            corp_store::store::list_entities(&mut con, &workspace_id.to_string())
+                .unwrap_or_default()
+                .into_iter()
+                .filter_map(|s| s.parse().ok())
+                .collect()
+        }
     }
 }

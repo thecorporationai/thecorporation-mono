@@ -79,8 +79,9 @@ async fn list_workspaces(
     let workspace_id = auth.workspace_id();
     let summaries = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let ws_store = match WorkspaceStore::open(&layout, workspace_id) {
+            let ws_store = match WorkspaceStore::open(&layout, workspace_id, valkey_client.as_ref()) {
                 Ok(store) => store,
                 Err(crate::git::error::GitStorageError::RepoNotFound(_)) => {
                     return Ok::<_, AppError>(Vec::new());
@@ -120,16 +121,17 @@ async fn list_audit_events(
     let workspace_id = auth.workspace_id();
     let events = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
             let mut events = Vec::new();
-            let ws_store = match WorkspaceStore::open(&layout, workspace_id) {
+            let ws_store = match WorkspaceStore::open(&layout, workspace_id, valkey_client.as_ref()) {
                 Ok(store) => store,
                 Err(crate::git::error::GitStorageError::RepoNotFound(_)) => {
                     return Ok::<_, AppError>(Vec::new());
                 }
                 Err(error) => return Err(AppError::Internal(format!("open workspace: {error}"))),
             };
-            if let Ok(log_entries) = ws_store.repo().recent_commits("main", 50) {
+            if let Ok(log_entries) = ws_store.recent_commits(50) {
                 for (oid, message, timestamp) in log_entries {
                     events.push(AuditEvent {
                         event_id: oid,
@@ -215,8 +217,9 @@ async fn workspace_status(
 
     let response = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let ws_store = WorkspaceStore::open(&layout, workspace_id)
+            let ws_store = WorkspaceStore::open(&layout, workspace_id, valkey_client.as_ref())
                 .map_err(|e| AppError::NotFound(format!("workspace not found: {e}")))?;
 
             let name = ws_store
@@ -261,9 +264,10 @@ async fn list_workspace_entities(
 
     let entities = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
             // Verify workspace exists
-            WorkspaceStore::open(&layout, workspace_id)
+            WorkspaceStore::open(&layout, workspace_id, valkey_client.as_ref())
                 .map_err(|e| AppError::NotFound(format!("workspace not found: {e}")))?;
 
             let ids = layout.list_entity_ids(workspace_id);
@@ -324,12 +328,13 @@ async fn demo_seed(
 
     let (entity_id, legal_name, entities_created) = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         let requested_name = req.name.clone();
         move || {
             // Initialize workspace if it doesn't exist
-            let ws_store = match WorkspaceStore::open(&layout, workspace_id) {
+            let ws_store = match WorkspaceStore::open(&layout, workspace_id, valkey_client.as_ref()) {
                 Ok(s) => s,
-                Err(_) => WorkspaceStore::init(&layout, workspace_id, &format!("Demo: {scenario}"))
+                Err(_) => WorkspaceStore::init(&layout, workspace_id, &format!("Demo: {scenario}"), valkey_client.as_ref())
                     .map_err(|e| AppError::Internal(format!("init workspace: {e}")))?,
             };
 
@@ -385,6 +390,7 @@ async fn demo_seed(
                 workspace_id,
                 entity_id,
                 &entity,
+                valkey_client.as_ref(),
             )
             .map_err(|e| AppError::Internal(format!("init entity: {e}")))?;
 
@@ -487,10 +493,11 @@ async fn link_workspace(
 
     tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         let provider = provider.clone();
         let external_id = external_id.clone();
         move || {
-            let ws_store = WorkspaceStore::open(&layout, workspace_id)
+            let ws_store = WorkspaceStore::open(&layout, workspace_id, valkey_client.as_ref())
                 .map_err(|e| AppError::NotFound(format!("workspace not found: {e}")))?;
 
             ws_store
@@ -638,8 +645,9 @@ async fn billing_status(
     let workspace_id = auth.workspace_id();
     let status = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let ws_store = WorkspaceStore::open(&layout, workspace_id)
+            let ws_store = WorkspaceStore::open(&layout, workspace_id, valkey_client.as_ref())
                 .map_err(|e| AppError::NotFound(format!("workspace not found: {e}")))?;
             match ws_store.read_json::<Subscription>("billing/subscription.json") {
                 Ok(subscription) => Ok::<_, AppError>(BillingStatusResponse {
@@ -694,8 +702,9 @@ async fn billing_portal(
     let workspace_id = auth.workspace_id();
     tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            WorkspaceStore::open(&layout, workspace_id)
+            WorkspaceStore::open(&layout, workspace_id, valkey_client.as_ref())
                 .map_err(|e| AppError::NotFound(format!("workspace not found: {e}")))?;
             Ok::<_, AppError>(())
         }
@@ -736,9 +745,10 @@ async fn billing_checkout(
 
     tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         let plan = plan.clone();
         move || {
-            let ws_store = WorkspaceStore::open(&layout, workspace_id)
+            let ws_store = WorkspaceStore::open(&layout, workspace_id, valkey_client.as_ref())
                 .map_err(|e| AppError::NotFound(format!("workspace not found: {e}")))?;
             let mut subscription =
                 match ws_store.read_json::<Subscription>("billing/subscription.json") {
@@ -795,8 +805,9 @@ async fn workspace_status_by_path(
     ensure_workspace_access(auth.workspace_id(), workspace_id)?;
     let response = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let ws_store = WorkspaceStore::open(&layout, workspace_id)
+            let ws_store = WorkspaceStore::open(&layout, workspace_id, valkey_client.as_ref())
                 .map_err(|e| AppError::NotFound(format!("workspace not found: {e}")))?;
 
             let name = ws_store
@@ -839,8 +850,9 @@ async fn workspace_entities_by_path(
     ensure_workspace_access(auth.workspace_id(), workspace_id)?;
     let entities = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            WorkspaceStore::open(&layout, workspace_id)
+            WorkspaceStore::open(&layout, workspace_id, valkey_client.as_ref())
                 .map_err(|e| AppError::NotFound(format!("workspace not found: {e}")))?;
 
             let ids = layout.list_entity_ids(workspace_id);
@@ -884,8 +896,9 @@ async fn workspace_contacts(
     ensure_workspace_access(auth.workspace_id(), workspace_id)?;
     let contacts = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            WorkspaceStore::open(&layout, workspace_id)
+            WorkspaceStore::open(&layout, workspace_id, valkey_client.as_ref())
                 .map_err(|e| AppError::NotFound(format!("workspace not found: {e}")))?;
 
             let entity_ids = layout.list_entity_ids(workspace_id);
@@ -893,7 +906,7 @@ async fn workspace_contacts(
 
             for entity_id in entity_ids {
                 if let Ok(store) =
-                    crate::store::entity_store::EntityStore::open(&layout, workspace_id, entity_id)
+                    crate::store::entity_store::EntityStore::open(&layout, workspace_id, entity_id, valkey_client.as_ref())
                 {
                     if let Ok(ids) = store.list_ids::<Contact>("main") {
                         for contact_id in ids {
@@ -1005,8 +1018,9 @@ async fn get_service_token(
 
     let response = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let ws_store = WorkspaceStore::open(&layout, workspace_id)
+            let ws_store = WorkspaceStore::open(&layout, workspace_id, valkey_client.as_ref())
                 .map_err(|e| AppError::NotFound(format!("workspace not found: {e}")))?;
             let expires_in = 3600u64;
             let scope_set = ScopeSet::from_vec(vec![Scope::Admin]);

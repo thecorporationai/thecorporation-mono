@@ -15,6 +15,7 @@ use crate::domain::auth::claims::decode_token;
 use crate::domain::auth::error::AuthError;
 use crate::domain::auth::scopes::{Scope, ScopeSet};
 use crate::domain::ids::{ContactId, EntityId, WorkspaceId};
+use crate::routes::ValkeyClient;
 use crate::store::RepoLayout;
 use crate::store::workspace_store::WorkspaceStore;
 
@@ -65,6 +66,7 @@ macro_rules! define_scoped_extractor {
         where
             S: Send + Sync + 'static,
             Arc<RepoLayout>: FromRef<S>,
+            ValkeyClient: FromRef<S>,
         {
             type Rejection = AuthRejection;
 
@@ -201,10 +203,11 @@ impl<S> FromRequestParts<S> for Principal
 where
     S: Send + Sync + 'static,
     Arc<RepoLayout>: FromRef<S>,
+    ValkeyClient: FromRef<S>,
 {
     type Rejection = AuthRejection;
 
-    async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
+    async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
         let auth_header = parts
             .headers
             .get("authorization")
@@ -214,8 +217,10 @@ where
         if let Some(token) = auth_header.strip_prefix("Bearer ") {
             if token.starts_with("sk_") {
                 // Direct API key path (Bearer sk_...) for integration parity.
-                let layout = Arc::<RepoLayout>::from_ref(_state);
-                return principal_from_api_key(layout.as_ref(), token).map_err(AuthRejection);
+                let layout = Arc::<RepoLayout>::from_ref(state);
+                let ValkeyClient(vc) = ValkeyClient::from_ref(state);
+                return principal_from_api_key(&layout, token, vc.as_ref())
+                    .map_err(AuthRejection);
             }
 
             // JWT path — decode the token using the shared secret from env.
@@ -246,17 +251,23 @@ where
 
         if auth_header.starts_with("sk_") {
             // Also accept raw API key header (without Bearer prefix).
-            let layout = Arc::<RepoLayout>::from_ref(_state);
-            return principal_from_api_key(layout.as_ref(), auth_header).map_err(AuthRejection);
+            let layout = Arc::<RepoLayout>::from_ref(state);
+            let ValkeyClient(vc) = ValkeyClient::from_ref(state);
+            return principal_from_api_key(&layout, auth_header, vc.as_ref())
+                .map_err(AuthRejection);
         }
 
         Err(AuthRejection(AuthError::Unauthorized))
     }
 }
 
-fn principal_from_api_key(layout: &RepoLayout, api_key: &str) -> Result<Principal, AuthError> {
+fn principal_from_api_key(
+    layout: &RepoLayout,
+    api_key: &str,
+    valkey_client: Option<&redis::Client>,
+) -> Result<Principal, AuthError> {
     for workspace_id in layout.list_workspace_ids() {
-        let ws_store = match WorkspaceStore::open(layout, workspace_id) {
+        let ws_store = match WorkspaceStore::open(layout, workspace_id, valkey_client) {
             Ok(s) => s,
             Err(_) => continue,
         };
@@ -353,6 +364,12 @@ mod tests {
     impl FromRef<TestState> for Arc<RepoLayout> {
         fn from_ref(state: &TestState) -> Arc<RepoLayout> {
             state.layout.clone()
+        }
+    }
+
+    impl FromRef<TestState> for ValkeyClient {
+        fn from_ref(_state: &TestState) -> ValkeyClient {
+            ValkeyClient(None)
         }
     }
 

@@ -374,6 +374,7 @@ fn open_store<'a>(
     workspace_id: WorkspaceId,
     allowed_entity_ids: Option<&[EntityId]>,
     entity_id: EntityId,
+    valkey_client: Option<&redis::Client>,
 ) -> Result<EntityStore<'a>, AppError> {
     if let Some(ids) = allowed_entity_ids
         && !ids.contains(&entity_id)
@@ -383,7 +384,7 @@ fn open_store<'a>(
             entity_id
         )));
     }
-    EntityStore::open(layout, workspace_id, entity_id).map_err(|e| match e {
+    EntityStore::open(layout, workspace_id, entity_id, valkey_client).map_err(|e| match e {
         crate::git::error::GitStorageError::RepoNotFound(_) => {
             AppError::NotFound(format!("entity {} not found", entity_id))
         }
@@ -508,8 +509,9 @@ async fn file_tax_document(
 
     let filing = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id, valkey_client.as_ref())?;
             ensure_entity_ready_for_compliance(&store, "tax filing")?;
             let document_type = canonical_tax_document_type(&req.document_type).to_owned();
             let existing_ids = store
@@ -591,9 +593,10 @@ async fn create_deadline(
 
     let deadline = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         let deadline_type = deadline_type.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id, valkey_client.as_ref())?;
 
             let deadline_id = DeadlineId::new();
             let deadline = Deadline::new(
@@ -644,8 +647,9 @@ async fn list_tax_filings(
 
     let filings = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id, valkey_client.as_ref())?;
             let ids = store
                 .list_ids::<TaxFiling>("main")
                 .map_err(|e| AppError::Internal(format!("list tax filings: {e}")))?;
@@ -685,8 +689,9 @@ async fn list_deadlines(
 
     let deadlines = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id, valkey_client.as_ref())?;
             let ids = store
                 .list_ids::<Deadline>("main")
                 .map_err(|e| AppError::Internal(format!("list deadlines: {e}")))?;
@@ -726,8 +731,9 @@ async fn list_contractor_classifications(
 
     let classifications = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id, valkey_client.as_ref())?;
             let ids = store
                 .list_ids::<ContractorClassification>("main")
                 .map_err(|e| AppError::Internal(format!("list contractor classifications: {e}")))?;
@@ -796,9 +802,10 @@ async fn classify_contractor(
 
     let classification = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         let contractor_name = req.contractor_name.trim().to_owned();
         move || {
-            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id, valkey_client.as_ref())?;
 
             let classification_id = ClassificationId::new();
             let classification = ContractorClassification::new(
@@ -860,8 +867,9 @@ async fn scan_compliance_escalations(
 
     let response = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id, valkey_client.as_ref())?;
             let deadline_ids = store
                 .list_ids::<Deadline>("main")
                 .map_err(|e| AppError::Internal(format!("list deadlines: {e}")))?;
@@ -1032,8 +1040,9 @@ async fn list_entity_escalations(
 
     let escalations = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id, valkey_client.as_ref())?;
             let ids = store
                 .list_ids::<ComplianceEscalation>("main")
                 .map_err(|e| AppError::Internal(format!("list escalations: {e}")))?;
@@ -1078,8 +1087,9 @@ async fn resolve_escalation_with_evidence(
 
     let response = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id, valkey_client.as_ref())?;
             let mut escalation = store
                 .read::<ComplianceEscalation>("main", escalation_id)
                 .map_err(|_| {

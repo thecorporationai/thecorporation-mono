@@ -84,8 +84,9 @@ fn open_store<'a>(
     layout: &'a crate::store::RepoLayout,
     workspace_id: WorkspaceId,
     entity_id: EntityId,
+    valkey_client: Option<&redis::Client>,
 ) -> Result<EntityStore<'a>, AppError> {
-    EntityStore::open(layout, workspace_id, entity_id).map_err(|e| match e {
+    EntityStore::open(layout, workspace_id, entity_id, valkey_client).map_err(|e| match e {
         crate::git::error::GitStorageError::RepoNotFound(_) => {
             AppError::NotFound(format!("entity {entity_id} not found"))
         }
@@ -213,12 +214,13 @@ async fn create_request(
 
     let service_request = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         let slug = req.service_slug.clone();
         let item_id = catalog_item.item_id;
         let amount_cents = catalog_item.amount_cents;
         let obligation_id_input = req.obligation_id;
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_id, valkey_client.as_ref())?;
 
             // Resolve or auto-create obligation.
             let obligation_id = match obligation_id_input {
@@ -295,8 +297,9 @@ async fn get_request(
 
     let service_request = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_id, valkey_client.as_ref())?;
             read_service_request(&store, request_id)
         }
     })
@@ -331,8 +334,9 @@ async fn list_requests(
 
     let requests = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_id, valkey_client.as_ref())?;
             let ids: Vec<ServiceRequestId> = store
                 .list_ids_in_dir("main", "services/requests")
                 .unwrap_or_default();
@@ -384,8 +388,9 @@ async fn begin_checkout(
 
     let service_request = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_id, valkey_client.as_ref())?;
             let mut service_request = read_service_request(&store, request_id)?;
 
             // Generate a deterministic session ID from the request ID.
@@ -431,8 +436,9 @@ async fn fulfill_request(
 
     let service_request = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_id, valkey_client.as_ref())?;
             let mut service_request = read_service_request(&store, request_id)?;
 
             // Paid -> Fulfilling -> Fulfilled in one atomic call.
@@ -486,8 +492,9 @@ async fn cancel_request(
 
     let service_request = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_id, valkey_client.as_ref())?;
             let mut service_request = read_service_request(&store, request_id)?;
 
             service_request
@@ -542,9 +549,10 @@ async fn stripe_webhook(
 
     let service_request = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         let payment_intent_id = payload.stripe_payment_intent_id;
         move || {
-            let store = open_store(&layout, workspace_id, entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_id, valkey_client.as_ref())?;
             let mut service_request = read_service_request(&store, request_id)?;
 
             service_request

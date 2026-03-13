@@ -1,4 +1,6 @@
-//! Entity store — reads and writes entity data to git repos.
+//! Entity store — reads and writes entity data to git repos or Valkey.
+
+use std::cell::RefCell;
 
 use serde::Serialize;
 
@@ -17,9 +19,36 @@ use crate::git::repo::CorpRepo;
 use super::RepoLayout;
 use super::stored_entity::StoredEntity;
 
-/// Operations on a single entity's git repo.
+/// Normalized branch info returned by dispatch methods.
+pub struct BranchInfoResult {
+    pub name: String,
+    pub head_oid: String,
+}
+
+/// Normalized merge result returned by dispatch methods.
+#[derive(Debug)]
+pub enum MergeOutcome {
+    FastForward { oid: String },
+    AlreadyUpToDate,
+    ThreeWayMerge { oid: String },
+    Squash { oid: String },
+}
+
+/// Internal backend discriminant.
+enum Backend {
+    Git {
+        repo: CorpRepo,
+    },
+    Valkey {
+        con: RefCell<redis::Connection>,
+        ws: String,
+        ent: String,
+    },
+}
+
+/// Operations on a single entity's storage (git repo or Valkey).
 pub struct EntityStore<'a> {
-    repo: CorpRepo,
+    backend: Backend,
     layout: &'a RepoLayout,
 }
 
@@ -30,23 +59,79 @@ impl<'a> EntityStore<'a> {
         workspace_id: WorkspaceId,
         entity_id: EntityId,
         entity: &Entity,
+        valkey_client: Option<&redis::Client>,
     ) -> Result<Self, GitStorageError> {
-        let path = layout.entity_repo_path(workspace_id, entity_id);
-        let repo = CorpRepo::init(&path, None)?;
-        let files = vec![FileWrite::json("corp.json", entity)?];
-        commit_files(&repo, "main", "Initialize entity", &files, None)?;
-        Ok(Self { repo, layout })
+        let backend = match valkey_client {
+            None => {
+                let path = layout.entity_repo_path(workspace_id, entity_id);
+                let repo = CorpRepo::init(&path, None)?;
+                let files = vec![FileWrite::json("corp.json", entity)?];
+                commit_files(&repo, "main", "Initialize entity", &files, None)?;
+                Backend::Git { repo }
+            }
+            Some(client) => {
+                let mut con = client
+                    .get_connection()
+                    .map_err(|e| GitStorageError::Git(e.to_string()))?;
+                let ws = workspace_id.to_string();
+                let ent = entity_id.to_string();
+                let vfiles = vec![corp_store::entry::FileWrite::json("corp.json", entity)
+                    .map_err(|e| GitStorageError::SerializationError(e.to_string()))?];
+                corp_store::store::commit_files(
+                    &mut con,
+                    &ws,
+                    &ent,
+                    "main",
+                    "Initialize entity",
+                    &vfiles,
+                    None,
+                    chrono::Utc::now(),
+                )?;
+                Backend::Valkey {
+                    con: RefCell::new(con),
+                    ws,
+                    ent,
+                }
+            }
+        };
+        Ok(Self { backend, layout })
     }
 
-    /// Open an existing entity repo.
+    /// Open an existing entity store.
     pub fn open(
         layout: &'a RepoLayout,
         workspace_id: WorkspaceId,
         entity_id: EntityId,
+        valkey_client: Option<&redis::Client>,
     ) -> Result<Self, GitStorageError> {
-        let path = layout.entity_repo_path(workspace_id, entity_id);
-        let repo = CorpRepo::open(&path)?;
-        Ok(Self { repo, layout })
+        let backend = match valkey_client {
+            None => {
+                let path = layout.entity_repo_path(workspace_id, entity_id);
+                let repo = CorpRepo::open(&path)?;
+                Backend::Git { repo }
+            }
+            Some(client) => {
+                let mut con = client
+                    .get_connection()
+                    .map_err(|e| GitStorageError::Git(e.to_string()))?;
+                let ws = workspace_id.to_string();
+                let ent = entity_id.to_string();
+                // Verify the entity exists by resolving its main ref.
+                match corp_store::store::resolve_ref(&mut con, &ws, &ent, "main") {
+                    Ok(_) => {}
+                    Err(corp_store::StoreError::RefNotFound(_)) => {
+                        return Err(GitStorageError::RepoNotFound(format!("{ws}/{ent}")));
+                    }
+                    Err(e) => return Err(GitStorageError::from(e)),
+                }
+                Backend::Valkey {
+                    con: RefCell::new(con),
+                    ws,
+                    ent,
+                }
+            }
+        };
+        Ok(Self { backend, layout })
     }
 
     /// Write multiple files atomically.
@@ -56,13 +141,17 @@ impl<'a> EntityStore<'a> {
         message: &str,
         files: Vec<FileWrite>,
     ) -> Result<(), GitStorageError> {
-        commit_files(&self.repo, branch, message, &files, None)?;
-        Ok(())
+        self.dispatch_commit(branch, message, &files)
     }
 
-    /// Get the underlying repo for advanced operations.
+    /// Get the underlying repo (git backend only — panics in Valkey mode).
     pub fn repo(&self) -> &CorpRepo {
-        &self.repo
+        match &self.backend {
+            Backend::Git { repo } => repo,
+            Backend::Valkey { .. } => {
+                panic!("repo() called on Valkey-backed EntityStore — use dispatch methods instead")
+            }
+        }
     }
 
     /// Get the layout reference.
@@ -74,7 +163,7 @@ impl<'a> EntityStore<'a> {
 
     /// Read a stored entity by ID.
     pub fn read<T: StoredEntity>(&self, branch: &str, id: T::Id) -> Result<T, GitStorageError> {
-        self.repo.read_json(branch, &T::storage_path(id))
+        self.dispatch_read_json(branch, &T::storage_path(id))
     }
 
     /// List all IDs for a stored entity type.
@@ -92,15 +181,14 @@ impl<'a> EntityStore<'a> {
     ) -> Result<(), GitStorageError> {
         let path = T::storage_path(id);
         let files = vec![FileWrite::json(path, value)?];
-        commit_files(&self.repo, branch, message, &files, None)?;
-        Ok(())
+        self.dispatch_commit(branch, message, &files)
     }
 
     // ── Singletons & special paths (not ID-based) ────────────────────
 
     /// Read the entity record (corp.json) from a branch.
     pub fn read_entity(&self, branch: &str) -> Result<Entity, GitStorageError> {
-        self.repo.read_json(branch, "corp.json")
+        self.dispatch_read_json(branch, "corp.json")
     }
 
     /// Write the entity record.
@@ -111,23 +199,22 @@ impl<'a> EntityStore<'a> {
         message: &str,
     ) -> Result<(), GitStorageError> {
         let files = vec![FileWrite::json("corp.json", entity)?];
-        commit_files(&self.repo, branch, message, &files, None)?;
-        Ok(())
+        self.dispatch_commit(branch, message, &files)
     }
 
     /// Read the cap table record.
     pub fn read_cap_table(&self, branch: &str) -> Result<CapTable, GitStorageError> {
-        self.repo.read_json(branch, "cap-table/cap-table.json")
+        self.dispatch_read_json(branch, "cap-table/cap-table.json")
     }
 
     /// Read filing record.
     pub fn read_filing(&self, branch: &str) -> Result<Filing, GitStorageError> {
-        self.repo.read_json(branch, "formation/filing.json")
+        self.dispatch_read_json(branch, "formation/filing.json")
     }
 
     /// Read tax profile.
     pub fn read_tax_profile(&self, branch: &str) -> Result<TaxProfile, GitStorageError> {
-        self.repo.read_json(branch, "tax/profile.json")
+        self.dispatch_read_json(branch, "tax/profile.json")
     }
 
     // ── Documents (special: skips filing.json) ───────────────────────
@@ -138,8 +225,7 @@ impl<'a> EntityStore<'a> {
         branch: &str,
         doc_id: DocumentId,
     ) -> Result<Document, GitStorageError> {
-        self.repo
-            .read_json(branch, &format!("formation/{}.json", doc_id))
+        self.dispatch_read_json(branch, &format!("formation/{}.json", doc_id))
     }
 
     /// Write a document.
@@ -151,13 +237,12 @@ impl<'a> EntityStore<'a> {
     ) -> Result<(), GitStorageError> {
         let path = format!("formation/{}.json", doc.document_id());
         let files = vec![FileWrite::json(path, doc)?];
-        commit_files(&self.repo, branch, message, &files, None)?;
-        Ok(())
+        self.dispatch_commit(branch, message, &files)
     }
 
     /// List all document IDs in the formation/ directory.
     pub fn list_document_ids(&self, branch: &str) -> Result<Vec<DocumentId>, GitStorageError> {
-        let entries = self.repo.list_dir(branch, "formation")?;
+        let entries = self.dispatch_list_dir(branch, "formation")?;
         let mut ids = Vec::new();
         for (name, is_dir) in entries {
             if is_dir {
@@ -184,7 +269,7 @@ impl<'a> EntityStore<'a> {
         meeting_id: MeetingId,
         id: AgendaItemId,
     ) -> Result<AgendaItem, GitStorageError> {
-        self.repo.read_json(
+        self.dispatch_read_json(
             branch,
             &format!("governance/meetings/{}/agenda/{}.json", meeting_id, id),
         )
@@ -209,7 +294,7 @@ impl<'a> EntityStore<'a> {
         meeting_id: MeetingId,
         id: VoteId,
     ) -> Result<Vote, GitStorageError> {
-        self.repo.read_json(
+        self.dispatch_read_json(
             branch,
             &format!("governance/meetings/{}/votes/{}.json", meeting_id, id),
         )
@@ -231,7 +316,7 @@ impl<'a> EntityStore<'a> {
         meeting_id: MeetingId,
         id: ResolutionId,
     ) -> Result<Resolution, GitStorageError> {
-        self.repo.read_json(
+        self.dispatch_read_json(
             branch,
             &format!("governance/meetings/{}/resolutions/{}.json", meeting_id, id),
         )
@@ -257,7 +342,7 @@ impl<'a> EntityStore<'a> {
         branch: &str,
         path: &str,
     ) -> Result<T, GitStorageError> {
-        self.repo.read_json(branch, path)
+        self.dispatch_read_json(branch, path)
     }
 
     /// Write any serializable value to a JSON path and commit it.
@@ -269,8 +354,29 @@ impl<'a> EntityStore<'a> {
         message: &str,
     ) -> Result<(), GitStorageError> {
         let files = vec![FileWrite::json(path, value)?];
-        commit_files(&self.repo, branch, message, &files, None)?;
-        Ok(())
+        self.dispatch_commit(branch, message, &files)
+    }
+
+    /// List directory entries at a given branch and path.
+    pub fn list_dir(
+        &self,
+        branch: &str,
+        dir_path: &str,
+    ) -> Result<Vec<(String, bool)>, GitStorageError> {
+        self.dispatch_list_dir(branch, dir_path)
+    }
+
+    /// Check if a path exists at a given branch.
+    pub fn path_exists(&self, branch: &str, path: &str) -> Result<bool, GitStorageError> {
+        match &self.backend {
+            Backend::Git { repo } => repo.path_exists(branch, path),
+            Backend::Valkey { con, ws, ent } => {
+                let mut con = con.borrow_mut();
+                Ok(corp_store::store::path_exists(
+                    &mut *con, ws, ent, branch, path,
+                )?)
+            }
+        }
     }
 
     /// List UUID-style IDs from files in a directory.
@@ -282,7 +388,7 @@ impl<'a> EntityStore<'a> {
         branch: &str,
         dir_path: &str,
     ) -> Result<Vec<T>, GitStorageError> {
-        let entries = match self.repo.list_dir(branch, dir_path) {
+        let entries = match self.dispatch_list_dir(branch, dir_path) {
             Ok(entries) => entries,
             Err(GitStorageError::NotFound(_)) => return Ok(Vec::new()),
             Err(e) => return Err(e),
@@ -303,5 +409,197 @@ impl<'a> EntityStore<'a> {
             }
         }
         Ok(ids)
+    }
+
+    // ── Branch management dispatch ───────────────────────────────────
+
+    /// Create a new branch.
+    pub fn create_branch(
+        &self,
+        name: &str,
+        from_ref: &str,
+    ) -> Result<BranchInfoResult, GitStorageError> {
+        match &self.backend {
+            Backend::Git { repo } => {
+                let info = crate::git::branch::create_branch(repo, name, from_ref)?;
+                Ok(BranchInfoResult {
+                    name: info.name,
+                    head_oid: info.head_oid.to_string(),
+                })
+            }
+            Backend::Valkey { con, ws, ent } => {
+                let mut con = con.borrow_mut();
+                let info =
+                    corp_store::branch::create_branch(&mut *con, ws, ent, name, from_ref)?;
+                Ok(BranchInfoResult {
+                    name: info.name,
+                    head_oid: info.head_sha1,
+                })
+            }
+        }
+    }
+
+    /// List all branches.
+    pub fn list_branches(&self) -> Result<Vec<BranchInfoResult>, GitStorageError> {
+        match &self.backend {
+            Backend::Git { repo } => {
+                let branches = crate::git::branch::list_branches(repo)?;
+                Ok(branches
+                    .into_iter()
+                    .map(|b| BranchInfoResult {
+                        name: b.name,
+                        head_oid: b.head_oid.to_string(),
+                    })
+                    .collect())
+            }
+            Backend::Valkey { con, ws, ent } => {
+                let mut con = con.borrow_mut();
+                let branches = corp_store::branch::list_branches(&mut *con, ws, ent)?;
+                Ok(branches
+                    .into_iter()
+                    .map(|b| BranchInfoResult {
+                        name: b.name,
+                        head_oid: b.head_sha1,
+                    })
+                    .collect())
+            }
+        }
+    }
+
+    /// Delete a branch.
+    pub fn delete_branch(&self, name: &str) -> Result<(), GitStorageError> {
+        match &self.backend {
+            Backend::Git { repo } => crate::git::branch::delete_branch(repo, name),
+            Backend::Valkey { con, ws, ent } => {
+                let mut con = con.borrow_mut();
+                Ok(corp_store::branch::delete_branch(&mut *con, ws, ent, name)?)
+            }
+        }
+    }
+
+    /// Merge a branch into a target.
+    pub fn merge_branch(
+        &self,
+        source: &str,
+        target: &str,
+        squash: bool,
+    ) -> Result<MergeOutcome, GitStorageError> {
+        match &self.backend {
+            Backend::Git { repo } => {
+                let result = if squash {
+                    crate::git::merge::merge_branch_squash(repo, source, target, None)?
+                } else {
+                    crate::git::merge::merge_branch(repo, source, target, None)?
+                };
+                Ok(match result {
+                    crate::git::merge::MergeResult::FastForward { new_oid } => {
+                        MergeOutcome::FastForward {
+                            oid: new_oid.to_string(),
+                        }
+                    }
+                    crate::git::merge::MergeResult::AlreadyUpToDate => {
+                        MergeOutcome::AlreadyUpToDate
+                    }
+                    crate::git::merge::MergeResult::ThreeWayMerge { new_oid } => {
+                        MergeOutcome::ThreeWayMerge {
+                            oid: new_oid.to_string(),
+                        }
+                    }
+                    crate::git::merge::MergeResult::Squash { new_oid } => {
+                        MergeOutcome::Squash {
+                            oid: new_oid.to_string(),
+                        }
+                    }
+                })
+            }
+            Backend::Valkey { con, ws, ent } => {
+                let mut con = con.borrow_mut();
+                let result = if squash {
+                    corp_store::merge::merge_branch_squash(
+                        &mut *con, ws, ent, source, target, None,
+                    )?
+                } else {
+                    corp_store::merge::merge_branch(&mut *con, ws, ent, source, target, None)?
+                };
+                Ok(match result {
+                    corp_store::merge::MergeResult::FastForward { sha1 } => {
+                        MergeOutcome::FastForward { oid: sha1 }
+                    }
+                    corp_store::merge::MergeResult::AlreadyUpToDate => {
+                        MergeOutcome::AlreadyUpToDate
+                    }
+                    corp_store::merge::MergeResult::ThreeWayMerge { sha1 } => {
+                        MergeOutcome::ThreeWayMerge { oid: sha1 }
+                    }
+                    corp_store::merge::MergeResult::Squash { sha1 } => {
+                        MergeOutcome::Squash { oid: sha1 }
+                    }
+                })
+            }
+        }
+    }
+
+    // ── Internal dispatch helpers ────────────────────────────────────
+
+    fn dispatch_read_json<T: serde::de::DeserializeOwned>(
+        &self,
+        branch: &str,
+        path: &str,
+    ) -> Result<T, GitStorageError> {
+        match &self.backend {
+            Backend::Git { repo } => repo.read_json(branch, path),
+            Backend::Valkey { con, ws, ent } => {
+                let mut con = con.borrow_mut();
+                Ok(corp_store::store::read_json(&mut *con, ws, ent, branch, path)?)
+            }
+        }
+    }
+
+    fn dispatch_commit(
+        &self,
+        branch: &str,
+        message: &str,
+        files: &[FileWrite],
+    ) -> Result<(), GitStorageError> {
+        match &self.backend {
+            Backend::Git { repo } => {
+                commit_files(repo, branch, message, files, None)?;
+                Ok(())
+            }
+            Backend::Valkey { con, ws, ent } => {
+                let mut con = con.borrow_mut();
+                let vfiles: Vec<corp_store::entry::FileWrite> = files
+                    .iter()
+                    .map(|f| corp_store::entry::FileWrite::new(&f.path, f.content.clone()))
+                    .collect();
+                corp_store::store::commit_files(
+                    &mut *con,
+                    ws,
+                    ent,
+                    branch,
+                    message,
+                    &vfiles,
+                    None,
+                    chrono::Utc::now(),
+                )?;
+                Ok(())
+            }
+        }
+    }
+
+    fn dispatch_list_dir(
+        &self,
+        branch: &str,
+        dir_path: &str,
+    ) -> Result<Vec<(String, bool)>, GitStorageError> {
+        match &self.backend {
+            Backend::Git { repo } => repo.list_dir(branch, dir_path),
+            Backend::Valkey { con, ws, ent } => {
+                let mut con = con.borrow_mut();
+                Ok(corp_store::store::list_dir(
+                    &mut *con, ws, ent, branch, dir_path,
+                )?)
+            }
+        }
     }
 }

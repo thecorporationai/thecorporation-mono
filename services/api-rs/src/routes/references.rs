@@ -8,7 +8,7 @@ use crate::auth::Principal;
 use crate::domain::auth::scopes::Scope;
 use crate::domain::ids::EntityId;
 use crate::error::AppError;
-use crate::git::commit::{FileWrite, commit_files};
+use crate::git::commit::FileWrite;
 use crate::git::error::GitStorageError;
 use crate::store::entity_store::EntityStore;
 use crate::store::workspace_store::WorkspaceStore;
@@ -220,12 +220,12 @@ fn normalized_resource_id(item: &SyncReferenceItem) -> Result<String, AppError> 
     Ok(resource_id.to_owned())
 }
 
-fn read_reference_records_from_repo(
-    repo: &crate::git::repo::CorpRepo,
+fn read_workspace_reference_records(
+    store: &WorkspaceStore<'_>,
     kind: ReferenceKind,
 ) -> Result<Vec<ReferenceHandleRecord>, AppError> {
     let dir = references_dir(kind);
-    let entries = match repo.list_dir("main", &dir) {
+    let entries = match store.list_dir(&dir) {
         Ok(entries) => entries,
         Err(GitStorageError::NotFound(_)) => return Ok(Vec::new()),
         Err(err) => return Err(AppError::from(err)),
@@ -238,7 +238,31 @@ fn read_reference_records_from_repo(
         }
         let path = format!("{dir}/{name}");
         let record: ReferenceHandleRecord =
-            repo.read_json("main", &path).map_err(AppError::from)?;
+            store.read_json(&path).map_err(AppError::from)?;
+        out.push(record);
+    }
+    Ok(out)
+}
+
+fn read_entity_reference_records(
+    store: &EntityStore<'_>,
+    kind: ReferenceKind,
+) -> Result<Vec<ReferenceHandleRecord>, AppError> {
+    let dir = references_dir(kind);
+    let entries = match store.list_dir("main", &dir) {
+        Ok(entries) => entries,
+        Err(GitStorageError::NotFound(_)) => return Ok(Vec::new()),
+        Err(err) => return Err(AppError::from(err)),
+    };
+
+    let mut out = Vec::new();
+    for (name, is_dir) in entries {
+        if is_dir || !name.ends_with(".json") {
+            continue;
+        }
+        let path = format!("{dir}/{name}");
+        let record: ReferenceHandleRecord =
+            store.read_json("main", &path).map_err(AppError::from)?;
         out.push(record);
     }
     Ok(out)
@@ -249,7 +273,7 @@ fn sync_workspace_reference_records(
     kind: ReferenceKind,
     items: &[SyncReferenceItem],
 ) -> Result<Vec<ReferenceHandleRecord>, AppError> {
-    let mut existing = read_reference_records_from_repo(store.repo(), kind)?;
+    let mut existing = read_workspace_reference_records(store, kind)?;
     let mut files = Vec::new();
     let mut out = Vec::with_capacity(items.len());
     let now = Utc::now().to_rfc3339();
@@ -296,14 +320,12 @@ fn sync_workspace_reference_records(
     }
 
     if !files.is_empty() {
-        commit_files(
-            store.repo(),
-            "main",
-            &format!("Sync {} reference handles", kind.as_str()),
-            &files,
-            None,
-        )
-        .map_err(AppError::from)?;
+        store
+            .commit_files(
+                &format!("Sync {} reference handles", kind.as_str()),
+                &files,
+            )
+            .map_err(AppError::from)?;
     }
 
     Ok(out)
@@ -315,7 +337,7 @@ fn sync_entity_reference_records(
     kind: ReferenceKind,
     items: &[SyncReferenceItem],
 ) -> Result<Vec<ReferenceHandleRecord>, AppError> {
-    let mut existing = read_reference_records_from_repo(store.repo(), kind)?;
+    let mut existing = read_entity_reference_records(store, kind)?;
     let mut files = Vec::new();
     let mut out = Vec::with_capacity(items.len());
     let now = Utc::now().to_rfc3339();
@@ -411,7 +433,7 @@ async fn sync_references(
             return Err(AppError::Forbidden("entity access denied".to_owned()));
         }
         let store =
-            EntityStore::open(&state.layout, workspace_id, entity_id).map_err(|err| match err {
+            EntityStore::open(&state.layout, workspace_id, entity_id, state.valkey_client.as_ref()).map_err(|err| match err {
                 GitStorageError::RepoNotFound(_) => {
                     AppError::NotFound(format!("entity {} not found", entity_id))
                 }
@@ -430,7 +452,7 @@ async fn sync_references(
                 "admin scope required for workspace-scoped reference sync".to_owned(),
             ));
         }
-        let store = WorkspaceStore::open(&state.layout, workspace_id).map_err(AppError::from)?;
+        let store = WorkspaceStore::open(&state.layout, workspace_id, state.valkey_client.as_ref()).map_err(AppError::from)?;
         sync_workspace_reference_records(&store, req.kind, &req.items)?
     };
 

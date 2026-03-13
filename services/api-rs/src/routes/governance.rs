@@ -556,6 +556,7 @@ fn open_store<'a>(
     workspace_id: WorkspaceId,
     allowed_entity_ids: Option<&[EntityId]>,
     entity_id: EntityId,
+    valkey_client: Option<&redis::Client>,
 ) -> Result<EntityStore<'a>, AppError> {
     if let Some(ids) = allowed_entity_ids
         && !ids.contains(&entity_id)
@@ -565,7 +566,7 @@ fn open_store<'a>(
             entity_id
         )));
     }
-    EntityStore::open(layout, workspace_id, entity_id).map_err(|e| match e {
+    EntityStore::open(layout, workspace_id, entity_id, valkey_client).map_err(|e| match e {
         crate::git::error::GitStorageError::RepoNotFound(_) => {
             AppError::NotFound(format!("entity {} not found", entity_id))
         }
@@ -1007,8 +1008,9 @@ async fn get_governance_profile(
 
     let profile = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id, valkey_client.as_ref())?;
             let profile = read_profile_or_default(&store, entity_id)?;
             profile.validate().map_err(AppError::UnprocessableEntity)?;
             Ok::<_, AppError>(profile)
@@ -1044,8 +1046,9 @@ async fn update_governance_profile(
 
     let profile = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id, valkey_client.as_ref())?;
             let mut profile = read_profile_or_default(&store, entity_id)?;
             profile.update(
                 req.legal_name,
@@ -1126,8 +1129,9 @@ async fn generate_governance_doc_bundle(
 
     let response = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id, valkey_client.as_ref())?;
             let profile = read_profile_or_default(&store, entity_id)?;
             profile.validate().map_err(AppError::UnprocessableEntity)?;
 
@@ -1213,8 +1217,9 @@ async fn get_current_governance_doc_bundle(
 
     let current = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id, valkey_client.as_ref())?;
             let current = read_doc_bundle_current(&store)?;
             if current.entity_id != entity_id {
                 return Err(AppError::NotFound(format!(
@@ -1251,8 +1256,9 @@ async fn list_governance_doc_bundles(
 
     let summaries = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id, valkey_client.as_ref())?;
             let summaries = list_doc_bundle_summaries(&store)?;
             Ok::<_, AppError>(summaries)
         }
@@ -1286,8 +1292,9 @@ async fn get_governance_doc_bundle(
 
     let manifest = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id, valkey_client.as_ref())?;
             let path = bundle_manifest_path(bundle_id);
             let manifest = store
                 .read_json::<GovernanceDocBundleManifest>("main", &path)
@@ -1332,8 +1339,9 @@ async fn list_governance_triggers(
 
     let triggers = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id, valkey_client.as_ref())?;
             let ids = store
                 .list_ids::<GovernanceTriggerEvent>("main")
                 .map_err(|e| AppError::Internal(format!("list governance triggers: {e}")))?;
@@ -1379,8 +1387,9 @@ async fn list_governance_mode_history(
 
     let events = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id, valkey_client.as_ref())?;
             let ids = store
                 .list_ids::<GovernanceModeChangeEvent>("main")
                 .map_err(|e| AppError::Internal(format!("list governance mode history: {e}")))?;
@@ -1427,8 +1436,9 @@ async fn ingest_lockdown_trigger(
 ) -> Result<Json<InternalLockdownTriggerResponse>, AppError> {
     let response = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, None, entity_id)?;
+            let store = open_store(&layout, workspace_id, None, entity_id, valkey_client.as_ref())?;
             let result = apply_lockdown_trigger(
                 &store,
                 entity_id,
@@ -1482,8 +1492,9 @@ async fn list_governance_audit_entries(
 
     let entries = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id, valkey_client.as_ref())?;
             let mut entries = list_audit_entries_sorted(&store, entity_id)?;
             entries.reverse();
             Ok::<_, AppError>(entries)
@@ -1522,8 +1533,9 @@ async fn create_governance_audit_event(
 
     let entry = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id, valkey_client.as_ref())?;
             let entry = build_audit_entry(
                 &store,
                 entity_id,
@@ -1576,8 +1588,9 @@ async fn write_governance_audit_checkpoint(
 
     let checkpoint = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id, valkey_client.as_ref())?;
             let entries = list_audit_entries_sorted(&store, entity_id)?;
             let latest = entries.last().ok_or_else(|| {
                 AppError::UnprocessableEntity(
@@ -1667,8 +1680,9 @@ async fn list_governance_audit_checkpoints(
 
     let checkpoints = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id, valkey_client.as_ref())?;
             let ids = store
                 .list_ids::<GovernanceAuditCheckpoint>("main")
                 .map_err(|e| {
@@ -1715,8 +1729,9 @@ async fn verify_governance_audit_chain(
 
     let report = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id, valkey_client.as_ref())?;
             let entries = list_audit_entries_sorted(&store, entity_id)?;
             let total_entries = u64::try_from(entries.len())
                 .map_err(|_| AppError::Internal("audit entry count overflow".to_owned()))?;
@@ -1869,8 +1884,9 @@ async fn list_governance_audit_verifications(
 
     let reports = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id, valkey_client.as_ref())?;
             let ids = store
                 .list_ids::<GovernanceAuditVerificationReport>("main")
                 .map_err(|e| {
@@ -1920,8 +1936,9 @@ async fn create_governance_body(
 
     let body = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id, valkey_client.as_ref())?;
             ensure_entity_ready_for_governance(&store, "governance body creation")?;
             let entity = store
                 .read_entity("main")
@@ -1999,8 +2016,9 @@ async fn list_governance_bodies(
 
     let bodies = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id, valkey_client.as_ref())?;
             let ids = store
                 .list_ids::<GovernanceBody>("main")
                 .map_err(|e| AppError::Internal(format!("list governance bodies: {e}")))?;
@@ -2046,8 +2064,9 @@ async fn get_governance_mode(
 
     let mode = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id, valkey_client.as_ref())?;
             Ok::<_, AppError>(read_mode_or_default(&store, entity_id))
         }
     })
@@ -2079,8 +2098,9 @@ async fn set_governance_mode(
 
     let mode = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id, valkey_client.as_ref())?;
             let current = read_mode_or_default(&store, entity_id);
 
             if matches!(current.mode(), GovernanceMode::IncidentLockdown)
@@ -2144,8 +2164,9 @@ async fn create_incident(
 
     let incident = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id, valkey_client.as_ref())?;
             let incident = GovernanceIncident::new(
                 IncidentId::new(),
                 entity_id,
@@ -2193,8 +2214,9 @@ async fn list_incidents(
 
     let incidents = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id, valkey_client.as_ref())?;
             let ids = store
                 .list_ids::<GovernanceIncident>("main")
                 .map_err(|e| AppError::Internal(format!("list incidents: {e}")))?;
@@ -2240,8 +2262,9 @@ async fn resolve_incident(
 
     let incident = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id, valkey_client.as_ref())?;
             let mut incident = store
                 .read::<GovernanceIncident>("main", incident_id)
                 .map_err(|_| AppError::NotFound(format!("incident {incident_id} not found")))?;
@@ -2286,8 +2309,9 @@ async fn get_delegation_schedule(
 
     let schedule = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id, valkey_client.as_ref())?;
             Ok::<_, AppError>(read_schedule_or_default(&store, entity_id))
         }
     })
@@ -2319,8 +2343,9 @@ async fn amend_delegation_schedule(
 
     let response = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id, valkey_client.as_ref())?;
             let current = read_schedule_or_default(&store, entity_id);
             let mut amended = current.clone();
 
@@ -2460,8 +2485,9 @@ async fn reauthorize_delegation_schedule(
 
     let response = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id, valkey_client.as_ref())?;
             validate_schedule_resolution(&store, req.meeting_id, req.adopted_resolution_id)?;
 
             let current = read_schedule_or_default(&store, entity_id);
@@ -2537,8 +2563,9 @@ async fn list_delegation_schedule_history(
 
     let history = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id, valkey_client.as_ref())?;
             let ids = store
                 .list_ids::<ScheduleAmendment>("main")
                 .map_err(|e| AppError::Internal(format!("list schedule amendments: {e}")))?;
@@ -2581,8 +2608,9 @@ async fn evaluate_governance(
 
     let decision = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id, valkey_client.as_ref())?;
             let mode = read_mode_or_default(&store, entity_id);
             let schedule = read_schedule_or_default(&store, entity_id);
             let entity = store
@@ -2638,8 +2666,9 @@ async fn create_seat(
 
     let seat = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id, valkey_client.as_ref())?;
             ensure_entity_ready_for_governance(&store, "seat appointment")?;
 
             let body = store.read::<GovernanceBody>("main", body_id).map_err(|_| {
@@ -2734,8 +2763,9 @@ async fn list_seats(
 
     let seats = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id, valkey_client.as_ref())?;
             let body = store.read::<GovernanceBody>("main", body_id).map_err(|_| {
                 AppError::NotFound(format!("governance body {} not found", body_id))
             })?;
@@ -2791,8 +2821,9 @@ async fn resign_seat(
 
     let seat = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id, valkey_client.as_ref())?;
             let mut seat = store.read::<GovernanceSeat>("main", seat_id).map_err(|_| {
                 AppError::NotFound(format!("governance seat {} not found", seat_id))
             })?;
@@ -2855,9 +2886,10 @@ async fn schedule_meeting(
 
     let (meeting, agenda_item_ids) = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         let title = title.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id, valkey_client.as_ref())?;
             ensure_entity_ready_for_governance(&store, "meeting scheduling")?;
 
             // Verify body exists
@@ -2950,8 +2982,9 @@ async fn list_meetings(
 
     let meetings = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id, valkey_client.as_ref())?;
             let body = store.read::<GovernanceBody>("main", body_id).map_err(|_| {
                 AppError::NotFound(format!("governance body {} not found", body_id))
             })?;
@@ -3007,8 +3040,9 @@ async fn list_agenda_items(
 
     let agenda_items = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id, valkey_client.as_ref())?;
             // Ensure the meeting exists and belongs to this entity's store.
             store
                 .read::<Meeting>("main", meeting_id)
@@ -3059,8 +3093,9 @@ async fn send_notice(
 
     let meeting = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id, valkey_client.as_ref())?;
             ensure_entity_ready_for_governance(&store, "meeting notice")?;
             let mut meeting = store
                 .read::<Meeting>("main", meeting_id)
@@ -3114,8 +3149,9 @@ async fn convene_meeting(
 
     let meeting = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id, valkey_client.as_ref())?;
             ensure_entity_ready_for_governance(&store, "meeting convening")?;
             let mut meeting = store
                 .read::<Meeting>("main", meeting_id)
@@ -3190,8 +3226,9 @@ async fn adjourn_meeting(
 
     let meeting = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id, valkey_client.as_ref())?;
             ensure_entity_ready_for_governance(&store, "meeting adjournment")?;
             let mut meeting = store
                 .read::<Meeting>("main", meeting_id)
@@ -3275,8 +3312,9 @@ async fn reopen_meeting(
 
     let meeting = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id, valkey_client.as_ref())?;
             ensure_entity_ready_for_governance(&store, "meeting reopening")?;
             let mut meeting = store
                 .read::<Meeting>("main", meeting_id)
@@ -3328,8 +3366,9 @@ async fn cancel_meeting(
 
     let meeting = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id, valkey_client.as_ref())?;
             ensure_entity_ready_for_governance(&store, "meeting cancellation")?;
             let mut meeting = store
                 .read::<Meeting>("main", meeting_id)
@@ -3388,8 +3427,9 @@ async fn cast_vote(
 
     let vote = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id, valkey_client.as_ref())?;
             ensure_entity_ready_for_governance(&store, "vote casting")?;
 
             // Read the meeting and check it can accept votes
@@ -3518,8 +3558,9 @@ async fn list_votes(
 
     let votes = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id, valkey_client.as_ref())?;
             let ids = store.list_vote_ids("main", meeting_id).unwrap_or_default();
 
             let mut results = Vec::new();
@@ -3567,8 +3608,9 @@ async fn finalize_agenda_item(
 
     let agenda_item = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id, valkey_client.as_ref())?;
             ensure_entity_ready_for_governance(&store, "agenda finalization")?;
             store
                 .read::<Meeting>("main", meeting_id)
@@ -3669,8 +3711,9 @@ async fn compute_resolution(
 
     let resolution = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id, valkey_client.as_ref())?;
             ensure_entity_ready_for_governance(&store, "resolution computation")?;
 
             // Read the meeting
@@ -3802,8 +3845,9 @@ async fn list_resolutions(
 
     let resolutions = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id, valkey_client.as_ref())?;
             let meeting = store
                 .read::<Meeting>("main", meeting_id)
                 .map_err(|_| AppError::NotFound(format!("meeting {} not found", meeting_id)))?;
@@ -3863,8 +3907,9 @@ async fn attach_resolution_document(
 
     let resolution = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id, valkey_client.as_ref())?;
             // Validate attached document exists in formation records.
             store.read_document("main", req.document_id).map_err(|_| {
                 AppError::NotFound(format!("document {} not found", req.document_id))
@@ -3934,8 +3979,9 @@ async fn scan_expired_seats(
 
     let result = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id, valkey_client.as_ref())?;
             let body_ids = store
                 .list_ids::<GovernanceBody>("main")
                 .map_err(|e| AppError::Internal(format!("list bodies: {e}")))?;
@@ -4029,9 +4075,10 @@ async fn written_consent(
 
     let meeting = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         let title = title.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id, valkey_client.as_ref())?;
             ensure_entity_ready_for_governance(&store, "written consent creation")?;
 
             // Verify body exists
@@ -4119,8 +4166,9 @@ async fn list_all_meetings(
 
     let meetings = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id, valkey_client.as_ref())?;
             let ids = store
                 .list_ids::<Meeting>("main")
                 .map_err(|e| AppError::Internal(format!("list meetings: {e}")))?;
@@ -4162,8 +4210,9 @@ async fn list_all_governance_bodies(
 
     let bodies = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id)?;
+            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id, valkey_client.as_ref())?;
             let ids = store
                 .list_ids::<GovernanceBody>("main")
                 .map_err(|e| AppError::Internal(format!("list bodies: {e}")))?;
