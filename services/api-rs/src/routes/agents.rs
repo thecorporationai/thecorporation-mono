@@ -976,8 +976,12 @@ async fn list_active_agents_internal(
         move || {
             let mut out = Vec::new();
 
-            for workspace_id in layout.list_workspace_ids() {
-                let ws_store = match WorkspaceStore::open(&layout, workspace_id, valkey_client.as_ref()) {
+            let (workspace_ids, shared_con) =
+                WorkspaceStore::list_and_prepare(&layout, valkey_client.as_ref())
+                    .map_err(|e| AppError::Internal(e.to_string()))?;
+
+            for workspace_id in workspace_ids {
+                let ws_store = match WorkspaceStore::open_shared(&layout, workspace_id, shared_con.clone()) {
                     Ok(store) => store,
                     Err(_) => continue,
                 };

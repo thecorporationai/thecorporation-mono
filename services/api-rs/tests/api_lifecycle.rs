@@ -4605,7 +4605,7 @@ async fn test_governance_profile_and_doc_bundle_generation() {
         "governance/doc-bundles/{}/documents/corporation/bylaws.md",
         current_bundle.bundle_id
     );
-    let bylaws = String::from_utf8(store.repo().read_blob("main", &bylaws_path).unwrap()).unwrap();
+    let bylaws = String::from_utf8(store.read_blob("main", &bylaws_path).unwrap()).unwrap();
     assert!(bylaws.contains("Parity Labs, Inc."));
     assert!(bylaws.contains("The Board of Directors shall consist of `3` director(s)."));
 }

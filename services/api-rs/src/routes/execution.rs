@@ -1786,11 +1786,13 @@ async fn list_global_human_obligations(
         let layout = state.layout.clone();
         let valkey_client = state.valkey_client.clone();
         move || {
-            let entity_ids = layout.list_entity_ids(workspace_id);
+            let (entity_ids, shared_con) =
+                EntityStore::list_and_prepare(&layout, workspace_id, valkey_client.as_ref())
+                    .map_err(|e| AppError::Internal(e.to_string()))?;
             let mut results = Vec::new();
 
             for entity_id in entity_ids {
-                if let Ok(store) = EntityStore::open(&layout, workspace_id, entity_id, valkey_client.as_ref()) {
+                if let Ok(store) = EntityStore::open_shared(&layout, workspace_id, entity_id, shared_con.clone()) {
                     if let Ok(ids) = store.list_ids::<Obligation>("main") {
                         for id in ids {
                             if let Ok(o) = store.read::<Obligation>("main", id) {
@@ -2144,7 +2146,9 @@ async fn global_obligations_summary(
         let layout = state.layout.clone();
         let valkey_client = state.valkey_client.clone();
         move || {
-            let entity_ids = layout.list_entity_ids(workspace_id);
+            let (entity_ids, shared_con) =
+                EntityStore::list_and_prepare(&layout, workspace_id, valkey_client.as_ref())
+                    .map_err(|e| AppError::Internal(e.to_string()))?;
             let mut total = 0;
             let mut pending = 0;
             let mut fulfilled = 0;
@@ -2152,7 +2156,7 @@ async fn global_obligations_summary(
             let mut expired = 0;
 
             for entity_id in entity_ids {
-                if let Ok(store) = EntityStore::open(&layout, workspace_id, entity_id, valkey_client.as_ref()) {
+                if let Ok(store) = EntityStore::open_shared(&layout, workspace_id, entity_id, shared_con.clone()) {
                     if let Ok(ids) = store.list_ids::<Obligation>("main") {
                         for id in ids {
                             if let Ok(o) = store.read::<Obligation>("main", id) {

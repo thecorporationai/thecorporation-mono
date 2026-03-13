@@ -87,23 +87,19 @@ pub fn list_workspace_ids(
     layout: &RepoLayout,
     backend: StorageBackendKind,
     valkey_client: Option<&redis::Client>,
-) -> Vec<WorkspaceId> {
+) -> Result<Vec<WorkspaceId>, crate::git::error::GitStorageError> {
     match backend {
-        StorageBackendKind::Git => layout.list_workspace_ids(),
+        StorageBackendKind::Git => Ok(layout.list_workspace_ids()),
         StorageBackendKind::Valkey => {
             let client = valkey_client.expect("valkey client required for Valkey backend");
-            let mut con = match client.get_connection() {
-                Ok(c) => c,
-                Err(e) => {
-                    tracing::error!("valkey connection failed: {e}");
-                    return Vec::new();
-                }
-            };
-            corp_store::store::list_workspaces(&mut con)
-                .unwrap_or_default()
+            let mut con = client
+                .get_connection()
+                .map_err(|e| crate::git::error::GitStorageError::Git(e.to_string()))?;
+            let ids = corp_store::store::list_workspaces(&mut con)?
                 .into_iter()
                 .filter_map(|s| s.parse().ok())
-                .collect()
+                .collect();
+            Ok(ids)
         }
     }
 }
@@ -114,23 +110,19 @@ pub fn list_entity_ids(
     backend: StorageBackendKind,
     valkey_client: Option<&redis::Client>,
     workspace_id: WorkspaceId,
-) -> Vec<EntityId> {
+) -> Result<Vec<EntityId>, crate::git::error::GitStorageError> {
     match backend {
-        StorageBackendKind::Git => layout.list_entity_ids(workspace_id),
+        StorageBackendKind::Git => Ok(layout.list_entity_ids(workspace_id)),
         StorageBackendKind::Valkey => {
             let client = valkey_client.expect("valkey client required for Valkey backend");
-            let mut con = match client.get_connection() {
-                Ok(c) => c,
-                Err(e) => {
-                    tracing::error!("valkey connection failed: {e}");
-                    return Vec::new();
-                }
-            };
-            corp_store::store::list_entities(&mut con, &workspace_id.to_string())
-                .unwrap_or_default()
+            let mut con = client
+                .get_connection()
+                .map_err(|e| crate::git::error::GitStorageError::Git(e.to_string()))?;
+            let ids = corp_store::store::list_entities(&mut con, &workspace_id.to_string())?
                 .into_iter()
                 .filter_map(|s| s.parse().ok())
-                .collect()
+                .collect();
+            Ok(ids)
         }
     }
 }

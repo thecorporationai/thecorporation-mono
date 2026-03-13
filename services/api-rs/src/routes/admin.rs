@@ -898,15 +898,18 @@ async fn workspace_contacts(
         let layout = state.layout.clone();
         let valkey_client = state.valkey_client.clone();
         move || {
-            WorkspaceStore::open(&layout, workspace_id, valkey_client.as_ref())
+            let (entity_ids, shared_con) =
+                crate::store::entity_store::EntityStore::list_and_prepare(&layout, workspace_id, valkey_client.as_ref())
+                    .map_err(|e| AppError::Internal(e.to_string()))?;
+
+            WorkspaceStore::open_shared(&layout, workspace_id, shared_con.clone())
                 .map_err(|e| AppError::NotFound(format!("workspace not found: {e}")))?;
 
-            let entity_ids = layout.list_entity_ids(workspace_id);
             let mut results = Vec::new();
 
             for entity_id in entity_ids {
                 if let Ok(store) =
-                    crate::store::entity_store::EntityStore::open(&layout, workspace_id, entity_id, valkey_client.as_ref())
+                    crate::store::entity_store::EntityStore::open_shared(&layout, workspace_id, entity_id, shared_con.clone())
                 {
                     if let Ok(ids) = store.list_ids::<Contact>("main") {
                         for contact_id in ids {

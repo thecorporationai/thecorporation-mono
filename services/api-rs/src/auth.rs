@@ -266,8 +266,11 @@ fn principal_from_api_key(
     api_key: &str,
     valkey_client: Option<&redis::Client>,
 ) -> Result<Principal, AuthError> {
-    for workspace_id in layout.list_workspace_ids() {
-        let ws_store = match WorkspaceStore::open(layout, workspace_id, valkey_client) {
+    let (workspace_ids, shared_con) = WorkspaceStore::list_and_prepare(layout, valkey_client)
+        .map_err(|_| AuthError::Unauthorized)?;
+
+    for workspace_id in workspace_ids {
+        let ws_store = match WorkspaceStore::open_shared(layout, workspace_id, shared_con.clone()) {
             Ok(s) => s,
             Err(_) => continue,
         };

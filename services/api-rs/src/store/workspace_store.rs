@@ -1,6 +1,7 @@
 //! Workspace store — reads and writes workspace-scoped data to `_workspace.git` or Valkey.
 
 use std::cell::RefCell;
+use std::rc::Rc;
 
 use serde::Serialize;
 
@@ -26,7 +27,7 @@ enum Backend {
         repo: CorpRepo,
     },
     Valkey {
-        con: RefCell<redis::Connection>,
+        con: Rc<RefCell<redis::Connection>>,
         ws: String,
     },
 }
@@ -82,7 +83,7 @@ impl<'a> WorkspaceStore<'a> {
                     chrono::Utc::now(),
                 )?;
                 Backend::Valkey {
-                    con: RefCell::new(con),
+                    con: Rc::new(RefCell::new(con)),
                     ws,
                 }
             }
@@ -127,7 +128,7 @@ impl<'a> WorkspaceStore<'a> {
                     Err(e) => return Err(GitStorageError::from(e)),
                 }
                 Backend::Valkey {
-                    con: RefCell::new(con),
+                    con: Rc::new(RefCell::new(con)),
                     ws,
                 }
             }
@@ -138,6 +139,70 @@ impl<'a> WorkspaceStore<'a> {
             workspace_id,
             layout,
         })
+    }
+
+    /// Open an existing workspace store, reusing a shared Valkey connection.
+    pub fn open_shared(
+        layout: &'a RepoLayout,
+        workspace_id: WorkspaceId,
+        shared_con: Option<Rc<RefCell<redis::Connection>>>,
+    ) -> Result<Self, GitStorageError> {
+        let backend = match shared_con {
+            None => {
+                let path = layout.workspace_repo_path(workspace_id);
+                let repo = CorpRepo::open(&path)?;
+                Backend::Git { repo }
+            }
+            Some(con) => {
+                let ws = workspace_id.to_string();
+                {
+                    let mut c = con.borrow_mut();
+                    match corp_store::store::resolve_ref(
+                        &mut *c,
+                        &ws,
+                        VALKEY_WORKSPACE_ENTITY,
+                        "main",
+                    ) {
+                        Ok(_) => {}
+                        Err(corp_store::StoreError::RefNotFound(_)) => {
+                            return Err(GitStorageError::RepoNotFound(format!(
+                                "{ws}/_workspace"
+                            )));
+                        }
+                        Err(e) => return Err(GitStorageError::from(e)),
+                    }
+                }
+                Backend::Valkey { con, ws }
+            }
+        };
+
+        Ok(Self {
+            backend,
+            workspace_id,
+            layout,
+        })
+    }
+
+    /// List workspace IDs and return a shared connection for subsequent `open_shared` calls.
+    pub fn list_and_prepare(
+        layout: &RepoLayout,
+        valkey_client: Option<&redis::Client>,
+    ) -> Result<(Vec<WorkspaceId>, Option<Rc<RefCell<redis::Connection>>>), GitStorageError> {
+        match valkey_client {
+            None => Ok((layout.list_workspace_ids(), None)),
+            Some(client) => {
+                let con = client
+                    .get_connection()
+                    .map_err(|e| GitStorageError::Git(e.to_string()))?;
+                let con = Rc::new(RefCell::new(con));
+                let ids = corp_store::store::list_workspaces(&mut *con.borrow_mut())
+                    .map_err(GitStorageError::from)?
+                    .into_iter()
+                    .filter_map(|s| s.parse().ok())
+                    .collect();
+                Ok((ids, Some(con)))
+            }
+        }
     }
 
     /// Read workspace metadata.
@@ -174,18 +239,6 @@ impl<'a> WorkspaceStore<'a> {
             &tombstone,
         )?];
         self.dispatch_commit(&format!("Revoke API key {key_id}"), &files)
-    }
-
-    /// Get the underlying repo (git backend only — panics in Valkey mode).
-    pub fn repo(&self) -> &CorpRepo {
-        match &self.backend {
-            Backend::Git { repo } => repo,
-            Backend::Valkey { .. } => {
-                panic!(
-                    "repo() called on Valkey-backed WorkspaceStore — use dispatch methods instead"
-                )
-            }
-        }
     }
 
     /// Get the workspace ID.

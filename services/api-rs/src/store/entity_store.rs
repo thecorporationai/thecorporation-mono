@@ -1,6 +1,7 @@
 //! Entity store — reads and writes entity data to git repos or Valkey.
 
 use std::cell::RefCell;
+use std::rc::Rc;
 
 use serde::Serialize;
 
@@ -40,7 +41,7 @@ enum Backend {
         repo: CorpRepo,
     },
     Valkey {
-        con: RefCell<redis::Connection>,
+        con: Rc<RefCell<redis::Connection>>,
         ws: String,
         ent: String,
     },
@@ -88,7 +89,7 @@ impl<'a> EntityStore<'a> {
                     chrono::Utc::now(),
                 )?;
                 Backend::Valkey {
-                    con: RefCell::new(con),
+                    con: Rc::new(RefCell::new(con)),
                     ws,
                     ent,
                 }
@@ -125,13 +126,77 @@ impl<'a> EntityStore<'a> {
                     Err(e) => return Err(GitStorageError::from(e)),
                 }
                 Backend::Valkey {
-                    con: RefCell::new(con),
+                    con: Rc::new(RefCell::new(con)),
                     ws,
                     ent,
                 }
             }
         };
         Ok(Self { backend, layout })
+    }
+
+    /// Open an existing entity store, reusing a shared Valkey connection.
+    ///
+    /// When `shared_con` is `Some`, uses the provided connection instead of
+    /// creating a new one. This avoids creating a TCP connection per store
+    /// in loops that open many stores sequentially.
+    pub fn open_shared(
+        layout: &'a RepoLayout,
+        workspace_id: WorkspaceId,
+        entity_id: EntityId,
+        shared_con: Option<Rc<RefCell<redis::Connection>>>,
+    ) -> Result<Self, GitStorageError> {
+        let backend = match shared_con {
+            None => {
+                let path = layout.entity_repo_path(workspace_id, entity_id);
+                let repo = CorpRepo::open(&path)?;
+                Backend::Git { repo }
+            }
+            Some(con) => {
+                let ws = workspace_id.to_string();
+                let ent = entity_id.to_string();
+                {
+                    let mut c = con.borrow_mut();
+                    match corp_store::store::resolve_ref(&mut *c, &ws, &ent, "main") {
+                        Ok(_) => {}
+                        Err(corp_store::StoreError::RefNotFound(_)) => {
+                            return Err(GitStorageError::RepoNotFound(format!("{ws}/{ent}")));
+                        }
+                        Err(e) => return Err(GitStorageError::from(e)),
+                    }
+                }
+                Backend::Valkey { con, ws, ent }
+            }
+        };
+        Ok(Self { backend, layout })
+    }
+
+    /// List entity IDs and return a shared connection for subsequent `open_shared` calls.
+    ///
+    /// In git mode, lists entities from the filesystem and returns `None` for the connection.
+    /// In Valkey mode, creates a single connection, lists entities, and returns the connection
+    /// wrapped in `Rc<RefCell<_>>` for reuse.
+    pub fn list_and_prepare(
+        layout: &RepoLayout,
+        workspace_id: WorkspaceId,
+        valkey_client: Option<&redis::Client>,
+    ) -> Result<(Vec<EntityId>, Option<Rc<RefCell<redis::Connection>>>), GitStorageError> {
+        match valkey_client {
+            None => Ok((layout.list_entity_ids(workspace_id), None)),
+            Some(client) => {
+                let con = client
+                    .get_connection()
+                    .map_err(|e| GitStorageError::Git(e.to_string()))?;
+                let con = Rc::new(RefCell::new(con));
+                let ws = workspace_id.to_string();
+                let ids = corp_store::store::list_entities(&mut *con.borrow_mut(), &ws)
+                    .map_err(GitStorageError::from)?
+                    .into_iter()
+                    .filter_map(|s| s.parse().ok())
+                    .collect();
+                Ok((ids, Some(con)))
+            }
+        }
     }
 
     /// Write multiple files atomically.
@@ -142,16 +207,6 @@ impl<'a> EntityStore<'a> {
         files: Vec<FileWrite>,
     ) -> Result<(), GitStorageError> {
         self.dispatch_commit(branch, message, &files)
-    }
-
-    /// Get the underlying repo (git backend only — panics in Valkey mode).
-    pub fn repo(&self) -> &CorpRepo {
-        match &self.backend {
-            Backend::Git { repo } => repo,
-            Backend::Valkey { .. } => {
-                panic!("repo() called on Valkey-backed EntityStore — use dispatch methods instead")
-            }
-        }
     }
 
     /// Get the layout reference.
@@ -335,6 +390,17 @@ impl<'a> EntityStore<'a> {
     }
 
     // ── Generic helpers ──────────────────────────────────────────────
+
+    /// Read raw bytes from a path.
+    pub fn read_blob(&self, branch: &str, path: &str) -> Result<Vec<u8>, GitStorageError> {
+        match &self.backend {
+            Backend::Git { repo } => repo.read_blob(branch, path),
+            Backend::Valkey { con, ws, ent } => {
+                let mut con = con.borrow_mut();
+                Ok(corp_store::store::read_blob(&mut *con, ws, ent, branch, path)?)
+            }
+        }
+    }
 
     /// Read any deserializable JSON from a path.
     pub fn read_json<T: serde::de::DeserializeOwned>(

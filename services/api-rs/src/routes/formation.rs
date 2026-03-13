@@ -1696,11 +1696,14 @@ fn workspace_has_legal_name(
     valkey_client: Option<&redis::Client>,
 ) -> Result<bool, AppError> {
     let normalized = normalize_legal_name(legal_name);
-    for entity_id in layout.list_entity_ids(workspace_id) {
+    let (entity_ids, shared_con) =
+        EntityStore::list_and_prepare(layout, workspace_id, valkey_client)
+            .map_err(|e| AppError::Internal(e.to_string()))?;
+    for entity_id in entity_ids {
         if skip_entity_id.is_some_and(|skip| skip == entity_id) {
             continue;
         }
-        if let Ok(store) = EntityStore::open(layout, workspace_id, entity_id, valkey_client)
+        if let Ok(store) = EntityStore::open_shared(layout, workspace_id, entity_id, shared_con.clone())
             && let Ok(entity) = store.read_entity("main")
             && normalize_legal_name(entity.legal_name()) == normalized
         {
@@ -3075,10 +3078,12 @@ async fn list_entities(
         let layout = state.layout.clone();
         let valkey_client = state.valkey_client.clone();
         move || {
-            let entity_ids = layout.list_entity_ids(workspace_id);
+            let (entity_ids, shared_con) =
+                EntityStore::list_and_prepare(&layout, workspace_id, valkey_client.as_ref())
+                    .map_err(|e| AppError::Internal(e.to_string()))?;
             let mut results = Vec::new();
             for eid in entity_ids {
-                if let Ok(store) = EntityStore::open(&layout, workspace_id, eid, valkey_client.as_ref()) {
+                if let Ok(store) = EntityStore::open_shared(&layout, workspace_id, eid, shared_con.clone()) {
                     if let Ok(entity) = store.read_entity("main") {
                         let next_action = service::next_formation_action(entity.formation_status())
                             .map(String::from);
@@ -3539,9 +3544,43 @@ fn resolve_signing_token(
     valkey_client: Option<&redis::Client>,
 ) -> Result<SigningToken, AppError> {
     let token_hash = hash_signing_token(raw_token);
-    for workspace_id in layout.list_workspace_ids() {
-        for entity_id in layout.list_entity_ids(workspace_id) {
-            let store = match EntityStore::open(layout, workspace_id, entity_id, valkey_client) {
+
+    // Create one shared connection for the entire scan.
+    let shared_con = valkey_client
+        .map(|client| -> Result<_, AppError> {
+            let con = client
+                .get_connection()
+                .map_err(|e| AppError::Internal(e.to_string()))?;
+            Ok(std::rc::Rc::new(std::cell::RefCell::new(con)))
+        })
+        .transpose()?;
+
+    let workspace_ids: Vec<WorkspaceId> = match &shared_con {
+        Some(con) => corp_store::store::list_workspaces(&mut *con.borrow_mut())
+            .map_err(|e| AppError::Internal(e.to_string()))?
+            .into_iter()
+            .filter_map(|s| s.parse().ok())
+            .collect(),
+        None => layout.list_workspace_ids(),
+    };
+
+    for workspace_id in workspace_ids {
+        let entity_ids: Vec<EntityId> = match &shared_con {
+            Some(con) => corp_store::store::list_entities(
+                &mut *con.borrow_mut(),
+                &workspace_id.to_string(),
+            )
+            .map_err(|e| AppError::Internal(e.to_string()))?
+            .into_iter()
+            .filter_map(|s| s.parse().ok())
+            .collect(),
+            None => layout.list_entity_ids(workspace_id),
+        };
+
+        for entity_id in entity_ids {
+            let store = match EntityStore::open_shared(
+                layout, workspace_id, entity_id, shared_con.clone(),
+            ) {
                 Ok(s) => s,
                 Err(_) => continue,
             };
