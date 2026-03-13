@@ -28,6 +28,9 @@ node_modules/
 target/
 *.rs.bk
 
+# Runtime data
+services/api-rs/data/
+
 # TypeScript / Node build outputs
 dist/
 
