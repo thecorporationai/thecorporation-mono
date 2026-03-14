@@ -29,3 +29,4 @@ export * from "./api-enums.generated.js";
 export type * from "./api-schemas.js";
 export { ensureEnvFile, loadEnvFile, generateFernetKey, generateSecret } from "./env.js";
 export { processRequest, resolveBinaryPath, resetCache } from "./process-transport.js";
+export type { ProcessRequestOptions } from "./process-transport.js";

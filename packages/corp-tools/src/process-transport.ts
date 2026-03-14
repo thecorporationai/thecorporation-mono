@@ -1,10 +1,13 @@
 import { execFileSync } from "node:child_process";
-import { existsSync } from "node:fs";
-import { resolve } from "node:path";
+import { existsSync, readFileSync } from "node:fs";
+import { resolve, join } from "node:path";
+import { homedir } from "node:os";
 import { createRequire } from "node:module";
 import { ensureEnvFile, loadEnvFile } from "./env.js";
 
 const require = createRequire(import.meta.url);
+
+// ── Binary resolution ───────────────────────────────────────────────
 
 let cachedBinaryPath: string | undefined;
 
@@ -38,6 +41,8 @@ export function resolveBinaryPath(processUrl: string): string {
   return cachedBinaryPath;
 }
 
+// ── Stderr parsing ──────────────────────────────────────────────────
+
 export function parseStatusFromStderr(stderr: string): number | null {
   const lines = stderr.split("\n");
   for (let i = lines.length - 1; i >= 0; i--) {
@@ -46,6 +51,8 @@ export function parseStatusFromStderr(stderr: string): number | null {
   }
   return null;
 }
+
+// ── Response builder ────────────────────────────────────────────────
 
 const STATUS_TEXT: Record<number, string> = {
   200: "OK", 201: "Created", 204: "No Content",
@@ -75,14 +82,66 @@ export function buildProcessResponse(status: number, body: string): Response {
   } as Response;
 }
 
+// ── Config reading (direct file access, no cli-ts dependency) ───────
+
+const CORP_CONFIG_DIR = process.env.CORP_CONFIG_DIR || join(homedir(), ".corp");
+
+function readJsonFileSafe(path: string): Record<string, unknown> | null {
+  try {
+    if (!existsSync(path)) return null;
+    return JSON.parse(readFileSync(path, "utf-8"));
+  } catch {
+    return null;
+  }
+}
+
+function loadServerSecretsFromAuth(): { jwt_secret: string; secrets_master_key: string; internal_worker_token: string } | null {
+  const auth = readJsonFileSafe(join(CORP_CONFIG_DIR, "auth.json"));
+  if (!auth) return null;
+  const ss = auth.server_secrets;
+  if (!ss || typeof ss !== "object") return null;
+  const s = ss as Record<string, unknown>;
+  if (typeof s.jwt_secret === "string" && typeof s.secrets_master_key === "string" && typeof s.internal_worker_token === "string") {
+    return { jwt_secret: s.jwt_secret, secrets_master_key: s.secrets_master_key, internal_worker_token: s.internal_worker_token };
+  }
+  return null;
+}
+
+function loadDataDirFromConfig(): string | undefined {
+  const cfg = readJsonFileSafe(join(CORP_CONFIG_DIR, "config.json"));
+  if (!cfg) return undefined;
+  const dataDir = typeof cfg.data_dir === "string" ? cfg.data_dir : undefined;
+  return dataDir || undefined;
+}
+
+// ── Env loading ─────────────────────────────────────────────────────
+
 let envLoaded = false;
 
 function ensureEnv(): void {
   if (envLoaded) return;
+
+  // Try server_secrets from auth.json first (local mode)
+  const secrets = loadServerSecretsFromAuth();
+  if (secrets) {
+    if (!process.env.JWT_SECRET) process.env.JWT_SECRET = secrets.jwt_secret;
+    if (!process.env.SECRETS_MASTER_KEY) process.env.SECRETS_MASTER_KEY = secrets.secrets_master_key;
+    if (!process.env.INTERNAL_WORKER_TOKEN) process.env.INTERNAL_WORKER_TOKEN = secrets.internal_worker_token;
+    envLoaded = true;
+    return;
+  }
+
+  // Fallback: load from .env file
   const envPath = resolve(process.cwd(), ".env");
   ensureEnvFile(envPath);
   loadEnvFile(envPath);
   envLoaded = true;
+}
+
+// ── Process request ─────────────────────────────────────────────────
+
+export interface ProcessRequestOptions {
+  dataDir?: string;
 }
 
 export function processRequest(
@@ -91,11 +150,19 @@ export function processRequest(
   pathWithQuery: string,
   headers: Record<string, string>,
   body?: string,
+  options?: ProcessRequestOptions,
 ): Response {
   ensureEnv();
 
   const binPath = resolveBinaryPath(processUrl);
-  const args = ["--skip-validation", "call", method, pathWithQuery];
+  const args = ["--skip-validation", "call"];
+
+  const dataDir = options?.dataDir ?? loadDataDirFromConfig();
+  if (dataDir) {
+    args.push("--data-dir", dataDir);
+  }
+
+  args.push(method, pathWithQuery);
 
   for (const [key, value] of Object.entries(headers)) {
     args.push("-H", `${key}: ${value}`);
@@ -131,6 +198,15 @@ export function processRequest(
 
     if (status !== null) {
       return buildProcessResponse(status, stdout);
+    }
+
+    // Binary crashed — detect config errors
+    const isConfigError = stderr.includes("panic") ||
+      stderr.includes("INTERNAL_WORKER_TOKEN") ||
+      stderr.includes("JWT_SECRET") ||
+      stderr.includes("SECRETS_MASTER_KEY");
+    if (isConfigError) {
+      throw new Error("Server configuration incomplete. Run 'corp setup' to configure local mode.");
     }
 
     throw new Error(`api-rs process failed:\n${stderr || stdout || String(err)}`);
