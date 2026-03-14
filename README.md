@@ -10,7 +10,7 @@ Version-controlled governance, autonomous agents, and open-source tooling — fr
 
 Folks, thanks for checking out a vision of Version Controlled Agent Driven Corporations. 
 
-I've worked in the the (legal/fin)tech space and built cap table software for over a decade. The current human world is messy and expensive. While this project has been generated in large part with an agent, it comes with thousands of hours of thinking about representing legal structures in software and the experiences of paying tens of thousands in legal fees for minor corporate actions.
+I've worked in the (legal/fin)tech space and built cap table software for over a decade. The current human world is messy and expensive. While this project has been generated in large part with an agent, it comes with thousands of hours of thinking about representing legal structures in software and the experiences of paying tens of thousands in legal fees for minor corporate actions.
 
 When needed, bend inefficient human processes to align with the best way technology should be used, and not the other way around. Too often overly complicated solutions are created because people build software to fit the status quo. However, when the real world process stands in the way of innovation, real life processes can be changed to fit the tech. Even in ossified layers like legal and corporate processes. In order to accomplish this, we must turn human processes into software and integrate every layer.
 
@@ -255,7 +255,7 @@ thecorporation-mono/
 - [thecorporation.ai](https://thecorporation.ai)
 - [Docs](https://docs.thecorporation.ai)
 - [How it Works](https://thecorporation.ai/how-it-works)
-- [GitHub](https://github.com/thecorporation)
+- [GitHub](https://github.com/thecorporationai/thecorporation-mono)
 
 ## License
 

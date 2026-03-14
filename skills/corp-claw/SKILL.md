@@ -167,5 +167,5 @@ acme-inc/
 
 - [Website](https://thecorporation.ai)
 - [Documentation](https://docs.thecorporation.ai)
-- [GitHub](https://github.com/thecorporation)
+- [GitHub](https://github.com/thecorporationai/thecorporation-mono)
 - [How it Works](https://thecorporation.ai/how-it-works)
