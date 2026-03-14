@@ -1,6 +1,6 @@
 {
   "name": "@thecorporation/agent",
-  "version": "26.3.8",
+  "version": "26.3.21",
   "description": "TheCorporation agent — 35 corporate governance tools for the Pi coding agent",
   "type": "module",
   "bin": {

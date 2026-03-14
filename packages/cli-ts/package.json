@@ -1,6 +1,6 @@
 {
   "name": "@thecorporation/cli",
-  "version": "26.3.8",
+  "version": "26.3.21",
   "description": "corp — Corporate governance from the terminal",
   "type": "module",
   "bin": {
