@@ -1,9 +1,20 @@
-import { input, confirm } from "@inquirer/prompts";
+import { input, confirm, select } from "@inquirer/prompts";
+import { homedir } from "node:os";
+import { join } from "node:path";
+import { existsSync, mkdirSync, readdirSync } from "node:fs";
 import { loadConfig, saveConfig, validateApiUrl } from "../config.js";
 import { provisionWorkspace } from "../api-client.js";
+import {
+  generateSecret,
+  generateFernetKey,
+  processRequest,
+} from "@thecorporation/corp-tools";
 import { printSuccess, printError } from "../output.js";
 
 const CLOUD_API_URL = "https://api.thecorporation.ai";
+const DEFAULT_DATA_DIR = join(homedir(), ".corp", "data");
+
+// ── Magic link auth (unchanged) ─────────────────────────────────────
 
 async function requestMagicLink(
   apiUrl: string,
@@ -77,24 +88,60 @@ async function magicLinkAuth(
   return verifyMagicLinkCode(apiUrl, trimmed);
 }
 
+// ── Local provisioning ──────────────────────────────────────────────
+
+function setupDataDir(dirPath: string): { isNew: boolean } {
+  if (!existsSync(dirPath)) {
+    mkdirSync(dirPath, { recursive: true });
+    return { isNew: true };
+  }
+  try {
+    const entries = readdirSync(dirPath);
+    if (entries.length > 0) {
+      console.log("Found existing data, reusing.");
+      return { isNew: false };
+    }
+  } catch {
+    // empty or unreadable
+  }
+  return { isNew: true };
+}
+
+async function localProvision(
+  dataDir: string,
+  name: string
+): Promise<{ api_key: string; workspace_id: string }> {
+  const resp = processRequest(
+    "process://",
+    "POST",
+    "/v1/workspaces/provision",
+    { "Content-Type": "application/json" },
+    JSON.stringify({ name }),
+    { dataDir },
+  );
+
+  if (!resp.ok) {
+    const detail = await resp.text();
+    throw new Error(`Provision failed: HTTP ${resp.status} — ${detail}`);
+  }
+
+  const body = (await resp.json()) as Record<string, unknown>;
+  if (!body.api_key || !body.workspace_id) {
+    throw new Error("Provision response missing api_key or workspace_id");
+  }
+  return {
+    api_key: body.api_key as string,
+    workspace_id: body.workspace_id as string,
+  };
+}
+
+// ── Main setup ──────────────────────────────────────────────────────
+
 export async function setupCommand(): Promise<void> {
   const cfg = loadConfig();
   console.log("Welcome to corp — corporate governance from the terminal.\n");
 
-  // Determine API URL
-  const customUrl = process.env.CORP_API_URL;
-  if (customUrl) {
-    try {
-      cfg.api_url = validateApiUrl(customUrl);
-    } catch (err) {
-      printError(`Invalid CORP_API_URL: ${err}`);
-      process.exit(1);
-    }
-    console.log(`Using API: ${cfg.api_url}\n`);
-  } else {
-    cfg.api_url = CLOUD_API_URL;
-  }
-
+  // User info
   console.log("--- User Info ---");
   const user = cfg.user ?? { name: "", email: "" };
   user.name = await input({
@@ -107,12 +154,65 @@ export async function setupCommand(): Promise<void> {
   });
   cfg.user = user;
 
-  const needsAuth = !cfg.api_key || !cfg.workspace_id;
-  const cloud = isCloudApi(cfg.api_url);
+  // Hosting mode
+  console.log("\n--- Hosting Mode ---");
+  const hostingMode = await select({
+    message: "How would you like to run corp?",
+    choices: [
+      { value: "local", name: "Local (your machine)" },
+      { value: "cloud", name: "TheCorporation cloud" },
+      { value: "self-hosted", name: "Self-hosted server (custom URL)" },
+    ],
+    default: cfg.hosting_mode || "local",
+  });
+  cfg.hosting_mode = hostingMode;
 
-  if (needsAuth) {
-    if (cloud) {
-      // Cloud API — authenticate via magic link
+  if (hostingMode === "local") {
+    // Data directory
+    const dataDir = await input({
+      message: "Data directory",
+      default: cfg.data_dir || DEFAULT_DATA_DIR,
+    });
+    cfg.data_dir = dataDir;
+    cfg.api_url = "process://";
+
+    const { isNew } = setupDataDir(dataDir);
+
+    // Generate server secrets
+    const serverSecrets = {
+      jwt_secret: generateSecret(),
+      secrets_master_key: generateFernetKey(),
+      internal_worker_token: generateSecret(),
+    };
+
+    // Inject into process.env so processRequest can use them immediately
+    process.env.JWT_SECRET = serverSecrets.jwt_secret;
+    process.env.SECRETS_MASTER_KEY = serverSecrets.secrets_master_key;
+    process.env.INTERNAL_WORKER_TOKEN = serverSecrets.internal_worker_token;
+
+    // Store secrets via _server_secrets (picked up by serializeAuth)
+    (cfg as Record<string, unknown>)._server_secrets = serverSecrets;
+
+    if (isNew || !cfg.workspace_id) {
+      console.log("\nProvisioning workspace...");
+      try {
+        const result = await localProvision(dataDir, `${user.name}'s workspace`);
+        cfg.api_key = result.api_key;
+        cfg.workspace_id = result.workspace_id;
+        printSuccess(`Local workspace ready: ${result.workspace_id}`);
+      } catch (err) {
+        printError(`Workspace provisioning failed: ${err}`);
+        console.log("You can retry with 'corp setup'.");
+      }
+    } else {
+      console.log("\nExisting workspace found.");
+    }
+  } else if (hostingMode === "cloud") {
+    cfg.api_url = CLOUD_API_URL;
+    cfg.data_dir = "";
+
+    const needsAuth = !cfg.api_key || !cfg.workspace_id;
+    if (needsAuth) {
       try {
         const result = await magicLinkAuth(cfg.api_url, user.email);
         cfg.api_key = result.api_key;
@@ -125,7 +225,27 @@ export async function setupCommand(): Promise<void> {
         );
       }
     } else {
-      // Self-hosted — provision directly (no auth required)
+      console.log("\nExisting credentials found. Run 'corp status' to verify.");
+    }
+  } else {
+    // Self-hosted
+    const url = await input({
+      message: "Server URL",
+      default:
+        cfg.api_url !== CLOUD_API_URL && !cfg.api_url.startsWith("process://")
+          ? cfg.api_url
+          : undefined,
+    });
+    try {
+      cfg.api_url = validateApiUrl(url);
+    } catch (err) {
+      printError(`Invalid URL: ${err}`);
+      process.exit(1);
+    }
+    cfg.data_dir = "";
+
+    const needsAuth = !cfg.api_key || !cfg.workspace_id;
+    if (needsAuth) {
       console.log("\nProvisioning workspace...");
       try {
         const result = await provisionWorkspace(
@@ -139,54 +259,6 @@ export async function setupCommand(): Promise<void> {
         printError(`Auto-provision failed: ${err}`);
         console.log(
           "You can manually set credentials with: corp config set api_key <key>"
-        );
-      }
-    }
-  } else {
-    console.log("\nVerifying existing credentials...");
-    let keyValid = false;
-    try {
-      const resp = await fetch(
-        `${cfg.api_url.replace(/\/+$/, "")}/v1/workspaces/${cfg.workspace_id}/status`,
-        { headers: { Authorization: `Bearer ${cfg.api_key}` } }
-      );
-      keyValid = resp.status !== 401;
-    } catch {
-      // network error — treat as potentially valid
-    }
-
-    if (keyValid) {
-      console.log("Credentials OK.");
-    } else {
-      console.log("API key is no longer valid.");
-      const reauth = await confirm({
-        message: cloud
-          ? "Re-authenticate via magic link?"
-          : "Provision a new workspace? (This will replace your current credentials)",
-        default: true,
-      });
-      if (reauth) {
-        try {
-          if (cloud) {
-            const result = await magicLinkAuth(cfg.api_url, user.email);
-            cfg.api_key = result.api_key;
-            cfg.workspace_id = result.workspace_id;
-            printSuccess(`Authenticated. Workspace: ${result.workspace_id}`);
-          } else {
-            const result = await provisionWorkspace(
-              cfg.api_url,
-              `${user.name}'s workspace`
-            );
-            cfg.api_key = result.api_key as string;
-            cfg.workspace_id = result.workspace_id as string;
-            console.log(`Workspace provisioned: ${result.workspace_id}`);
-          }
-        } catch (err) {
-          printError(`Authentication failed: ${err}`);
-        }
-      } else {
-        console.log(
-          "Keeping existing credentials. You can manually update with: corp config set api_key <key>"
         );
       }
     }
