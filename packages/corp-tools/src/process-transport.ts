@@ -25,10 +25,10 @@ export function resolveBinaryPath(processUrl: string): string {
 
   try {
     const server = require("@thecorporation/server");
-    const pkgPath = server.getBinaryPath?.();
+    const pkgPath: string | undefined = server.getBinaryPath?.();
     if (pkgPath) {
       cachedBinaryPath = pkgPath;
-      return cachedBinaryPath;
+      return pkgPath;
     }
   } catch {
     // Package not installed

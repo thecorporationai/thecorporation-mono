@@ -28,3 +28,4 @@ export { TOOL_REGISTRY, GENERATED_TOOL_DEFINITIONS, READ_ONLY_TOOLS } from "./de
 export * from "./api-enums.generated.js";
 export type * from "./api-schemas.js";
 export { ensureEnvFile, loadEnvFile } from "./env.js";
+export { processRequest, resolveBinaryPath, resetCache } from "./process-transport.js";
