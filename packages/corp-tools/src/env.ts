@@ -32,12 +32,12 @@ INTERNAL_WORKER_TOKEN={{INTERNAL_WORKER_TOKEN}}
 # MAX_QUEUE_DEPTH=1000
 `;
 
-function generateFernetKey(): string {
+export function generateFernetKey(): string {
   // Fernet key = url-safe base64 of 32 random bytes
   return randomBytes(32).toString("base64url") + "=";
 }
 
-function generateSecret(length = 32): string {
+export function generateSecret(length = 32): string {
   return randomBytes(length).toString("hex");
 }
 

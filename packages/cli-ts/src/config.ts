@@ -37,6 +37,7 @@ const ALLOWED_CONFIG_KEYS = new Set([
   "user.name",
   "user.email",
   "active_entity_id",
+  "data_dir",
 ]);
 
 const SENSITIVE_CONFIG_KEYS = new Set(["api_url", "api_key", "workspace_id"]);
@@ -47,6 +48,11 @@ type CorpAuthConfig = {
   workspace_id?: string;
   llm?: {
     api_key?: string;
+  };
+  server_secrets?: {
+    jwt_secret: string;
+    secrets_master_key: string;
+    internal_worker_token: string;
   };
 };
 
@@ -63,6 +69,7 @@ const DEFAULTS: CorpConfig = {
   },
   user: { name: "", email: "" },
   active_entity_id: "",
+  data_dir: "",
 };
 
 function sleepSync(ms: number): void {
@@ -301,6 +308,7 @@ function normalizeConfig(raw: unknown): CorpConfig {
   cfg.workspace_id = normalizeString(raw.workspace_id) ?? cfg.workspace_id;
   cfg.hosting_mode = normalizeString(raw.hosting_mode) ?? cfg.hosting_mode;
   cfg.active_entity_id = normalizeString(raw.active_entity_id) ?? cfg.active_entity_id;
+  cfg.data_dir = normalizeString(raw.data_dir) ?? cfg.data_dir;
 
   if (isObject(raw.llm)) {
     cfg.llm.provider = normalizeString(raw.llm.provider) ?? cfg.llm.provider;
@@ -353,6 +361,7 @@ function serializeConfig(cfg: CorpConfig): string {
       email: normalized.user.email,
     },
     active_entity_id: normalized.active_entity_id,
+    ...(normalized.data_dir ? { data_dir: normalized.data_dir } : {}),
   };
   if (normalized.active_entity_ids && Object.keys(normalized.active_entity_ids).length > 0) {
     serialized.active_entity_ids = normalized.active_entity_ids;
@@ -372,6 +381,22 @@ function serializeAuth(cfg: CorpConfig): string {
   };
   if (normalized.llm.api_key) {
     serialized.llm = { api_key: normalized.llm.api_key };
+  }
+  // Preserve server_secrets from existing auth file
+  const existingAuth = readJsonFile(AUTH_FILE);
+  if (isObject(existingAuth) && isObject(existingAuth.server_secrets)) {
+    const ss = existingAuth.server_secrets;
+    if (typeof ss.jwt_secret === "string" && typeof ss.secrets_master_key === "string" && typeof ss.internal_worker_token === "string") {
+      serialized.server_secrets = {
+        jwt_secret: ss.jwt_secret,
+        secrets_master_key: ss.secrets_master_key,
+        internal_worker_token: ss.internal_worker_token,
+      };
+    }
+  }
+  // Allow overriding via cfg._server_secrets (used by setup to write new secrets)
+  if ((cfg as Record<string, unknown>)._server_secrets) {
+    serialized.server_secrets = (cfg as Record<string, unknown>)._server_secrets as CorpAuthConfig["server_secrets"];
   }
   return JSON.stringify(serialized, null, 2) + "\n";
 }
@@ -404,6 +429,9 @@ function setKnownConfigValue(cfg: CorpConfig, dotPath: string, value: string): v
       return;
     case "hosting_mode":
       cfg.hosting_mode = value.trim();
+      return;
+    case "data_dir":
+      cfg.data_dir = value.trim();
       return;
     case "llm.provider":
       cfg.llm.provider = value.trim();
@@ -465,6 +493,28 @@ function migrateLegacySensitiveConfigIfNeeded(): void {
 export function loadConfig(): CorpConfig {
   migrateLegacySensitiveConfigIfNeeded();
   return readConfigUnlocked();
+}
+
+export interface ServerSecrets {
+  jwt_secret: string;
+  secrets_master_key: string;
+  internal_worker_token: string;
+}
+
+export function loadServerSecrets(): ServerSecrets | null {
+  const authRaw = readJsonFile(AUTH_FILE);
+  if (!isObject(authRaw) || !isObject(authRaw.server_secrets)) {
+    return null;
+  }
+  const ss = authRaw.server_secrets;
+  if (typeof ss.jwt_secret !== "string" || typeof ss.secrets_master_key !== "string" || typeof ss.internal_worker_token !== "string") {
+    return null;
+  }
+  return {
+    jwt_secret: ss.jwt_secret,
+    secrets_master_key: ss.secrets_master_key,
+    internal_worker_token: ss.internal_worker_token,
+  };
 }
 
 export function saveConfig(cfg: CorpConfig): void {
