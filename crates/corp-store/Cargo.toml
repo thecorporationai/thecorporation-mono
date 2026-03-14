@@ -1,6 +1,6 @@
 [package]
 name = "corp-store"
-version = "26.3.21"
+version = "26.3.22"
 edition = "2024"
 rust-version = "1.85"
 description = "Valkey-backed git-compatible content-addressed store"

@@ -1,6 +1,6 @@
 [package]
 name = "agent-types"
-version = "26.3.21"
+version = "26.3.22"
 edition = "2024"
 rust-version = "1.85"
 
