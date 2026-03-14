@@ -65,6 +65,9 @@ enum Command {
         /// Read request body from stdin.
         #[arg(long)]
         stdin: bool,
+        /// Path to data/repos directory.
+        #[arg(long)]
+        data_dir: Option<PathBuf>,
     },
 }
 
@@ -127,8 +130,9 @@ async fn main() {
             path,
             headers,
             stdin,
+            data_dir,
         }) => {
-            call_oneshot(cli.skip_validation, method, path, headers, stdin).await;
+            call_oneshot(cli.skip_validation, method, path, headers, stdin, data_dir).await;
         }
         None => {
             run_server(cli.skip_validation).await;
@@ -137,7 +141,9 @@ async fn main() {
 }
 
 fn init_state(skip_validation: bool) -> routes::AppState {
-    let data_dir = PathBuf::from("./data/repos");
+    let data_dir = PathBuf::from(
+        std::env::var("DATA_DIR").unwrap_or_else(|_| "./data/repos".to_owned()),
+    );
 
     if skip_validation {
         tracing::warn!("--skip-validation set — skipping startup data validation");
@@ -400,9 +406,16 @@ async fn call_oneshot(
     path: String,
     headers: Vec<String>,
     read_stdin: bool,
+    data_dir: Option<PathBuf>,
 ) {
     use std::io::{Read as _, Write as _};
     use tower::ServiceExt;
+
+    // Set DATA_DIR before init_state reads it
+    if let Some(ref dir) = data_dir {
+        // SAFETY: single-threaded at this point (before tokio runtime work)
+        unsafe { std::env::set_var("DATA_DIR", dir); }
+    }
 
     tracing_subscriber::fmt()
         .with_env_filter(EnvFilter::from_default_env())
