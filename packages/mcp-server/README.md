@@ -70,7 +70,16 @@ Set credentials explicitly in your MCP client config:
 }
 ```
 
-### Option 3: Self-hosted
+### Option 3: Local mode
+
+Run `corp setup` and choose "Local". The MCP server automatically picks up the local-mode config from `~/.corp/` — no additional env vars needed. All requests go through the Rust binary directly (no network).
+
+```bash
+npx @thecorporation/cli setup   # choose "Local"
+# MCP server now works automatically
+```
+
+### Option 4: Self-hosted
 
 Point to your own API server:
 
@@ -92,9 +101,9 @@ Point to your own API server:
 
 | Env var | Description | Default |
 |---|---|---|
-| `CORP_API_URL` | API base URL | `https://api.thecorporation.ai` |
-| `CORP_API_KEY` | API key | from `~/.corp/config.json` |
-| `CORP_WORKSPACE_ID` | Workspace ID | from `~/.corp/config.json` |
+| `CORP_API_URL` | API base URL (`process://` for local) | `https://api.thecorporation.ai` |
+| `CORP_API_KEY` | API key | from `~/.corp/auth.json` |
+| `CORP_WORKSPACE_ID` | Workspace ID | from `~/.corp/auth.json` |
 
 ## Tools
 

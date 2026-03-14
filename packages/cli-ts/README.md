@@ -15,24 +15,47 @@ npm install -g @thecorporation/cli
 ## Quick Start
 
 ```bash
-corp setup                          # authenticate via magic link
+corp setup                          # choose local, cloud, or self-hosted
 corp status                         # workspace summary
 corp chat                           # AI assistant with full tool access
 corp form --type llc --name "Acme"  # form a new entity
 ```
 
-## Authentication
+## Setup & Hosting Modes
 
-`corp setup` authenticates via magic link:
+`corp setup` walks you through configuration. After entering your name and email, you choose a hosting mode:
 
-1. Enter your name and email
-2. Check your email for a sign-in link from TheCorporation
-3. Copy the code from the link URL and paste it into the terminal
-4. Credentials are saved to `~/.corp/config.json`
+### Local (your machine)
+
+Everything runs on your machine — no server, no cloud. Data is stored in `~/.corp/data` (configurable). Each CLI command invokes the Rust binary directly (~6ms per call).
+
+1. Choose "Local (your machine)"
+2. Confirm data directory (default `~/.corp/data`)
+3. A workspace is provisioned automatically
+4. Credentials and server secrets are saved to `~/.corp/auth.json`
+
+```bash
+corp setup    # select "Local"
+corp status   # verify — all local, no network
+```
+
+### TheCorporation cloud
+
+Hosted by TheCorporation. Authenticates via magic link:
+
+1. Choose "TheCorporation cloud"
+2. Check your email for a sign-in link
+3. Paste the code from the link URL
 
 Your workspace is shared across the CLI, [MCP server](https://www.npmjs.com/package/@thecorporation/mcp-server), and [chat](https://humans.thecorporation.ai/chat) — all keyed on your email.
 
-For self-hosted setups (`CORP_API_URL` pointing to your own server), `corp setup` provisions a workspace directly without requiring a magic link.
+### Self-hosted server
+
+Point to your own API server:
+
+1. Choose "Self-hosted server (custom URL)"
+2. Enter the server URL
+3. A workspace is provisioned directly (no magic link needed)
 
 ## Commands
 
@@ -217,11 +240,23 @@ Inside `corp chat`, these slash commands are available:
 
 ## Configuration
 
-Config is stored at `~/.corp/config.json`. `corp setup` populates it via magic link auth. You can also set values manually:
+Config is stored at `~/.corp/config.json`. Credentials are in `~/.corp/auth.json`. `corp setup` populates both.
+
+### Hosting mode config
+
+| Key | Values | Description |
+|---|---|---|
+| `hosting_mode` | `local`, `cloud`, `self-hosted` | How the CLI connects to the API |
+| `api_url` | URL or `process://` | `process://` for local, HTTPS for cloud/self-hosted |
+| `data_dir` | path | Data directory (local mode only, default `~/.corp/data`) |
+
+### Manual configuration
 
 ```bash
-corp config set api_url https://api.thecorporation.ai
-corp config set api_key sk_...
+corp config set api_url https://api.thecorporation.ai  # cloud
+corp config set api_url process:// --force              # local
+corp config set data_dir ~/.corp/data
+corp config set api_key sk_... --force
 corp config set workspace_id ws_...
 ```
 

@@ -74,8 +74,18 @@ claude mcp add thecorporation -- npx -y @thecorporation/mcp-server
 
 ```bash
 npm install -g @thecorporation/cli
-corp setup
+corp setup   # choose local, cloud, or self-hosted
 ```
+
+### Option 3: Local mode
+
+Run everything on your machine — no server, no cloud:
+
+```bash
+npx @thecorporation/cli setup   # choose "Local (your machine)"
+```
+
+Data is stored in `~/.corp/data`. Each command invokes the Rust binary directly (~6ms). The MCP server automatically picks up local-mode credentials from `~/.corp/`.
 
 ## Usage
 

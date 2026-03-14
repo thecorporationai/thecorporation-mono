@@ -9,41 +9,39 @@ The `npx corp` CLI is the command-line interface for TheCorporation platform —
 
 ## Quick Start
 
-### Local Server Setup
-
-To run against a local server instead of the cloud API:
-
-```bash
-npx corp serve --port 8020
-```
-
-Then provision a workspace:
-
-```bash
-curl -s -X POST http://localhost:8020/v1/workspaces/provision -H "Content-Type: application/json" | cat
-```
-
-This returns `{"workspace_id": "...", "api_key": "..."}`. Configure the CLI:
-
-```bash
-npx corp config set api_url http://localhost:8020
-npx corp config set api_key <key> --force
-npx corp config set workspace_id <workspace_id>
-```
-
-The `--force` flag is required for security-sensitive keys like `api_key`.
-
-### Cloud Setup
+### Setup
 
 ```bash
 npx corp setup
 ```
 
-Follow the interactive wizard. Or configure manually:
+Choose a hosting mode:
+
+- **Local (your machine)** — no server needed. Data stored in `~/.corp/data`. Each command invokes the Rust binary directly (~6ms).
+- **TheCorporation cloud** — hosted service, authenticates via magic link.
+- **Self-hosted server** — point to your own API server URL.
+
+### Local mode (recommended for development)
 
 ```bash
-npx corp config set api_url https://api.thecorporation.ai
-npx corp config set api_key <key> --force
+npx corp setup              # choose "Local (your machine)"
+npx corp status             # verify — all local, no network
+```
+
+### Cloud mode
+
+```bash
+npx corp setup              # choose "TheCorporation cloud"
+# Follow the magic link auth flow
+```
+
+### Advanced: Local server mode
+
+For development with a persistent HTTP server:
+
+```bash
+npx corp serve --port 8020
+npx corp config set api_url http://localhost:8020 --force
 ```
 
 ### Verify Context

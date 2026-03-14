@@ -44,6 +44,17 @@ Spawns the server as a child process and returns a `ChildProcess`.
 | `commitSigningKey` | `COMMIT_SIGNING_KEY` | — |
 | `stdio` | — | `"inherit"` |
 
+### Oneshot mode (CLI)
+
+The binary also supports a `call` subcommand for processing a single request without starting a server:
+
+```bash
+api-rs --skip-validation call GET /v1/health
+api-rs --skip-validation call --data-dir ~/.corp/data POST /v1/workspaces/provision --stdin
+```
+
+The `--data-dir` flag sets the data directory for that request (overrides `DATA_DIR` env var, defaults to `./data/repos`). This is used by the CLI's `process://` transport for local-mode operation.
+
 ### `getBinaryPath()`
 
 Returns the resolved binary path, or `null` if unavailable. Resolution order:
