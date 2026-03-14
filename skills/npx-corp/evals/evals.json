@@ -1,0 +1,23 @@
+{
+  "skill_name": "npx-corp",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "I need to form a Delaware C-Corp called 'NeuralGrid Inc' with two founders - Alice Chen (CEO, alice@neuralgrid.io, 123 Elm St, Wilmington DE 19801) and Bob Park (CTO, bob@neuralgrid.io, 456 Market St, San Francisco CA 94105). Then issue 8,000,000 shares of common stock to Alice and 2,000,000 to Bob at par value $0.0001. Use npx corp commands. The server is already running on port 8020 and configured.",
+      "expected_output": "A sequence of npx corp commands that: (1) forms the C-Corp with both founders using one-shot form or staged flow, (2) sets active entity, (3) creates a board + seat, (4) creates a common stock instrument, (5) uses written consent or a board vote to approve the equity issuance, (6) issues equity to both founders with --resolution-id. Must NOT skip the board approval step for a C-Corp.",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "I'm building an ops agent that monitors governance deadlines. Using npx corp, I need to: create the agent on entity 07f8b334, give it a skill, create a work item for 'Review Q1 board minutes' due April 15, have the agent claim it, then complete it. Show me the commands.",
+      "expected_output": "A sequence of npx corp commands covering: agents create, agents skill (with short payload), work-items create (with --category, --deadline, --created-by), work-items claim --agent-name, work-items complete. Should mention keeping agent payloads concise.",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "We have a C-Corp (entity ID: abc123) and just closed a $2M seed round. We need to do a 409A valuation with enterprise value $5,000,000. Walk me through getting the 409A approved and checking the FMV per share, using npx corp.",
+      "expected_output": "A sequence covering: cap-table create-valuation (--valuation-type 409a, --enterprise-value 5000000), submit-valuation, then governance approval via written-consent or board meeting, then approve-valuation with --resolution-id, then cap-table 409a to check FMV. Should explain that board approval is required and show how to get a resolution-id.",
+      "files": []
+    }
+  ]
+}
