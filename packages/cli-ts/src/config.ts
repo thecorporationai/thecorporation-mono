@@ -145,9 +145,16 @@ function allowUnsafeApiUrl(): boolean {
 }
 
 export function validateApiUrl(value: string): string {
+  const trimmed = value.trim();
+
+  // Process transport: process:// or process:///path/to/binary
+  if (trimmed.startsWith("process://")) {
+    return trimmed;
+  }
+
   let parsed: URL;
   try {
-    parsed = new URL(value.trim());
+    parsed = new URL(trimmed);
   } catch {
     throw new Error("api_url must be a valid absolute URL");
   }

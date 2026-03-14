@@ -28,6 +28,7 @@ import type {
   DigestSummary,
   DigestTriggerResponse,
 } from "./api-schemas.js";
+import { processRequest } from "./process-transport.js";
 
 export class SessionExpiredError extends Error {
   constructor() {
@@ -96,7 +97,7 @@ export class CorpAPIClient {
   readonly workspaceId: string;
 
   constructor(apiUrl: string, apiKey: string, workspaceId: string) {
-    this.apiUrl = apiUrl.replace(/\/+$/, "");
+    this.apiUrl = apiUrl.startsWith("process://") ? apiUrl : apiUrl.replace(/\/+$/, "");
     this.apiKey = apiKey;
     this.workspaceId = workspaceId;
   }
@@ -110,11 +111,19 @@ export class CorpAPIClient {
   }
 
   private async request(method: string, path: string, body?: unknown, params?: Record<string, string>): Promise<Response> {
-    let url = `${this.apiUrl}${path}`;
+    let fullPath = path;
     if (params) {
       const qs = new URLSearchParams(params).toString();
-      if (qs) url += `?${qs}`;
+      if (qs) fullPath += `?${qs}`;
     }
+
+    if (this.apiUrl.startsWith("process://")) {
+      const hdrs = this.headers();
+      const bodyStr = body !== undefined ? JSON.stringify(body) : undefined;
+      return processRequest(this.apiUrl, method, fullPath, hdrs, bodyStr);
+    }
+
+    const url = `${this.apiUrl}${fullPath}`;
     const opts: RequestInit = { method, headers: this.headers() };
     if (body !== undefined) opts.body = JSON.stringify(body);
     return fetch(url, opts);
@@ -318,6 +327,9 @@ export class CorpAPIClient {
     return { entity_id: entityId, document_id: documentId };
   }
   getPreviewPdfUrl(entityId: string, documentId: string): string {
+    if (this.apiUrl.startsWith("process://")) {
+      throw new Error("getPreviewPdfUrl is not available in process transport mode — use validatePreviewPdf() and fetch the PDF via the API instead");
+    }
     const qs = new URLSearchParams({ entity_id: entityId, document_id: documentId }).toString();
     return `${this.apiUrl}/v1/documents/preview/pdf?${qs}`;
   }
