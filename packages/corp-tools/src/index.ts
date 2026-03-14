@@ -27,3 +27,4 @@ export { TOOL_REGISTRY, GENERATED_TOOL_DEFINITIONS, READ_ONLY_TOOLS } from "./de
 // Generated OpenAPI types and runtime enum constants
 export * from "./api-enums.generated.js";
 export type * from "./api-schemas.js";
+export { ensureEnvFile, loadEnvFile } from "./env.js";
