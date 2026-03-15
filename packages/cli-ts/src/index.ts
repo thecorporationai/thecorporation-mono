@@ -370,9 +370,11 @@ capTableCmd
 capTableCmd
   .command("issue-safe")
   .requiredOption("--investor <name>", "Investor name")
-  .requiredOption("--amount <n>", "Principal amount in cents", parseInt)
+  .requiredOption("--amount-cents <n>", "Principal amount in cents (e.g. 5000000000 = $50M)", parseInt)
+  .option("--amount <n>", "", parseInt)
   .option("--safe-type <type>", "SAFE type", "post_money")
-  .requiredOption("--valuation-cap <n>", "Valuation cap in cents", parseInt)
+  .requiredOption("--valuation-cap-cents <n>", "Valuation cap in cents (e.g. 1000000000 = $10M)", parseInt)
+  .option("--valuation-cap <n>", "", parseInt)
   .option("--meeting-id <ref>", "Board meeting reference required when issuing under a board-governed entity")
   .option("--resolution-id <ref>", "Board resolution reference required when issuing under a board-governed entity")
   .option("--json", "Output as JSON")
@@ -383,6 +385,8 @@ capTableCmd
     const { issueSafeCommand } = await import("./commands/cap-table.js");
     await issueSafeCommand({
       ...opts,
+      amountCents: opts.amountCents ?? opts.amount,
+      valuationCapCents: opts.valuationCapCents ?? opts.valuationCap,
       entityId: parent.entityId,
       json: inheritOption(opts.json, parent.json),
     });
@@ -413,7 +417,8 @@ capTableCmd
   });
 capTableCmd
   .command("distribute")
-  .requiredOption("--amount <n>", "Total distribution amount in cents", parseInt)
+  .requiredOption("--amount-cents <n>", "Total distribution amount in cents (e.g. 100000 = $1,000.00)", parseInt)
+  .option("--amount <n>", "", parseInt)
   .option("--type <type>", "Distribution type (dividend, return, liquidation)", "dividend")
   .requiredOption("--description <desc>", "Distribution description")
   .option("--json", "Output as JSON")
@@ -424,6 +429,7 @@ capTableCmd
     const { distributeCommand } = await import("./commands/cap-table.js");
     await distributeCommand({
       ...opts,
+      amountCents: opts.amountCents ?? opts.amount,
       entityId: parent.entityId,
       json: inheritOption(opts.json, parent.json),
     });
@@ -561,7 +567,8 @@ financeCmd
 financeCmd
   .command("invoice")
   .requiredOption("--customer <name>", "Customer name")
-  .requiredOption("--amount <n>", "Amount in cents", parseInt)
+  .requiredOption("--amount-cents <n>", "Amount in cents (e.g. 500000 = $5,000.00)", parseInt)
+  .option("--amount <n>", "", parseInt)
   .requiredOption("--due-date <date>", "Due date (ISO 8601)")
   .option("--description <desc>", "Description", "Services rendered")
   .option("--json", "Output as JSON")
@@ -571,6 +578,7 @@ financeCmd
     const { financeInvoiceCommand } = await import("./commands/finance.js");
     await financeInvoiceCommand({
       ...opts,
+      amountCents: opts.amountCents ?? opts.amount,
       entityId: parent.entityId,
       json: inheritOption(opts.json, parent.json),
     });
@@ -618,7 +626,8 @@ financeCmd
   });
 financeCmd
   .command("pay")
-  .requiredOption("--amount <n>", "Amount in cents", parseInt)
+  .requiredOption("--amount-cents <n>", "Amount in cents (e.g. 500000 = $5,000.00)", parseInt)
+  .option("--amount <n>", "", parseInt)
   .requiredOption("--recipient <name>", "Recipient name")
   .option("--method <method>", "Payment method", "ach")
   .option("--json", "Output as JSON")
@@ -628,6 +637,7 @@ financeCmd
     const { financePayCommand } = await import("./commands/finance.js");
     await financePayCommand({
       ...opts,
+      amountCents: opts.amountCents ?? opts.amount,
       entityId: parent.entityId,
       json: inheritOption(opts.json, parent.json),
     });
@@ -654,6 +664,19 @@ financeCmd
     const parent = cmd.parent!.opts();
     const { financeOpenAccountCommand } = await import("./commands/finance.js");
     await financeOpenAccountCommand({
+      ...opts,
+      entityId: parent.entityId,
+      json: inheritOption(opts.json, parent.json),
+    });
+  });
+financeCmd
+  .command("activate-account <account-ref>")
+  .option("--json", "Output as JSON")
+  .description("Activate a bank account (transitions from pending_review to active)")
+  .action(async (accountRef: string, opts, cmd) => {
+    const parent = cmd.parent!.opts();
+    const { financeActivateAccountCommand } = await import("./commands/finance.js");
+    await financeActivateAccountCommand(accountRef, {
       ...opts,
       entityId: parent.entityId,
       json: inheritOption(opts.json, parent.json),
@@ -1436,8 +1459,8 @@ program
 const formCmd = program
   .command("form")
   .description("Form a new entity with founders and cap table")
-  .option("--entity-type <type>", "Entity type (llc, c_corp)")
-  .option("--legal-name <name>", "Legal name")
+  .option("--type <type>", "Entity type (llc, c_corp)")
+  .option("--name <name>", "Legal name")
   .option("--jurisdiction <jurisdiction>", "Jurisdiction (e.g. US-DE, US-WY)")
   .option("--member <member>", "Founder as 'name,email,role[,pct[,address[,officer_title[,is_incorporator]]]]' with address as street|city|state|zip, or key=value pairs like 'name=...,email=...,role=...,officer_title=cto,is_incorporator=true,address=street|city|state|zip' (repeatable)", (v: string, a: string[]) => [...a, v], [] as string[])
   .option("--member-json <json>", "Founder JSON object (repeatable)", (v: string, a: string[]) => [...a, v], [] as string[])
@@ -1450,9 +1473,6 @@ const formCmd = program
   .option("--json", "Output as JSON")
   .option("--dry-run", "Show the request without creating the entity")
   .action(async (opts) => {
-    // Map --entity-type and --legal-name to the internal keys expected by formCommand
-    if (opts.entityType && !opts.type) opts.type = opts.entityType;
-    if (opts.legalName && !opts.name) opts.name = opts.legalName;
     const { formCommand } = await import("./commands/form.js");
     await formCommand(opts);
   });
@@ -1477,6 +1497,10 @@ formCmd.command("create")
     await formCreateCommand({
       ...opts,
       jurisdiction: inheritOption(opts.jurisdiction, parent.jurisdiction),
+      fiscalYearEnd: inheritOption(opts.fiscalYearEnd, parent.fiscalYearEnd),
+      sCorp: inheritOption(opts.sCorp, parent.sCorp),
+      transferRestrictions: inheritOption(opts.transferRestrictions, parent.transferRestrictions),
+      rofr: inheritOption(opts.rofr, parent.rofr),
       json: inheritOption(opts.json, parent.json),
       dryRun: inheritOption(opts.dryRun, parent.dryRun),
     });

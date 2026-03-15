@@ -436,9 +436,9 @@ export async function issueEquityCommand(opts: {
 export async function issueSafeCommand(opts: {
   entityId?: string;
   investor: string;
-  amount: number;
+  amountCents: number;
   safeType: string;
-  valuationCap: number;
+  valuationCapCents: number;
   email?: string;
   meetingId?: string;
   resolutionId?: string;
@@ -454,9 +454,9 @@ export async function issueSafeCommand(opts: {
       printDryRun("cap_table.issue_safe", {
         entity_id: eid,
         investor: opts.investor,
-        amount: opts.amount,
+        amount_cents: opts.amountCents,
         safe_type: opts.safeType,
-        valuation_cap: opts.valuationCap,
+        valuation_cap_cents: opts.valuationCapCents,
         email: opts.email,
         meeting_id: opts.meetingId,
         resolution_id: opts.resolutionId,
@@ -480,8 +480,8 @@ export async function issueSafeCommand(opts: {
     const body: Record<string, unknown> = {
       entity_id: eid,
       investor_name: opts.investor,
-      principal_amount_cents: opts.amount,
-      valuation_cap_cents: opts.valuationCap,
+      principal_amount_cents: opts.amountCents,
+      valuation_cap_cents: opts.valuationCapCents,
       safe_type: opts.safeType,
     };
     if (opts.email) body.email = opts.email;
@@ -494,7 +494,7 @@ export async function issueSafeCommand(opts: {
       printJson(result);
       return;
     }
-    printSuccess(`SAFE issued: $${(opts.amount / 100).toLocaleString()} to ${opts.investor}`);
+    printSuccess(`SAFE issued: $${(opts.amountCents / 100).toLocaleString()} to ${opts.investor}`);
     printReferenceSummary("safe_note", result, { showReuseHint: true });
   } catch (err) {
     printError(`Failed to issue SAFE: ${err}`);
@@ -589,7 +589,7 @@ export async function transferSharesCommand(opts: {
 
 export async function distributeCommand(opts: {
   entityId?: string;
-  amount: number;
+  amountCents: number;
   type: string;
   description: string;
   json?: boolean;
@@ -601,7 +601,7 @@ export async function distributeCommand(opts: {
   try {
     const eid = await resolver.resolveEntity(opts.entityId);
     const payload = {
-      entity_id: eid, total_amount_cents: opts.amount, distribution_type: opts.type,
+      entity_id: eid, total_amount_cents: opts.amountCents, distribution_type: opts.type,
       description: opts.description,
     };
     if (opts.dryRun) {

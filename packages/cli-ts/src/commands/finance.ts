@@ -235,7 +235,7 @@ export async function financeClassificationsCommand(opts: { entityId?: string; j
 }
 
 export async function financeInvoiceCommand(opts: {
-  entityId?: string; customer: string; amount: number; dueDate: string; description: string; json?: boolean;
+  entityId?: string; customer: string; amountCents: number; dueDate: string; description: string; json?: boolean;
 }): Promise<void> {
   const cfg = requireConfig("api_url", "api_key", "workspace_id");
   const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
@@ -243,7 +243,7 @@ export async function financeInvoiceCommand(opts: {
   try {
     const eid = await resolver.resolveEntity(opts.entityId);
     const result = await client.createInvoice({
-      entity_id: eid, customer_name: opts.customer, amount_cents: opts.amount,
+      entity_id: eid, customer_name: opts.customer, amount_cents: opts.amountCents,
       due_date: opts.dueDate, description: opts.description,
     });
     await resolver.stabilizeRecord("invoice", result, eid);
@@ -278,7 +278,7 @@ export async function financePayrollCommand(opts: {
 }
 
 export async function financePayCommand(opts: {
-  entityId?: string; amount: number; recipient: string; method: string; json?: boolean;
+  entityId?: string; amountCents: number; recipient: string; method: string; json?: boolean;
 }): Promise<void> {
   const cfg = requireConfig("api_url", "api_key", "workspace_id");
   const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
@@ -286,7 +286,7 @@ export async function financePayCommand(opts: {
   try {
     const eid = await resolver.resolveEntity(opts.entityId);
     const result = await client.submitPayment({
-      entity_id: eid, amount_cents: opts.amount, recipient: opts.recipient,
+      entity_id: eid, amount_cents: opts.amountCents, recipient: opts.recipient,
       payment_method: opts.method,
       description: `Payment via ${opts.method}`,
     });
@@ -317,6 +317,27 @@ export async function financeOpenAccountCommand(opts: {
       showReuseHint: true,
     });
   } catch (err) { printError(`Failed to open bank account: ${err}`); process.exit(1); }
+}
+
+export async function financeActivateAccountCommand(
+  accountRef: string,
+  opts: { entityId?: string; json?: boolean },
+): Promise<void> {
+  const cfg = requireConfig("api_url", "api_key", "workspace_id");
+  const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
+  const resolver = new ReferenceResolver(client, cfg);
+  try {
+    const eid = await resolver.resolveEntity(opts.entityId);
+    const resolvedId = await resolver.resolveBankAccount(eid, accountRef);
+    const result = await client.activateBankAccount(resolvedId, eid);
+    await resolver.stabilizeRecord("bank_account", result, eid);
+    resolver.rememberFromRecord("bank_account", result, eid);
+    printWriteResult(result, `Bank account activated: ${resolvedId}`, {
+      jsonOnly: opts.json,
+      referenceKind: "bank_account",
+      showReuseHint: true,
+    });
+  } catch (err) { printError(`Failed to activate bank account: ${err}`); process.exit(1); }
 }
 
 export async function financeClassifyContractorCommand(opts: {
