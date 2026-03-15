@@ -427,7 +427,6 @@ export async function issueEquityCommand(opts: {
     }
     printSuccess(`Equity issued: ${opts.shares} shares (${opts.grantType}) to ${opts.recipient}`);
     printReferenceSummary("round", round, { label: "Round Ref:", showReuseHint: true });
-    printJson(result);
   } catch (err) {
     printError(`Failed to issue equity: ${err}`);
     process.exit(1);
@@ -497,7 +496,6 @@ export async function issueSafeCommand(opts: {
     }
     printSuccess(`SAFE issued: $${(opts.amount / 100).toLocaleString()} to ${opts.investor}`);
     printReferenceSummary("safe_note", result, { showReuseHint: true });
-    printJson(result);
   } catch (err) {
     printError(`Failed to issue SAFE: ${err}`);
     process.exit(1);
@@ -803,7 +801,6 @@ export async function issueRoundCommand(opts: {
     if (roundMatch) {
       printReferenceSummary("round", roundMatch.raw, { showReuseHint: true });
     }
-    printJson(result);
   } catch (err) {
     printError(`Failed to issue round: ${err}`);
     process.exit(1);
@@ -899,7 +896,6 @@ export async function submitValuationCommand(opts: {
         printReferenceSummary("agenda_item", { agenda_item_id: result.agenda_item_id }, { label: "Agenda Ref:" });
       }
     }
-    printJson(result);
   } catch (err) {
     const msg = String(err);
     if (msg.includes("404")) {

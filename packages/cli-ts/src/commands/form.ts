@@ -118,7 +118,7 @@ function normalizeFounderInfo(input: Record<string, unknown>): FounderInfo {
   }
 
   const founder: FounderInfo = { name, email, role };
-  const ownershipPct = input.ownership_pct ?? input.pct;
+  const ownershipPct = input.ownership_pct ?? input.membership_pct ?? input.pct;
   if (ownershipPct != null) founder.ownership_pct = Number(ownershipPct);
   const sharesPurchased = input.shares_purchased ?? input.shares;
   if (sharesPurchased != null) founder.shares_purchased = Number(sharesPurchased);
@@ -893,7 +893,6 @@ export async function formActivateCommand(entityId: string, opts: FormActivateOp
     }
     console.log(`  Signatures added: ${result.signatures_added}`);
     console.log(`  Documents updated: ${result.documents_signed}`);
-    printJson(formation);
   } catch (err) {
     printError(`Failed to activate formation: ${err}`);
     process.exit(1);

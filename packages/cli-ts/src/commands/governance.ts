@@ -38,7 +38,6 @@ export async function governanceCreateBodyCommand(opts: {
     }
     printSuccess(`Governance body created: ${bodyId}`);
     printReferenceSummary("body", result, { showReuseHint: true });
-    printJson(result);
     console.log(chalk.dim("\n  Next steps:"));
     console.log(chalk.dim(`    corp governance add-seat @last:body --holder <contact-ref>`));
     console.log(chalk.dim(`    corp governance seats @last:body`));
@@ -69,7 +68,6 @@ export async function governanceAddSeatCommand(bodyId: string, opts: {
     }
     printSuccess(`Seat added: ${result.seat_id ?? "OK"}`);
     printReferenceSummary("seat", result, { showReuseHint: true });
-    printJson(result);
   } catch (err) { printError(`Failed to add seat: ${err}`); process.exit(1); }
 }
 
@@ -162,7 +160,6 @@ export async function governanceConveneCommand(opts: {
     }
     printSuccess(`Meeting scheduled: ${meetingId}`);
     printReferenceSummary("meeting", result, { showReuseHint: true });
-    printJson(result);
     console.log(chalk.dim("\n  Next steps:"));
     console.log(chalk.dim(`    corp governance notice @last:meeting`));
     console.log(chalk.dim(`    corp governance open @last:meeting --present-seat <seat-ref>`));
@@ -194,7 +191,6 @@ export async function governanceOpenMeetingCommand(
       return;
     }
     printSuccess(`Meeting opened: ${resolvedMeetingId}`);
-    printJson(result);
   } catch (err) { printError(`Failed to open meeting: ${err}`); process.exit(1); }
 }
 
@@ -225,7 +221,6 @@ export async function governanceVoteCommand(
       return;
     }
     printSuccess(`Vote cast: ${result.vote_id ?? "OK"}`);
-    printJson(result);
   } catch (err) {
     const message = String(err);
     if (message.includes("voting session is not open")) {
@@ -260,7 +255,6 @@ export async function sendNoticeCommand(
       return;
     }
     printSuccess(`Notice sent for meeting ${resolvedMeetingId}`);
-    printJson(result);
   } catch (err) { printError(`Failed to send notice: ${err}`); process.exit(1); }
 }
 
@@ -284,7 +278,6 @@ export async function adjournMeetingCommand(
       return;
     }
     printSuccess(`Meeting ${resolvedMeetingId} adjourned`);
-    printJson(result);
   } catch (err) { printError(`Failed to adjourn meeting: ${err}`); process.exit(1); }
 }
 
@@ -308,7 +301,6 @@ export async function cancelMeetingCommand(
       return;
     }
     printSuccess(`Meeting ${resolvedMeetingId} cancelled`);
-    printJson(result);
   } catch (err) { printError(`Failed to cancel meeting: ${err}`); process.exit(1); }
 }
 
@@ -332,7 +324,6 @@ export async function reopenMeetingCommand(
       return;
     }
     printSuccess(`Meeting ${resolvedMeetingId} re-opened`);
-    printJson(result);
   } catch (err) { printError(`Failed to re-open meeting: ${err}`); process.exit(1); }
 }
 
@@ -361,7 +352,6 @@ export async function finalizeAgendaItemCommand(
       return;
     }
     printSuccess(`Agenda item ${resolvedItemId} finalized as ${opts.status}`);
-    printJson(result);
   } catch (err) { printError(`Failed to finalize agenda item: ${err}`); process.exit(1); }
 }
 
@@ -398,7 +388,6 @@ export async function computeResolutionCommand(
     }
     printSuccess(`Resolution computed for agenda item ${itemId}`);
     printReferenceSummary("resolution", result, { showReuseHint: true });
-    printJson(result);
   } catch (err) { printError(`Failed to compute resolution: ${err}`); process.exit(1); }
 }
 
@@ -428,7 +417,6 @@ export async function writtenConsentCommand(opts: {
     }
     printSuccess(`Written consent created: ${meetingId}`);
     printReferenceSummary("meeting", result, { showReuseHint: true });
-    printJson(result);
     console.log(chalk.dim("\n  Next steps:"));
     console.log(chalk.dim(`    corp governance agenda-items @last:meeting`));
     console.log(chalk.dim(`    corp governance vote @last:meeting <item-ref> --voter <contact-ref> --vote for`));

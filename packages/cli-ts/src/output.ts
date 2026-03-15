@@ -108,7 +108,6 @@ export function printWriteResult(
       showReuseHint: normalized.showReuseHint,
     });
   }
-  printJson(result);
 }
 
 // --- Status Panel ---
