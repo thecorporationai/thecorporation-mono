@@ -66,6 +66,14 @@ program
   });
 
 program
+  .command("use <entity-ref>")
+  .description("Set the active entity by name, short ID, or reference")
+  .action(async (entityRef: string) => {
+    const { useCommand } = await import("./commands/use.js");
+    await useCommand(entityRef);
+  });
+
+program
   .command("schema")
   .description("Dump the CLI command catalog as JSON")
   .option("--compact", "Emit compact JSON")
