@@ -1251,7 +1251,7 @@ workItemsCmd
 workItemsCmd
   .command("create")
   .requiredOption("--title <title>", "Work item title")
-  .option("--category <category>", "Work item category")
+  .requiredOption("--category <category>", "Work item category")
   .option("--description <desc>", "Description")
   .option("--deadline <date>", "Deadline (YYYY-MM-DD)")
   .option("--asap", "Mark as ASAP priority")
@@ -1270,7 +1270,7 @@ workItemsCmd
   });
 workItemsCmd
   .command("claim <item-ref>")
-  .option("--by <name>", "Agent or user claiming the item")
+  .option("--by <name>", "Agent or user claiming the item (required)")
   .option("--claimer <name>", "Alias for --by")
   .option("--ttl <seconds>", "Auto-release TTL in seconds", parseInt)
   .option("--json", "Output as JSON")
@@ -1292,7 +1292,7 @@ workItemsCmd
   });
 workItemsCmd
   .command("complete <item-ref>")
-  .option("--by <name>", "Agent or user completing the item")
+  .option("--by <name>", "Agent or user completing the item (required)")
   .option("--completed-by <name>", "Alias for --by")
   .option("--result <text>", "Completion result or notes")
   .option("--notes <text>", "Alias for --result")

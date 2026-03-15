@@ -80,10 +80,6 @@ export async function workItemsCreateCommand(opts: {
   const resolver = new ReferenceResolver(client, cfg);
   try {
     const eid = await resolver.resolveEntity(opts.entityId);
-    if (!opts.category) {
-      printError("Missing required option: --category <category>");
-      process.exit(1);
-    }
     const data: Record<string, unknown> = { title: opts.title, category: opts.category };
     if (opts.description) data.description = opts.description;
     if (opts.deadline) data.deadline = opts.deadline;
