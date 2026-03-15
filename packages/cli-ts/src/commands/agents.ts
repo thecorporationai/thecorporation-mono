@@ -2,6 +2,7 @@ import { requireConfig } from "../config.js";
 import { CorpAPIClient } from "../api-client.js";
 import { printAgentsTable, printError, printJson, printReferenceSummary, printWriteResult } from "../output.js";
 import { ReferenceResolver } from "../references.js";
+import { confirm } from "@inquirer/prompts";
 import chalk from "chalk";
 import type { ApiRecord } from "../types.js";
 import { readFileSync, realpathSync } from "node:fs";
@@ -93,12 +94,22 @@ export async function agentsResumeCommand(agentId: string, opts: { json?: boolea
   } catch (err) { printError(`Failed to resume agent: ${err}`); process.exit(1); }
 }
 
-export async function agentsDeleteCommand(agentId: string, opts: { json?: boolean }): Promise<void> {
+export async function agentsDeleteCommand(agentId: string, opts: { json?: boolean; yes?: boolean }): Promise<void> {
   const cfg = requireConfig("api_url", "api_key", "workspace_id");
   const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
   const resolver = new ReferenceResolver(client, cfg);
   try {
     const resolvedAgentId = await resolver.resolveAgent(agentId);
+    if (!opts.yes) {
+      const ok = await confirm({
+        message: `Delete agent ${resolvedAgentId}? This cannot be undone.`,
+        default: false,
+      });
+      if (!ok) {
+        console.log("Cancelled.");
+        return;
+      }
+    }
     const result = await client.deleteAgent(resolvedAgentId);
     printWriteResult(result, `Agent ${resolvedAgentId} deleted.`, opts.json);
   } catch (err) { printError(`Failed to delete agent: ${err}`); process.exit(1); }

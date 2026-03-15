@@ -2,6 +2,7 @@ import { requireConfig } from "../config.js";
 import { CorpAPIClient } from "../api-client.js";
 import { printReferenceSummary, printWorkItemsTable, printError, printJson, printWriteResult } from "../output.js";
 import { ReferenceResolver } from "../references.js";
+import { confirm } from "@inquirer/prompts";
 import chalk from "chalk";
 
 function actorLabel(record: Record<string, unknown>, key: "claimed_by" | "completed_by" | "created_by"): string | undefined {
@@ -144,13 +145,23 @@ export async function workItemsReleaseCommand(workItemId: string, opts: { entity
   } catch (err) { printError(`Failed to release work item: ${err}`); process.exit(1); }
 }
 
-export async function workItemsCancelCommand(workItemId: string, opts: { entityId?: string; json?: boolean }): Promise<void> {
+export async function workItemsCancelCommand(workItemId: string, opts: { entityId?: string; json?: boolean; yes?: boolean }): Promise<void> {
   const cfg = requireConfig("api_url", "api_key", "workspace_id");
   const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
   const resolver = new ReferenceResolver(client, cfg);
   try {
     const eid = await resolver.resolveEntity(opts.entityId);
     const resolvedWorkItemId = await resolver.resolveWorkItem(eid, workItemId);
+    if (!opts.yes) {
+      const ok = await confirm({
+        message: `Cancel work item ${resolvedWorkItemId}?`,
+        default: false,
+      });
+      if (!ok) {
+        console.log("Cancelled.");
+        return;
+      }
+    }
     const result = await client.cancelWorkItem(eid, resolvedWorkItemId);
     printWriteResult(result, `Work item ${resolvedWorkItemId} cancelled.`, opts.json);
   } catch (err) { printError(`Failed to cancel work item: ${err}`); process.exit(1); }

@@ -216,6 +216,7 @@ entitiesCmd
   .command("dissolve <entity-ref>")
   .requiredOption("--reason <reason>", "Dissolution reason")
   .option("--effective-date <date>", "Effective date (ISO 8601)")
+  .option("--yes, -y", "Skip confirmation prompt")
   .description("Dissolve an entity")
   .action(async (entityId: string, opts) => {
     const { entitiesDissolveCommand } = await import("./commands/entities.js");
@@ -978,6 +979,7 @@ governanceCmd
   .command("cancel <meeting-ref>")
   .option("--json", "Output as JSON")
   .option("--dry-run", "Show the request without cancelling the meeting")
+  .option("--yes, -y", "Skip confirmation prompt")
   .description("Cancel a meeting")
   .action(async (meetingId: string, opts, cmd) => {
     const parent = cmd.parent!.opts();
@@ -1250,12 +1252,15 @@ agentsCmd.command("resume <agent-ref>").option("--json", "Output as JSON").descr
       json: inheritOption(opts.json, parent.json),
     });
   });
-agentsCmd.command("delete <agent-ref>").option("--json", "Output as JSON").description("Delete an agent")
+agentsCmd.command("delete <agent-ref>").option("--json", "Output as JSON")
+  .option("--yes, -y", "Skip confirmation prompt")
+  .description("Delete an agent")
   .action(async (agentId: string, opts, cmd) => {
     const parent = cmd.parent!.opts();
     const { agentsDeleteCommand } = await import("./commands/agents.js");
     await agentsDeleteCommand(agentId, {
       json: inheritOption(opts.json, parent.json),
+      yes: opts.yes,
     });
   });
 agentsCmd.command("message <agent-ref>").option("--body <text>", "Message text")
@@ -1389,6 +1394,7 @@ workItemsCmd
 workItemsCmd
   .command("cancel <item-ref>")
   .option("--json", "Output as JSON")
+  .option("--yes, -y", "Skip confirmation prompt")
   .description("Cancel a work item")
   .action(async (itemId: string, opts, cmd) => {
     const parent = cmd.parent!.opts();
@@ -1396,6 +1402,7 @@ workItemsCmd
     await workItemsCancelCommand(itemId, {
       entityId: parent.entityId,
       json: inheritOption(opts.json, parent.json),
+      yes: opts.yes,
     });
   });
 

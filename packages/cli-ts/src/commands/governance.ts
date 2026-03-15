@@ -6,6 +6,7 @@ import {
   printResolutionsTable, printDryRun, printError, printReferenceSummary, printSuccess, printJson,
 } from "../output.js";
 import { ReferenceResolver } from "../references.js";
+import { confirm } from "@inquirer/prompts";
 import chalk from "chalk";
 
 export async function governanceCreateBodyCommand(opts: {
@@ -283,7 +284,7 @@ export async function adjournMeetingCommand(
 
 export async function cancelMeetingCommand(
   meetingId: string,
-  opts: { entityId?: string; json?: boolean; dryRun?: boolean },
+  opts: { entityId?: string; json?: boolean; dryRun?: boolean; yes?: boolean },
 ): Promise<void> {
   const cfg = requireConfig("api_url", "api_key", "workspace_id");
   const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
@@ -294,6 +295,16 @@ export async function cancelMeetingCommand(
     if (opts.dryRun) {
       printDryRun("governance.cancel_meeting", { entity_id: eid, meeting_id: resolvedMeetingId });
       return;
+    }
+    if (!opts.yes) {
+      const ok = await confirm({
+        message: `Cancel meeting ${resolvedMeetingId}?`,
+        default: false,
+      });
+      if (!ok) {
+        console.log("Cancelled.");
+        return;
+      }
     }
     const result = await client.cancelMeeting(resolvedMeetingId, eid);
     if (opts.json) {

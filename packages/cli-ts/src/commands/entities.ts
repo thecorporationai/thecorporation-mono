@@ -3,6 +3,7 @@ import { CorpAPIClient } from "../api-client.js";
 import { printEntitiesTable, printError, printReferenceSummary, printSuccess, printJson } from "../output.js";
 import { ReferenceResolver } from "../references.js";
 import { withSpinner } from "../spinner.js";
+import { confirm } from "@inquirer/prompts";
 import chalk from "chalk";
 
 export async function entitiesCommand(opts: { json?: boolean }): Promise<void> {
@@ -84,13 +85,23 @@ export async function entitiesConvertCommand(
 
 export async function entitiesDissolveCommand(
   entityId: string,
-  opts: { reason: string; effectiveDate?: string }
+  opts: { reason: string; effectiveDate?: string; yes?: boolean }
 ): Promise<void> {
   const cfg = requireConfig("api_url", "api_key", "workspace_id");
   const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
   const resolver = new ReferenceResolver(client, cfg);
   try {
     const resolvedEntityId = await resolver.resolveEntity(entityId);
+    if (!opts.yes) {
+      const ok = await confirm({
+        message: `Dissolve entity ${entityId}? This cannot be undone.`,
+        default: false,
+      });
+      if (!ok) {
+        console.log("Cancelled.");
+        return;
+      }
+    }
     const data: Record<string, string> = { reason: opts.reason };
     if (opts.effectiveDate) data.effective_date = opts.effectiveDate;
     const result = await client.dissolveEntity(resolvedEntityId, data);
