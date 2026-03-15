@@ -35,6 +35,7 @@ program
   .name("corp")
   .description("corp — Corporate governance from the terminal")
   .version(pkg.version);
+program.option("-q, --quiet", "Only output the resource ID (for scripting)");
 
 // --- setup ---
 program

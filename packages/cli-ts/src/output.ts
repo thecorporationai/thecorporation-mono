@@ -42,20 +42,35 @@ export function printDryRun(operation: string, payload: unknown): void {
   });
 }
 
+export function printQuietId(record: unknown, ...idFields: string[]): void {
+  if (typeof record !== "object" || record === null) return;
+  const rec = record as Record<string, unknown>;
+  for (const field of idFields) {
+    if (typeof rec[field] === "string" && rec[field]) {
+      console.log(rec[field]);
+      return;
+    }
+  }
+}
+
 type WriteResultOptions =
   | boolean
   | {
       jsonOnly?: boolean;
+      quiet?: boolean;
       referenceKind?: ResourceKind;
       referenceLabel?: string;
       showReuseHint?: boolean;
+      idFields?: string[];
     };
 
 function normalizeWriteResultOptions(options?: WriteResultOptions): {
   jsonOnly?: boolean;
+  quiet?: boolean;
   referenceKind?: ResourceKind;
   referenceLabel?: string;
   showReuseHint?: boolean;
+  idFields?: string[];
 } {
   if (typeof options === "boolean") {
     return { jsonOnly: options };
@@ -94,6 +109,21 @@ export function printWriteResult(
   const normalized = normalizeWriteResultOptions(options);
   if (normalized.jsonOnly) {
     printJson(result);
+    return;
+  }
+  if (normalized.quiet) {
+    const defaultIdFields = [
+      "entity_id", "agent_id", "meeting_id", "body_id", "seat_id",
+      "work_item_id", "document_id", "invoice_id", "payment_id",
+      "safe_note_id", "valuation_id", "round_id", "instrument_id",
+      "transfer_workflow_id", "distribution_id", "deadline_id",
+      "filing_id", "bank_account_id", "classification_id",
+      "resolution_id", "agenda_item_id", "contact_id",
+      "request_id", "service_request_id", "key_id",
+      "formation_id", "execution_id", "incident_id",
+      "id",
+    ];
+    printQuietId(result, ...(normalized.idFields ?? defaultIdFields));
     return;
   }
   printSuccess(successMessage);
