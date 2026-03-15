@@ -1083,7 +1083,11 @@ const taxCmd = program
   .command("tax")
   .description("Tax filings and deadline tracking")
   .option("--entity-id <ref>", "Entity reference (ID, short ID, @last, or unique name)")
-  .option("--json", "Output as JSON");
+  .option("--json", "Output as JSON")
+  .action(async (opts) => {
+    const { taxSummaryCommand } = await import("./commands/tax.js");
+    await taxSummaryCommand(opts);
+  });
 taxCmd
   .command("filings")
   .option("--json", "Output as JSON")
@@ -1343,7 +1347,11 @@ const servicesCmd = program
   .command("services")
   .description("Service catalog and fulfillment")
   .option("--entity-id <ref>", "Entity reference (ID, short ID, @last, or unique name)")
-  .option("--json", "Output as JSON");
+  .option("--json", "Output as JSON")
+  .action(async (opts) => {
+    const { servicesCatalogCommand } = await import("./commands/services.js");
+    await servicesCatalogCommand({ json: opts.json });
+  });
 servicesCmd
   .command("catalog")
   .option("--json", "Output as JSON")

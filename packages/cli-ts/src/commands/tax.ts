@@ -3,6 +3,32 @@ import { CorpAPIClient } from "../api-client.js";
 import { printDeadlinesTable, printError, printJson, printTaxFilingsTable, printWriteResult } from "../output.js";
 import { ReferenceResolver } from "../references.js";
 
+export async function taxSummaryCommand(opts: { entityId?: string; json?: boolean }): Promise<void> {
+  const cfg = requireConfig("api_url", "api_key", "workspace_id");
+  const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
+  const resolver = new ReferenceResolver(client, cfg);
+  try {
+    const eid = await resolver.resolveEntity(opts.entityId);
+    const [filings, deadlines] = await Promise.all([
+      client.listTaxFilings(eid),
+      client.listDeadlines(eid),
+    ]);
+    if (opts.json) {
+      printJson({ filings, deadlines });
+      return;
+    }
+    if (filings.length === 0 && deadlines.length === 0) {
+      console.log("No tax filings or deadlines found.");
+      return;
+    }
+    if (filings.length > 0) printTaxFilingsTable(filings);
+    if (deadlines.length > 0) printDeadlinesTable(deadlines);
+  } catch (err) {
+    printError(`Failed to fetch tax summary: ${err}`);
+    process.exit(1);
+  }
+}
+
 function normalizeRecurrence(recurrence?: string): string | undefined {
   if (!recurrence) return undefined;
   if (recurrence === "yearly") return "annual";
