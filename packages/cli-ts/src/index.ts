@@ -299,41 +299,90 @@ const capTableCmd = program
     const { capTableCommand } = await import("./commands/cap-table.js");
     await capTableCommand(opts);
   });
-capTableCmd.command("safes").description("SAFE notes").action(async (_opts, cmd) => {
-  const parent = cmd.parent!.opts();
-  const { safesCommand } = await import("./commands/cap-table.js");
-  await safesCommand(parent);
-});
-capTableCmd.command("transfers").description("Share transfers").action(async (_opts, cmd) => {
-  const parent = cmd.parent!.opts();
-  const { transfersCommand } = await import("./commands/cap-table.js");
-  await transfersCommand(parent);
-});
-capTableCmd.command("instruments").description("Cap table instruments").action(async (_opts, cmd) => {
-  const parent = cmd.parent!.opts();
-  const { instrumentsCommand } = await import("./commands/cap-table.js");
-  await instrumentsCommand(parent);
-});
-capTableCmd.command("share-classes").description("Share classes").action(async (_opts, cmd) => {
-  const parent = cmd.parent!.opts();
-  const { shareClassesCommand } = await import("./commands/cap-table.js");
-  await shareClassesCommand(parent);
-});
-capTableCmd.command("rounds").description("Staged equity rounds").action(async (_opts, cmd) => {
-  const parent = cmd.parent!.opts();
-  const { roundsCommand } = await import("./commands/cap-table.js");
-  await roundsCommand(parent);
-});
-capTableCmd.command("valuations").description("Valuations history").action(async (_opts, cmd) => {
-  const parent = cmd.parent!.opts();
-  const { valuationsCommand } = await import("./commands/cap-table.js");
-  await valuationsCommand(parent);
-});
-capTableCmd.command("409a").description("Current 409A valuation").action(async (_opts, cmd) => {
-  const parent = cmd.parent!.opts();
-  const { fourOhNineACommand } = await import("./commands/cap-table.js");
-  await fourOhNineACommand(parent);
-});
+capTableCmd.command("safes")
+  .option("--entity-id <ref>", "Entity reference")
+  .option("--json", "Output as JSON")
+  .description("SAFE notes")
+  .action(async (opts, cmd) => {
+    const parent = cmd.parent!.opts();
+    const { safesCommand } = await import("./commands/cap-table.js");
+    await safesCommand({
+      entityId: opts.entityId ?? parent.entityId,
+      json: inheritOption(opts.json, parent.json),
+    });
+  });
+capTableCmd.command("transfers")
+  .option("--entity-id <ref>", "Entity reference")
+  .option("--json", "Output as JSON")
+  .description("Share transfers")
+  .action(async (opts, cmd) => {
+    const parent = cmd.parent!.opts();
+    const { transfersCommand } = await import("./commands/cap-table.js");
+    await transfersCommand({
+      entityId: opts.entityId ?? parent.entityId,
+      json: inheritOption(opts.json, parent.json),
+    });
+  });
+capTableCmd.command("instruments")
+  .option("--entity-id <ref>", "Entity reference")
+  .option("--json", "Output as JSON")
+  .description("Cap table instruments")
+  .action(async (opts, cmd) => {
+    const parent = cmd.parent!.opts();
+    const { instrumentsCommand } = await import("./commands/cap-table.js");
+    await instrumentsCommand({
+      entityId: opts.entityId ?? parent.entityId,
+      json: inheritOption(opts.json, parent.json),
+    });
+  });
+capTableCmd.command("share-classes")
+  .option("--entity-id <ref>", "Entity reference")
+  .option("--json", "Output as JSON")
+  .description("Share classes")
+  .action(async (opts, cmd) => {
+    const parent = cmd.parent!.opts();
+    const { shareClassesCommand } = await import("./commands/cap-table.js");
+    await shareClassesCommand({
+      entityId: opts.entityId ?? parent.entityId,
+      json: inheritOption(opts.json, parent.json),
+    });
+  });
+capTableCmd.command("rounds")
+  .option("--entity-id <ref>", "Entity reference")
+  .option("--json", "Output as JSON")
+  .description("Staged equity rounds")
+  .action(async (opts, cmd) => {
+    const parent = cmd.parent!.opts();
+    const { roundsCommand } = await import("./commands/cap-table.js");
+    await roundsCommand({
+      entityId: opts.entityId ?? parent.entityId,
+      json: inheritOption(opts.json, parent.json),
+    });
+  });
+capTableCmd.command("valuations")
+  .option("--entity-id <ref>", "Entity reference")
+  .option("--json", "Output as JSON")
+  .description("Valuations history")
+  .action(async (opts, cmd) => {
+    const parent = cmd.parent!.opts();
+    const { valuationsCommand } = await import("./commands/cap-table.js");
+    await valuationsCommand({
+      entityId: opts.entityId ?? parent.entityId,
+      json: inheritOption(opts.json, parent.json),
+    });
+  });
+capTableCmd.command("409a")
+  .option("--entity-id <ref>", "Entity reference")
+  .option("--json", "Output as JSON")
+  .description("Current 409A valuation")
+  .action(async (opts, cmd) => {
+    const parent = cmd.parent!.opts();
+    const { fourOhNineACommand } = await import("./commands/cap-table.js");
+    await fourOhNineACommand({
+      entityId: opts.entityId ?? parent.entityId,
+      json: inheritOption(opts.json, parent.json),
+    });
+  });
 capTableCmd
   .command("create-instrument")
   .requiredOption("--kind <kind>", "Instrument kind (common_equity, preferred_equity, membership_unit, option_grant, safe)")
