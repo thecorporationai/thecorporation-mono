@@ -27,7 +27,8 @@ const program = new Command();
 program
   .name("corp")
   .description("corp — Corporate governance from the terminal")
-  .version(pkg.version);
+  .version(pkg.version)
+  .enablePositionalOptions();
 program.option("-q, --quiet", "Only output the resource ID (for scripting)");
 
 // --- setup ---
@@ -1737,6 +1738,8 @@ program
 // --- form ---
 const formCmd = program
   .command("form")
+  .enablePositionalOptions()
+  .passThroughOptions()
   .description("Form a new entity with founders and cap table")
   .option("--type <type>", "Entity type (llc, c_corp)")
   .option("--name <name>", "Legal name")
@@ -1775,6 +1778,8 @@ formCmd.command("create")
     const { formCreateCommand } = await import("./commands/form.js");
     await formCreateCommand({
       ...opts,
+      type: inheritOption(opts.type, parent.type),
+      name: inheritOption(opts.name, parent.name),
       jurisdiction: inheritOption(opts.jurisdiction, parent.jurisdiction),
       fiscalYearEnd: inheritOption(opts.fiscalYearEnd, parent.fiscalYearEnd),
       sCorp: inheritOption(opts.sCorp, parent.sCorp),
