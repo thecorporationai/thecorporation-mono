@@ -3,7 +3,7 @@ import chalk from "chalk";
 import Table from "cli-table3";
 import { readFileSync, realpathSync } from "node:fs";
 import { relative, resolve } from "node:path";
-import { requireConfig } from "../config.js";
+import { requireConfig, setActiveEntityId, saveConfig } from "../config.js";
 import { CorpAPIClient } from "../api-client.js";
 import { printDryRun, printError, printJson, printReferenceSummary, printSuccess } from "../output.js";
 import { ReferenceResolver } from "../references.js";
@@ -543,6 +543,12 @@ export async function formCommand(opts: FormOptions): Promise<void> {
     await resolver.stabilizeRecord("entity", result);
     resolver.rememberFromRecord("entity", result);
 
+    if (result.entity_id) {
+      setActiveEntityId(cfg, String(result.entity_id));
+      saveConfig(cfg);
+      console.log(chalk.dim(`  Active entity set to ${result.entity_id}`));
+    }
+
     if (opts.json) {
       printJson(result);
       return;
@@ -665,6 +671,12 @@ export async function formCreateCommand(opts: FormCreateOptions): Promise<void> 
     const result = await client.createPendingEntity(payload);
     await resolver.stabilizeRecord("entity", result);
     resolver.rememberFromRecord("entity", result);
+
+    if (result.entity_id) {
+      setActiveEntityId(cfg, String(result.entity_id));
+      saveConfig(cfg);
+    }
+
     if (opts.json) {
       printJson(result);
       return;
