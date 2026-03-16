@@ -316,6 +316,27 @@ export class CorpAPIClient {
   writtenConsent(data: ApiRecord) {
     return this.post("/v1/meetings/written-consent", data) as Promise<WrittenConsentResponse>;
   }
+  getGovernanceMode(entityId: string) {
+    return this.get("/v1/governance/mode", { entity_id: entityId }) as Promise<ApiRecord>;
+  }
+  setGovernanceMode(data: ApiRecord) {
+    return this.post("/v1/governance/mode", data) as Promise<ApiRecord>;
+  }
+  resignSeat(seatId: string, entityId: string) {
+    return this.post(`/v1/governance-seats/${pathSegment(seatId)}/resign`, { entity_id: entityId }) as Promise<ApiRecord>;
+  }
+  createGovernanceIncident(data: ApiRecord) {
+    return this.post("/v1/governance/incidents", data) as Promise<ApiRecord>;
+  }
+  listGovernanceIncidents(entityId: string) {
+    return this.get(`/v1/entities/${pathSegment(entityId)}/governance/incidents`) as Promise<ApiRecord[]>;
+  }
+  resolveGovernanceIncident(incidentId: string, data: ApiRecord) {
+    return this.post(`/v1/governance/incidents/${pathSegment(incidentId)}/resolve`, data) as Promise<ApiRecord>;
+  }
+  getGovernanceProfile(entityId: string) {
+    return this.get(`/v1/entities/${pathSegment(entityId)}/governance/profile`) as Promise<ApiRecord>;
+  }
   listAgendaItems(meetingId: string, entityId: string) {
     return this.get(`/v1/meetings/${pathSegment(meetingId)}/agenda-items`, { entity_id: entityId }) as Promise<AgendaItemResponse[]>;
   }

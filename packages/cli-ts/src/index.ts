@@ -1062,6 +1062,60 @@ governanceCmd
       json: inheritOption(opts.json, parent.json),
     });
   });
+governanceCmd
+  .command("mode")
+  .addOption(new Option("--set <mode>", "Set governance mode").choices(["founder", "board", "executive", "normal", "incident_lockdown"]))
+  .option("--json", "Output as JSON")
+  .description("View or set governance mode")
+  .action(async (opts, cmd) => {
+    const parent = cmd.parent!.opts();
+    const { governanceModeCommand } = await import("./commands/governance.js");
+    await governanceModeCommand({
+      ...opts,
+      entityId: parent.entityId,
+      json: inheritOption(opts.json, parent.json),
+    });
+  });
+governanceCmd
+  .command("resign <seat-ref>")
+  .option("--body-id <ref>", "Governance body reference")
+  .option("--json", "Output as JSON")
+  .description("Resign from a governance seat")
+  .action(async (seatRef: string, opts, cmd) => {
+    const parent = cmd.parent!.opts();
+    const { governanceResignCommand } = await import("./commands/governance.js");
+    await governanceResignCommand(seatRef, {
+      ...opts,
+      entityId: parent.entityId,
+      json: inheritOption(opts.json, parent.json),
+    });
+  });
+governanceCmd
+  .command("incidents")
+  .option("--json", "Output as JSON")
+  .description("List governance incidents")
+  .action(async (opts, cmd) => {
+    const parent = cmd.parent!.opts();
+    const { governanceIncidentsCommand } = await import("./commands/governance.js");
+    await governanceIncidentsCommand({
+      ...opts,
+      entityId: parent.entityId,
+      json: inheritOption(opts.json, parent.json),
+    });
+  });
+governanceCmd
+  .command("profile")
+  .option("--json", "Output as JSON")
+  .description("View governance profile and configuration")
+  .action(async (opts, cmd) => {
+    const parent = cmd.parent!.opts();
+    const { governanceProfileCommand } = await import("./commands/governance.js");
+    await governanceProfileCommand({
+      ...opts,
+      entityId: parent.entityId,
+      json: inheritOption(opts.json, parent.json),
+    });
+  });
 governanceCmd.addHelpText("after", `
 Examples:
   $ corp governance create-body --name "Board of Directors" --body-type board_of_directors
@@ -1070,6 +1124,11 @@ Examples:
   $ corp governance open @last:meeting --present-seat alice-seat
   $ corp governance vote @last:meeting <item-ref> --voter alice --vote for
   $ corp governance written-consent --body board --title "Approve Option Plan" --description "Board approves 2026 option plan"
+  $ corp governance mode
+  $ corp governance mode --set board
+  $ corp governance resign <seat-ref>
+  $ corp governance incidents
+  $ corp governance profile
 `);
 
 // --- documents ---

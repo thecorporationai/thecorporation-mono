@@ -434,6 +434,83 @@ export async function writtenConsentCommand(opts: {
   } catch (err) { printError(`Failed to create written consent: ${err}`); process.exit(1); }
 }
 
+export async function governanceModeCommand(opts: {
+  entityId?: string; set?: string; json?: boolean;
+}): Promise<void> {
+  const cfg = requireConfig("api_url", "api_key", "workspace_id");
+  const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
+  const resolver = new ReferenceResolver(client, cfg);
+  try {
+    const eid = await resolver.resolveEntity(opts.entityId);
+    if (opts.set) {
+      const result = await client.setGovernanceMode({ entity_id: eid, mode: opts.set });
+      if (opts.json) { printJson(result); return; }
+      printSuccess(`Governance mode set to: ${opts.set}`);
+    } else {
+      const result = await client.getGovernanceMode(eid);
+      if (opts.json) { printJson(result); return; }
+      console.log(`  ${chalk.bold("Governance Mode:")} ${result.mode ?? "N/A"}`);
+      if (result.reason) console.log(`  ${chalk.bold("Reason:")} ${result.reason}`);
+    }
+  } catch (err) { printError(`Failed: ${err}`); process.exit(1); }
+}
+
+export async function governanceResignCommand(seatRef: string, opts: {
+  entityId?: string; bodyId?: string; json?: boolean;
+}): Promise<void> {
+  const cfg = requireConfig("api_url", "api_key", "workspace_id");
+  const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
+  const resolver = new ReferenceResolver(client, cfg);
+  try {
+    const eid = await resolver.resolveEntity(opts.entityId);
+    const seatId = await resolver.resolveSeat(eid, seatRef, opts.bodyId);
+    const result = await client.resignSeat(seatId, eid);
+    if (opts.json) { printJson(result); return; }
+    printSuccess(`Seat ${seatId} resigned.`);
+  } catch (err) { printError(`Failed to resign seat: ${err}`); process.exit(1); }
+}
+
+export async function governanceIncidentsCommand(opts: {
+  entityId?: string; json?: boolean;
+}): Promise<void> {
+  const cfg = requireConfig("api_url", "api_key", "workspace_id");
+  const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
+  const resolver = new ReferenceResolver(client, cfg);
+  try {
+    const eid = await resolver.resolveEntity(opts.entityId);
+    const incidents = await client.listGovernanceIncidents(eid);
+    if (opts.json) { printJson(incidents); return; }
+    if (incidents.length === 0) { console.log("No governance incidents found."); return; }
+    for (const inc of incidents) {
+      const status = String(inc.status ?? "open");
+      const colored = status === "resolved" ? chalk.green(status) : chalk.red(status);
+      console.log(`  [${colored}] ${inc.incident_type ?? "unknown"}: ${inc.description ?? inc.id}`);
+    }
+  } catch (err) { printError(`Failed to list incidents: ${err}`); process.exit(1); }
+}
+
+export async function governanceProfileCommand(opts: {
+  entityId?: string; json?: boolean;
+}): Promise<void> {
+  const cfg = requireConfig("api_url", "api_key", "workspace_id");
+  const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
+  const resolver = new ReferenceResolver(client, cfg);
+  try {
+    const eid = await resolver.resolveEntity(opts.entityId);
+    const profile = await client.getGovernanceProfile(eid);
+    if (opts.json) { printJson(profile); return; }
+    console.log(chalk.blue("\u2500".repeat(40)));
+    console.log(chalk.blue.bold("  Governance Profile"));
+    console.log(chalk.blue("\u2500".repeat(40)));
+    for (const [key, value] of Object.entries(profile)) {
+      if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+        console.log(`  ${chalk.bold(key.replaceAll("_", " ") + ":")} ${value}`);
+      }
+    }
+    console.log(chalk.blue("\u2500".repeat(40)));
+  } catch (err) { printError(`Failed to get governance profile: ${err}`); process.exit(1); }
+}
+
 export async function listAgendaItemsCommand(meetingId: string, opts: { entityId?: string; json?: boolean }): Promise<void> {
   const cfg = requireConfig("api_url", "api_key", "workspace_id");
   const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
