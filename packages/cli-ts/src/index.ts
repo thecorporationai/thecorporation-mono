@@ -592,6 +592,65 @@ capTableCmd
       json: inheritOption(opts.json, parent.json),
     });
   });
+capTableCmd
+  .command("preview-conversion")
+  .requiredOption("--safe-id <ref>", "SAFE note reference to convert")
+  .requiredOption("--price-per-share-cents <n>", "Conversion price per share in cents", parseInt)
+  .option("--json", "Output as JSON")
+  .description("Preview SAFE-to-equity conversion")
+  .action(async (opts, cmd) => {
+    const parent = cmd.parent!.opts();
+    const { previewConversionCommand } = await import("./commands/cap-table.js");
+    await previewConversionCommand({
+      ...opts,
+      entityId: parent.entityId,
+      json: inheritOption(opts.json, parent.json),
+    });
+  });
+capTableCmd
+  .command("convert")
+  .requiredOption("--safe-id <ref>", "SAFE note reference to convert")
+  .requiredOption("--price-per-share-cents <n>", "Conversion price per share in cents", parseInt)
+  .option("--json", "Output as JSON")
+  .option("--dry-run", "Show the request without executing")
+  .description("Execute SAFE-to-equity conversion")
+  .action(async (opts, cmd) => {
+    const parent = cmd.parent!.opts();
+    const { executeConversionCommand } = await import("./commands/cap-table.js");
+    await executeConversionCommand({
+      ...opts,
+      entityId: parent.entityId,
+      json: inheritOption(opts.json, parent.json),
+    });
+  });
+capTableCmd
+  .command("dilution")
+  .requiredOption("--round-id <ref>", "Round reference to model dilution for")
+  .option("--json", "Output as JSON")
+  .description("Preview dilution impact of a round")
+  .action(async (opts, cmd) => {
+    const parent = cmd.parent!.opts();
+    const { dilutionPreviewCommand } = await import("./commands/cap-table.js");
+    await dilutionPreviewCommand({
+      ...opts,
+      entityId: parent.entityId,
+      json: inheritOption(opts.json, parent.json),
+    });
+  });
+capTableCmd
+  .command("control-map")
+  .option("--root-entity-id <ref>", "Root entity for ownership tree (defaults to active entity)")
+  .option("--json", "Output as JSON")
+  .description("View entity control/ownership map")
+  .action(async (opts, cmd) => {
+    const parent = cmd.parent!.opts();
+    const { controlMapCommand } = await import("./commands/cap-table.js");
+    await controlMapCommand({
+      ...opts,
+      entityId: parent.entityId,
+      json: inheritOption(opts.json, parent.json),
+    });
+  });
 capTableCmd.addHelpText("after", `
 Examples:
   $ corp cap-table                                    # view full cap table
@@ -815,6 +874,20 @@ financeCmd
       json: inheritOption(opts.json, parent.json),
     });
   });
+financeCmd
+  .command("statements")
+  .option("--period <period>", "Period (e.g. 2026-Q1, 2025)")
+  .option("--json", "Output as JSON")
+  .description("View financial statements (P&L, balance sheet)")
+  .action(async (opts, cmd) => {
+    const parent = cmd.parent!.opts();
+    const { financeStatementsCommand } = await import("./commands/finance.js");
+    await financeStatementsCommand({
+      ...opts,
+      entityId: parent.entityId,
+      json: inheritOption(opts.json, parent.json),
+    });
+  });
 financeCmd.addHelpText("after", `
 Examples:
   $ corp finance                                      # financial summary
@@ -822,6 +895,7 @@ Examples:
   $ corp finance pay --amount-cents 250000 --recipient "Vendor" --method ach
   $ corp finance payroll --period-start 2026-03-01 --period-end 2026-03-15
   $ corp finance open-account --institution Mercury
+  $ corp finance statements --period 2026-Q1
 `);
 
 // --- governance ---

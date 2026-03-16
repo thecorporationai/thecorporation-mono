@@ -948,6 +948,85 @@ export async function approveValuationCommand(opts: {
   }
 }
 
+export async function previewConversionCommand(opts: {
+  entityId?: string; safeId: string; pricePerShareCents: number; json?: boolean;
+}): Promise<void> {
+  const cfg = requireConfig("api_url", "api_key", "workspace_id");
+  const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
+  const resolver = new ReferenceResolver(client, cfg);
+  try {
+    const eid = await resolver.resolveEntity(opts.entityId);
+    const safeId = await resolver.resolveSafeNote(eid, opts.safeId);
+    const result = await client.previewRoundConversion({
+      entity_id: eid,
+      safe_note_id: safeId,
+      price_per_share_cents: opts.pricePerShareCents,
+    } as unknown as Parameters<typeof client.previewRoundConversion>[0]);
+    if (opts.json) { printJson(result); return; }
+    printSuccess("Conversion Preview:");
+    if (result.shares_issued) console.log(`  Shares to issue: ${result.shares_issued}`);
+    if (result.ownership_pct) console.log(`  Post-conversion ownership: ${result.ownership_pct}%`);
+    printJson(result);
+  } catch (err) { printError(`Failed to preview conversion: ${err}`); process.exit(1); }
+}
+
+export async function executeConversionCommand(opts: {
+  entityId?: string; safeId: string; pricePerShareCents: number;
+  json?: boolean; dryRun?: boolean;
+}): Promise<void> {
+  const cfg = requireConfig("api_url", "api_key", "workspace_id");
+  const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
+  const resolver = new ReferenceResolver(client, cfg);
+  try {
+    const eid = await resolver.resolveEntity(opts.entityId);
+    const safeId = await resolver.resolveSafeNote(eid, opts.safeId);
+    const payload = {
+      entity_id: eid,
+      safe_note_id: safeId,
+      price_per_share_cents: opts.pricePerShareCents,
+    };
+    if (opts.dryRun) { printDryRun("equity.conversion.execute", payload); return; }
+    const result = await client.executeRoundConversion(
+      payload as unknown as Parameters<typeof client.executeRoundConversion>[0],
+    );
+    printWriteResult(result, `Conversion executed for SAFE ${safeId}`, {
+      jsonOnly: opts.json,
+    });
+  } catch (err) { printError(`Failed to execute conversion: ${err}`); process.exit(1); }
+}
+
+export async function dilutionPreviewCommand(opts: {
+  entityId?: string; roundId: string; json?: boolean;
+}): Promise<void> {
+  const cfg = requireConfig("api_url", "api_key", "workspace_id");
+  const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
+  const resolver = new ReferenceResolver(client, cfg);
+  try {
+    const eid = await resolver.resolveEntity(opts.entityId);
+    const roundId = await resolver.resolveRound(eid, opts.roundId);
+    const result = await client.getDilutionPreview(eid, roundId);
+    if (opts.json) { printJson(result); return; }
+    printJson(result);
+  } catch (err) { printError(`Failed to preview dilution: ${err}`); process.exit(1); }
+}
+
+export async function controlMapCommand(opts: {
+  entityId?: string; rootEntityId?: string; json?: boolean;
+}): Promise<void> {
+  const cfg = requireConfig("api_url", "api_key", "workspace_id");
+  const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
+  const resolver = new ReferenceResolver(client, cfg);
+  try {
+    const eid = await resolver.resolveEntity(opts.entityId);
+    const rootEntityId = opts.rootEntityId
+      ? await resolver.resolveEntity(opts.rootEntityId)
+      : eid;
+    const result = await client.getControlMap(eid, rootEntityId);
+    if (opts.json) { printJson(result); return; }
+    printJson(result);
+  } catch (err) { printError(`Failed to fetch control map: ${err}`); process.exit(1); }
+}
+
 function print409a(data: Record<string, unknown>): void {
   console.log(chalk.green("─".repeat(40)));
   console.log(chalk.green.bold("  409A Valuation"));

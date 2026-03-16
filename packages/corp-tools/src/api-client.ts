@@ -386,6 +386,17 @@ export class CorpAPIClient {
   activateBankAccount(bankAccountId: string, entityId: string) { return this.postWithParams(`/v1/bank-accounts/${pathSegment(bankAccountId)}/activate`, {}, { entity_id: entityId }) as Promise<ApiRecord>; }
   classifyContractor(data: ApiRecord) { return this.post("/v1/contractors/classify", data) as Promise<ApiRecord>; }
   reconcileLedger(data: ApiRecord) { return this.post("/v1/ledger/reconcile", data) as Promise<ApiRecord>; }
+  getFinancialStatements(entityId: string, params?: Record<string, string>) {
+    return this.get("/v1/treasury/financial-statements", { entity_id: entityId, ...(params ?? {}) }) as Promise<ApiRecord>;
+  }
+
+  // --- Equity analytics ---
+  getDilutionPreview(entityId: string, roundId: string) {
+    return this.get("/v1/equity/dilution/preview", { entity_id: entityId, round_id: roundId }) as Promise<ApiRecord>;
+  }
+  getControlMap(entityId: string, rootEntityId: string) {
+    return this.get("/v1/equity/control-map", { entity_id: entityId, root_entity_id: rootEntityId }) as Promise<ApiRecord>;
+  }
 
   // --- Tax ---
   listTaxFilings(entityId: string) { return this.get(`/v1/entities/${pathSegment(entityId)}/tax-filings`) as Promise<ApiRecord[]>; }

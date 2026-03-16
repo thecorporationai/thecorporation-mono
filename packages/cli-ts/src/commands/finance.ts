@@ -363,6 +363,25 @@ export async function financeClassifyContractorCommand(opts: {
   } catch (err) { printError(`Failed to classify contractor: ${err}`); process.exit(1); }
 }
 
+export async function financeStatementsCommand(opts: {
+  entityId?: string; period?: string; json?: boolean;
+}): Promise<void> {
+  const cfg = requireConfig("api_url", "api_key", "workspace_id");
+  const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
+  const resolver = new ReferenceResolver(client, cfg);
+  try {
+    const eid = await resolver.resolveEntity(opts.entityId);
+    const params: Record<string, string> = {};
+    if (opts.period) params.period = opts.period;
+    const result = await client.getFinancialStatements(eid, params);
+    if (opts.json) { printJson(result); return; }
+    printJson(result);
+  } catch (err) {
+    printError(`Failed to fetch financial statements: ${err}`);
+    process.exit(1);
+  }
+}
+
 export async function financeReconcileCommand(opts: {
   entityId?: string; startDate: string; endDate: string; json?: boolean;
 }): Promise<void> {
