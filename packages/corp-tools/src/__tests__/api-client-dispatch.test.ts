@@ -43,7 +43,7 @@ describe("CorpAPIClient transport dispatch", () => {
 
   it("getPreviewPdfUrl throws for process:// URLs", () => {
     const client = new CorpAPIClient("process://", "key", "ws");
-    expect(() => client.getPreviewPdfUrl("ent1", "doc1")).toThrow("not available in process transport");
+    expect(() => client.getPreviewPdfUrl("ent1", "doc1")).toThrow("not available in local process transport mode");
   });
 
   it("getPreviewPdfUrl works for https:// URLs", () => {

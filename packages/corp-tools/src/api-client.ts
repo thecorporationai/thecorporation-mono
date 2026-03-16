@@ -31,8 +31,8 @@ import type {
 import { processRequest } from "./process-transport.js";
 
 export class SessionExpiredError extends Error {
-  constructor() {
-    super("Your API key is no longer valid. Run 'corp setup' to re-authenticate.");
+  constructor(detail?: string) {
+    super(detail || "Your API key is no longer valid. Run 'corp setup' to re-authenticate.");
     this.name = "SessionExpiredError";
   }
 }
@@ -86,7 +86,14 @@ export async function provisionWorkspace(
   });
   if (!resp.ok) {
     const detail = await extractErrorMessage(resp);
-    throw new Error(`Provision failed: ${resp.status} ${resp.statusText} — ${detail}`);
+    const prefix = resp.status >= 500
+      ? "Server error"
+      : resp.status === 404
+        ? "Not found"
+        : resp.status === 422
+          ? "Validation error"
+          : `HTTP ${resp.status}`;
+    throw new Error(`Provision failed (${prefix}): ${detail}`);
   }
   return resp.json() as Promise<ApiRecord>;
 }
@@ -130,10 +137,17 @@ export class CorpAPIClient {
   }
 
   private async throwIfError(resp: Response): Promise<void> {
-    if (resp.status === 401) throw new SessionExpiredError();
     if (!resp.ok) {
       const detail = await extractErrorMessage(resp);
-      throw new Error(`${resp.status} ${resp.statusText} — ${detail}`);
+      if (resp.status === 401) throw new SessionExpiredError(detail);
+      const prefix = resp.status >= 500
+        ? "Server error"
+        : resp.status === 404
+          ? "Not found"
+          : resp.status === 422
+            ? "Validation error"
+            : `HTTP ${resp.status}`;
+      throw new Error(`${prefix}: ${detail}`);
     }
   }
 
@@ -328,7 +342,10 @@ export class CorpAPIClient {
   }
   getPreviewPdfUrl(entityId: string, documentId: string): string {
     if (this.apiUrl.startsWith("process://")) {
-      throw new Error("getPreviewPdfUrl is not available in process transport mode — use validatePreviewPdf() and fetch the PDF via the API instead");
+      throw new Error(
+        "PDF preview is not available in local process transport mode.\n" +
+        "  Use cloud mode (npx corp setup) or start a local HTTP server (npx corp serve) instead.",
+      );
     }
     const qs = new URLSearchParams({ entity_id: entityId, document_id: documentId }).toString();
     return `${this.apiUrl}/v1/documents/preview/pdf?${qs}`;
@@ -345,6 +362,7 @@ export class CorpAPIClient {
   runPayroll(data: ApiRecord) { return this.post("/v1/payroll/runs", data) as Promise<ApiRecord>; }
   submitPayment(data: ApiRecord) { return this.post("/v1/payments", data) as Promise<ApiRecord>; }
   openBankAccount(data: ApiRecord) { return this.post("/v1/treasury/bank-accounts", data) as Promise<ApiRecord>; }
+  activateBankAccount(bankAccountId: string, entityId: string) { return this.postWithParams(`/v1/bank-accounts/${pathSegment(bankAccountId)}/activate`, {}, { entity_id: entityId }) as Promise<ApiRecord>; }
   classifyContractor(data: ApiRecord) { return this.post("/v1/contractors/classify", data) as Promise<ApiRecord>; }
   reconcileLedger(data: ApiRecord) { return this.post("/v1/ledger/reconcile", data) as Promise<ApiRecord>; }
 
@@ -478,7 +496,15 @@ export class CorpAPIClient {
     const resp = await this.request("POST", "/v1/workspaces/link", { external_id: externalId, provider });
     if (!resp.ok) {
       const detail = await extractErrorMessage(resp);
-      throw new Error(`${resp.status} ${resp.statusText} — ${detail}`);
+      if (resp.status === 401) throw new SessionExpiredError(detail);
+      const prefix = resp.status >= 500
+        ? "Server error"
+        : resp.status === 404
+          ? "Not found"
+          : resp.status === 422
+            ? "Validation error"
+            : `HTTP ${resp.status}`;
+      throw new Error(`${prefix}: ${detail}`);
     }
     return resp.json() as Promise<ApiRecord>;
   }

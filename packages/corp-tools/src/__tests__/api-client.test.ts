@@ -54,12 +54,28 @@ describe("provisionWorkspace", () => {
     expect(capturedUrl).toBe("http://localhost:8000/v1/workspaces/provision");
   });
 
-  it("throws on non-ok response", async () => {
+  it("throws on non-ok response with structured message", async () => {
+    globalThis.fetch = vi.fn(async () => {
+      return new Response(JSON.stringify({ error: "name is required" }), {
+        status: 422,
+        statusText: "Unprocessable Entity",
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+
+    await expect(provisionWorkspace("http://localhost:8000", "test")).rejects.toThrow(
+      "Provision failed (Validation error): name is required"
+    );
+  });
+
+  it("throws on non-ok response with plain text body", async () => {
     globalThis.fetch = vi.fn(async () => {
       return new Response("Bad Request", { status: 422, statusText: "Unprocessable Entity" });
     });
 
-    await expect(provisionWorkspace("http://localhost:8000", "test")).rejects.toThrow("Provision failed: 422");
+    await expect(provisionWorkspace("http://localhost:8000", "test")).rejects.toThrow(
+      "Provision failed (Validation error): Bad Request"
+    );
   });
 });
 
@@ -179,5 +195,59 @@ describe("CorpAPIClient HTTP methods", () => {
     });
     const { SessionExpiredError } = await import("../api-client.js");
     await expect(client.getStatus()).rejects.toThrow(SessionExpiredError);
+  });
+
+  it("throws 'Validation error' on 422 with JSON error body", async () => {
+    globalThis.fetch = vi.fn(async () => {
+      return new Response(JSON.stringify({ error: "field X is required" }), {
+        status: 422,
+        statusText: "Unprocessable Entity",
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+    await expect(client.getStatus()).rejects.toThrow("Validation error: field X is required");
+  });
+
+  it("throws 'Not found' on 404", async () => {
+    globalThis.fetch = vi.fn(async () => {
+      return new Response(JSON.stringify({ message: "entity not found" }), {
+        status: 404,
+        statusText: "Not Found",
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+    await expect(client.getStatus()).rejects.toThrow("Not found: entity not found");
+  });
+
+  it("throws 'Server error' on 500", async () => {
+    globalThis.fetch = vi.fn(async () => {
+      return new Response(JSON.stringify({ error: "internal failure" }), {
+        status: 500,
+        statusText: "Internal Server Error",
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+    await expect(client.getStatus()).rejects.toThrow("Server error: internal failure");
+  });
+
+  it("throws 'HTTP <status>' for other error codes", async () => {
+    globalThis.fetch = vi.fn(async () => {
+      return new Response(JSON.stringify({ error: "rate limited" }), {
+        status: 429,
+        statusText: "Too Many Requests",
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+    await expect(client.getStatus()).rejects.toThrow("HTTP 429: rate limited");
+  });
+
+  it("falls back to response text when body is not JSON", async () => {
+    globalThis.fetch = vi.fn(async () => {
+      return new Response("Something went wrong", {
+        status: 502,
+        statusText: "Bad Gateway",
+      });
+    });
+    await expect(client.getStatus()).rejects.toThrow("Server error: Something went wrong");
   });
 });

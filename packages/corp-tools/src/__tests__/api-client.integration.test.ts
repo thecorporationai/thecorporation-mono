@@ -62,8 +62,8 @@ describe("provisionWorkspace", () => {
     expect(ws.name).toBe("Integration Test WS");
   });
 
-  it.skipIf(!canRun)("provision without name returns 422", async () => {
-    await expect(provisionWorkspace(API_URL)).rejects.toThrow(/422/);
+  it.skipIf(!canRun)("provision without name returns validation error", async () => {
+    await expect(provisionWorkspace(API_URL)).rejects.toThrow(/Validation error/);
   });
 });
 
@@ -215,7 +215,7 @@ describe("entity lifecycle", () => {
       expectStructuredResponse(cap);
     } catch (e: any) {
       // 404 acceptable if entity not fully active
-      expect(e.message).toMatch(/40[04]/);
+      expect(e.message).toMatch(/Not found|HTTP 40[04]/);
     }
   });
 
@@ -224,7 +224,7 @@ describe("entity lifecycle", () => {
       const notes = await client.getSafeNotes(entityId);
       expect(Array.isArray(notes)).toBe(true);
     } catch (e: any) {
-      expect(e.message).toMatch(/40[04]/);
+      expect(e.message).toMatch(/Not found|HTTP 40[04]/);
     }
   });
 
@@ -233,7 +233,7 @@ describe("entity lifecycle", () => {
       const transfers = await client.getShareTransfers(entityId);
       expect(Array.isArray(transfers)).toBe(true);
     } catch (e: any) {
-      expect(e.message).toMatch(/40[04]/);
+      expect(e.message).toMatch(/Not found|HTTP 40[04]/);
     }
   });
 
@@ -242,7 +242,7 @@ describe("entity lifecycle", () => {
       const vals = await client.getValuations(entityId);
       expect(Array.isArray(vals)).toBe(true);
     } catch (e: any) {
-      expect(e.message).toMatch(/40[04]/);
+      expect(e.message).toMatch(/Not found|HTTP 40[04]/);
     }
   });
 
@@ -251,7 +251,7 @@ describe("entity lifecycle", () => {
       const val = await client.getCurrent409a(entityId);
       expectStructuredResponse(val);
     } catch (e: any) {
-      expect(e.message).toMatch(/40[04]/);
+      expect(e.message).toMatch(/Not found|HTTP 40[04]/);
     }
   });
 
@@ -260,7 +260,7 @@ describe("entity lifecycle", () => {
       const bodies = await client.listGovernanceBodies(entityId);
       expect(Array.isArray(bodies)).toBe(true);
     } catch (e: any) {
-      expect(e.message).toMatch(/40[04]/);
+      expect(e.message).toMatch(/Not found|HTTP 40[04]/);
     }
   });
 
@@ -288,8 +288,8 @@ describe("entity lifecycle", () => {
         expectStructuredResponse(result);
       } catch (e: any) {
         // 400/404 is acceptable (missing prereqs), but 422 or 500 means broken request
-        expect(e.message).not.toMatch(/422/);
-        expect(e.message).not.toMatch(/500/);
+        expect(e.message).not.toMatch(/Validation error/);
+        expect(e.message).not.toMatch(/Server error/);
       }
     });
   }
@@ -318,8 +318,8 @@ describe("equity rounds", () => {
       const round = await client.createEquityRound({ entity_id: entityId, name: "Seed", issuer_legal_entity_id: "le_fake" });
       expectStructuredResponse(round);
     } catch (e: any) {
-      expect(e.message).not.toMatch(/422/);
-      expect(e.message).not.toMatch(/500/);
+      expect(e.message).not.toMatch(/Validation error/);
+      expect(e.message).not.toMatch(/Server error/);
     }
   });
 
@@ -337,8 +337,8 @@ describe("equity rounds", () => {
       try {
         await fn(client);
       } catch (e: any) {
-        expect(e.message).not.toMatch(/422/);
-        expect(e.message).not.toMatch(/500/);
+        expect(e.message).not.toMatch(/Validation error/);
+        expect(e.message).not.toMatch(/Server error/);
       }
     });
   }
@@ -372,8 +372,8 @@ describe("intent lifecycle", () => {
       });
       expectStructuredResponse(intent);
     } catch (e: any) {
-      expect(e.message).not.toMatch(/422/);
-      expect(e.message).not.toMatch(/500/);
+      expect(e.message).not.toMatch(/Validation error/);
+      expect(e.message).not.toMatch(/Server error/);
     }
   });
 
@@ -381,8 +381,8 @@ describe("intent lifecycle", () => {
     try {
       await client.evaluateIntent("fake-intent", entityId);
     } catch (e: any) {
-      expect(e.message).not.toMatch(/422/);
-      expect(e.message).not.toMatch(/500/);
+      expect(e.message).not.toMatch(/Validation error/);
+      expect(e.message).not.toMatch(/Server error/);
     }
   });
 
@@ -390,8 +390,8 @@ describe("intent lifecycle", () => {
     try {
       await client.authorizeIntent("fake-intent", entityId);
     } catch (e: any) {
-      expect(e.message).not.toMatch(/422/);
-      expect(e.message).not.toMatch(/500/);
+      expect(e.message).not.toMatch(/Validation error/);
+      expect(e.message).not.toMatch(/Server error/);
     }
   });
 });
@@ -418,8 +418,8 @@ describe("governance", () => {
     try {
       await client.scheduleMeeting({ entity_id: entityId, title: "Board Meeting", body_type: "board" });
     } catch (e: any) {
-      expect(e.message).not.toMatch(/422/);
-      expect(e.message).not.toMatch(/500/);
+      expect(e.message).not.toMatch(/Validation error/);
+      expect(e.message).not.toMatch(/Server error/);
     }
   });
 
@@ -427,8 +427,8 @@ describe("governance", () => {
     try {
       await client.conveneMeeting("fake-meeting", entityId, { quorum_present: true });
     } catch (e: any) {
-      expect(e.message).not.toMatch(/422/);
-      expect(e.message).not.toMatch(/500/);
+      expect(e.message).not.toMatch(/Validation error/);
+      expect(e.message).not.toMatch(/Server error/);
     }
   });
 
@@ -436,8 +436,8 @@ describe("governance", () => {
     try {
       await client.castVote(entityId, "fake-meeting", "fake-item", { vote: "yes", voter_id: "voter_1" });
     } catch (e: any) {
-      expect(e.message).not.toMatch(/422/);
-      expect(e.message).not.toMatch(/500/);
+      expect(e.message).not.toMatch(/Validation error/);
+      expect(e.message).not.toMatch(/Server error/);
     }
   });
 
@@ -445,8 +445,8 @@ describe("governance", () => {
     try {
       await client.getMeetingResolutions("fake-meeting", "fake-entity");
     } catch (e: any) {
-      expect(e.message).not.toMatch(/422/);
-      expect(e.message).not.toMatch(/500/);
+      expect(e.message).not.toMatch(/Validation error/);
+      expect(e.message).not.toMatch(/Server error/);
     }
   });
 });
@@ -496,8 +496,8 @@ describe("contacts", () => {
       const profile = await client.getContactProfile(contactId, entityId);
       expectStructuredResponse(profile);
     } catch (e: any) {
-      expect(e.message).not.toMatch(/422/);
-      expect(e.message).not.toMatch(/500/);
+      expect(e.message).not.toMatch(/Validation error/);
+      expect(e.message).not.toMatch(/Server error/);
     }
   });
 
@@ -506,8 +506,8 @@ describe("contacts", () => {
       const prefs = await client.getNotificationPrefs(contactId);
       expectStructuredResponse(prefs);
     } catch (e: any) {
-      expect(e.message).not.toMatch(/422/);
-      expect(e.message).not.toMatch(/500/);
+      expect(e.message).not.toMatch(/Validation error/);
+      expect(e.message).not.toMatch(/Server error/);
     }
   });
 
@@ -516,8 +516,8 @@ describe("contacts", () => {
       const prefs = await client.updateNotificationPrefs(contactId, { email: true });
       expectStructuredResponse(prefs);
     } catch (e: any) {
-      expect(e.message).not.toMatch(/422/);
-      expect(e.message).not.toMatch(/500/);
+      expect(e.message).not.toMatch(/Validation error/);
+      expect(e.message).not.toMatch(/Server error/);
     }
   });
 });
@@ -560,7 +560,7 @@ describe("agents", () => {
       expectStructuredResponse(result);
     } catch (e: any) {
       // May fail without Redis — that's OK
-      expect(e.message).not.toMatch(/422/);
+      expect(e.message).not.toMatch(/Validation error/);
     }
   });
 
@@ -571,8 +571,8 @@ describe("agents", () => {
       const result = await client.addAgentSkill(agentId, { name: "test_skill", description: "A test skill" });
       expectStructuredResponse(result);
     } catch (e: any) {
-      expect(e.message).not.toMatch(/422/);
-      expect(e.message).not.toMatch(/500/);
+      expect(e.message).not.toMatch(/Validation error/);
+      expect(e.message).not.toMatch(/Server error/);
     }
   });
 
