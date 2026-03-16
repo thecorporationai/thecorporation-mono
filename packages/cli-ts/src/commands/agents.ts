@@ -1,6 +1,6 @@
 import { requireConfig } from "../config.js";
 import { CorpAPIClient } from "../api-client.js";
-import { printAgentsTable, printError, printJson, printReferenceSummary, printWriteResult } from "../output.js";
+import { printAgentsTable, printError, printJson, printReferenceSummary, printSuccess, printWriteResult } from "../output.js";
 import { ReferenceResolver } from "../references.js";
 import { confirm } from "@inquirer/prompts";
 import chalk from "chalk";
@@ -162,21 +162,65 @@ export async function agentsMessageCommand(
   } catch (err) { printError(`Failed to send message: ${err}`); process.exit(1); }
 }
 
-export async function agentsExecutionsCommand(agentId: string, _opts: { json?: boolean }): Promise<void> {
+export async function agentsExecutionCommand(
+  agentId: string,
+  executionId: string,
+  opts: { json?: boolean },
+): Promise<void> {
   const cfg = requireConfig("api_url", "api_key", "workspace_id");
   const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
   const resolver = new ReferenceResolver(client, cfg);
-  const resolvedAgentId = await resolver.resolveAgent(agentId);
-  // No list-executions endpoint exists yet; individual executions can be
-  // queried via GET /v1/agents/{agent_id}/executions/{execution_id}.
-  printError(
-    `Listing executions is not yet supported.\n` +
-    `  To inspect a specific run, use the execution ID returned by "agents message":\n` +
-    `  GET /v1/agents/${resolvedAgentId}/executions/<execution-id>`,
-  );
-  process.exit(1);
+  try {
+    const resolvedAgentId = await resolver.resolveAgent(agentId);
+    const result = await client.getAgentExecution(resolvedAgentId, executionId);
+    if (opts.json) { printJson(result); return; }
+    console.log(chalk.magenta("─".repeat(40)));
+    console.log(chalk.magenta.bold("  Execution Status"));
+    console.log(chalk.magenta("─".repeat(40)));
+    console.log(`  ${chalk.bold("Execution:")} ${executionId}`);
+    console.log(`  ${chalk.bold("Agent:")} ${resolvedAgentId}`);
+    console.log(`  ${chalk.bold("Status:")} ${result.status ?? "N/A"}`);
+    if (result.started_at) console.log(`  ${chalk.bold("Started:")} ${result.started_at}`);
+    if (result.completed_at) console.log(`  ${chalk.bold("Completed:")} ${result.completed_at}`);
+    console.log(chalk.magenta("─".repeat(40)));
+  } catch (err) { printError(`Failed to get execution: ${err}`); process.exit(1); }
 }
 
+export async function agentsExecutionResultCommand(
+  agentId: string,
+  executionId: string,
+  opts: { json?: boolean },
+): Promise<void> {
+  const cfg = requireConfig("api_url", "api_key", "workspace_id");
+  const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
+  const resolver = new ReferenceResolver(client, cfg);
+  try {
+    const resolvedAgentId = await resolver.resolveAgent(agentId);
+    const result = await client.getAgentExecutionResult(resolvedAgentId, executionId);
+    if (opts.json) { printJson(result); return; }
+    printSuccess(`Result for execution ${executionId}:`);
+    printJson(result);
+  } catch (err) { printError(`Failed to get execution result: ${err}`); process.exit(1); }
+}
+
+export async function agentsKillCommand(
+  agentId: string,
+  executionId: string,
+  opts: { yes?: boolean; json?: boolean },
+): Promise<void> {
+  const cfg = requireConfig("api_url", "api_key", "workspace_id");
+  const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
+  const resolver = new ReferenceResolver(client, cfg);
+  try {
+    const resolvedAgentId = await resolver.resolveAgent(agentId);
+    if (!opts.yes) {
+      const ok = await confirm({ message: `Kill execution ${executionId}?`, default: false });
+      if (!ok) { console.log("Cancelled."); return; }
+    }
+    const result = await client.killAgentExecution(resolvedAgentId, executionId);
+    printWriteResult(result, `Execution ${executionId} killed.`, opts.json);
+  } catch (err) { printError(`Failed to kill execution: ${err}`); process.exit(1); }
+}
 
 export async function agentsSkillCommand(agentId: string, opts: {
   name: string;
