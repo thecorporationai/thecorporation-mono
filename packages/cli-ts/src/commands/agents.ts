@@ -69,7 +69,18 @@ export async function agentsCreateCommand(opts: {
       referenceKind: "agent",
       showReuseHint: true,
     });
-  } catch (err) { printError(`Failed to create agent: ${err}`); process.exit(1); }
+  } catch (err) {
+    const msg = String(err);
+    if (msg.includes("409") || msg.includes("conflict") || msg.includes("already exists")) {
+      printError(
+        `Agent name '${opts.name}' is already in use (deleted agents still reserve their name).\n` +
+        "  Choose a different name, e.g.: corp agents create --name '...-v2' --prompt '...'",
+      );
+    } else {
+      printError(`Failed to create agent: ${err}`);
+    }
+    process.exit(1);
+  }
 }
 
 export async function agentsPauseCommand(agentId: string, opts: { json?: boolean }): Promise<void> {
@@ -91,7 +102,19 @@ export async function agentsResumeCommand(agentId: string, opts: { json?: boolea
     const resolvedAgentId = await resolver.resolveAgent(agentId);
     const result = await client.updateAgent(resolvedAgentId, { status: "active" });
     printWriteResult(result, `Agent ${resolvedAgentId} resumed.`, opts.json);
-  } catch (err) { printError(`Failed to resume agent: ${err}`); process.exit(1); }
+  } catch (err) {
+    const msg = String(err);
+    if (msg.includes("409") || msg.includes("disabled") || msg.includes("deleted")) {
+      printError(
+        `Cannot resume agent ${agentId}: the agent may be disabled or deleted.\n` +
+        "  Disabled/deleted agents cannot be resumed. Create a new agent instead:\n" +
+        "    corp agents create --name '...' --prompt '...'",
+      );
+    } else {
+      printError(`Failed to resume agent: ${err}`);
+    }
+    process.exit(1);
+  }
 }
 
 export async function agentsDeleteCommand(agentId: string, opts: { json?: boolean; yes?: boolean }): Promise<void> {
@@ -159,7 +182,19 @@ export async function agentsMessageCommand(
     const resolvedAgentId = await resolver.resolveAgent(agentId);
     const result = await client.sendAgentMessage(resolvedAgentId, body!);
     printWriteResult(result, `Message sent. Execution: ${result.execution_id ?? "OK"}`, opts.json);
-  } catch (err) { printError(`Failed to send message: ${err}`); process.exit(1); }
+  } catch (err) {
+    const msg = String(err);
+    if (msg.includes("409")) {
+      printError(
+        `Cannot message agent: the agent must be active or paused (not disabled/deleted).\n` +
+        "  Check agent status: corp agents show " + agentId + "\n" +
+        "  Resume a paused agent: corp agents resume " + agentId,
+      );
+    } else {
+      printError(`Failed to send message: ${err}`);
+    }
+    process.exit(1);
+  }
 }
 
 export async function agentsExecutionCommand(

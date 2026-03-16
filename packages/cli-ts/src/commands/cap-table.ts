@@ -403,7 +403,7 @@ export async function issueEquityCommand(opts: {
     await resolver.stabilizeRecord("round", round, eid);
     const roundId = (round.round_id ?? round.equity_round_id) as string;
 
-    // 2. Add the security
+    // 2. Add the security — deduplicate holder by matching name/email against existing holders
     const securityData: Record<string, unknown> = {
       entity_id: eid,
       instrument_id: instrumentId,
@@ -412,6 +412,19 @@ export async function issueEquityCommand(opts: {
       grant_type: opts.grantType,
     };
     if (opts.email) securityData.email = opts.email;
+
+    // Attempt to find existing holder to avoid creating duplicates
+    const existingHolders = (capTable.holders ?? []) as ApiRecord[];
+    const matchingHolder = existingHolders.find((h) => {
+      const nameMatch = String(h.name ?? "").toLowerCase() === opts.recipient.toLowerCase();
+      const emailMatch = opts.email && String(h.email ?? "").toLowerCase() === opts.email.toLowerCase();
+      return nameMatch || emailMatch;
+    });
+    if (matchingHolder) {
+      const holderId = matchingHolder.holder_id ?? matchingHolder.contact_id ?? matchingHolder.id;
+      if (holderId) securityData.holder_id = holderId;
+    }
+
     await client.addRoundSecurity(roundId, securityData);
 
     // 3. Issue the round
@@ -1006,6 +1019,11 @@ export async function dilutionPreviewCommand(opts: {
     const roundId = await resolver.resolveRound(eid, opts.roundId);
     const result = await client.getDilutionPreview(eid, roundId);
     if (opts.json) { printJson(result); return; }
+    // Warn if the round is closed — dilution preview on closed rounds returns 0
+    if (result.round_status === "closed" || result.round_status === "issued") {
+      console.log(chalk.yellow("Note: This round is already closed. Dilution preview reflects the finalized state, not a scenario model."));
+      console.log(chalk.dim("  For scenario modeling, create a new round with: corp cap-table start-round --name '...' --issuer-legal-entity-id '...'"));
+    }
     printJson(result);
   } catch (err) { printError(`Failed to preview dilution: ${err}`); process.exit(1); }
 }
@@ -1021,10 +1039,44 @@ export async function controlMapCommand(opts: {
     const rootEntityId = opts.rootEntityId
       ? await resolver.resolveEntity(opts.rootEntityId)
       : eid;
-    const result = await client.getControlMap(eid, rootEntityId);
+
+    let result: ApiRecord;
+    try {
+      result = await client.getControlMap(eid, rootEntityId);
+    } catch (firstErr) {
+      // If the entity_id itself works but root_entity_id fails, try using
+      // the cap table's issuer_legal_entity_id as the root instead.
+      const msg = String(firstErr);
+      if (msg.includes("404") && !opts.rootEntityId) {
+        try {
+          const capTable = await client.getCapTable(eid);
+          const issuerLegalEntityId = capTable.issuer_legal_entity_id as string | undefined;
+          if (issuerLegalEntityId && issuerLegalEntityId !== eid) {
+            result = await client.getControlMap(eid, issuerLegalEntityId);
+          } else {
+            throw firstErr;
+          }
+        } catch {
+          throw firstErr;
+        }
+      } else {
+        throw firstErr;
+      }
+    }
     if (opts.json) { printJson(result); return; }
     printJson(result);
-  } catch (err) { printError(`Failed to fetch control map: ${err}`); process.exit(1); }
+  } catch (err) {
+    const msg = String(err);
+    if (msg.includes("404") && (msg.includes("root_entity_id") || msg.includes("not found"))) {
+      printError(
+        `Control map: entity not found. Ensure the entity is active and has a cap table.\n` +
+        "  Try: corp cap-table control-map --root-entity-id <legal-entity-id>",
+      );
+    } else {
+      printError(`Failed to fetch control map: ${err}`);
+    }
+    process.exit(1);
+  }
 }
 
 function print409a(data: Record<string, unknown>): void {

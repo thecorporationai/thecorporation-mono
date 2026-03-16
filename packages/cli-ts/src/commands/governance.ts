@@ -421,12 +421,28 @@ export async function writtenConsentCommand(opts: {
     const result = await client.writtenConsent(payload);
     await resolver.stabilizeRecord("meeting", result, eid);
     resolver.rememberFromRecord("meeting", result, eid);
-    const meetingId = result.meeting_id ?? "OK";
+    const meetingId = String(result.meeting_id ?? "");
+
+    // Auto-open written consent with all body seats present for quorum evaluation
+    if (meetingId) {
+      try {
+        const seats = await client.getGovernanceSeats(resolvedBodyId, eid);
+        const seatIds = seats
+          .map((s) => String(s.seat_id ?? (s as Record<string, unknown>).id ?? ""))
+          .filter((id) => id.length > 0);
+        if (seatIds.length > 0) {
+          await client.conveneMeeting(meetingId, eid, { present_seat_ids: seatIds });
+        }
+      } catch {
+        // Non-fatal: written consent can still proceed without open step
+      }
+    }
+
     if (opts.json) {
       printJson(result);
       return;
     }
-    printSuccess(`Written consent created: ${meetingId}`);
+    printSuccess(`Written consent created: ${meetingId || "OK"}`);
     printReferenceSummary("meeting", result, { showReuseHint: true });
     console.log(chalk.dim("\n  Next steps:"));
     console.log(chalk.dim(`    corp governance agenda-items @last:meeting`));

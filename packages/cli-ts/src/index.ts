@@ -30,6 +30,9 @@ program
   .version(pkg.version)
   .enablePositionalOptions();
 program.option("-q, --quiet", "Only output the resource ID (for scripting)");
+program.action(() => {
+  program.outputHelp();
+});
 
 // --- setup ---
 program
@@ -142,6 +145,7 @@ program
   .description("View or trigger daily digests")
   .option("--trigger", "Trigger digest now")
   .option("--key <key>", "Get specific digest by key")
+  .option("--entity-id <ref>", "Entity reference (ID, short ID, @last, or unique name)")
   .option("--json", "Output as JSON")
   .action(async (opts) => {
     const { digestCommand } = await import("./commands/digest.js");
@@ -687,18 +691,20 @@ financeCmd
 financeCmd
   .command("invoice")
   .requiredOption("--customer <name>", "Customer name")
-  .requiredOption("--amount-cents <n>", "Amount in cents (e.g. 500000 = $5,000.00)", parseInt)
-  .option("--amount <n>", "", parseInt)
+  .option("--amount-cents <n>", "Amount in cents (e.g. 500000 = $5,000.00)", parseInt)
+  .option("--amount <n>", "Amount in dollars (converted to cents)", parseInt)
   .requiredOption("--due-date <date>", "Due date (ISO 8601)")
   .option("--description <desc>", "Description", "Services rendered")
   .option("--json", "Output as JSON")
   .description("Create an invoice")
   .action(async (opts, cmd) => {
     const parent = cmd.parent!.opts();
+    const amountCents = opts.amountCents ?? (opts.amount != null ? opts.amount * 100 : undefined);
+    if (amountCents == null) { cmd.error("required option '--amount-cents <n>' or '--amount <n>' not specified"); return; }
     const { financeInvoiceCommand } = await import("./commands/finance.js");
     await financeInvoiceCommand({
       ...opts,
-      amountCents: opts.amountCents ?? opts.amount,
+      amountCents,
       entityId: parent.entityId,
       json: inheritOption(opts.json, parent.json),
     });
@@ -746,18 +752,20 @@ financeCmd
   });
 financeCmd
   .command("pay")
-  .requiredOption("--amount-cents <n>", "Amount in cents (e.g. 500000 = $5,000.00)", parseInt)
-  .option("--amount <n>", "", parseInt)
+  .option("--amount-cents <n>", "Amount in cents (e.g. 500000 = $5,000.00)", parseInt)
+  .option("--amount <n>", "Amount in dollars (converted to cents)", parseInt)
   .requiredOption("--recipient <name>", "Recipient name")
   .option("--method <method>", "Payment method", "ach")
   .option("--json", "Output as JSON")
   .description("Submit a payment")
   .action(async (opts, cmd) => {
     const parent = cmd.parent!.opts();
+    const amountCents = opts.amountCents ?? (opts.amount != null ? opts.amount * 100 : undefined);
+    if (amountCents == null) { cmd.error("required option '--amount-cents <n>' or '--amount <n>' not specified"); return; }
     const { financePayCommand } = await import("./commands/finance.js");
     await financePayCommand({
       ...opts,
-      amountCents: opts.amountCents ?? opts.amount,
+      amountCents,
       entityId: parent.entityId,
       json: inheritOption(opts.json, parent.json),
     });
@@ -849,10 +857,10 @@ financeCmd
   });
 financeCmd
   .command("reconcile")
-  .requiredOption("--start-date <date>", "Period start")
-  .requiredOption("--end-date <date>", "Period end")
+  .requiredOption("--start-date <date>", "Period start (required, ISO 8601)")
+  .requiredOption("--end-date <date>", "Period end (required, ISO 8601)")
   .option("--json", "Output as JSON")
-  .description("Reconcile ledger")
+  .description("Reconcile ledger (requires --start-date and --end-date)")
   .action(async (opts, cmd) => {
     const parent = cmd.parent!.opts();
     const { financeReconcileCommand } = await import("./commands/finance.js");
@@ -1350,14 +1358,19 @@ taxCmd
   .requiredOption("--type <type>", "Deadline type")
   .requiredOption("--due-date <date>", "Due date (ISO 8601)")
   .requiredOption("--description <desc>", "Description")
-  .option("--recurrence <recurrence>", "Recurrence (e.g. annual; 'yearly' is normalized)")
+  .option("--recurrence <recurrence>", "Recurrence (e.g. annual; 'yearly' is normalized). Required for annual_report type.")
   .option("--json", "Output as JSON")
   .description("Track a compliance deadline")
   .action(async (opts, cmd) => {
     const parent = cmd.parent!.opts();
+    let recurrence = opts.recurrence;
+    if (!recurrence && opts.type === "annual_report") {
+      recurrence = "annual";
+    }
     const { taxDeadlineCommand } = await import("./commands/tax.js");
     await taxDeadlineCommand({
       ...opts,
+      recurrence,
       entityId: parent.entityId,
       json: inheritOption(opts.json, parent.json),
     });
@@ -1518,7 +1531,7 @@ workItemsCmd
 workItemsCmd
   .command("create")
   .requiredOption("--title <title>", "Work item title")
-  .requiredOption("--category <category>", "Work item category")
+  .option("--category <category>", "Work item category")
   .option("--description <desc>", "Description")
   .option("--deadline <date>", "Deadline (YYYY-MM-DD)")
   .option("--asap", "Mark as ASAP priority")
@@ -1527,10 +1540,12 @@ workItemsCmd
   .description("Create a new work item")
   .action(async (opts, cmd) => {
     const parent = cmd.parent!.opts();
+    const resolvedCategory = inheritOption(opts.category, parent.category);
+    if (!resolvedCategory) { cmd.error("required option '--category <category>' not specified"); return; }
     const { workItemsCreateCommand } = await import("./commands/work-items.js");
     await workItemsCreateCommand({
       ...opts,
-      category: inheritOption(opts.category, parent.category),
+      category: resolvedCategory,
       entityId: parent.entityId,
       json: inheritOption(opts.json, parent.json),
     });
@@ -1754,14 +1769,14 @@ const formCmd = program
   .option("--rofr", "Enable right of first refusal")
   .option("--json", "Output as JSON")
   .option("--dry-run", "Show the request without creating the entity")
-  .action(async (opts) => {
+  .action(async (opts, cmd) => {
     const { formCommand } = await import("./commands/form.js");
-    await formCommand(opts);
+    await formCommand({ ...opts, quiet: program.opts().quiet });
   });
 formCmd.command("create")
   .description("Create a pending entity (staged flow step 1)")
-  .requiredOption("--type <type>", "Entity type (llc, c_corp)")
-  .requiredOption("--name <name>", "Legal name")
+  .option("--type <type>", "Entity type (llc, c_corp)")
+  .option("--name <name>", "Legal name")
   .option("--jurisdiction <jurisdiction>", "Jurisdiction (e.g. US-DE, US-WY)")
   .option("--registered-agent-name <name>", "Registered agent legal name")
   .option("--registered-agent-address <address>", "Registered agent address line")
@@ -1775,11 +1790,21 @@ formCmd.command("create")
   .option("--dry-run", "Show the request without creating the pending entity")
   .action(async (opts, cmd) => {
     const parent = cmd.parent!.opts();
+    const resolvedType = inheritOption(opts.type, parent.type);
+    const resolvedName = inheritOption(opts.name, parent.name);
+    if (!resolvedType) { cmd.error("required option '--type <type>' not specified"); return; }
+    const SUPPORTED_ENTITY_TYPES = ["llc", "c_corp", "s_corp", "corporation"];
+    if (!SUPPORTED_ENTITY_TYPES.includes(resolvedType)) {
+      cmd.error(`unsupported entity type '${resolvedType}'. Supported types: ${SUPPORTED_ENTITY_TYPES.join(", ")}`);
+      return;
+    }
+    if (!resolvedName) { cmd.error("required option '--name <name>' not specified"); return; }
+    if (!resolvedName.trim()) { cmd.error("--name cannot be empty or whitespace"); return; }
     const { formCreateCommand } = await import("./commands/form.js");
     await formCreateCommand({
       ...opts,
-      type: inheritOption(opts.type, parent.type),
-      name: inheritOption(opts.name, parent.name),
+      type: resolvedType,
+      name: resolvedName,
       jurisdiction: inheritOption(opts.jurisdiction, parent.jurisdiction),
       fiscalYearEnd: inheritOption(opts.fiscalYearEnd, parent.fiscalYearEnd),
       sCorp: inheritOption(opts.sCorp, parent.sCorp),
@@ -1787,6 +1812,7 @@ formCmd.command("create")
       rofr: inheritOption(opts.rofr, parent.rofr),
       json: inheritOption(opts.json, parent.json),
       dryRun: inheritOption(opts.dryRun, parent.dryRun),
+      quiet: program.opts().quiet,
     });
   });
 formCmd.command("add-founder <entity-ref>")

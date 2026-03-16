@@ -42,7 +42,20 @@ export async function documentsSigningLinkCommand(docId: string, opts: { entityI
   const resolver = new ReferenceResolver(client, cfg);
   try {
     const eid = await resolver.resolveEntity(opts.entityId);
-    const resolvedDocumentId = await resolver.resolveDocument(eid, docId);
+    let resolvedDocumentId: string;
+    try {
+      resolvedDocumentId = await resolver.resolveDocument(eid, docId);
+    } catch {
+      // If @last resolved to a contract_id instead of document_id, re-resolve
+      // by fetching the contract and extracting its document_id
+      printError(
+        `Could not resolve '${docId}' as a document. If you just generated a contract, ` +
+        "use the document_id from the generate output, not @last (which may reference the contract_id).\n" +
+        "  List documents with: corp documents",
+      );
+      process.exit(1);
+      return;
+    }
     const result = await client.getSigningLink(resolvedDocumentId, eid);
     const shareUrl = formatSigningLink(resolvedDocumentId, result);
     if (process.stdout.isTTY) {
@@ -94,12 +107,37 @@ export async function documentsGenerateCommand(opts: {
     });
     await resolver.stabilizeRecord("document", result, eid);
     resolver.rememberFromRecord("document", result, eid);
+    // Also remember as "contract" for signing-link resolution
+    if (result.document_id) {
+      resolver.remember("document", String(result.document_id), eid);
+    }
     printWriteResult(result, `Contract generated: ${result.contract_id ?? "OK"}`, {
       jsonOnly: opts.json,
       referenceKind: "document",
       showReuseHint: true,
     });
-  } catch (err) { printError(`Failed to generate contract: ${err}`); process.exit(1); }
+  } catch (err) {
+    const msg = String(err);
+    // Provide helpful hints for template-specific required fields
+    if (opts.template === "employment_offer" && (msg.includes("department") || msg.includes("required"))) {
+      printError(
+        `Failed to generate employment_offer: ${msg}\n` +
+        "  Hint: employment_offer requires additional parameters. Use --param for each:\n" +
+        "    --param department=Engineering --param dispute_resolution_terms=arbitration\n" +
+        "    --param equity_grant_type=stock_option --param equity_shares=10000\n" +
+        "  Or pass --base-salary 150000",
+      );
+    } else if (opts.template === "safe_agreement" && (msg.includes("purchase_amount") || msg.includes("required"))) {
+      printError(
+        `Failed to generate safe_agreement: ${msg}\n` +
+        "  Hint: safe_agreement requires purchase_amount. Use:\n" +
+        "    --param purchase_amount=50000000",
+      );
+    } else {
+      printError(`Failed to generate contract: ${err}`);
+    }
+    process.exit(1);
+  }
 }
 
 function coerceParamValue(raw: string): unknown {

@@ -40,6 +40,7 @@ interface FormOptions {
   address?: string;
   json?: boolean;
   dryRun?: boolean;
+  quiet?: boolean;
 }
 
 // ── Helpers ────────────────────────────────────────────────────
@@ -466,20 +467,40 @@ function printSummary(
 
 // ── Main Command ───────────────────────────────────────────────
 
+const SUPPORTED_ENTITY_TYPES = ["llc", "c_corp", "s_corp", "corporation"];
+
 export async function formCommand(opts: FormOptions): Promise<void> {
   const cfg = requireConfig("api_url", "api_key", "workspace_id");
   const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
   const resolver = new ReferenceResolver(client, cfg);
 
   try {
+    // Client-side type validation
+    if (opts.type && !SUPPORTED_ENTITY_TYPES.includes(opts.type)) {
+      printError(`Unsupported entity type '${opts.type}'. Supported types: ${SUPPORTED_ENTITY_TYPES.join(", ")}`);
+      process.exit(1);
+    }
+    // Client-side name validation
+    if (opts.name != null && !opts.name.trim()) {
+      printError("--name cannot be empty or whitespace");
+      process.exit(1);
+    }
+
     let serverCfg: ApiRecord = {};
     try { serverCfg = await client.getConfig(); } catch { /* ignore */ }
 
-    const scripted = Boolean(
+    const hasMembers = Boolean(
       (opts.member && opts.member.length > 0) ||
       (opts.memberJson && opts.memberJson.length > 0) ||
       opts.membersFile,
     );
+    const scripted = hasMembers || opts.json || opts.dryRun || !process.stdout.isTTY;
+
+    // If non-TTY/json/dryRun and no members provided, error early instead of prompting
+    if (scripted && !hasMembers) {
+      printError("At least one --member, --member-json, or --members-file is required in non-interactive mode.");
+      process.exit(1);
+    }
 
     // Phase 1: Entity Details
     const { entityType, name, jurisdiction, companyAddress, fiscalYearEnd, sCorpElection } =
@@ -492,7 +513,9 @@ export async function formCommand(opts: FormOptions): Promise<void> {
     const { transferRestrictions, rofr } = await phaseStock(opts, entityType, founders, scripted);
 
     // Summary & Confirm
-    printSummary(entityType, name, jurisdiction, fiscalYearEnd, sCorpElection, founders, transferRestrictions, rofr);
+    if (!opts.quiet) {
+      printSummary(entityType, name, jurisdiction, fiscalYearEnd, sCorpElection, founders, transferRestrictions, rofr);
+    }
 
     const shouldProceed = scripted
       ? true
@@ -549,6 +572,12 @@ export async function formCommand(opts: FormOptions): Promise<void> {
       console.log(chalk.dim(`  Active entity set to ${result.entity_id}`));
     }
 
+    if (opts.quiet) {
+      const id = result.entity_id ?? result.formation_id;
+      if (id) console.log(String(id));
+      return;
+    }
+
     if (opts.json) {
       printJson(result);
       return;
@@ -586,7 +615,17 @@ export async function formCommand(opts: FormOptions): Promise<void> {
     }
   } catch (err) {
     if (err instanceof Error && err.message.includes("exit")) throw err;
-    printError(`Failed to create formation: ${err}`);
+    const msg = String(err);
+    if (msg.includes("officers_list") || msg.includes("officer")) {
+      printError(
+        `Formation failed: ${msg}\n` +
+        "  Hint: C-Corp directors need an officer_title. Use --member with officer_title field, e.g.:\n" +
+        "    --member 'name=Alice,email=a@co.com,role=director,officer_title=ceo,pct=100'\n" +
+        "  Or use --member-json with {\"officer_title\": \"ceo\"}",
+      );
+    } else {
+      printError(`Failed to create formation: ${err}`);
+    }
     process.exit(1);
   }
 }
@@ -607,6 +646,7 @@ interface FormCreateOptions {
   companyAddress?: string;
   dryRun?: boolean;
   json?: boolean;
+  quiet?: boolean;
 }
 
 function parseCsvAddress(raw?: string): { street: string; city: string; state: string; zip: string } | undefined {
@@ -677,6 +717,11 @@ export async function formCreateCommand(opts: FormCreateOptions): Promise<void> 
       saveConfig(cfg);
     }
 
+    if (opts.quiet) {
+      const id = result.entity_id;
+      if (id) console.log(String(id));
+      return;
+    }
     if (opts.json) {
       printJson(result);
       return;
@@ -852,7 +897,16 @@ export async function formFinalizeCommand(entityId: string, opts: FormFinalizeOp
       console.log(chalk.yellow(`\n  Next: ${result.next_action}`));
     }
   } catch (err) {
-    printError(`Failed to finalize formation: ${err}`);
+    const msg = String(err);
+    if (msg.includes("officers_list") || msg.includes("officer")) {
+      printError(
+        `Finalization failed: ${msg}\n` +
+        "  Hint: C-Corp entities require at least one founder with an officer_title.\n" +
+        "  Add a founder with: corp form add-founder @last:entity --name '...' --email '...' --role director --pct 100 --officer-title ceo",
+      );
+    } else {
+      printError(`Failed to finalize formation: ${err}`);
+    }
     process.exit(1);
   }
 }

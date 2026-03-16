@@ -2,7 +2,7 @@ import { requireConfig } from "../config.js";
 import { CorpAPIClient } from "../api-client.js";
 import { printError, printSuccess, printJson, printWarning } from "../output.js";
 
-export async function digestCommand(opts: { trigger?: boolean; key?: string; json?: boolean }): Promise<void> {
+export async function digestCommand(opts: { trigger?: boolean; key?: string; entityId?: string; json?: boolean }): Promise<void> {
   const cfg = requireConfig("api_url", "api_key", "workspace_id");
   const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
   try {
@@ -24,8 +24,15 @@ export async function digestCommand(opts: { trigger?: boolean; key?: string; jso
       printJson(result);
     } else {
       const digests = await client.listDigests();
-      if (digests.length === 0) console.log("No digest history found.");
-      else printJson(digests);
+      if (digests.length === 0) {
+        if (opts.json) {
+          printJson([]);
+        } else {
+          console.log("No digest history found.");
+        }
+      } else {
+        printJson(digests);
+      }
     }
   } catch (err) { printError(`Failed: ${err}`); process.exit(1); }
 }
