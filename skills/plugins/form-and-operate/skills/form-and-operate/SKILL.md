@@ -1,5 +1,5 @@
 ---
-name: npx-corp
+name: form-and-operate
 description: How to use the `npx corp` CLI to manage corporate entities, governance, cap tables, finance, agents, and compliance for TheCorporation platform. Use this skill whenever the user mentions `npx corp`, TheCorporation, corporate formation, entity governance, cap table management, equity issuance, 409A valuations, board meetings, written consent, SAFE instruments, corporate agents, work items, or any task involving programmatic corporate governance. Also use when the user wants to form an LLC or C-Corp, manage board seats, issue stock options, run payroll, generate legal documents, or automate corporate compliance workflows.
 ---
 
@@ -28,27 +28,20 @@ npx corp setup              # choose "Local (your machine)"
 npx corp status             # verify — all local, no network
 ```
 
-### Advanced: Local HTTP server mode
+### Cloud mode
+
+```bash
+npx corp setup              # choose "TheCorporation cloud"
+# Follow the magic link auth flow
+```
+
+### Advanced: Local server mode
 
 For development with a persistent HTTP server:
 
 ```bash
 npx corp serve --port 8020
 npx corp config set api_url http://localhost:8020 --force
-```
-
-Or provision a workspace manually:
-
-```bash
-curl -s -X POST http://localhost:8020/v1/workspaces/provision -H "Content-Type: application/json" | cat
-```
-
-Returns `{"workspace_id": "...", "api_key": "..."}`. Configure:
-
-```bash
-npx corp config set api_url http://localhost:8020
-npx corp config set api_key <key> --force
-npx corp config set workspace_id <workspace_id>
 ```
 
 ### Verify Context
@@ -68,7 +61,7 @@ The CLI supports flexible reference formats across all commands:
 | Full UUID | `763dde4d-ca62-4e20-90ba-662c462d4b09` | Canonical ID |
 | Short ID | `763dde4d` | First segment of UUID |
 | `@last` | `@last` | Most recently created resource of that type |
-| Name/Handle | `"Acme Corp"` or `acme-corp` | Unique name or handle match |
+| Name/Handle | `"Acme Corp"` | Unique name match |
 
 Use `npx corp resolve <kind> <ref>` to test resolution. Use `npx corp find <kind> <query>` to list matches.
 
@@ -101,16 +94,6 @@ npx corp form \
 
 **Important:** Member addresses use pipe `|` as separator (street|city|state|zip), NOT commas.
 
-For LLCs, include `pct` (ownership percentage) and use `role=member`:
-
-```bash
-npx corp form --type llc --name "Acme LLC" --jurisdiction US-WY \
-  --member "name=Jane Doe,email=jane@acme.com,role=member,pct=60,address=100 Main St|Cheyenne|WY|82001" \
-  --json
-```
-
-Member roles: `director`, `officer`, `manager`, `member`, `chair` (NOT `founder` — that is not a valid role).
-
 ### Staged Formation
 
 For more control, use the staged flow:
@@ -132,8 +115,6 @@ The `activate` step transitions from `documents_generated` to `active` status by
 - `--board-size <n>`, `--authorized-shares <n>`, `--par-value <value>`
 - `--company-address`, `--incorporator-name`, `--incorporator-address`
 - `--principal-name` (LLC manager name)
-
-Both one-shot `form` and staged `form create` use the same flags: `--type` and `--name`.
 
 ### Entity Types
 
@@ -169,7 +150,7 @@ create-body → add-seat → convene (with --agenda) → notice → open (--pres
    ```
    Roles: `chair`, `member`, `officer`, `observer`
 
-3. **Convene a meeting** — `--body`, `--type`, and `--title` are all required
+3. **Convene a meeting** — `--type` and `--body` are required
    ```bash
    npx corp governance convene --body @last --type board_meeting --title "Board Meeting Q1" --date 2026-04-01 --agenda "Approve equity grant" --agenda "Review financials" --json
    ```
@@ -193,7 +174,7 @@ create-body → add-seat → convene (with --agenda) → notice → open (--pres
    ```
    Vote values: `for`, `against`, `abstain`, `recusal`
 
-8. **Compute resolution** — requires both `<meeting-ref>` and `<item-ref>` as positional args, plus `--text`
+8. **Compute resolution** — requires both `<meeting-ref>` and `<item-ref>` as positional args
    ```bash
    npx corp governance resolve <meeting-ref> <item-ref> --text "RESOLVED: The board approves the equity grant" --json
    ```
@@ -202,27 +183,24 @@ create-body → add-seat → convene (with --agenda) → notice → open (--pres
    ```bash
    npx corp governance finalize-item <meeting-ref> <item-ref> --status voted --json
    ```
-   Status choices: `discussed`, `voted`, `tabled`, `withdrawn` (NOT `approved`)
+   Status choices: `discussed`, `voted`, `tabled`, `withdrawn`
 
 10. **Adjourn** — `npx corp governance adjourn <meeting-ref> --json`
 
 ### Written Consent (Alternative to Meetings)
 
-Written consent creates a meeting of type `written_consent` in `convened` status with an auto-generated agenda item. You must then vote and resolve it manually to obtain a `resolution_id`:
+For board approvals without a formal meeting:
 
 ```bash
 npx corp governance written-consent --body <body-ref> --title "Approve Equity Grant" --description "Approve 10000 shares to Jane Doe" --json
 ```
 
-Then vote with each director and compute the resolution:
+Written consent produces a `meeting_id` and resolution that can be used for downstream operations like equity issuance. List the agenda items and vote to complete:
 
 ```bash
-npx corp governance agenda-items @last --json
+npx corp governance agenda-items @last
 npx corp governance vote @last <item-ref> --voter <contact-ref> --vote for --json
-npx corp governance resolve @last <item-ref> --text "RESOLVED that equity is approved" --json
 ```
-
-The resolution must pass quorum (majority of seated directors must vote "for") to get `passed: true`.
 
 ## Cap Table
 
@@ -246,7 +224,7 @@ npx corp cap-table create-instrument --kind common_equity --symbol COMMON --auth
 
 ### Issuing Equity
 
-C-Corps require board approval (both `--meeting-id` and `--resolution-id`) before issuing equity:
+C-Corps require board approval (a resolution) before issuing equity:
 
 ```bash
 npx corp cap-table issue-equity --grant-type common --shares 100000 --recipient "Jane Doe" --meeting-id <meeting-ref> --resolution-id <resolution-ref> --json
@@ -279,7 +257,7 @@ npx corp cap-table issue-safe --investor "Jane Investor" --amount 5000000 --valu
 
 ### 409A Valuations
 
-Five-step process (create → submit → board approval → approve → check):
+Three-step process:
 
 1. **Create valuation**
    ```bash
@@ -287,16 +265,12 @@ Five-step process (create → submit → board approval → approve → check):
    ```
    Types: `four_oh_nine_a`, `fair_market_value`
    Methodologies: `income`, `market`, `asset`, `backsolve`, `hybrid`
-   `--enterprise-value` and `--fmv` are in cents.
 
 2. **Submit for approval** — `npx corp cap-table submit-valuation <valuation-ref> --json`
-   This auto-creates a board meeting with an agenda item.
 
-3. **Approve via governance** — Open the auto-created meeting, vote, and resolve (see meeting lifecycle above).
+3. **Approve** (after board resolution) — `npx corp cap-table approve-valuation <valuation-ref> --resolution-id <resolution-ref> --json`
 
-4. **Approve valuation** — `npx corp cap-table approve-valuation <valuation-ref> --resolution-id <resolution-ref> --json`
-
-5. **Check FMV** — `npx corp cap-table 409a --json`
+Then check: `npx corp cap-table 409a --json`
 
 ### Transfers
 
@@ -307,27 +281,34 @@ npx corp cap-table transfer --from <contact-ref> --to <contact-ref> --shares 100
 ### Distributions
 
 ```bash
-npx corp cap-table distribute --amount 10000000 --type dividend --description "Q1 distribution" --json
+npx corp cap-table distribute --amount 100000 --type dividend --description "Q1 distribution" --json
 ```
-
-Distribution types: `dividend` (default), `return`, `liquidation`
 
 ## Finance
 
-All monetary amounts in **cents**.
+Key subcommands: `invoices`, `invoice`, `payroll-runs`, `payroll`, `payments`, `pay`, `bank-accounts`, `open-account`, `classifications`, `classify-contractor`, `reconciliations`, `reconcile`, `distributions`.
+
+Monetary amounts are in **cents** (e.g., `--amount 500000` = $5,000).
+
+### Payments
 
 ```bash
-npx corp finance invoice --customer "Client Name" --amount 500000 --due-date 2026-04-15 --json
-npx corp finance pay --recipient "Vendor" --amount 500000 --method ach --json
-npx corp finance payroll --period-start 2026-03-01 --period-end 2026-03-15 --json
-npx corp finance open-account --institution "Mercury" --json
-npx corp finance classify-contractor --name "Eve" --state DE --hours 40 --exclusive --duration 12 --json
-npx corp finance reconcile --start-date 2026-01-01 --end-date 2026-03-15 --json
+npx corp finance pay --amount 500000 --recipient "Jane Doe" --method ach --json
 ```
 
-Note: Payments require an active bank account. `open-account` creates accounts in `pending_review` state.
+Note: Payments require an active bank account. Use `npx corp finance open-account` to create one (created in `pending_review` state).
 
-List commands: `invoices`, `payments`, `bank-accounts`, `payroll-runs`, `classifications`, `reconciliations`, `distributions`
+### Invoices
+
+```bash
+npx corp finance invoice --customer "Client Co" --amount 1000000 --due-date 2026-04-01 --json
+```
+
+### Payroll
+
+```bash
+npx corp finance payroll --period-start 2026-03-01 --period-end 2026-03-15 --json
+```
 
 ## Documents
 
@@ -362,29 +343,28 @@ npx corp documents preview-pdf --definition-id bylaws
 
 Templates: `bylaws`, `operating_agreement`, `certificate_of_incorporation`, `articles_of_organization`, `employment_offer`, `nda`, `ip_assignment`, etc.
 
-## Tax
+## Contacts
 
 ```bash
-npx corp tax file --type 1120 --year 2025 --json
-npx corp tax deadline --type estimated_tax --due-date 2026-04-15 --description "Q1 estimated" --recurrence annual --json
+npx corp contacts --json                                    # list all
+npx corp contacts add --name "Jane Doe" --email jane@acme.com --category founder --json
+npx corp contacts edit <contact-ref> --category board_member --json
+npx corp contacts show <contact-ref> --json
 ```
 
-Filing types: `1120`, `1120s`, `1065`, `franchise_tax`, `annual_report`, `83b`, `1099_nec`, `k1`, `941`, `w2`
-
-List commands: `tax filings`, `tax deadlines`
+Categories: `employee`, `contractor`, `board_member`, `investor`, `law_firm`, `valuation_firm`, `accounting_firm`, `officer`, `founder`, `member`, `other`
 
 ## Agents
 
-Agents are workspace-scoped autonomous actors (no `--entity-id` needed):
+Agents are autonomous actors that can claim work items and interact with the system:
 
 ```bash
-npx corp agents create --name "Ops Agent" --prompt "You monitor governance deadlines" --json
-npx corp agents skill <agent-ref> --name "gov-watch" --description "Monitor deadlines" --json
+npx corp agents create --name "Ops Agent" --prompt "You manage corporate operations" --json
+npx corp agents skill <agent-ref> --name "gov-watch" --description "Monitor governance deadlines" --json
 npx corp agents message <agent-ref> --body "Check upcoming deadlines" --json
 npx corp agents pause <agent-ref>
 npx corp agents resume <agent-ref>
 npx corp agents delete <agent-ref>
-npx corp agents show <agent-ref> --json
 ```
 
 **`agents create` flags:**
@@ -392,57 +372,29 @@ npx corp agents show <agent-ref> --json
 - `--prompt <prompt>` (required) — system prompt for the agent
 - `--model <model>` — LLM model to use
 
-Keep skill descriptions and message bodies concise to avoid 500 errors. Use `--body-file` or `--instructions-file` for large content.
+Note: Agents are workspace-scoped, not entity-scoped. No `--entity-id` needed.
+
+Agent payloads can be size-sensitive — keep skill descriptions and message bodies concise to avoid 500 errors. Use `--body-file` or `--instructions-file` for large content.
 
 ## Work Items
 
 ```bash
-npx corp work-items create --title "File annual report" --category compliance --description "File with DE SOS" --deadline 2026-06-01 --created-by "Ops Agent" --json
-npx corp work-items claim <item-ref> --by "Ops Agent" --json
-npx corp work-items complete <item-ref> --by "Ops Agent" --result "Filed successfully" --json
-npx corp work-items release <item-ref> --json
-npx corp work-items cancel <item-ref> --json
-npx corp work-items show <item-ref> --json
+npx corp work-items create --entity-id <ref> --title "File annual report" --category compliance --description "File with DE SOS" --deadline 2026-06-01 --created-by agent --json
+npx corp work-items claim <work-item-ref> --by "Ops Agent" --json
+npx corp work-items complete <work-item-ref> --by "Ops Agent" --result "Filed successfully" --json
+npx corp work-items release <work-item-ref>
+npx corp work-items cancel <work-item-ref>
 ```
 
-Note: `--by` is required for both `claim` and `complete`. Aliases: `--claimer` for claim, `--completed-by` for complete.
+Note: `--by` is required for both `claim` and `complete`. Alias: `--claimer` for claim, `--completed-by` for complete.
 
-## Contacts
-
-```bash
-npx corp contacts --json
-npx corp contacts add --name "Jane Doe" --email jane@acme.com --type individual --category investor --cap-table-access detailed --json
-npx corp contacts edit <contact-ref> --category board_member --json
-npx corp contacts show <contact-ref> --json
-```
-
-Contact types: `individual`, `organization`
-Categories: `employee`, `contractor`, `board_member`, `investor`, `law_firm`, `valuation_firm`, `accounting_firm`, `officer`, `founder`, `member`, `other`
-
-## Entity Management
+## Tax
 
 ```bash
-npx corp entities --json
-npx corp entities show <entity-ref> --json
-npx corp entities convert <entity-ref> --to c_corp --jurisdiction US-DE
-npx corp entities dissolve <entity-ref> --reason "Voluntary dissolution" --effective-date 2026-03-15
-```
-
-## Services
-
-```bash
-npx corp services catalog --json
-npx corp services buy <slug> --json
-npx corp services list --json
-npx corp services show <ref> --json
-npx corp services cancel <ref> --json
-```
-
-## Obligations
-
-```bash
-npx corp obligations --json
-npx corp obligations --tier overdue --json
+npx corp tax filings --json
+npx corp tax file --type franchise_tax --year 2026 --json
+npx corp tax deadlines --json
+npx corp tax deadline --type annual_report --due-date 2026-06-01 --description "Delaware annual report" --json
 ```
 
 ## Key Flags
@@ -456,38 +408,40 @@ npx corp obligations --tier overdue --json
 
 ## Important Gotchas
 
-1. **C-Corp equity requires board approval** — You must have both `--meeting-id` and `--resolution-id` from a governance vote or written consent before issuing equity or SAFEs on a C-Corp.
+1. **C-Corp equity requires board approval** — You must have a `resolution_id` from a governance vote or written consent before issuing equity on a C-Corp. LLCs do not have this requirement.
 
 2. **`active_entity_id` must be set** — Most entity-scoped commands require either `--entity-id` or a configured `active_entity_id`.
 
-3. **Dollar sign in descriptions** — `$` characters in command arguments may be shell-interpolated. In descriptions like `"$50K SAFE"`, the `$50K` can become `0K`. Avoid `$` or escape it.
+3. **Dollar sign in descriptions** — `$` characters in command arguments may be shell-interpolated. In descriptions like `"$50K SAFE"`, the `$50K` can become `0K`. Avoid `$` or escape it properly.
 
-4. **Written consent requires manual vote+resolve** — Written consent creates a meeting with an agenda item, but does NOT auto-resolve. You must vote with each director and resolve manually to get a `resolution_id`.
+4. **SAFE instrument is NOT needed for `issue-safe`** — Unlike `issue-equity`, the `issue-safe` command does not require a pre-existing instrument. It creates the SAFE directly.
 
-5. **Quorum matters** — If you have multiple board seats, you need majority votes before resolving. A resolution with fewer than quorum votes will have `passed: false`.
+5. **Agent payload size** — Large payloads to `agents skill` or `agents message` can cause 500 errors. Keep payloads short, or use `--body-file`/`--instructions-file`.
 
-6. **All monetary values in cents** — `--amount`, `--enterprise-value`, `--fmv`, `--valuation-cap`, `--issue-price-cents`, `--price-per-share-cents` are all in cents.
+6. **Formation `finalize` requires complete data** — The staged flow requires `--board-size` and `--company-address` on `finalize` for C-Corps. Missing fields cause validation errors.
 
-7. **Formation `finalize` requires complete data** — The staged flow requires `--board-size` and `--company-address` on `finalize` for C-Corps.
+7. **`demo` command** — Use `npx corp demo --name "Acme" --minimal` for a reliable quick seed. Full scenarios (`startup`, `llc`, `restaurant`) may hit validation edge cases depending on version.
 
-8. **Member role is not `founder`** — Valid roles: `director`, `officer`, `manager`, `member`, `chair`.
+8. **Monetary values are in cents** — All financial amounts (`--amount`, `--valuation-cap`, `--enterprise-value`, `--issue-price-cents`, `--price-per-share-cents`) are in cents. `500000` = $5,000.
 
-9. **Body type is `board_of_directors`** — Not `board`. Valid types: `board_of_directors`, `llc_member_vote`.
+9. **Role values** — Member/seat roles are `director`, `officer`, `manager`, `member`, `chair` — NOT `founder`. Use `founder` as a contact category instead.
 
-10. **Address format varies** — One-shot `--member` addresses use pipe `|` separator. Staged `--address` and `--company-address` use comma `,` separator.
+10. **Body type values** — Governance body types are `board_of_directors`, `llc_member_vote` — NOT `board`.
 
-12. **Formation auto-creates board** — Forming a C-Corp automatically creates a Board of Directors governance body with a seat for each director-role member.
+11. **Address formats** — One-shot `--member` addresses use pipe separator: `street|city|state|zip`. Staged `--address` and `--company-address` use comma separator: `street,city,state,zip`.
+
+12. **`finance activate-account`** — Bank accounts are created in `pending_review` state. Use `npx corp finance activate-account <account-ref>` to activate before submitting payments.
+
+13. **Formation auto-creates board** — Forming a C-Corp automatically creates a Board of Directors governance body. You don't need to `create-body` separately after formation.
 
 13. **LLC requires pct** — LLC members require `pct` (ownership percentage). C-Corp members can use either `pct` or `shares`.
-
-14. **`demo` command** — Use `npx corp demo --name "Acme" --minimal` for a reliable quick seed.
 
 ## Workflow Patterns for Agents
 
 ### Pattern: Form Entity + Issue Equity (C-Corp)
 
 ```
-form (one-shot with --type c_corp) → config set active_entity_id @last → written-consent (approve equity) → vote → resolve → cap-table create-instrument → issue-equity --grant-type common --shares <n> --recipient <name> --meeting-id --resolution-id
+form (one-shot with --type c_corp) → config set active_entity_id @last → written-consent (approve equity) → cap-table issue-equity --grant-type common --shares <n> --recipient <name> --meeting-id <consent-meeting> --resolution-id <consent-resolution>
 ```
 
 Note: Formation auto-creates a board, so skip `create-body` + `add-seat` if using one-shot formation.
@@ -495,13 +449,13 @@ Note: Formation auto-creates a board, so skip `create-body` + `add-seat` if usin
 ### Pattern: 409A Valuation Approval
 
 ```
-cap-table create-valuation --type four_oh_nine_a --date <date> --methodology <method> → submit-valuation <ref> → open auto-created meeting → vote → resolve → approve-valuation <ref> --resolution-id <resolution-ref> → cap-table 409a
+cap-table create-valuation --type four_oh_nine_a --date <date> --methodology <method> → submit-valuation <valuation-ref> → governance written-consent (approve 409A) → approve-valuation <valuation-ref> --resolution-id <consent-resolution> → cap-table 409a
 ```
 
 ### Pattern: Agent Task Loop
 
 ```
-agents create --name <name> --prompt <prompt> → agents skill <ref> --name <skill> --description <desc> → work-items create --created-by <agent-name> → work-items claim <ref> --by <agent-name> → work-items complete <ref> --by <agent-name>
+agents create --name <name> --prompt <prompt> → agents skill <agent-ref> --name <skill> --description <desc> → work-items create → work-items claim <ref> --by <agent-name> → work-items complete <ref> --by <agent-name> → agents message <agent-ref> --body "status report"
 ```
 
 ## Further Reference

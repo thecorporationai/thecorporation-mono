@@ -1,17 +1,16 @@
 # Skills
 
-ClawHub skill packages for TheCorporation.
-
-Each subdirectory is a standalone skill package containing a `SKILL.md` file that can be published to [ClawHub](https://clawhub.ai).
+Claude Code plugin marketplace for TheCorporation.
 
 ## Packages
 
 | Package | Description |
 |---|---|
-| [corp-claw](./corp-claw/) | Corporate governance and formation tools for autonomous agents |
+| [form-and-operate](./plugins/form-and-operate/) | Form and operate companies — entity formation, cap tables, compliance, equity issuance |
 
-## Publishing
+## Install
 
 ```bash
-clawhub publish ./corp-claw
+claude plugin marketplace add ~/repos/thecorporation-mono/skills
+claude plugin install form-and-operate
 ```

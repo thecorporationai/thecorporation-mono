@@ -589,6 +589,15 @@ pub struct CapTableHolderSummary {
 }
 
 #[derive(Debug, Serialize, utoipa::ToSchema)]
+pub struct CapTableShareClassSummary {
+    pub share_class_id: ShareClassId,
+    pub class_code: String,
+    pub stock_type: String,
+    pub par_value: String,
+    pub authorized_shares: i64,
+}
+
+#[derive(Debug, Serialize, utoipa::ToSchema)]
 pub struct CapTableResponse {
     pub entity_id: EntityId,
     pub issuer_legal_entity_id: LegalEntityId,
@@ -596,6 +605,7 @@ pub struct CapTableResponse {
     pub total_units: i64,
     pub instruments: Vec<CapTableInstrumentSummary>,
     pub holders: Vec<CapTableHolderSummary>,
+    pub share_classes: Vec<CapTableShareClassSummary>,
     pub generated_at: String,
 }
 
@@ -1181,6 +1191,7 @@ fn compute_cap_table(
     holders: &[Holder],
     instruments: &[Instrument],
     positions: &[Position],
+    share_classes: &[ShareClass],
 ) -> CapTableResponse {
     let issuer_instruments: Vec<&Instrument> = instruments
         .iter()
@@ -1301,6 +1312,20 @@ fn compute_cap_table(
     }
     instrument_rows.sort_by(|a, b| a.symbol.cmp(&b.symbol));
 
+    let share_class_rows: Vec<CapTableShareClassSummary> = share_classes
+        .iter()
+        .map(|sc| CapTableShareClassSummary {
+            share_class_id: sc.share_class_id(),
+            class_code: sc.class_code().to_owned(),
+            stock_type: serde_json::to_value(sc.stock_type())
+                .ok()
+                .and_then(|v| v.as_str().map(String::from))
+                .unwrap_or_else(|| format!("{:?}", sc.stock_type()).to_lowercase()),
+            par_value: sc.par_value().to_owned(),
+            authorized_shares: sc.authorized_shares().raw(),
+        })
+        .collect();
+
     CapTableResponse {
         entity_id,
         issuer_legal_entity_id,
@@ -1308,6 +1333,7 @@ fn compute_cap_table(
         total_units,
         instruments: instrument_rows,
         holders: holder_rows,
+        share_classes: share_class_rows,
         generated_at: chrono::Utc::now().to_rfc3339(),
     }
 }
@@ -5632,6 +5658,7 @@ async fn get_cap_table(
             let legal_entities = read_all::<LegalEntity>(&store)?;
             let instruments = read_all::<Instrument>(&store)?;
             let positions = read_all::<Position>(&store)?;
+            let share_classes = read_all::<ShareClass>(&store).unwrap_or_default();
 
             let issuer_legal_entity_id =
                 infer_issuer(entity_id, &legal_entities, query.issuer_legal_entity_id)?;
@@ -5643,6 +5670,7 @@ async fn get_cap_table(
                 &holders,
                 &instruments,
                 &positions,
+                &share_classes,
             ))
         }
     })

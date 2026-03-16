@@ -1,0 +1,23 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "thecorporation",
+  "description": "TheCorporation skills for corporate governance, formation, and autonomous agent workflows",
+  "owner": {
+    "name": "TheCorporation",
+    "email": "support@thecorporation.ai"
+  },
+  "plugins": [
+    {
+      "name": "form-and-operate",
+      "description": "Form and operate companies — entity formation, cap tables, compliance, equity issuance, and governance workflows via npx corp",
+      "version": "1.0.0",
+      "author": {
+        "name": "TheCorporation",
+        "email": "support@thecorporation.ai"
+      },
+      "source": "./plugins/form-and-operate",
+      "category": "development",
+      "homepage": "https://thecorporation.ai"
+    }
+  ]
+}

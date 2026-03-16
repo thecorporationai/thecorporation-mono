@@ -4,6 +4,14 @@ import { printError } from "../output.js";
 export async function claimCommand(code: string): Promise<void> {
   const cfg = loadConfig();
   const apiUrl = (cfg.api_url || "https://api.thecorporation.ai").replace(/\/+$/, "");
+  if (apiUrl.startsWith("process://")) {
+    printError(
+      "Claim codes require a remote API server.\n" +
+      "  Run: npx corp config set api_url https://api.thecorporation.ai --force\n" +
+      "  Or use: npx corp setup",
+    );
+    process.exit(1);
+  }
   try {
     const resp = await fetch(`${apiUrl}/v1/workspaces/claim`, {
       method: "POST",

@@ -6,6 +6,8 @@ use crate::domain::equity::holder::{Holder, HolderType};
 use crate::domain::equity::instrument::{Instrument, InstrumentKind};
 use crate::domain::equity::legal_entity::{LegalEntity, LegalEntityRole};
 use crate::domain::equity::position::Position;
+use crate::domain::equity::share_class::ShareClass;
+use crate::domain::equity::types::{ShareCount, StockType};
 use crate::domain::formation::{
     content::*, document::Document, entity::Entity, filing::Filing, tax_profile::TaxProfile,
     types::*,
@@ -1232,11 +1234,30 @@ pub fn setup_cap_table(
     let instrument = Instrument::new(
         instrument_id,
         legal_entity_id,
-        symbol,
+        symbol.clone(),
         kind,
         auth_units,
         price_cents,
         serde_json::Value::Null,
+    );
+
+    // 3b. Create a share class matching the instrument
+    let share_class_id = ShareClassId::new();
+    let cap_table_id = CapTableId::new();
+    let stock_type = match kind {
+        InstrumentKind::CommonEquity => StockType::Common,
+        InstrumentKind::PreferredEquity => StockType::Preferred,
+        InstrumentKind::MembershipUnit => StockType::MembershipUnit,
+        _ => StockType::Common,
+    };
+    let share_class = ShareClass::new(
+        share_class_id,
+        cap_table_id,
+        symbol,
+        stock_type,
+        par_value.unwrap_or("0.0001").to_owned(),
+        ShareCount::new(auth_units.unwrap_or(10_000_000)),
+        None,
     );
 
     // 4. Create holders for each non-agent member and compute positions
@@ -1356,6 +1377,15 @@ pub fn setup_cap_table(
         FileWrite::json(
             format!("cap-table/instruments/{}.json", instrument_id),
             &instrument,
+        )
+        .map_err(|e| FormationError::Storage(e.to_string()))?,
+    );
+
+    // Share class
+    files.push(
+        FileWrite::json(
+            format!("cap-table/classes/{}.json", share_class_id),
+            &share_class,
         )
         .map_err(|e| FormationError::Storage(e.to_string()))?,
     );

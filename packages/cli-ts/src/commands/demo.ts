@@ -27,6 +27,12 @@ function scenarioConfig(name: string, scenario: string): ApiRecord {
             role: "member",
             investor_type: "natural_person",
             ownership_pct: 60,
+            address: {
+              street: "251 Little Falls Dr",
+              city: "Wilmington",
+              state: "DE",
+              zip: "19808",
+            },
           },
           {
             name: "Bob Martinez",
@@ -34,6 +40,12 @@ function scenarioConfig(name: string, scenario: string): ApiRecord {
             role: "member",
             investor_type: "natural_person",
             ownership_pct: 40,
+            address: {
+              street: "251 Little Falls Dr",
+              city: "Wilmington",
+              state: "DE",
+              zip: "19808",
+            },
           },
         ],
         fiscal_year_end: "12-31",
@@ -56,6 +68,12 @@ function scenarioConfig(name: string, scenario: string): ApiRecord {
             role: "manager",
             investor_type: "natural_person",
             ownership_pct: 55,
+            address: {
+              street: "18 Market St",
+              city: "Wilmington",
+              state: "DE",
+              zip: "19801",
+            },
           },
           {
             name: "Noah Patel",
@@ -63,6 +81,12 @@ function scenarioConfig(name: string, scenario: string): ApiRecord {
             role: "member",
             investor_type: "natural_person",
             ownership_pct: 45,
+            address: {
+              street: "18 Market St",
+              city: "Wilmington",
+              state: "DE",
+              zip: "19801",
+            },
           },
         ],
         fiscal_year_end: "12-31",
@@ -92,6 +116,12 @@ function scenarioConfig(name: string, scenario: string): ApiRecord {
             shares_purchased: 6_000_000,
             officer_title: "ceo",
             is_incorporator: true,
+            address: {
+              street: "251 Little Falls Dr",
+              city: "Wilmington",
+              state: "DE",
+              zip: "19808",
+            },
           },
           {
             name: "Bob Martinez",
@@ -100,6 +130,12 @@ function scenarioConfig(name: string, scenario: string): ApiRecord {
             investor_type: "natural_person",
             shares_purchased: 4_000_000,
             officer_title: "cto",
+            address: {
+              street: "251 Little Falls Dr",
+              city: "Wilmington",
+              state: "DE",
+              zip: "19808",
+            },
           },
         ],
         fiscal_year_end: "12-31",
