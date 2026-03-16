@@ -452,6 +452,18 @@ export class CorpAPIClient {
   sendAgentMessage(id: string, message: string) { return this.post(`/v1/agents/${pathSegment(id)}/messages`, { message }) as Promise<ApiRecord>; }
   addAgentSkill(id: string, data: ApiRecord) { return this.post(`/v1/agents/${pathSegment(id)}/skills`, data) as Promise<ApiRecord>; }
   listSupportedModels() { return this.get("/v1/models") as Promise<ApiRecord[]>; }
+  async getAgentExecution(agentId: string, executionId: string): Promise<ApiRecord> {
+    return this.get(`/v1/agents/${pathSegment(agentId)}/executions/${pathSegment(executionId)}`) as Promise<ApiRecord>;
+  }
+  async getAgentExecutionResult(agentId: string, executionId: string): Promise<ApiRecord> {
+    return this.get(`/v1/agents/${pathSegment(agentId)}/executions/${pathSegment(executionId)}/result`) as Promise<ApiRecord>;
+  }
+  async getAgentExecutionLogs(agentId: string, executionId: string): Promise<ApiRecord> {
+    return this.get(`/v1/agents/${pathSegment(agentId)}/executions/${pathSegment(executionId)}/logs`) as Promise<ApiRecord>;
+  }
+  async killAgentExecution(agentId: string, executionId: string): Promise<ApiRecord> {
+    return this.post(`/v1/agents/${pathSegment(agentId)}/executions/${pathSegment(executionId)}/kill`, {}) as Promise<ApiRecord>;
+  }
 
   // --- Governance bodies ---
   createGovernanceBody(data: ApiRecord) { return this.post("/v1/governance-bodies", data) as Promise<ApiRecord>; }
@@ -468,6 +480,15 @@ export class CorpAPIClient {
 
   // --- API Keys ---
   listApiKeys() { return this.get("/v1/api-keys", { workspace_id: this.workspaceId }) as Promise<ApiRecord[]>; }
+  async createApiKey(data: ApiRecord): Promise<ApiRecord> {
+    return this.post("/v1/api-keys", data) as Promise<ApiRecord>;
+  }
+  async revokeApiKey(keyId: string): Promise<void> {
+    return this.del(`/v1/api-keys/${pathSegment(keyId)}`);
+  }
+  async rotateApiKey(keyId: string): Promise<ApiRecord> {
+    return this.post(`/v1/api-keys/${pathSegment(keyId)}/rotate`, {}) as Promise<ApiRecord>;
+  }
 
   // --- Obligations ---
   assignObligation(obligationId: string, contactId: string) {

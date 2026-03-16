@@ -1311,12 +1311,49 @@ agentsCmd.command("skill <agent-ref>").requiredOption("--name <name>", "Skill na
       json: inheritOption(opts.json, parent.json),
     });
   });
+agentsCmd
+  .command("execution <agent-ref> <execution-id>")
+  .option("--json", "Output as JSON")
+  .description("Check execution status")
+  .action(async (agentId: string, executionId: string, opts, cmd) => {
+    const parent = cmd.parent!.opts();
+    const { agentsExecutionCommand } = await import("./commands/agents.js");
+    await agentsExecutionCommand(agentId, executionId, {
+      json: opts.json ?? parent.json,
+    });
+  });
+agentsCmd
+  .command("execution-result <agent-ref> <execution-id>")
+  .option("--json", "Output as JSON")
+  .description("Get execution result")
+  .action(async (agentId: string, executionId: string, opts, cmd) => {
+    const parent = cmd.parent!.opts();
+    const { agentsExecutionResultCommand } = await import("./commands/agents.js");
+    await agentsExecutionResultCommand(agentId, executionId, {
+      json: opts.json ?? parent.json,
+    });
+  });
+agentsCmd
+  .command("kill <agent-ref> <execution-id>")
+  .option("--yes", "Skip confirmation")
+  .option("--json", "Output as JSON")
+  .description("Kill a running execution")
+  .action(async (agentId: string, executionId: string, opts, cmd) => {
+    const parent = cmd.parent!.opts();
+    const { agentsKillCommand } = await import("./commands/agents.js");
+    await agentsKillCommand(agentId, executionId, {
+      ...opts,
+      json: opts.json ?? parent.json,
+    });
+  });
 agentsCmd.addHelpText("after", `
 Examples:
   $ corp agents                                       # list all agents
   $ corp agents create --name "bookkeeper" --prompt "You manage accounts payable"
   $ corp agents message @last:agent --body "Process this month's invoices"
   $ corp agents skill @last:agent --name invoice-processing --description "Process AP invoices"
+  $ corp agents execution @last:agent <execution-id>  # check execution status
+  $ corp agents kill @last:agent <execution-id>       # kill a running execution
 `);
 
 // --- work-items ---
@@ -1687,13 +1724,40 @@ Examples:
 `);
 
 // --- api-keys ---
-program
+const apiKeysCmd = program
   .command("api-keys")
-  .description("List API keys")
+  .description("API key management")
   .option("--json", "Output as JSON")
   .action(async (opts) => {
-    const { apiKeysCommand } = await import("./commands/api-keys.js");
-    await apiKeysCommand(opts);
+    const { apiKeysListCommand } = await import("./commands/api-keys.js");
+    await apiKeysListCommand(opts);
+  });
+apiKeysCmd
+  .command("create")
+  .requiredOption("--name <name>", "Key name/label")
+  .option("--scopes <scopes>", "Comma-separated scopes")
+  .option("--json", "Output as JSON")
+  .description("Create a new API key")
+  .action(async (opts) => {
+    const { apiKeysCreateCommand } = await import("./commands/api-keys.js");
+    await apiKeysCreateCommand(opts);
+  });
+apiKeysCmd
+  .command("revoke <key-id>")
+  .option("--yes", "Skip confirmation")
+  .option("--json", "Output as JSON")
+  .description("Revoke an API key")
+  .action(async (keyId: string, opts) => {
+    const { apiKeysRevokeCommand } = await import("./commands/api-keys.js");
+    await apiKeysRevokeCommand(keyId, opts);
+  });
+apiKeysCmd
+  .command("rotate <key-id>")
+  .option("--json", "Output as JSON")
+  .description("Rotate an API key (returns new key)")
+  .action(async (keyId: string, opts) => {
+    const { apiKeysRotateCommand } = await import("./commands/api-keys.js");
+    await apiKeysRotateCommand(keyId, opts);
   });
 
 // --- demo ---
