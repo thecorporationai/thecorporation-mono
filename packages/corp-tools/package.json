@@ -1,6 +1,6 @@
 {
   "name": "@thecorporation/corp-tools",
-  "version": "26.3.23",
+  "version": "26.3.24",
   "description": "Shared corporate tool handlers, API client, and types",
   "type": "module",
   "main": "./dist/index.js",
