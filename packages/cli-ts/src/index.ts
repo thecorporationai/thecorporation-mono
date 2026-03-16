@@ -4,24 +4,17 @@ import { inheritOption } from "./command-options.js";
 
 const require = createRequire(import.meta.url);
 const pkg = require("../package.json");
+const TAX_DOCUMENT_TYPE_DISPLAY = [
+  "1120", "1120s", "1065", "franchise_tax", "annual_report", "83b",
+  "1099_nec", "k1", "941", "w2",
+] as const;
+const TAX_DOCUMENT_TYPE_ALIASES: Record<string, string> = {
+  form_1120: "1120", form_1120s: "1120s", form_1065: "1065",
+  form_1099_nec: "1099_nec", form_k1: "k1", form_941: "941", form_w2: "w2",
+};
 const TAX_DOCUMENT_TYPE_CHOICES = [
-  "1120",
-  "1120s",
-  "1065",
-  "franchise_tax",
-  "annual_report",
-  "83b",
-  "form_1120",
-  "form_1120s",
-  "form_1065",
-  "1099_nec",
-  "form_1099_nec",
-  "k1",
-  "form_k1",
-  "941",
-  "form_941",
-  "w2",
-  "form_w2",
+  ...TAX_DOCUMENT_TYPE_DISPLAY,
+  ...Object.keys(TAX_DOCUMENT_TYPE_ALIASES),
 ] as const;
 const FINALIZE_ITEM_STATUS_CHOICES = [
   "discussed",
@@ -1163,7 +1156,11 @@ taxCmd
   });
 taxCmd
   .command("file")
-  .addOption(new Option("--type <type>", `Document type (${TAX_DOCUMENT_TYPE_CHOICES.join(", ")})`).choices([...TAX_DOCUMENT_TYPE_CHOICES]).makeOptionMandatory())
+  .addOption(
+    new Option("--type <type>", `Document type (${TAX_DOCUMENT_TYPE_DISPLAY.join(", ")})`)
+      .choices([...TAX_DOCUMENT_TYPE_CHOICES])
+      .makeOptionMandatory(),
+  )
   .requiredOption("--year <year>", "Tax year", parseInt)
   .option("--json", "Output as JSON")
   .description("File a tax document")

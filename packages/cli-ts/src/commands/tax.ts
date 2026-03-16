@@ -63,6 +63,11 @@ export async function taxDeadlinesCommand(opts: { entityId?: string; json?: bool
   } catch (err) { printError(`Failed to fetch deadlines: ${err}`); process.exit(1); }
 }
 
+const TAX_TYPE_ALIASES: Record<string, string> = {
+  form_1120: "1120", form_1120s: "1120s", form_1065: "1065",
+  form_1099_nec: "1099_nec", form_k1: "k1", form_941: "941", form_w2: "w2",
+};
+
 export async function taxFileCommand(opts: {
   entityId?: string;
   type: string;
@@ -73,8 +78,9 @@ export async function taxFileCommand(opts: {
   const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
   const resolver = new ReferenceResolver(client, cfg);
   try {
+    const docType = TAX_TYPE_ALIASES[opts.type] ?? opts.type;
     const eid = await resolver.resolveEntity(opts.entityId);
-    const result = await client.fileTaxDocument({ entity_id: eid, document_type: opts.type, tax_year: opts.year });
+    const result = await client.fileTaxDocument({ entity_id: eid, document_type: docType, tax_year: opts.year });
     await resolver.stabilizeRecord("tax_filing", result, eid);
     resolver.rememberFromRecord("tax_filing", result, eid);
     printWriteResult(result, `Tax document filed: ${result.filing_id ?? "OK"}`, {
