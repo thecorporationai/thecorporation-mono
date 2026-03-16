@@ -592,6 +592,14 @@ capTableCmd
       json: inheritOption(opts.json, parent.json),
     });
   });
+capTableCmd.addHelpText("after", `
+Examples:
+  $ corp cap-table                                    # view full cap table
+  $ corp cap-table issue-equity --grant-type common --shares 1000000 --recipient "Alice Smith"
+  $ corp cap-table issue-safe --investor "Seed Fund" --amount-cents 50000000 --valuation-cap-cents 1000000000
+  $ corp cap-table create-valuation --type four_oh_nine_a --date 2026-01-01 --methodology market
+  $ corp cap-table transfer --from alice --to bob --shares 1000 --share-class-id COMMON --governing-doc-type bylaws --transferee-rights full_member
+`);
 
 // --- finance ---
 const financeCmd = program
@@ -807,6 +815,14 @@ financeCmd
       json: inheritOption(opts.json, parent.json),
     });
   });
+financeCmd.addHelpText("after", `
+Examples:
+  $ corp finance                                      # financial summary
+  $ corp finance invoice --customer "Client Co" --amount-cents 500000 --due-date 2026-04-01
+  $ corp finance pay --amount-cents 250000 --recipient "Vendor" --method ach
+  $ corp finance payroll --period-start 2026-03-01 --period-end 2026-03-15
+  $ corp finance open-account --institution Mercury
+`);
 
 // --- governance ---
 const governanceCmd = program
@@ -1046,6 +1062,15 @@ governanceCmd
       json: inheritOption(opts.json, parent.json),
     });
   });
+governanceCmd.addHelpText("after", `
+Examples:
+  $ corp governance create-body --name "Board of Directors" --body-type board_of_directors
+  $ corp governance add-seat @last:body --holder "alice"
+  $ corp governance convene --body board --type board_meeting --title "Q1 Review" --agenda "Approve budget"
+  $ corp governance open @last:meeting --present-seat alice-seat
+  $ corp governance vote @last:meeting <item-ref> --voter alice --vote for
+  $ corp governance written-consent --body board --title "Approve Option Plan" --description "Board approves 2026 option plan"
+`);
 
 // --- documents ---
 const documentsCmd = program
@@ -1286,6 +1311,13 @@ agentsCmd.command("skill <agent-ref>").requiredOption("--name <name>", "Skill na
       json: inheritOption(opts.json, parent.json),
     });
   });
+agentsCmd.addHelpText("after", `
+Examples:
+  $ corp agents                                       # list all agents
+  $ corp agents create --name "bookkeeper" --prompt "You manage accounts payable"
+  $ corp agents message @last:agent --body "Process this month's invoices"
+  $ corp agents skill @last:agent --name invoice-processing --description "Process AP invoices"
+`);
 
 // --- work-items ---
 const workItemsCmd = program
@@ -1403,6 +1435,13 @@ workItemsCmd
       yes: opts.yes,
     });
   });
+workItemsCmd.addHelpText("after", `
+Examples:
+  $ corp work-items                                   # list open work items
+  $ corp work-items create --title "File Q1 taxes" --category compliance --deadline 2026-04-15
+  $ corp work-items claim @last:work_item --by bookkeeper-agent
+  $ corp work-items complete @last:work_item --by bookkeeper-agent --result "Filed 1120 for Q1"
+`);
 
 // --- services ---
 const servicesCmd = program
@@ -1637,6 +1676,15 @@ formCmd.command("activate <entity-ref>")
       dryRun: inheritOption(opts.dryRun, cmd.parent!.opts().dryRun),
     });
   });
+formCmd.addHelpText("after", `
+Examples:
+  $ corp form --type llc --name "My LLC" --member "Alice,alice@co.com,member,100"
+  $ corp form --type c_corp --name "Acme Inc" --jurisdiction US-DE --member-json '{"name":"Bob","email":"bob@acme.com","role":"director","pct":100}'
+  $ corp form create --type llc --name "My LLC"
+  $ corp form add-founder @last:entity --name "Alice" --email "alice@co.com" --role member --pct 100
+  $ corp form finalize @last:entity
+  $ corp form activate @last:entity
+`);
 
 // --- api-keys ---
 program
