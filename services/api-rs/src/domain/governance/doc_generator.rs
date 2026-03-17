@@ -482,7 +482,7 @@ fn render_template_node(
     }
 }
 
-fn render_document_template_from_ast(
+pub fn render_document_template_from_ast(
     doc: &DocumentDefinition,
     ast: &GovernanceDocAst,
     entity_type: EntityTypeKey,

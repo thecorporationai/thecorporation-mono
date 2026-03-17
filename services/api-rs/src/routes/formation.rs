@@ -1668,6 +1668,45 @@ async fn confirm_ein(
 
 // ── Contract / Document management ──────────────────────────────────
 
+#[derive(Serialize, utoipa::ToSchema)]
+pub struct CatalogDocumentEntry {
+    pub id: String,
+    pub title: String,
+    pub entity_scope: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub preamble: Option<String>,
+}
+
+#[derive(Serialize, utoipa::ToSchema)]
+pub struct CatalogCategoryGroup {
+    pub category: String,
+    pub label: String,
+    pub documents: Vec<CatalogDocumentEntry>,
+}
+
+#[derive(Serialize, utoipa::ToSchema)]
+pub struct CatalogResponse {
+    pub categories: Vec<CatalogCategoryGroup>,
+}
+
+#[derive(Serialize, utoipa::ToSchema)]
+pub struct CatalogMarkdownVariant {
+    pub entity_type: String,
+    pub markdown: String,
+}
+
+#[derive(Serialize, utoipa::ToSchema)]
+pub struct CatalogMarkdownResponse {
+    pub id: String,
+    pub title: String,
+    pub category: String,
+    pub entity_scope: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub markdown: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub variants: Option<Vec<CatalogMarkdownVariant>>,
+}
+
 #[derive(Deserialize, utoipa::ToSchema)]
 pub struct GenerateContractRequest {
     pub entity_id: EntityId,
@@ -3874,6 +3913,128 @@ async fn submit_signing(
     }))
 }
 
+/// Serialize an enum value to its serde snake_case string.
+fn serde_variant_name<S: Serialize>(value: &S) -> String {
+    serde_json::to_value(value)
+        .ok()
+        .and_then(|v| v.as_str().map(ToOwned::to_owned))
+        .unwrap_or_default()
+}
+
+#[utoipa::path(
+    get,
+    path = "/v1/governance/catalog",
+    tag = "formation",
+    responses(
+        (status = 200, description = "Document catalog", body = CatalogResponse),
+    ),
+)]
+async fn governance_catalog() -> impl IntoResponse {
+    let ast = doc_ast::default_doc_ast();
+
+    use crate::domain::governance::doc_ast::DocumentCategory;
+    let category_order: &[(DocumentCategory, &str)] = &[
+        (DocumentCategory::Corporation, "Corporation"),
+        (DocumentCategory::Llc, "LLC"),
+        (DocumentCategory::Common, "Common"),
+        (DocumentCategory::Compliance, "Compliance"),
+        (DocumentCategory::Transactions, "Transactions"),
+    ];
+
+    let mut categories = Vec::new();
+    for &(cat, label) in category_order {
+        let documents: Vec<CatalogDocumentEntry> = ast
+            .documents
+            .iter()
+            .filter(|doc| doc.category == cat)
+            .map(|doc| CatalogDocumentEntry {
+                id: doc.id.clone(),
+                title: doc.title.clone(),
+                entity_scope: serde_variant_name(&doc.entity_scope),
+                preamble: doc.preamble.clone(),
+            })
+            .collect();
+        if !documents.is_empty() {
+            categories.push(CatalogCategoryGroup {
+                category: serde_variant_name(&cat),
+                label: label.to_owned(),
+                documents,
+            });
+        }
+    }
+
+    let headers = [(header::CACHE_CONTROL, "public, max-age=3600")];
+    (headers, Json(CatalogResponse { categories }))
+}
+
+#[utoipa::path(
+    get,
+    path = "/v1/governance/catalog/{document_id}/markdown",
+    tag = "formation",
+    params(
+        ("document_id" = String, Path, description = "Document definition ID from the AST"),
+    ),
+    responses(
+        (status = 200, description = "Rendered markdown", body = CatalogMarkdownResponse),
+        (status = 404, description = "Document not found"),
+    ),
+)]
+async fn governance_catalog_markdown(
+    Path(document_id): Path<String>,
+) -> Result<impl IntoResponse, AppError> {
+    let ast = doc_ast::default_doc_ast();
+    let doc = ast
+        .documents
+        .iter()
+        .find(|d| d.id == document_id)
+        .ok_or_else(|| AppError::NotFound(format!("document definition '{}' not found", document_id)))?;
+
+    let category = serde_variant_name(&doc.category);
+    let entity_scope = serde_variant_name(&doc.entity_scope);
+
+    use crate::domain::governance::doc_ast::EntityScope;
+    use crate::domain::governance::doc_ast::EntityTypeKey;
+
+    let (markdown, variants) = match doc.entity_scope {
+        EntityScope::Corporation => {
+            let md = doc_generator::render_document_template_from_ast(doc, ast, EntityTypeKey::Corporation);
+            (Some(md), None)
+        }
+        EntityScope::Llc => {
+            let md = doc_generator::render_document_template_from_ast(doc, ast, EntityTypeKey::Llc);
+            (Some(md), None)
+        }
+        EntityScope::Common | EntityScope::Both => {
+            let corp_md = doc_generator::render_document_template_from_ast(doc, ast, EntityTypeKey::Corporation);
+            let llc_md = doc_generator::render_document_template_from_ast(doc, ast, EntityTypeKey::Llc);
+            if corp_md == llc_md {
+                (Some(corp_md), None)
+            } else {
+                (None, Some(vec![
+                    CatalogMarkdownVariant {
+                        entity_type: "corporation".to_owned(),
+                        markdown: corp_md,
+                    },
+                    CatalogMarkdownVariant {
+                        entity_type: "llc".to_owned(),
+                        markdown: llc_md,
+                    },
+                ]))
+            }
+        }
+    };
+
+    let headers = [(header::CACHE_CONTROL, "public, max-age=3600")];
+    Ok((headers, Json(CatalogMarkdownResponse {
+        id: doc.id.clone(),
+        title: doc.title.clone(),
+        category,
+        entity_scope,
+        markdown,
+        variants,
+    })))
+}
+
 pub fn formation_routes() -> Router<AppState> {
     Router::new()
         .route("/v1/formations", post(create_formation))
@@ -3920,6 +4081,8 @@ pub fn formation_routes() -> Router<AppState> {
             "/v1/formations/{entity_id}/ein-confirmation",
             post(confirm_ein),
         )
+        .route("/v1/governance/catalog", get(governance_catalog))
+        .route("/v1/governance/catalog/{document_id}/markdown", get(governance_catalog_markdown))
         .route("/v1/documents/preview/pdf", get(preview_document_pdf))
         .route(
             "/v1/documents/preview/pdf/validate",
@@ -3997,6 +4160,8 @@ pub fn formation_routes() -> Router<AppState> {
         create_pending_formation,
         add_founder,
         finalize_pending_formation,
+        governance_catalog,
+        governance_catalog_markdown,
     ),
     components(schemas(
         CreateFormationRequest,
@@ -4030,6 +4195,11 @@ pub fn formation_routes() -> Router<AppState> {
         DocumentCopyResponse,
         ConvertEntityRequest,
         DissolveEntityRequest,
+        CatalogResponse,
+        CatalogCategoryGroup,
+        CatalogDocumentEntry,
+        CatalogMarkdownResponse,
+        CatalogMarkdownVariant,
     )),
     tags((name = "formation", description = "Entity formation and document management")),
 )]
