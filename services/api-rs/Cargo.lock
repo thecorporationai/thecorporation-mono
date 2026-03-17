@@ -10,7 +10,7 @@ checksum = "320119579fcad9c21884f5c4861d16174d0e06250625266f50fe6898340abefa"
 
 [[package]]
 name = "agent-types"
-version = "26.3.22"
+version = "26.3.24"
 dependencies = [
  "chrono",
  "serde",
@@ -106,7 +106,7 @@ checksum = "7f202df86484c868dbad7eaa557ef785d5c66295e41b460ef922eca0723b842c"
 
 [[package]]
 name = "api-rs"
-version = "26.3.22"
+version = "26.3.24"
 dependencies = [
  "agent-types",
  "anyhow",
@@ -733,7 +733,7 @@ dependencies = [
 
 [[package]]
 name = "corp-store"
-version = "26.3.22"
+version = "26.3.24"
 dependencies = [
  "chrono",
  "hex",

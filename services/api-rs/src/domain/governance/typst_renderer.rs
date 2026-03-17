@@ -827,4 +827,84 @@ mod tests {
         let pdf = compile_typst_to_pdf(&source).expect("should compile with signature");
         assert!(pdf.starts_with(b"%PDF"));
     }
+
+    fn make_llc_entity() -> Entity {
+        Entity::new(
+            EntityId::new(),
+            WorkspaceId::new(),
+            "Acme Test LLC".to_owned(),
+            EntityType::Llc,
+            Jurisdiction::new("Wyoming").expect("jurisdiction"),
+            Some("Acme Registered Agent".to_owned()),
+            Some("456 Main St".to_owned()),
+        )
+        .expect("entity")
+    }
+
+    #[test]
+    fn render_all_documents_to_pdf() {
+        use std::fs;
+        use std::path::Path;
+
+        let out_dir = Path::new("/root/repos/examples-docs");
+        fs::create_dir_all(out_dir).expect("create output dir");
+
+        let ast = super::super::doc_ast::default_doc_ast();
+
+        // Corporation entity + profile
+        let corp_entity = make_entity();
+        let corp_profile = GovernanceProfile::default_for_entity(&corp_entity);
+
+        // LLC entity + profile
+        let llc_entity = make_llc_entity();
+        let llc_profile = GovernanceProfile::default_for_entity(&llc_entity);
+
+        let mut success = 0u32;
+        let mut failures: Vec<String> = Vec::new();
+
+        for doc in &ast.documents {
+            // Determine which entity types this doc applies to
+            let entity_types: Vec<(EntityTypeKey, &GovernanceProfile, &str)> =
+                if doc.entity_scope.matches(EntityTypeKey::Corporation)
+                    && doc.entity_scope.matches(EntityTypeKey::Llc)
+                {
+                    vec![
+                        (EntityTypeKey::Corporation, &corp_profile, "corp"),
+                        (EntityTypeKey::Llc, &llc_profile, "llc"),
+                    ]
+                } else if doc.entity_scope.matches(EntityTypeKey::Corporation) {
+                    vec![(EntityTypeKey::Corporation, &corp_profile, "corp")]
+                } else {
+                    vec![(EntityTypeKey::Llc, &llc_profile, "llc")]
+                };
+
+            for (entity_type, profile, label) in entity_types {
+                let filename = format!("{}-{}.pdf", doc.id, label);
+                match render_pdf(doc, ast, entity_type, profile, &[]) {
+                    Ok(pdf) => {
+                        assert!(
+                            pdf.starts_with(b"%PDF"),
+                            "{filename}: output should start with %PDF header"
+                        );
+                        let path = out_dir.join(&filename);
+                        fs::write(&path, &pdf).expect("write PDF");
+                        eprintln!("  OK  {filename} ({} bytes)", pdf.len());
+                        success += 1;
+                    }
+                    Err(e) => {
+                        eprintln!("  FAIL {filename}: {e}");
+                        failures.push(format!("{filename}: {e}"));
+                    }
+                }
+            }
+        }
+
+        eprintln!("\n{success} PDFs rendered, {} failures", failures.len());
+        if !failures.is_empty() {
+            panic!(
+                "Some documents failed to render:\n{}",
+                failures.join("\n")
+            );
+        }
+    }
 }
