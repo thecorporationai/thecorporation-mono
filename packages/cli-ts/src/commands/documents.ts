@@ -119,19 +119,21 @@ export async function documentsGenerateCommand(opts: {
   } catch (err) {
     const msg = String(err);
     // Provide helpful hints for template-specific required fields
-    if (opts.template === "employment_offer" && (msg.includes("department") || msg.includes("required"))) {
+    if (opts.template === "employment_offer" && (msg.includes("base_salary") || msg.includes("required"))) {
       printError(
         `Failed to generate employment_offer: ${msg}\n` +
-        "  Hint: employment_offer requires additional parameters. Use --param for each:\n" +
-        "    --param department=Engineering --param dispute_resolution_terms=arbitration\n" +
-        "    --param equity_grant_type=stock_option --param equity_shares=10000\n" +
-        "  Or pass --base-salary 150000",
+        "  Hint: employment_offer requires base_salary. Use:\n" +
+        "    --base-salary 150000\n" +
+        "  Or: --param base_salary=150000\n" +
+        "  Optional params: position_title, start_date, work_location, classification,\n" +
+        "    bonus_terms, equity_terms, benefits_summary, governing_law",
       );
-    } else if (opts.template === "safe_agreement" && (msg.includes("purchase_amount") || msg.includes("required"))) {
+    } else if (opts.template === "safe_agreement" && (msg.includes("purchase_amount") || msg.includes("investment_amount") || msg.includes("valuation_cap") || msg.includes("investor_notice") || msg.includes("required"))) {
       printError(
         `Failed to generate safe_agreement: ${msg}\n` +
-        "  Hint: safe_agreement requires purchase_amount. Use:\n" +
-        "    --param purchase_amount=50000000",
+        "  Hint: safe_agreement requires purchase_amount, valuation_cap, and investor_notice_address. Use:\n" +
+        "    --param purchase_amount=50000000 --param valuation_cap=10000000\n" +
+        "    --param investor_notice_address=\"123 Main St, City, ST 12345\"",
       );
     } else {
       printError(`Failed to generate contract: ${err}`);

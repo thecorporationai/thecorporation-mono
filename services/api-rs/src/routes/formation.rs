@@ -2088,7 +2088,7 @@ fn contract_document_binding(
                     "entity_legal_name": entity_legal_name,
                     "effective_date": effective_date,
                     "investor_name": counterparty_name,
-                    "purchase_amount": required_param_rendered(parameters, &["investment_amount", "investment_amount_display"], "purchase_amount")?,
+                    "purchase_amount": required_param_rendered(parameters, &["purchase_amount", "investment_amount", "investment_amount_display"], "purchase_amount")?,
                     "safe_type": parameters.get("safe_type").and_then(Value::as_str).unwrap_or("post-money"),
                     "valuation_cap": required_param_rendered(parameters, &["valuation_cap", "valuation_cap_display"], "valuation_cap")?,
                     "discount_rate": parameters.get("discount_rate").and_then(Value::as_str).unwrap_or("None"),
