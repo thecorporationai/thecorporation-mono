@@ -216,13 +216,13 @@ function normalizeActiveEntityMap(value: unknown): Record<string, string> | unde
     return undefined;
   }
   const entries = Object.entries(value).filter(
-    ([workspaceId, entityId]) =>
-      typeof workspaceId === "string" && typeof entityId === "string" && entityId.length > 0,
+    (entry): entry is [string, string] =>
+      typeof entry[0] === "string" && typeof entry[1] === "string" && entry[1].length > 0,
   );
   if (entries.length === 0) {
     return undefined;
   }
-  return Object.fromEntries(entries);
+  return Object.fromEntries(entries) as Record<string, string>;
 }
 
 function trimReferenceEntries(
@@ -239,13 +239,13 @@ function normalizeReferenceMap(value: unknown): Record<string, string> | undefin
     return undefined;
   }
   const entries = Object.entries(value).filter(
-    ([key, ref]) => typeof key === "string" && typeof ref === "string" && ref.trim().length > 0,
+    (entry): entry is [string, string] => typeof entry[0] === "string" && typeof entry[1] === "string" && (entry[1] as string).trim().length > 0,
   );
   if (entries.length === 0) {
     return undefined;
   }
   return Object.fromEntries(
-    trimReferenceEntries(entries.map(([key, ref]) => [key, ref.trim()])),
+    trimReferenceEntries(entries.map(([key, val]) => [key, val.trim()])),
   );
 }
 

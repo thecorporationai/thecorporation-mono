@@ -162,6 +162,8 @@ export async function resolveCommand(
       case "round":
         resolvedId = await resolver.resolveRound(requiredEntity(entityId, normalizedKind), ref);
         break;
+      default:
+        throw new Error(`Unhandled resolve kind: ${normalizedKind}`);
     }
 
     printJson({

@@ -10,6 +10,7 @@ interface ServeOptions {
 export async function serveCommand(opts: ServeOptions): Promise<void> {
   let server: { getBinaryPath: () => string | null; isAvailable: () => boolean; startServer: (options: Record<string, unknown>) => ChildProcess };
   try {
+    // @ts-expect-error — optional dependency, handled by catch block
     server = await import("@thecorporation/server");
   } catch {
     console.error(

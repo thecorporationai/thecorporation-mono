@@ -83,8 +83,8 @@ export async function contextCommand(opts: { json?: boolean }): Promise<void> {
     } else {
       console.log(`  ${chalk.bold("Active Entity:")} none`);
     }
-    if (status.next_deadline) {
-      console.log(`  ${chalk.bold("Next Deadline:")} ${status.next_deadline}`);
+    if ((status as Record<string, unknown>).next_deadline) {
+      console.log(`  ${chalk.bold("Next Deadline:")} ${(status as Record<string, unknown>).next_deadline}`);
     }
     console.log(chalk.blue("─".repeat(50)));
   } catch (err) {

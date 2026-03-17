@@ -1,4 +1,5 @@
 import chalk from "chalk";
+import { printError } from "../output.js";
 
 export async function approvalsListCommand(_opts: Record<string, unknown>): Promise<void> {
   console.log(chalk.bold("Approvals in TheCorporation"));
