@@ -176,6 +176,21 @@ async fn get_json(app: &Router, path: &str, token: &str) -> (StatusCode, Value) 
     (status, value)
 }
 
+async fn get_json_no_auth(app: &Router, path: &str) -> (StatusCode, Value) {
+    let req = Request::builder()
+        .method(Method::GET)
+        .uri(path)
+        .body(Body::empty())
+        .unwrap();
+    let response = app.clone().oneshot(req).await.unwrap();
+    let status = response.status();
+    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let value: Value = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
+    (status, value)
+}
+
 async fn delete_req(app: &Router, path: &str, token: &str) -> StatusCode {
     let req = Request::builder()
         .method(Method::DELETE)
@@ -6117,4 +6132,82 @@ async fn test_trigger_digests_returns_explanatory_message_when_no_digests_genera
             .is_some_and(|message| message.contains("no digests were produced")),
         "expected explanatory message: {body}"
     );
+}
+
+#[tokio::test]
+async fn governance_catalog_returns_all_documents() {
+    let tmp = TempDir::new().unwrap();
+    let app = build_app(&tmp);
+    let (status, body) = get_json_no_auth(&app, "/v1/governance/catalog").await;
+    assert_eq!(status, StatusCode::OK);
+
+    let categories = body["categories"].as_array().unwrap();
+    assert!(!categories.is_empty(), "should have at least one category");
+
+    let total: usize = categories
+        .iter()
+        .map(|c| c["documents"].as_array().unwrap().len())
+        .sum();
+    assert!(total >= 27, "should have at least 27 documents, got {total}");
+
+    let first_doc = &categories[0]["documents"][0];
+    assert!(first_doc["id"].is_string());
+    assert!(first_doc["title"].is_string());
+    assert!(first_doc["entity_scope"].is_string());
+}
+
+#[tokio::test]
+async fn governance_catalog_markdown_renders_bylaws() {
+    let tmp = TempDir::new().unwrap();
+    let app = build_app(&tmp);
+    let (status, body) = get_json_no_auth(&app, "/v1/governance/catalog/bylaws/markdown").await;
+    assert_eq!(status, StatusCode::OK);
+
+    assert_eq!(body["id"], "bylaws");
+    assert_eq!(body["category"], "corporation");
+    assert_eq!(body["entity_scope"], "corporation");
+    assert!(body["markdown"].is_string());
+    assert!(body["variants"].is_null());
+    assert!(body["markdown"].as_str().unwrap().contains("# Bylaws"));
+}
+
+#[tokio::test]
+async fn governance_catalog_markdown_renders_both_variants_for_both_scope_doc() {
+    let tmp = TempDir::new().unwrap();
+    let app = build_app(&tmp);
+    let (status, body) = get_json_no_auth(
+        &app,
+        "/v1/governance/catalog/stock_transfer_agreement/markdown",
+    ).await;
+    assert_eq!(status, StatusCode::OK);
+
+    assert_eq!(body["entity_scope"], "both");
+    let has_content = body["markdown"].is_string() || body["variants"].is_array();
+    assert!(has_content, "should have either markdown or variants");
+}
+
+#[tokio::test]
+async fn governance_catalog_markdown_renders_common_scope_doc() {
+    let tmp = TempDir::new().unwrap();
+    let app = build_app(&tmp);
+    let (status, body) = get_json_no_auth(
+        &app,
+        "/v1/governance/catalog/ip_assignment_agreement/markdown",
+    ).await;
+    assert_eq!(status, StatusCode::OK);
+
+    assert_eq!(body["entity_scope"], "common");
+    let has_content = body["markdown"].is_string() || body["variants"].is_array();
+    assert!(has_content, "should have either markdown or variants");
+}
+
+#[tokio::test]
+async fn governance_catalog_markdown_returns_404_for_unknown_doc() {
+    let tmp = TempDir::new().unwrap();
+    let app = build_app(&tmp);
+    let (status, _body) = get_json_no_auth(
+        &app,
+        "/v1/governance/catalog/nonexistent_doc/markdown",
+    ).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
 }
