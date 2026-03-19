@@ -844,10 +844,9 @@ mod tests {
     #[test]
     fn render_all_documents_to_pdf() {
         use std::fs;
-        use std::path::Path;
 
-        let out_dir = Path::new("/root/repos/examples-docs");
-        fs::create_dir_all(out_dir).expect("create output dir");
+        let tmp = tempfile::tempdir().expect("create temp dir");
+        let out_dir = tmp.path();
 
         let ast = super::super::doc_ast::default_doc_ast();
 
