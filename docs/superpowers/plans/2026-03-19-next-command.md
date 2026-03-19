@@ -143,7 +143,7 @@ At the top of `next_steps.rs`, add the imports needed for the recommendation eng
 
 ```rust
 use crate::domain::ids::EntityId;
-use crate::store::EntityStore;
+use crate::store::entity_store::EntityStore;
 ```
 
 Add a helper to build command strings:
