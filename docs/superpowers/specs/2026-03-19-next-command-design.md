@@ -44,7 +44,7 @@ Workspace-scoped. Aggregates recommendations across all entities. Follows the ex
       "category": "documents",
       "title": "Sign Certificate of Incorporation",
       "description": "Document awaiting your signature",
-      "command": "npx corp documents signing-link --document-id doc_xyz",
+      "command": "npx corp documents signing-link doc_xyz",
       "urgency": "high"
     }
   ],
@@ -162,17 +162,17 @@ Default (human-readable):
 
   Documents (2)
    • Sign Certificate of Incorporation
-     → npx corp documents signing-link --document-id doc_xyz
+     → npx corp documents signing-link doc_xyz
    • Sign Bylaws
-     → npx corp documents signing-link --document-id doc_def
+     → npx corp documents signing-link doc_def
 
   Governance (1)
    • Create board of directors
-     → npx corp governance create-body --entity-id ent_abc123 --name "Board of Directors" --kind board
+     → npx corp governance --entity-id ent_abc123 create-body --name "Board of Directors" --body-type board_of_directors
 
   Compliance (1)
    • File EIN application — due Apr 15
-     → npx corp tax file --entity-id ent_abc123 --kind ein
+     → npx corp tax --entity-id ent_abc123 file --type ein
 
   7 items total (1 critical, 2 high, 3 medium, 1 low)
 ```
