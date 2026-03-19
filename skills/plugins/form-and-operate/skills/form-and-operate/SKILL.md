@@ -1,6 +1,12 @@
 ---
-name: form-and-operate
+name: thecorporation-form-and-operate
 description: How to use the `npx corp` CLI to manage corporate entities, governance, cap tables, finance, agents, and compliance for TheCorporation platform. Use this skill whenever the user mentions `npx corp`, TheCorporation, corporate formation, entity governance, cap table management, equity issuance, 409A valuations, board meetings, written consent, SAFE instruments, corporate agents, work items, or any task involving programmatic corporate governance. Also use when the user wants to form an LLC or C-Corp, manage board seats, issue stock options, run payroll, generate legal documents, or automate corporate compliance workflows.
+homepage: https://github.com/thecorporationai/thecorporation-mono
+install:
+  - kind: node
+    package: "@thecorporation/cli"
+    bins:
+      - corp
 ---
 
 # npx corp CLI Skill
