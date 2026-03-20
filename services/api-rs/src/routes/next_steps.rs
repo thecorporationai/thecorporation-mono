@@ -81,6 +81,11 @@ pub fn compute_next_steps(store: &EntityStore, entity_id: EntityId) -> Vec<NextS
     let eid = entity_id.to_string();
     let mut items: Vec<NextStepItem> = Vec::new();
 
+    // Determine if entity is fully active (used to gate post-formation recommendations).
+    let is_active = store.read_entity("main")
+        .map(|e| e.formation_status() == FormationStatus::Active)
+        .unwrap_or(false);
+
     // 1. Formation status
     if let Ok(entity) = store.read_entity("main") {
         match entity.formation_status() {
@@ -93,8 +98,11 @@ pub fn compute_next_steps(store: &EntityStore, entity_id: EntityId) -> Vec<NextS
                     urgency: "critical".into(),
                 });
             }
-            FormationStatus::DocumentsGenerated
-            | FormationStatus::DocumentsSigned
+            FormationStatus::DocumentsGenerated => {
+                // Documents exist but aren't signed yet — signing is the next step.
+                // Don't recommend activation until documents are signed.
+            }
+            FormationStatus::DocumentsSigned
             | FormationStatus::FilingSubmitted
             | FormationStatus::Filed
             | FormationStatus::EinApplied => {
@@ -112,7 +120,7 @@ pub fn compute_next_steps(store: &EntityStore, entity_id: EntityId) -> Vec<NextS
         }
     }
 
-    // 2. Unsigned documents
+    // 2. Unsigned documents (always shown regardless of formation state)
     if let Ok(doc_ids) = store.list_document_ids("main") {
         for doc_id in doc_ids {
             if let Ok(doc) = store.read_document("main", doc_id) {
@@ -129,10 +137,10 @@ pub fn compute_next_steps(store: &EntityStore, entity_id: EntityId) -> Vec<NextS
         }
     }
 
-    // 3. No governance bodies
+    // 3. No governance bodies (only after entity is active)
     let body_ids = store.list_ids::<GovernanceBody>("main").unwrap_or_default();
     if body_ids.is_empty() {
-        if items.iter().all(|i| i.category != "formation") {
+        if is_active {
             items.push(NextStepItem {
                 category: "governance".into(),
                 title: "Create board of directors".into(),
@@ -161,9 +169,9 @@ pub fn compute_next_steps(store: &EntityStore, entity_id: EntityId) -> Vec<NextS
         }
     }
 
-    // 5. No equity instruments
+    // 5. No equity instruments (only after entity is active)
     if let Ok(instrument_ids) = store.list_ids::<Instrument>("main") {
-        if instrument_ids.is_empty() && items.iter().all(|i| i.category != "formation") {
+        if instrument_ids.is_empty() && is_active {
             items.push(NextStepItem {
                 category: "cap_table".into(),
                 title: "Set up cap table — create share classes".into(),
@@ -202,9 +210,9 @@ pub fn compute_next_steps(store: &EntityStore, entity_id: EntityId) -> Vec<NextS
         }
     }
 
-    // 8. No bank account
+    // 8. No bank account (only after entity is active)
     if let Ok(acct_ids) = store.list_ids::<BankAccount>("main") {
-        if acct_ids.is_empty() && items.iter().all(|i| i.category != "formation") {
+        if acct_ids.is_empty() && is_active {
             items.push(NextStepItem {
                 category: "finance".into(),
                 title: "Open a bank account".into(),

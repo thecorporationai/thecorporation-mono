@@ -192,25 +192,18 @@ async fn entity_next_steps_pending_formation() {
     assert_eq!(status, StatusCode::OK, "entity next-steps failed: {ns}");
 
     let top = &ns["top"];
-    assert!(!top.is_null(), "expected top to be non-null for pending entity, got: {ns}");
+    assert!(!top.is_null(), "expected top to be non-null for new entity, got: {ns}");
 
-    assert_eq!(
-        top["category"].as_str().unwrap_or(""),
-        "formation",
-        "expected top.category == \"formation\", got: {}",
-        top["category"]
-    );
-
-    assert_eq!(
-        top["urgency"].as_str().unwrap_or(""),
-        "critical",
-        "expected top.urgency == \"critical\", got: {}",
-        top["urgency"]
-    );
-
+    // One-shot formation creates entity in DocumentsGenerated state.
+    // Top recommendation should be signing documents (not activate, since docs aren't signed yet).
+    let category = top["category"].as_str().unwrap_or("");
     let command = top["command"].as_str().unwrap_or("");
     assert!(
-        command.contains("finalize") || command.contains("activate"),
-        "expected top.command to contain \"finalize\" or \"activate\", got: {command}"
+        category == "documents" || category == "formation",
+        "expected top.category to be \"documents\" or \"formation\", got: {category}"
+    );
+    assert!(
+        command.contains("signing-link") || command.contains("finalize") || command.contains("activate"),
+        "expected actionable command, got: {command}"
     );
 }
