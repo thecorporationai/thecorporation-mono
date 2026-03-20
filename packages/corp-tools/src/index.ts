@@ -30,3 +30,32 @@ export type * from "./api-schemas.js";
 export { ensureEnvFile, loadEnvFile, generateFernetKey, generateSecret } from "./env.js";
 export { processRequest, resolveBinaryPath, resetCache } from "./process-transport.js";
 export type { ProcessRequestOptions } from "./process-transport.js";
+
+// Reference matching / tracking (browser-compatible core)
+export {
+  ReferenceTracker,
+  shortId,
+  slugify,
+  normalize,
+  validateReferenceInput,
+  describeReferenceRecord,
+  getReferenceId,
+  getReferenceLabel,
+  getReferenceAlias,
+  matchRank,
+  isOpaqueUuid,
+  isShortIdCandidate,
+  parseLastReference,
+  uniqueStrings,
+  kindLabel,
+  isEntityScopedKind,
+  extractId,
+  isValidResourceKind,
+  RESOURCE_KINDS,
+} from "./reference-tracker.js";
+export type {
+  ReferenceStorage,
+  ResourceKind,
+  MatchRecord,
+  ReferenceMatch,
+} from "./reference-tracker.js";
