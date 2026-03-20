@@ -10,7 +10,11 @@ import type { ApiRecord } from "../types.js";
 
 async function formHandler(ctx: CommandContext): Promise<void> {
   const { formCommand } = await import("../commands/form.js");
-  await formCommand({ ...ctx.opts, quiet: ctx.quiet } as Parameters<typeof formCommand>[0]);
+  // Map --entity-type / --legal-name aliases to --type / --name for formCommand
+  const opts = { ...ctx.opts, quiet: ctx.quiet };
+  if (opts.entityType && !opts.type) opts.type = opts.entityType;
+  if (opts.legalName && !opts.name) opts.name = opts.legalName;
+  await formCommand(opts as Parameters<typeof formCommand>[0]);
 }
 
 // ── form create handler ────────────────────────────────────────
@@ -41,11 +45,10 @@ async function resolveEntityRefForFormCommand(
   }
   try {
     return await resolver.resolveEntity(entityRef);
-  } catch (err) {
-    if (String(err).includes("fetch failed")) {
-      return entityRef;
-    }
-    throw err;
+  } catch {
+    // In dry-run mode, fall back to the raw ref if resolution fails
+    // (e.g. fetch failed, auth error, network error, etc.)
+    return entityRef;
   }
 }
 
@@ -319,7 +322,9 @@ export const formationCommands: CommandDef[] = [
     dryRun: true,
     options: [
       { flags: "--type <type>", description: "Entity type (llc, c_corp)" },
+      { flags: "--entity-type <type>", description: "Entity type (alias for --type)" },
       { flags: "--name <name>", description: "Legal name" },
+      { flags: "--legal-name <name>", description: "Legal name (alias for --name)" },
       { flags: "--jurisdiction <jurisdiction>", description: "Jurisdiction (e.g. US-DE, US-WY)" },
       { flags: "--member <member>", description: "Founder as 'name,email,role[,pct[,address[,officer_title[,is_incorporator]]]]' (repeatable)", type: "array", default: [] },
       { flags: "--member-json <json>", description: "Founder JSON object (repeatable)", type: "array", default: [] },

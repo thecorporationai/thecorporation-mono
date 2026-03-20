@@ -144,7 +144,7 @@ async function ensureIssuancePreflight(
     await client.getCurrent409a(entityId);
   } catch (err) {
     const msg = String(err);
-    if (msg.includes("404")) {
+    if (msg.includes("404") || msg.includes("Not found") || msg.includes("not found")) {
       throw new Error(
         "Stock option issuances require a current approved 409A valuation. Create and approve one first with: corp cap-table create-valuation --type four_oh_nine_a --date YYYY-MM-DD --methodology <method>; corp cap-table submit-valuation <valuation-ref>; corp cap-table approve-valuation <valuation-ref> --resolution-id <resolution-ref>",
       );
@@ -354,7 +354,7 @@ export const capTableCommands: CommandDef[] = [
         print409a(data);
       } catch (err) {
         const msg = String(err);
-        if (msg.includes("404")) {
+        if (msg.includes("404") || msg.includes("Not found") || msg.includes("not found")) {
           try {
             const valuations = await ctx.client.getValuations(eid);
             const pending409a = valuations
@@ -1028,7 +1028,7 @@ export const capTableCommands: CommandDef[] = [
         }
       } catch (err) {
         const msg = String(err);
-        if (msg.includes("404")) {
+        if (msg.includes("404") || msg.includes("Not found") || msg.includes("not found")) {
           ctx.writer.error(`Valuation not found. List valuations with: corp cap-table valuations`);
         } else {
           ctx.writer.error(`Failed to submit valuation: ${err}`);

@@ -1,4 +1,4 @@
-import { Command } from "commander";
+import { Command, Option } from "commander";
 import type { CommandDef, CommandContext } from "./registry/types.js";
 import { executeGenericRead } from "./generic-executor.js";
 import { createWriter } from "./writer.js";
@@ -123,13 +123,24 @@ function wireCommand(parent: Command, def: CommandDef): Command {
         v,
       ];
 
-    const defaultVal = opt.default as string | boolean | string[] | undefined;
-    if (opt.required) {
-      if (coerce) cmd.requiredOption(opt.flags, opt.description, coerce, opt.default);
-      else cmd.requiredOption(opt.flags, opt.description, defaultVal);
+    // When choices are specified, use Commander's Option class with .choices()
+    // so Commander validates the value at parse time.
+    if (opt.choices && opt.choices.length > 0) {
+      const o = new Option(opt.flags, opt.description);
+      o.choices(opt.choices);
+      if (opt.required) o.makeOptionMandatory(true);
+      if (opt.default !== undefined) o.default(opt.default);
+      if (coerce) o.argParser(coerce as (value: string, previous: unknown) => unknown);
+      cmd.addOption(o);
     } else {
-      if (coerce) cmd.option(opt.flags, opt.description, coerce, opt.default);
-      else cmd.option(opt.flags, opt.description, defaultVal);
+      const defaultVal = opt.default as string | boolean | string[] | undefined;
+      if (opt.required) {
+        if (coerce) cmd.requiredOption(opt.flags, opt.description, coerce, opt.default);
+        else cmd.requiredOption(opt.flags, opt.description, defaultVal);
+      } else {
+        if (coerce) cmd.option(opt.flags, opt.description, coerce, opt.default);
+        else cmd.option(opt.flags, opt.description, defaultVal);
+      }
     }
   }
 

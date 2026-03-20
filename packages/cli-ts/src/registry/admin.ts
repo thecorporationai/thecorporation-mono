@@ -308,9 +308,22 @@ export const adminCommands: CommandDef[] = [
   {
     name: "approvals",
     description: "Approvals are managed through governance meetings and execution intents",
+    local: true,
     handler: async () => {
-      const { approvalsListCommand } = await import("../commands/approvals.js");
-      await approvalsListCommand({});
+      process.stderr.write(
+        "Approvals are managed through governance meetings and execution intents.\n" +
+        "Use these commands to manage approvals:\n\n" +
+        "  Board approval via meeting vote:\n" +
+        '    corp governance convene --body <body> --type board_meeting --title "Approve X"\n' +
+        "    corp governance vote <meeting> <item> --voter <contact> --vote for\n\n" +
+        "  Written consent (no meeting needed):\n" +
+        '    corp governance written-consent --body <body> --title "Approve X" --description "..."\n\n' +
+        "  View pending items:\n" +
+        "    corp governance meetings <body>        # see scheduled meetings\n" +
+        "    corp governance agenda-items <meeting>  # see items awaiting votes\n" +
+        "    corp cap-table valuations               # see pending valuations\n",
+      );
+      process.exit(1);
     },
   },
 ];
