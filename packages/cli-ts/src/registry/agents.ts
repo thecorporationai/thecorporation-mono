@@ -146,6 +146,8 @@ export const agentCommands: CommandDef[] = [
         process.exit(1);
       }
     },
+    produces: { kind: "agent" },
+    successTemplate: "Agent created: {name}",
   },
 
   // --- agents pause <agent-ref> ---

@@ -129,6 +129,8 @@ export const serviceCommands: CommandDef[] = [
         });
       }
     },
+    produces: { kind: "service_request" },
+    successTemplate: "Service request created",
   },
 
   // --- services fulfill <ref> ---

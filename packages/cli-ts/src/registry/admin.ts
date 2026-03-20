@@ -169,6 +169,8 @@ export const adminCommands: CommandDef[] = [
         json: ctx.opts.json as boolean | undefined,
       });
     },
+    produces: { kind: "api_key" },
+    successTemplate: "API key created",
   },
   {
     name: "api-keys revoke",
@@ -203,6 +205,8 @@ export const adminCommands: CommandDef[] = [
         json: ctx.opts.json as boolean | undefined,
       });
     },
+    produces: { kind: "api_key" },
+    successTemplate: "API key rotated",
   },
 
   // ── link (API, write) ───────────────────────────────────────────────
@@ -233,6 +237,7 @@ export const adminCommands: CommandDef[] = [
       const { claimCommand } = await import("../commands/claim.js");
       await claimCommand(ctx.positional[0]);
     },
+    produces: { kind: "entity", trackEntity: true },
   },
 
   // ── feedback (API, write) ───────────────────────────────────────────

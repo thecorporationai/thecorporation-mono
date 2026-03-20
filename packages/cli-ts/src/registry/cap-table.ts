@@ -501,6 +501,8 @@ export const capTableCommands: CommandDef[] = [
       ctx.writer.success(`Instrument created: ${result.instrument_id ?? "OK"}`);
       printReferenceSummary("instrument", result, { showReuseHint: true });
     },
+    produces: { kind: "instrument" },
+    successTemplate: "Instrument created: {symbol}",
   },
 
   // --- cap-table issue-equity ---
@@ -622,6 +624,8 @@ export const capTableCommands: CommandDef[] = [
       ctx.writer.success(`Equity issued: ${shares} shares (${grantType}) to ${recipient}`);
       printReferenceSummary("round", round, { label: "Round Ref:", showReuseHint: true });
     },
+    produces: { kind: "round" },
+    successTemplate: "Equity issued: {round_name}",
   },
 
   // --- cap-table issue-safe ---
@@ -695,6 +699,8 @@ export const capTableCommands: CommandDef[] = [
       ctx.writer.success(`SAFE issued: $${(amountCents / 100).toLocaleString()} to ${investor}`);
       printReferenceSummary("safe_note", result, { showReuseHint: true });
     },
+    produces: { kind: "safe_note" },
+    successTemplate: "SAFE created: {investor_name}",
   },
 
   // --- cap-table transfer ---
@@ -781,6 +787,8 @@ export const capTableCommands: CommandDef[] = [
       ctx.writer.success(`Transfer workflow created: ${result.transfer_workflow_id ?? "OK"}`);
       printReferenceSummary("share_transfer", result, { label: "Transfer Ref:", showReuseHint: true });
     },
+    produces: { kind: "share_transfer" },
+    successTemplate: "Transfer created",
   },
 
   // --- cap-table distribute ---
@@ -850,6 +858,8 @@ export const capTableCommands: CommandDef[] = [
       ctx.writer.success(`Round started: ${result.round_id ?? "OK"}`);
       printReferenceSummary("round", result, { showReuseHint: true });
     },
+    produces: { kind: "round" },
+    successTemplate: "Round started: {round_name}",
   },
 
   // --- cap-table add-security ---
@@ -978,6 +988,8 @@ export const capTableCommands: CommandDef[] = [
       ctx.writer.success(`Valuation created: ${result.valuation_id ?? "OK"}`);
       printReferenceSummary("valuation", result, { showReuseHint: true });
     },
+    produces: { kind: "valuation" },
+    successTemplate: "Valuation created",
   },
 
   // --- cap-table submit-valuation <valuation-ref> ---

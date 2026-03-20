@@ -260,6 +260,8 @@ export const documentCommands: CommandDef[] = [
         process.exit(1);
       }
     },
+    produces: { kind: "document" },
+    successTemplate: "Document generated: {title}",
   },
 
   // --- documents preview-pdf ---

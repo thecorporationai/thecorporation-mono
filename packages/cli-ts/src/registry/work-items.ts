@@ -142,6 +142,8 @@ export const workItemCommands: CommandDef[] = [
         { jsonOnly: ctx.opts.json, referenceKind: "work_item", showReuseHint: true },
       );
     },
+    produces: { kind: "work_item" },
+    successTemplate: "Work item created: {title}",
   },
 
   // --- work-items claim <item-ref> ---

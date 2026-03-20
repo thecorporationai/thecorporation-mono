@@ -336,6 +336,8 @@ export const formationCommands: CommandDef[] = [
       { flags: "--rofr", description: "Enable right of first refusal" },
     ],
     handler: formHandler,
+    produces: { kind: "entity", trackEntity: true },
+    successTemplate: "Entity formed: {legal_name}",
     examples: [
       'corp form --type llc --name "My LLC" --member "Alice,alice@co.com,member,100"',
       "corp form --type c_corp --name \"Acme Inc\" --jurisdiction US-DE --member-json '{\"name\":\"Bob\",\"email\":\"bob@acme.com\",\"role\":\"director\",\"pct\":100}'",
@@ -363,6 +365,8 @@ export const formationCommands: CommandDef[] = [
       { flags: "--company-address <address>", description: "Company address as 'street,city,state,zip'" },
     ],
     handler: formCreateHandler,
+    produces: { kind: "entity", trackEntity: true },
+    successTemplate: "Pending entity created: {legal_name}",
   },
   {
     name: "form add-founder",

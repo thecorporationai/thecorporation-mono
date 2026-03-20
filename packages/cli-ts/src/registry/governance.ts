@@ -265,6 +265,8 @@ export const governanceCommands: CommandDef[] = [
       console.log(chalk.dim(`    corp governance add-seat @last:body --holder <contact-ref>`));
       console.log(chalk.dim(`    corp governance seats @last:body`));
     },
+    produces: { kind: "body" },
+    successTemplate: "Governance body created: {name}",
   },
 
   // --- governance add-seat <body-ref> ---
@@ -296,6 +298,8 @@ export const governanceCommands: CommandDef[] = [
       ctx.writer.success(`Seat added: ${result.seat_id ?? "OK"}`);
       printReferenceSummary("seat", result, { showReuseHint: true });
     },
+    produces: { kind: "seat" },
+    successTemplate: "Seat added to {body_id}",
   },
 
   // --- governance convene ---
@@ -339,6 +343,8 @@ export const governanceCommands: CommandDef[] = [
       console.log(chalk.dim(`    corp governance open @last:meeting --present-seat <seat-ref>`));
       console.log(chalk.dim(`    corp governance agenda-items @last:meeting`));
     },
+    produces: { kind: "meeting" },
+    successTemplate: "Meeting scheduled: {title}",
   },
 
   // --- governance open <meeting-ref> ---
@@ -590,6 +596,8 @@ export const governanceCommands: CommandDef[] = [
       ctx.writer.success(`Resolution computed for agenda item ${itemRef}`);
       printReferenceSummary("resolution", result, { showReuseHint: true });
     },
+    produces: { kind: "resolution" },
+    successTemplate: "Resolution computed",
   },
 
   // --- governance written-consent ---
@@ -641,6 +649,8 @@ export const governanceCommands: CommandDef[] = [
       console.log(chalk.dim(`    corp governance agenda-items @last:meeting`));
       console.log(chalk.dim(`    corp governance vote @last:meeting <item-ref> --voter <contact-ref> --vote for`));
     },
+    produces: { kind: "meeting" },
+    successTemplate: "Written consent created: {title}",
   },
 
   // --- governance resign <seat-ref> ---

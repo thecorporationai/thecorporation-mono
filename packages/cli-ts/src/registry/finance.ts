@@ -203,6 +203,8 @@ export const financeCommands: CommandDef[] = [
         showReuseHint: true,
       });
     },
+    produces: { kind: "invoice" },
+    successTemplate: "Invoice created: {customer_name}",
   },
 
   // --- finance payments ---
@@ -260,6 +262,8 @@ export const financeCommands: CommandDef[] = [
         showReuseHint: true,
       });
     },
+    produces: { kind: "payment" },
+    successTemplate: "Payment submitted: {recipient_name}",
   },
 
   // --- finance bank-accounts ---
@@ -302,6 +306,8 @@ export const financeCommands: CommandDef[] = [
         showReuseHint: true,
       });
     },
+    produces: { kind: "bank_account" },
+    successTemplate: "Bank account opened: {bank_name}",
   },
 
   // --- finance activate-account <account-ref> ---
@@ -371,6 +377,8 @@ export const financeCommands: CommandDef[] = [
         showReuseHint: true,
       });
     },
+    produces: { kind: "payroll_run" },
+    successTemplate: "Payroll run created",
   },
 
   // --- finance distributions ---
@@ -438,6 +446,8 @@ export const financeCommands: CommandDef[] = [
         showReuseHint: true,
       });
     },
+    produces: { kind: "reconciliation" },
+    successTemplate: "Reconciliation created",
   },
 
   // --- finance classifications ---
@@ -493,6 +503,8 @@ export const financeCommands: CommandDef[] = [
         showReuseHint: true,
       });
     },
+    produces: { kind: "classification" },
+    successTemplate: "Classification created: {contractor_name}",
   },
 
   // --- finance statements ---

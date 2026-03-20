@@ -283,6 +283,8 @@ export const entityCommands: CommandDef[] = [
       { flags: "--notes <notes>", description: "Notes" },
     ],
     handler: contactsAddHandler,
+    produces: { kind: "contact" },
+    successTemplate: "Contact created: {name}",
   },
   {
     name: "contacts edit",

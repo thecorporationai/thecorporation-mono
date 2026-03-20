@@ -112,6 +112,8 @@ export const complianceCommands: CommandDef[] = [
         showReuseHint: true,
       });
     },
+    produces: { kind: "tax_filing" },
+    successTemplate: "Tax filing created",
   },
 
   // --- tax deadlines ---
@@ -168,5 +170,7 @@ export const complianceCommands: CommandDef[] = [
         showReuseHint: true,
       });
     },
+    produces: { kind: "deadline" },
+    successTemplate: "Deadline tracked",
   },
 ];
