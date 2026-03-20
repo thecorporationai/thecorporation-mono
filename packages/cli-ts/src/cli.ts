@@ -93,11 +93,14 @@ function wireCommand(parent: Command, def: CommandDef): Command {
     cmd.alias(alias);
   }
 
-  // Standard options — every command gets --json
-  cmd.option("--json", "Output as JSON");
+  // Standard options — every command gets --json (unless already defined in options)
+  const definedFlags = new Set((def.options || []).map((o) => o.flags));
+  if (!definedFlags.has("--json")) {
+    cmd.option("--json", "Output as JSON");
+  }
 
   // Entity-scoped commands get --entity-id
-  if (def.entity) {
+  if (def.entity && !definedFlags.has("--entity-id <ref>")) {
     cmd.option(
       "--entity-id <ref>",
       "Entity reference (overrides active entity and parent command)",
@@ -105,7 +108,7 @@ function wireCommand(parent: Command, def: CommandDef): Command {
   }
 
   // Dry-run support
-  if (def.dryRun) {
+  if (def.dryRun && !definedFlags.has("--dry-run")) {
     cmd.option("--dry-run", "Preview the request without executing");
   }
 

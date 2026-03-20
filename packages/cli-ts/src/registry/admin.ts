@@ -82,7 +82,8 @@ export const adminCommands: CommandDef[] = [
       }
       const { createRequire } = await import("node:module");
       const require = createRequire(import.meta.url);
-      const pkg = require("../../package.json");
+      let pkg: { version: string };
+      try { pkg = require("../../package.json"); } catch { pkg = require("../package.json"); }
       const schema = generateSchema(registry, "corp", pkg.version);
       if (ctx.opts.compact) {
         console.log(JSON.stringify(schema));
