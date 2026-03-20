@@ -90,6 +90,7 @@ export function generateSchema(commands: CommandDef[], programName: string, vers
       variadic: boolean;
       choices?: string[];
     }[];
+    examples?: string[];
     subcommands: SchemaCmd[];
   }
 
@@ -156,6 +157,7 @@ export function generateSchema(commands: CommandDef[], programName: string, vers
           ...(o.choices && { choices: o.choices }),
         })),
       ],
+      ...(cmd.examples?.length ? { examples: cmd.examples } : {}),
       subcommands: [],
     };
 
