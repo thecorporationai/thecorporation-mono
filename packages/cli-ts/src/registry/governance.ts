@@ -9,6 +9,7 @@ import {
   printReferenceSummary,
 } from "../output.js";
 import { confirm } from "@inquirer/prompts";
+import { writtenConsent as writtenConsentWorkflow } from "@thecorporation/corp-tools";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -622,29 +623,26 @@ export const governanceCommands: CommandDef[] = [
         ctx.writer.dryRun("governance.written_consent", payload);
         return;
       }
-      const result = await ctx.client.writtenConsent(payload);
-      await ctx.resolver.stabilizeRecord("meeting", result, eid);
-      ctx.resolver.rememberFromRecord("meeting", result, eid);
-      const meetingId = String(result.meeting_id ?? "");
 
-      // Auto-open written consent with all body seats present for quorum evaluation
-      if (meetingId) {
-        try {
-          const seats = await ctx.client.getGovernanceSeats(resolvedBodyId, eid);
-          const seatIds = seats
-            .map((s) => String(s.seat_id ?? (s as Record<string, unknown>).id ?? ""))
-            .filter((id) => id.length > 0);
-          if (seatIds.length > 0) {
-            await ctx.client.conveneMeeting(meetingId, eid, { present_seat_ids: seatIds });
-          }
-        } catch {
-          // Non-fatal: written consent can still proceed without open step
-        }
+      const result = await writtenConsentWorkflow(ctx.client, {
+        entityId: eid,
+        bodyId: resolvedBodyId,
+        title: ctx.opts.title as string,
+        description: ctx.opts.description as string,
+      });
+
+      if (!result.success) {
+        ctx.writer.error(result.error!);
+        return;
       }
 
-      if (ctx.opts.json) { ctx.writer.json(result); return; }
+      await ctx.resolver.stabilizeRecord("meeting", result.data!, eid);
+      ctx.resolver.rememberFromRecord("meeting", result.data!, eid);
+      const meetingId = String(result.data?.meeting_id ?? "");
+
+      if (ctx.opts.json) { ctx.writer.json(result.data); return; }
       ctx.writer.success(`Written consent created: ${meetingId || "OK"}`);
-      printReferenceSummary("meeting", result, { showReuseHint: true });
+      printReferenceSummary("meeting", result.data!, { showReuseHint: true });
       console.log(chalk.dim("\n  Next steps:"));
       console.log(chalk.dim(`    corp governance agenda-items @last:meeting`));
       console.log(chalk.dim(`    corp governance vote @last:meeting <item-ref> --voter <contact-ref> --vote for`));

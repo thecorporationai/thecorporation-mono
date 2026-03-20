@@ -1,6 +1,5 @@
 import chalk from "chalk";
 import type { CommandDef, CommandContext } from "./types.js";
-import type { CorpAPIClient } from "../api-client.js";
 import type { ApiRecord } from "../types.js";
 import {
   printCapTable,
@@ -13,145 +12,15 @@ import {
   printValuationsTable,
 } from "../output.js";
 import { shortId } from "../references.js";
+import {
+  entityHasActiveBoard,
+  issueEquity,
+  issueSafe,
+} from "@thecorporation/corp-tools";
 
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
-
-type CapTableInstrument = {
-  instrument_id: string;
-  kind: string;
-  symbol: string;
-  status?: string;
-};
-
-// ---------------------------------------------------------------------------
-// Helpers — equity issuance logic shared across handlers
-// ---------------------------------------------------------------------------
-
-function normalizedGrantType(grantType: string): string {
-  return grantType.trim().toLowerCase().replaceAll("-", "_").replaceAll(" ", "_");
-}
-
-function expectedInstrumentKinds(grantType: string): string[] {
-  switch (normalizedGrantType(grantType)) {
-    case "common":
-    case "common_stock":
-      return ["common_equity"];
-    case "preferred":
-    case "preferred_stock":
-      return ["preferred_equity"];
-    case "unit":
-    case "membership_unit":
-      return ["membership_unit"];
-    case "option":
-    case "options":
-    case "stock_option":
-    case "iso":
-    case "nso":
-      return ["option_grant"];
-    case "rsa":
-      return ["common_equity", "preferred_equity"];
-    default:
-      return [];
-  }
-}
-
-function grantRequiresCurrent409a(grantType: string, instrumentKind?: string): boolean {
-  return instrumentKind?.toLowerCase() === "option_grant" || expectedInstrumentKinds(grantType).includes("option_grant");
-}
-
-function buildInstrumentCreationHint(grantType: string): string {
-  const normalized = normalizedGrantType(grantType);
-  switch (normalized) {
-    case "preferred":
-    case "preferred_stock":
-      return "Create one with: corp cap-table create-instrument --kind preferred_equity --symbol SERIES-A --authorized-units <shares>";
-    case "option":
-    case "options":
-    case "stock_option":
-    case "iso":
-    case "nso":
-      return "Create one with: corp cap-table create-instrument --kind option_grant --symbol OPTION-PLAN --authorized-units <shares>";
-    case "membership_unit":
-    case "unit":
-      return "Create one with: corp cap-table create-instrument --kind membership_unit --symbol UNIT --authorized-units <units>";
-    case "common":
-    case "common_stock":
-      return "Create one with: corp cap-table create-instrument --kind common_equity --symbol COMMON --authorized-units <shares>";
-    default:
-      return "Create a matching instrument first, then pass --instrument-id explicitly.";
-  }
-}
-
-function resolveInstrumentForGrant(
-  instruments: CapTableInstrument[],
-  grantType: string,
-  explicitInstrumentId?: string,
-): CapTableInstrument {
-  if (explicitInstrumentId) {
-    const explicit = instruments.find((instrument) => instrument.instrument_id === explicitInstrumentId);
-    if (!explicit) {
-      throw new Error(`Instrument ${explicitInstrumentId} was not found on the cap table.`);
-    }
-    return explicit;
-  }
-
-  const expectedKinds = expectedInstrumentKinds(grantType);
-  if (expectedKinds.length === 0) {
-    throw new Error(
-      `No default instrument mapping exists for grant type "${grantType}". ${buildInstrumentCreationHint(grantType)}`,
-    );
-  }
-  const match = instruments.find((instrument) => expectedKinds.includes(String(instrument.kind).toLowerCase()));
-  if (!match) {
-    throw new Error(
-      `No instrument found for grant type "${grantType}". Expected one of: ${expectedKinds.join(", ")}. ${buildInstrumentCreationHint(grantType)}`,
-    );
-  }
-  return match;
-}
-
-async function entityHasActiveBoard(client: CorpAPIClient, entityId: string): Promise<boolean> {
-  const bodies = await client.listGovernanceBodies(entityId);
-  return bodies.some((body) =>
-    String(body.body_type ?? "").toLowerCase() === "board_of_directors"
-      && String(body.status ?? "active").toLowerCase() === "active"
-  );
-}
-
-async function ensureIssuancePreflight(
-  client: CorpAPIClient,
-  entityId: string,
-  grantType: string,
-  instrument?: CapTableInstrument,
-  meetingId?: string,
-  resolutionId?: string,
-): Promise<void> {
-  if (!meetingId || !resolutionId) {
-    if (await entityHasActiveBoard(client, entityId)) {
-      throw new Error(
-        "Board approval is required before issuing this round. Pass --meeting-id and --resolution-id from a passed board vote.",
-      );
-    }
-  }
-
-  if (!grantRequiresCurrent409a(grantType, instrument?.kind)) {
-    return;
-  }
-
-  try {
-    await client.getCurrent409a(entityId);
-  } catch (err) {
-    const msg = String(err);
-    if (msg.includes("404") || msg.includes("Not found") || msg.includes("not found")) {
-      throw new Error(
-        "Stock option issuances require a current approved 409A valuation. Create and approve one first with: corp cap-table create-valuation --type four_oh_nine_a --date YYYY-MM-DD --methodology <method>; corp cap-table submit-valuation <valuation-ref>; corp cap-table approve-valuation <valuation-ref> --resolution-id <resolution-ref>",
-      );
-    }
-    throw err;
-  }
-}
+// Helpers (normalizedGrantType, expectedInstrumentKinds, grantRequiresCurrent409a,
+// buildInstrumentCreationHint, resolveInstrumentForGrant, entityHasActiveBoard,
+// ensureIssuancePreflight) are now imported from @thecorporation/corp-tools.
 
 // ---------------------------------------------------------------------------
 // Local output helper — 409A panel
@@ -545,84 +414,49 @@ export const capTableCommands: CommandDef[] = [
         return;
       }
 
-      // Fetch cap table to get issuer and instrument info
-      const capTable = await ctx.client.getCapTable(eid);
-      const issuerLegalEntityId = capTable.issuer_legal_entity_id as string;
-      if (!issuerLegalEntityId) {
-        ctx.writer.error("No issuer legal entity found. Has this entity been formed with a cap table?");
-        process.exit(1);
-      }
-
-      // Resolve instrument ID
-      const instruments = (capTable.instruments ?? []) as CapTableInstrument[];
-      if (!instruments.length) {
-        ctx.writer.error("No instruments found on cap table. Create one with: corp cap-table create-instrument --kind common_equity --symbol COMMON --authorized-units <shares>");
-        process.exit(1);
-      }
-      const explicitInstrumentId = optInstrumentId
+      // Resolve references before passing to workflow
+      const instrumentId = optInstrumentId
         ? await ctx.resolver.resolveInstrument(eid, optInstrumentId)
         : undefined;
-      const instrument = resolveInstrumentForGrant(instruments, grantType, explicitInstrumentId);
-      const instrumentId = instrument.instrument_id;
-      if (!optInstrumentId) {
-        console.log(`Using instrument: ${instrument.symbol} (${instrument.kind})`);
-      }
       const meetingId = optMeetingId ? await ctx.resolver.resolveMeeting(eid, optMeetingId) : undefined;
       const resolutionId = optResolutionId
         ? await ctx.resolver.resolveResolution(eid, optResolutionId, meetingId)
         : undefined;
-      await ensureIssuancePreflight(
-        ctx.client,
-        eid,
+
+      const result = await issueEquity(ctx.client, {
+        entityId: eid,
         grantType,
-        instrument,
+        shares,
+        recipientName: recipient,
+        recipientEmail: email,
+        instrumentId,
         meetingId,
         resolutionId,
-      );
-
-      // 1. Start a staged round
-      const round = await ctx.client.startEquityRound({
-        entity_id: eid,
-        name: `${grantType} grant \u2014 ${recipient}`,
-        issuer_legal_entity_id: issuerLegalEntityId,
       });
-      await ctx.resolver.stabilizeRecord("round", round, eid);
-      const roundId = (round.round_id ?? round.equity_round_id) as string;
 
-      // 2. Add the security
-      const securityData: Record<string, unknown> = {
-        entity_id: eid,
-        instrument_id: instrumentId,
-        quantity: shares,
-        recipient_name: recipient,
-        grant_type: grantType,
-      };
-      if (email) securityData.email = email;
-
-      // Attempt to find existing holder to avoid creating duplicates
-      const existingHolders = (capTable.holders ?? []) as ApiRecord[];
-      const matchingHolder = existingHolders.find((h) => {
-        const nameMatch = String(h.name ?? "").toLowerCase() === recipient.toLowerCase();
-        const emailMatch = email && String(h.email ?? "").toLowerCase() === email.toLowerCase();
-        return nameMatch || emailMatch;
-      });
-      if (matchingHolder) {
-        const holderId = matchingHolder.holder_id ?? matchingHolder.contact_id ?? matchingHolder.id;
-        if (holderId) securityData.holder_id = holderId;
+      if (!result.success) {
+        ctx.writer.error(result.error!);
+        return;
       }
 
-      await ctx.client.addRoundSecurity(roundId, securityData);
+      // Track references for the created round
+      const round = result.data?.round as Record<string, unknown> | undefined;
+      if (round) {
+        await ctx.resolver.stabilizeRecord("round", round, eid);
+        ctx.resolver.rememberFromRecord("round", round, eid);
+      }
 
-      // 3. Issue the round
-      const issuePayload: Record<string, unknown> = { entity_id: eid };
-      if (meetingId) issuePayload.meeting_id = meetingId;
-      if (resolutionId) issuePayload.resolution_id = resolutionId;
-      const result = await ctx.client.issueRound(roundId, issuePayload);
-      ctx.resolver.rememberFromRecord("round", round, eid);
+      // Show instrument selection detail
+      const instrStep = result.steps.find((s) => s.name === "resolve_instrument");
+      if (instrStep && !optInstrumentId) {
+        console.log(instrStep.detail);
+      }
 
-      if (ctx.opts.json) { ctx.writer.json(result); return; }
+      if (ctx.opts.json) { ctx.writer.json(result.data); return; }
       ctx.writer.success(`Equity issued: ${shares} shares (${grantType}) to ${recipient}`);
-      printReferenceSummary("round", round, { label: "Round Ref:", showReuseHint: true });
+      if (round) {
+        printReferenceSummary("round", round, { label: "Round Ref:", showReuseHint: true });
+      }
     },
     produces: { kind: "round" },
     successTemplate: "Equity issued: {round_name}",
@@ -669,35 +503,33 @@ export const capTableCommands: CommandDef[] = [
         return;
       }
 
+      // Resolve references before passing to workflow
       const meetingId = optMeetingId ? await ctx.resolver.resolveMeeting(eid, optMeetingId) : undefined;
       const resolutionId = optResolutionId
         ? await ctx.resolver.resolveResolution(eid, optResolutionId, meetingId)
         : undefined;
-      await ensureIssuancePreflight(
-        ctx.client,
-        eid,
+
+      const result = await issueSafe(ctx.client, {
+        entityId: eid,
+        investorName: investor,
+        amountCents,
+        valuationCapCents,
         safeType,
-        undefined,
+        email,
         meetingId,
         resolutionId,
-      );
+      });
 
-      const body: Record<string, unknown> = {
-        entity_id: eid,
-        investor_name: investor,
-        principal_amount_cents: amountCents,
-        valuation_cap_cents: valuationCapCents,
-        safe_type: safeType,
-      };
-      if (email) body.email = email;
-      if (meetingId) body.meeting_id = meetingId;
-      if (resolutionId) body.resolution_id = resolutionId;
-      const result = await ctx.client.createSafeNote(body);
-      await ctx.resolver.stabilizeRecord("safe_note", result, eid);
-      ctx.resolver.rememberFromRecord("safe_note", result, eid);
-      if (ctx.opts.json) { ctx.writer.json(result); return; }
+      if (!result.success) {
+        ctx.writer.error(result.error!);
+        return;
+      }
+
+      await ctx.resolver.stabilizeRecord("safe_note", result.data!, eid);
+      ctx.resolver.rememberFromRecord("safe_note", result.data!, eid);
+      if (ctx.opts.json) { ctx.writer.json(result.data); return; }
       ctx.writer.success(`SAFE issued: $${(amountCents / 100).toLocaleString()} to ${investor}`);
-      printReferenceSummary("safe_note", result, { showReuseHint: true });
+      printReferenceSummary("safe_note", result.data!, { showReuseHint: true });
     },
     produces: { kind: "safe_note" },
     successTemplate: "SAFE created: {investor_name}",

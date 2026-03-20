@@ -59,3 +59,26 @@ export type {
   MatchRecord,
   ReferenceMatch,
 } from "./reference-tracker.js";
+
+// Shared workflows (multi-step business logic)
+export {
+  // Equity helpers
+  normalizedGrantType,
+  expectedInstrumentKinds,
+  grantRequiresCurrent409a,
+  buildInstrumentCreationHint,
+  resolveInstrumentForGrant,
+  entityHasActiveBoard,
+  ensureIssuancePreflight,
+  // Multi-step workflows
+  issueEquity,
+  issueSafe,
+  writtenConsent,
+} from "./workflows/index.js";
+export type {
+  WorkflowResult,
+  WorkflowStep,
+  IssueEquityArgs,
+  IssueSafeArgs,
+  WrittenConsentArgs,
+} from "./workflows/index.js";
