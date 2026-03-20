@@ -138,6 +138,14 @@ export const financeCommands: CommandDef[] = [
       if (ctx.opts.json) { ctx.writer.json(summary); return; }
       printFinanceSummaryPanel(summary);
     },
+    examples: [
+      "corp finance",
+      'corp finance invoice --customer "Client Co" --amount-cents 500000 --due-date 2026-04-01',
+      'corp finance pay --amount-cents 250000 --recipient "Vendor" --method ach',
+      "corp finance payroll --period-start 2026-03-01 --period-end 2026-03-15",
+      "corp finance open-account --institution Mercury",
+      "corp finance statements --period 2026-Q1",
+    ],
   },
 
   // --- finance invoices ---
