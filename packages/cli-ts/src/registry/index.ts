@@ -2,21 +2,21 @@ import type { CommandDef, WebRouteEntry } from "./types.js";
 
 // Domain registries — uncomment as they're created
 import { workspaceCommands } from "./workspace.js";
-// import { entityCommands } from "./entities.js";
-// import { contactCommands } from "./contacts.js";
+import { entityCommands } from "./entities.js";
+import { formationCommands } from "./formation.js";
 // import { capTableCommands } from "./cap-table.js";
 // import { financeCommands } from "./finance.js";
-// import { governanceCommands } from "./governance.js";
+import { governanceCommands } from "./governance.js";
 // import { documentCommands } from "./documents.js";
 // import { taxCommands } from "./tax.js";
 
 export const registry: CommandDef[] = [
   ...workspaceCommands,
-  // ...entityCommands,
-  // ...contactCommands,
+  ...entityCommands,
+  ...formationCommands,
   // ...capTableCommands,
   // ...financeCommands,
-  // ...governanceCommands,
+  ...governanceCommands,
   // ...documentCommands,
   // ...taxCommands,
 ];
