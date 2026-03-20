@@ -9,6 +9,7 @@ import { formationCommands } from "./formation.js";
 import { governanceCommands } from "./governance.js";
 // import { documentCommands } from "./documents.js";
 // import { taxCommands } from "./tax.js";
+import { adminCommands } from "./admin.js";
 
 export const registry: CommandDef[] = [
   ...workspaceCommands,
@@ -19,6 +20,7 @@ export const registry: CommandDef[] = [
   ...governanceCommands,
   // ...documentCommands,
   // ...taxCommands,
+  ...adminCommands,
 ];
 
 /** Generate web-routes.json manifest from registry */
