@@ -4,22 +4,28 @@ import type { CommandDef, WebRouteEntry } from "./types.js";
 import { workspaceCommands } from "./workspace.js";
 import { entityCommands } from "./entities.js";
 import { formationCommands } from "./formation.js";
-// import { capTableCommands } from "./cap-table.js";
-// import { financeCommands } from "./finance.js";
+import { capTableCommands } from "./cap-table.js";
+import { financeCommands } from "./finance.js";
 import { governanceCommands } from "./governance.js";
-// import { documentCommands } from "./documents.js";
-// import { taxCommands } from "./tax.js";
+import { documentCommands } from "./documents.js";
+import { complianceCommands } from "./compliance.js";
+import { agentCommands } from "./agents.js";
+import { workItemCommands } from "./work-items.js";
+import { serviceCommands } from "./services.js";
 import { adminCommands } from "./admin.js";
 
 export const registry: CommandDef[] = [
   ...workspaceCommands,
   ...entityCommands,
   ...formationCommands,
-  // ...capTableCommands,
-  // ...financeCommands,
+  ...capTableCommands,
+  ...financeCommands,
   ...governanceCommands,
-  // ...documentCommands,
-  // ...taxCommands,
+  ...documentCommands,
+  ...complianceCommands,
+  ...agentCommands,
+  ...workItemCommands,
+  ...serviceCommands,
   ...adminCommands,
 ];
 
