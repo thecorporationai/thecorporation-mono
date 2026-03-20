@@ -181,6 +181,11 @@ export class CorpAPIClient {
     await this.throwIfError(resp);
   }
 
+  /** Public generic GET for declarative/registry-driven commands. */
+  async fetchJSON(path: string, params?: Record<string, string>): Promise<unknown> {
+    return this.get(path, params);
+  }
+
   // --- Workspace ---
   getStatus() { return this.get(`/v1/workspaces/${pathSegment(this.workspaceId)}/status`) as Promise<WorkspaceStatusResponse>; }
 
