@@ -29,6 +29,13 @@ export const registry: CommandDef[] = [
   ...adminCommands,
 ];
 
+/** Attach produces/successTemplate to a web-route entry if present on the CommandDef */
+function attachProducesFields(entry: WebRouteEntry, cmd: CommandDef): WebRouteEntry {
+  if (cmd.produces) entry.produces = cmd.produces;
+  if (cmd.successTemplate) entry.successTemplate = cmd.successTemplate;
+  return entry;
+}
+
 /** Generate web-routes.json manifest from registry */
 export function generateWebRoutes(commands: CommandDef[]): { commands: Record<string, WebRouteEntry> } {
   const entries: Record<string, WebRouteEntry> = {};
@@ -37,8 +44,7 @@ export function generateWebRoutes(commands: CommandDef[]): { commands: Record<st
     if (cmd.local) {
       entries[cmd.name] = { local: true };
     } else if (cmd.display && cmd.handler && cmd.route) {
-      // Custom handler with display — web can use generic executor
-      entries[cmd.name] = {
+      entries[cmd.name] = attachProducesFields({
         method: cmd.route.method,
         path: cmd.route.path,
         ...(cmd.entity !== undefined && { entity: cmd.entity }),
@@ -47,10 +53,9 @@ export function generateWebRoutes(commands: CommandDef[]): { commands: Record<st
         ...(cmd.display.listKey && { listKey: cmd.display.listKey }),
         ...(cmd.optQP && { optQP: cmd.optQP }),
         custom: true,
-      };
+      }, cmd);
     } else if (cmd.display && !cmd.handler && cmd.route) {
-      // Pure read — full route config
-      entries[cmd.name] = {
+      entries[cmd.name] = attachProducesFields({
         method: cmd.route.method,
         path: cmd.route.path,
         ...(cmd.entity !== undefined && { entity: cmd.entity }),
@@ -58,13 +63,14 @@ export function generateWebRoutes(commands: CommandDef[]): { commands: Record<st
         ...(cmd.display.cols && { cols: cmd.display.cols }),
         ...(cmd.display.listKey && { listKey: cmd.display.listKey }),
         ...(cmd.optQP && { optQP: cmd.optQP }),
-      };
+      }, cmd);
     } else if (cmd.route && cmd.route.method !== "GET") {
-      // Write command
-      entries[cmd.name] = { method: cmd.route.method, write: true };
+      entries[cmd.name] = attachProducesFields(
+        { method: cmd.route.method, write: true },
+        cmd,
+      );
     } else if (cmd.handler && !cmd.local) {
-      // Custom/informational
-      entries[cmd.name] = { custom: true };
+      entries[cmd.name] = attachProducesFields({ custom: true }, cmd);
     }
   }
   return { commands: entries };

@@ -1,6 +1,14 @@
 import type { CorpAPIClient } from "../api-client.js";
 import type { ReferenceResolver } from "../references.js";
 
+export type ResourceKind =
+  | "entity" | "contact" | "body" | "seat" | "meeting" | "agenda_item"
+  | "resolution" | "document" | "instrument" | "share_class" | "round"
+  | "safe_note" | "valuation" | "share_transfer" | "invoice" | "payment"
+  | "bank_account" | "payroll_run" | "distribution" | "reconciliation"
+  | "classification" | "tax_filing" | "deadline" | "agent" | "work_item"
+  | "service_request" | "api_key" | "digest";
+
 export interface CommandDef {
   name: string;
   description: string;
@@ -17,6 +25,18 @@ export interface CommandDef {
   dryRun?: boolean;
   passThroughOptions?: boolean;
   examples?: string[];
+
+  /** What resource this command produces (for @last tracking and result display) */
+  produces?: {
+    kind: ResourceKind;
+    /** Response field containing the ID (default: `${kind}_id`) */
+    idField?: string;
+    /** Also set the active entity from the response */
+    trackEntity?: boolean;
+  };
+
+  /** Success message template with field interpolation: "Created {name} ({entity_id})" */
+  successTemplate?: string;
 }
 
 export interface ArgDef {
@@ -72,4 +92,6 @@ export interface WebRouteEntry {
   write?: boolean;
   local?: boolean;
   custom?: boolean;
+  produces?: { kind: string; idField?: string; trackEntity?: boolean };
+  successTemplate?: string;
 }
