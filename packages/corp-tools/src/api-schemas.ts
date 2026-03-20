@@ -76,3 +76,23 @@ export type DigestTriggerResponse = components["schemas"]["DigestTriggerResponse
 
 // ── Billing ──────────────────────────────────────────────────────────
 export type InvoiceResponse = components["schemas"]["InvoiceResponse"];
+
+// ── Next Steps ──────────────────────────────────────────────────────
+export interface NextStepItem {
+  category: string;
+  title: string;
+  description?: string;
+  command: string;
+  urgency: string;
+}
+export interface NextStepsSummary {
+  critical: number;
+  high: number;
+  medium: number;
+  low: number;
+}
+export interface NextStepsResponse {
+  top: NextStepItem | null;
+  backlog: NextStepItem[];
+  summary: NextStepsSummary;
+}

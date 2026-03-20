@@ -27,6 +27,7 @@ import type {
   DocumentResponse,
   DigestSummary,
   DigestTriggerResponse,
+  NextStepsResponse,
 } from "./api-schemas.js";
 import { processRequest } from "./process-transport.js";
 
@@ -460,6 +461,15 @@ export class CorpAPIClient {
   // --- Human obligations ---
   getHumanObligations() { return this.get(`/v1/workspaces/${pathSegment(this.workspaceId)}/human-obligations`) as Promise<ObligationResponse[]>; }
   getSignerToken(obligationId: string) { return this.post(`/v1/human-obligations/${pathSegment(obligationId)}/signer-token`) as Promise<ApiRecord>; }
+
+  // --- Next Steps ---
+  getEntityNextSteps(entityId: string) {
+    return this.get(`/v1/entities/${pathSegment(entityId)}/next-steps`) as Promise<NextStepsResponse>;
+  }
+
+  getWorkspaceNextSteps() {
+    return this.get(`/v1/workspaces/${pathSegment(this.workspaceId)}/next-steps`) as Promise<NextStepsResponse>;
+  }
 
   // --- Demo ---
   seedDemo(data: ApiRecord) { return this.post("/v1/demo/seed", data) as Promise<ApiRecord>; }
