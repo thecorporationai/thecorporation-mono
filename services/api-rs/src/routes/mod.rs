@@ -11,6 +11,7 @@ pub mod formation;
 pub mod governance;
 pub mod governance_enforcement;
 pub mod llm_proxy;
+pub mod next_steps;
 pub mod references;
 pub mod secret_proxies;
 pub mod secrets_proxy;

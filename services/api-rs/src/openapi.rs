@@ -32,6 +32,7 @@ pub fn openapi_spec() -> utoipa::openapi::OpenApi {
         routes::agent_executions::AgentExecutionsApi::openapi(),
         routes::work_items::WorkItemsApi::openapi(),
         routes::services::ServicesApi::openapi(),
+        routes::next_steps::NextStepsApi::openapi(),
     ];
 
     for module_doc in modules {
@@ -76,6 +77,7 @@ pub fn openapi_spec() -> utoipa::openapi::OpenApi {
         (name = "agent_executions", description = "Agent execution queue"),
         (name = "work_items", description = "Long-term work item coordination"),
         (name = "services", description = "Service catalog and fulfillment"),
+        (name = "next_steps", description = "Actionable next-step recommendations"),
     ),
 )]
 struct ApiDoc;

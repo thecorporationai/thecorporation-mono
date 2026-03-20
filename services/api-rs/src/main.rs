@@ -363,6 +363,7 @@ fn build_router(state: routes::AppState) -> Router {
         .merge(routes::secret_proxies::secret_proxy_routes())
         .merge(routes::work_items::work_items_routes())
         .merge(routes::services::services_routes())
+        .merge(routes::next_steps::next_steps_routes())
         .merge(routes::admin::admin_routes())
         .merge(routes::admin::admin_billing_routes())
         .with_state(state)
