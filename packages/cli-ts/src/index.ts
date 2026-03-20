@@ -34,6 +34,33 @@ program.action(() => {
   program.outputHelp();
 });
 
+program.addHelpText(
+  "after",
+  `\nTip: Run "corp next" to see your recommended next actions.\n`,
+);
+
+// --- next (featured) ---
+program
+  .command("next")
+  .description("See what to do next — your recommended actions")
+  .option("--entity-id <ref>", "Entity to check (default: active entity)")
+  .option("--workspace", "Show recommendations across all entities")
+  .option("--json", "Output as JSON")
+  .action(async (opts) => {
+    const { nextCommand } = await import("./commands/next.js");
+    await nextCommand(opts);
+  })
+  .addHelpText(
+    "after",
+    `
+Examples:
+  $ corp next                          # Next steps for active entity
+  $ corp next --workspace              # Next steps across all entities
+  $ corp next --entity-id ent_abc123   # Next steps for specific entity
+  $ corp next --json                   # JSON output for scripting
+`,
+  );
+
 // --- setup ---
 program
   .command("setup")

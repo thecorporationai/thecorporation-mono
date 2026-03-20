@@ -1,6 +1,7 @@
 import chalk from "chalk";
 import Table from "cli-table3";
 import type { ApiRecord } from "./types.js";
+import type { NextStepItem, NextStepsSummary } from "@thecorporation/corp-tools";
 import {
   getReferenceAlias,
   getReferenceId,
@@ -16,6 +17,13 @@ const URGENCY_COLORS: Record<string, (s: string) => string> = {
   d14: chalk.blue,
   d30: chalk.dim,
   upcoming: chalk.dim,
+};
+
+const NEXT_STEP_COLORS: Record<string, (s: string) => string> = {
+  critical: chalk.red.bold,
+  high: chalk.yellow,
+  medium: chalk.cyan,
+  low: chalk.dim,
 };
 
 export function printError(msg: string): void {
@@ -188,6 +196,74 @@ export function printFinanceSummaryPanel(data: ApiRecord): void {
   console.log(`  ${chalk.bold("Reconciliations:")} ${s(reconciliations.balanced_count)}/${s(reconciliations.count)} balanced`);
   console.log(`  ${chalk.bold("Contractors:")} ${s(classifications.count)} classifications, ${s(classifications.high_risk_count)} high risk`);
   console.log(chalk.green("─".repeat(54)));
+}
+
+const CATEGORY_LABELS: Record<string, string> = {
+  setup: "Setup",
+  formation: "Formation",
+  documents: "Documents",
+  governance: "Governance",
+  cap_table: "Cap Table",
+  compliance: "Compliance",
+  finance: "Finance",
+  agents: "Agents",
+};
+
+export function printNextSteps(data: {
+  top: NextStepItem | null;
+  backlog: NextStepItem[];
+  summary: NextStepsSummary;
+}): void {
+  if (!data.top) {
+    console.log(chalk.green.bold("\n  All caught up! No pending actions.\n"));
+    return;
+  }
+
+  // Top recommendation
+  console.log();
+  console.log(chalk.bold("  Next up:"));
+  const topColor = NEXT_STEP_COLORS[data.top.urgency] ?? ((x: string) => x);
+  console.log(`   ${topColor(data.top.title)}`);
+  if (data.top.description) {
+    console.log(`   ${chalk.dim(data.top.description)}`);
+  }
+  console.log(`   ${chalk.green("→")} ${chalk.green(data.top.command)}`);
+
+  // Backlog grouped by category
+  if (data.backlog.length > 0) {
+    console.log();
+    console.log(chalk.bold("  More to do:"));
+
+    const groups = new Map<string, NextStepItem[]>();
+    for (const item of data.backlog) {
+      const cat = item.category || "other";
+      if (!groups.has(cat)) groups.set(cat, []);
+      groups.get(cat)!.push(item);
+    }
+
+    for (const [cat, items] of groups) {
+      const label = CATEGORY_LABELS[cat] ?? cat;
+      console.log(`\n   ${chalk.bold(`${label} (${items.length})`)}`);
+      for (const item of items) {
+        const color = NEXT_STEP_COLORS[item.urgency] ?? ((x: string) => x);
+        console.log(`    ${color("•")} ${item.title}`);
+        if (item.description) {
+          console.log(`      ${chalk.dim(item.description)}`);
+        }
+        console.log(`      ${chalk.green("→")} ${chalk.green(item.command)}`);
+      }
+    }
+  }
+
+  // Summary footer
+  const { critical = 0, high = 0, medium = 0, low = 0 } = data.summary;
+  const total = critical + high + medium + low;
+  const parts: string[] = [];
+  if (critical > 0) parts.push(chalk.red.bold(`${critical} critical`));
+  if (high > 0) parts.push(chalk.yellow(`${high} high`));
+  if (medium > 0) parts.push(chalk.cyan(`${medium} medium`));
+  if (low > 0) parts.push(chalk.dim(`${low} low`));
+  console.log(`\n  ${total} item${total === 1 ? "" : "s"} total (${parts.join(", ")})\n`);
 }
 
 // --- Generic table helper ---
