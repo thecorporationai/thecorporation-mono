@@ -351,4 +351,22 @@ export const agentCommands: CommandDef[] = [
       ctx.writer.writeResult(result, `Execution ${executionId} killed.`, { jsonOnly: ctx.opts.json });
     },
   },
+
+  // ── Auto-generated from OpenAPI ──────────────────────────────
+  {
+    name: "agents executions-logs",
+    description: "/v1/agents/{agent_id}/executions/{execution_id}/logs",
+    route: { method: "GET", path: "/v1/agents/{pos}/executions/{pos2}/logs" },
+    args: [{ name: "agent-id", required: true, description: "Agent Id" }, { name: "execution-id", required: true, description: "Execution Id" }],
+  },
+
+
+  // ── Auto-generated from OpenAPI ──────────────────────────────
+  {
+    name: "agents messages",
+    description: "/v1/agents/{agent_id}/messages/{message_id}",
+    route: { method: "GET", path: "/v1/agents/{pos}/messages/{pos2}" },
+    args: [{ name: "agent-id", required: true, description: "Agent Id" }, { name: "message-id", required: true, description: "Message Id" }],
+  },
+
 ];

@@ -314,4 +314,25 @@ export const entityCommands: CommandDef[] = [
     ],
     handler: contactsEditHandler,
   },
+
+  // ── Auto-generated from OpenAPI ──────────────────────────────
+  {
+    name: "contacts notification-prefs",
+    description: "/v1/contacts/{contact_id}/notification-prefs",
+    route: { method: "GET", path: "/v1/contacts/{pos}/notification-prefs" },
+    args: [{ name: "contact-id", required: true, description: "Contact Id" }],
+    display: { title: "Contacts Notification Prefs", cols: ["#contact_id>ID", "email_enabled>Email Enabled", "sms_enabled>Sms Enabled", "@updated_at>Updated At", "webhook_enabled>Webhook Enabled"] },
+  },
+  {
+    name: "contacts notification-prefs",
+    description: "/v1/contacts/{contact_id}/notification-prefs",
+    route: { method: "PATCH", path: "/v1/contacts/{pos}/notification-prefs" },
+    args: [{ name: "contact-id", required: true, description: "Contact Id" }],
+    options: [
+      { flags: "--email-enabled <email-enabled>", description: "Email Enabled" },
+      { flags: "--sms-enabled <sms-enabled>", description: "Sms Enabled" },
+      { flags: "--webhook-enabled <webhook-enabled>", description: "Webhook Enabled" },
+    ],
+  },
+
 ];

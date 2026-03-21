@@ -1,0 +1,242 @@
+import type { CommandDef } from "./types.js";
+
+export const treasuryCommands: CommandDef[] = [
+  {
+    name: "bank-accounts close",
+    description: "/v1/bank-accounts/{bank_account_id}/close",
+    route: { method: "POST", path: "/v1/bank-accounts/{pos}/close" },
+    entity: true,
+    args: [{ name: "bank-account-id", required: true, description: "Bank Account Id" }],
+  },
+  {
+    name: "distributions",
+    description: "/v1/distributions",
+    route: { method: "POST", path: "/v1/distributions" },
+    options: [
+      { flags: "--description <description>", description: "Description", required: true },
+      { flags: "--distribution-type <distribution-type>", description: "Type of distribution.", choices: ["dividend", "return", "liquidation"] },
+      { flags: "--total-amount-cents <total-amount-cents>", description: "Total Amount Cents", required: true, type: "int" },
+    ],
+  },
+  {
+    name: "entities accounts",
+    description: "/v1/entities/{entity_id}/accounts",
+    route: { method: "GET", path: "/v1/entities/{eid}/accounts" },
+    entity: true,
+    display: { title: "Entities Accounts", cols: ["account_code>Account Code", "#account_id>ID", "account_name>Account Name", "account_type>Account Type", "@created_at>Created At", "currency>Currency", "#entity_id>ID", "is_active>Is Active"] },
+  },
+  {
+    name: "entities journal-entries",
+    description: "/v1/entities/{entity_id}/journal-entries",
+    route: { method: "GET", path: "/v1/entities/{eid}/journal-entries" },
+    entity: true,
+    display: { title: "Entities Journal Entries", cols: ["@created_at>Created At", "description>Description", "effective_date>Effective Date", "#entity_id>ID", "#journal_entry_id>ID", "status>Status", "total_credits_cents>Total Credits Cents", "total_debits_cents>Total Debits Cents"] },
+  },
+  {
+    name: "entities spending-limits",
+    description: "/v1/entities/{entity_id}/spending-limits",
+    route: { method: "GET", path: "/v1/entities/{eid}/spending-limits" },
+    entity: true,
+    display: { title: "Entities Spending Limits", cols: ["amount_cents>Amount Cents", "category>Category", "@created_at>Created At", "#entity_id>ID", "period>Period", "#spending_limit_id>ID"] },
+  },
+  {
+    name: "entities stripe-account",
+    description: "/v1/entities/{entity_id}/stripe-account",
+    route: { method: "GET", path: "/v1/entities/{eid}/stripe-account" },
+    entity: true,
+    display: { title: "Entities Stripe Account", cols: ["@created_at>Created At", "#entity_id>ID", "status>Status", "#stripe_account_id>ID"] },
+  },
+  {
+    name: "invoices from-agent-request",
+    description: "/v1/invoices/from-agent-request",
+    route: { method: "POST", path: "/v1/invoices/from-agent-request" },
+    options: [
+      { flags: "--amount-cents <amount-cents>", description: "Amount Cents", required: true, type: "int" },
+      { flags: "--customer-name <customer-name>", description: "Customer Name", required: true },
+      { flags: "--description <description>", description: "Description", required: true },
+      { flags: "--due-date <due-date>", description: "Due Date", required: true },
+    ],
+  },
+  {
+    name: "invoices",
+    description: "/v1/invoices/{invoice_id}",
+    route: { method: "GET", path: "/v1/invoices/{pos}" },
+    entity: true,
+    args: [{ name: "invoice-id", required: true, description: "Invoice Id" }],
+    display: { title: "Invoices", cols: ["amount_cents>Amount Cents", "@created_at>Created At", "customer_name>Customer Name", "description>Description", "@due_date>Due Date", "#entity_id>ID", "#invoice_id>ID", "status>Status"] },
+  },
+  {
+    name: "invoices mark-paid",
+    description: "/v1/invoices/{invoice_id}/mark-paid",
+    route: { method: "POST", path: "/v1/invoices/{pos}/mark-paid" },
+    entity: true,
+    args: [{ name: "invoice-id", required: true, description: "Invoice Id" }],
+  },
+  {
+    name: "invoices pay-instructions",
+    description: "/v1/invoices/{invoice_id}/pay-instructions",
+    route: { method: "GET", path: "/v1/invoices/{pos}/pay-instructions" },
+    entity: true,
+    args: [{ name: "invoice-id", required: true, description: "Invoice Id" }],
+    display: { title: "Invoices Pay Instructions", cols: ["amount_cents>Amount Cents", "currency>Currency", "instructions>Instructions", "#invoice_id>ID", "payment_method>Payment Method"] },
+  },
+  {
+    name: "invoices send",
+    description: "/v1/invoices/{invoice_id}/send",
+    route: { method: "POST", path: "/v1/invoices/{pos}/send" },
+    entity: true,
+    args: [{ name: "invoice-id", required: true, description: "Invoice Id" }],
+  },
+  {
+    name: "invoices status",
+    description: "/v1/invoices/{invoice_id}/status",
+    route: { method: "GET", path: "/v1/invoices/{pos}/status" },
+    entity: true,
+    args: [{ name: "invoice-id", required: true, description: "Invoice Id" }],
+    display: { title: "Invoices Status", cols: ["amount_cents>Amount Cents", "@created_at>Created At", "customer_name>Customer Name", "description>Description", "@due_date>Due Date", "#entity_id>ID", "#invoice_id>ID", "status>Status"] },
+  },
+  {
+    name: "journal-entries post",
+    description: "/v1/journal-entries/{entry_id}/post",
+    route: { method: "POST", path: "/v1/journal-entries/{pos}/post" },
+    entity: true,
+    args: [{ name: "entry-id", required: true, description: "Entry Id" }],
+  },
+  {
+    name: "journal-entries void",
+    description: "/v1/journal-entries/{entry_id}/void",
+    route: { method: "POST", path: "/v1/journal-entries/{pos}/void" },
+    entity: true,
+    args: [{ name: "entry-id", required: true, description: "Entry Id" }],
+  },
+  {
+    name: "ledger reconcile",
+    description: "/v1/ledger/reconcile",
+    route: { method: "POST", path: "/v1/ledger/reconcile" },
+    options: [
+      { flags: "--as-of-date <as-of-date>", description: "As Of Date" },
+      { flags: "--end-date <end-date>", description: "End Date" },
+      { flags: "--start-date <start-date>", description: "Start Date" },
+    ],
+  },
+  {
+    name: "payments",
+    description: "/v1/payments",
+    route: { method: "POST", path: "/v1/payments" },
+    options: [
+      { flags: "--amount-cents <amount-cents>", description: "Amount Cents", required: true, type: "int" },
+      { flags: "--description <description>", description: "Description", required: true },
+      { flags: "--payment-method <payment-method>", description: "How a payment is made or received.", choices: ["bank_transfer", "card", "check", "wire", "ach"] },
+      { flags: "--recipient <recipient>", description: "Recipient", required: true },
+    ],
+  },
+  {
+    name: "payments execute",
+    description: "/v1/payments/execute",
+    route: { method: "POST", path: "/v1/payments/execute" },
+    options: [
+      { flags: "--amount-cents <amount-cents>", description: "Amount Cents", required: true, type: "int" },
+      { flags: "--description <description>", description: "Description", required: true },
+      { flags: "--payment-method <payment-method>", description: "How a payment is made or received.", choices: ["bank_transfer", "card", "check", "wire", "ach"] },
+      { flags: "--recipient <recipient>", description: "Recipient", required: true },
+    ],
+  },
+  {
+    name: "payroll runs",
+    description: "/v1/payroll/runs",
+    route: { method: "POST", path: "/v1/payroll/runs" },
+    options: [
+      { flags: "--pay-period-end <pay-period-end>", description: "Pay Period End", required: true },
+      { flags: "--pay-period-start <pay-period-start>", description: "Pay Period Start", required: true },
+    ],
+  },
+  {
+    name: "spending-limits",
+    description: "/v1/spending-limits",
+    route: { method: "POST", path: "/v1/spending-limits" },
+    options: [
+      { flags: "--amount-cents <amount-cents>", description: "Amount Cents", required: true, type: "int" },
+      { flags: "--category <category>", description: "Category", required: true },
+      { flags: "--period <period>", description: "Period", required: true },
+    ],
+  },
+  {
+    name: "treasury accounts",
+    description: "/v1/treasury/accounts",
+    route: { method: "POST", path: "/v1/treasury/accounts" },
+    options: [
+      { flags: "--account-code <account-code>", description: "Standard GL account codes with integer discriminants matching the code number.", required: true, choices: ["Cash", "AccountsReceivable", "AccountsPayable", "AccruedExpenses", "FounderCapital", "Revenue", "OperatingExpenses", "Cogs"] },
+    ],
+  },
+  {
+    name: "treasury bank-accounts",
+    description: "/v1/treasury/bank-accounts",
+    route: { method: "POST", path: "/v1/treasury/bank-accounts" },
+    options: [
+      { flags: "--account-type <account-type>", description: "Account Type", choices: ["checking", "savings"] },
+      { flags: "--bank-name <bank-name>", description: "Bank Name", required: true },
+    ],
+  },
+  {
+    name: "treasury chart-of-accounts",
+    description: "/v1/treasury/chart-of-accounts/{entity_id}",
+    route: { method: "GET", path: "/v1/treasury/chart-of-accounts/{eid}" },
+    entity: true,
+    display: { title: "Treasury Chart Of Accounts", cols: ["accounts>Accounts", "#entity_id>ID"] },
+  },
+  {
+    name: "treasury invoices",
+    description: "/v1/treasury/invoices",
+    route: { method: "POST", path: "/v1/treasury/invoices" },
+    options: [
+      { flags: "--amount-cents <amount-cents>", description: "Amount Cents", required: true, type: "int" },
+      { flags: "--customer-name <customer-name>", description: "Customer Name", required: true },
+      { flags: "--description <description>", description: "Description", required: true },
+      { flags: "--due-date <due-date>", description: "Due Date", required: true },
+    ],
+  },
+  {
+    name: "treasury journal-entries",
+    description: "/v1/treasury/journal-entries",
+    route: { method: "POST", path: "/v1/treasury/journal-entries" },
+    options: [
+      { flags: "--description <description>", description: "Description", required: true },
+      { flags: "--effective-date <effective-date>", description: "Effective Date", required: true },
+      { flags: "--lines <lines>", description: "Lines", required: true, type: "array" },
+    ],
+  },
+  {
+    name: "treasury payment-intents",
+    description: "/v1/treasury/payment-intents",
+    route: { method: "POST", path: "/v1/treasury/payment-intents" },
+    options: [
+      { flags: "--amount-cents <amount-cents>", description: "Amount Cents", required: true, type: "int" },
+      { flags: "--currency <currency>", description: "Currency" },
+      { flags: "--description <description>", description: "Description" },
+    ],
+  },
+  {
+    name: "treasury payouts",
+    description: "/v1/treasury/payouts",
+    route: { method: "POST", path: "/v1/treasury/payouts" },
+    options: [
+      { flags: "--amount-cents <amount-cents>", description: "Amount Cents", required: true, type: "int" },
+      { flags: "--description <description>", description: "Description" },
+      { flags: "--destination <destination>", description: "Destination", required: true },
+    ],
+  },
+  {
+    name: "treasury seed-chart-of-accounts",
+    description: "/v1/treasury/seed-chart-of-accounts",
+    route: { method: "POST", path: "/v1/treasury/seed-chart-of-accounts" },
+    options: [
+      { flags: "--template <template>", description: "Template" },
+    ],
+  },
+  {
+    name: "treasury stripe-accounts",
+    description: "/v1/treasury/stripe-accounts",
+    route: { method: "POST", path: "/v1/treasury/stripe-accounts" },
+  },
+
+];

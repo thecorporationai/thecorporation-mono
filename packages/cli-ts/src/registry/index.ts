@@ -13,6 +13,10 @@ import { agentCommands } from "./agents.js";
 import { workItemCommands } from "./work-items.js";
 import { serviceCommands } from "./services.js";
 import { adminCommands } from "./admin.js";
+import { executionCommands } from "./execution.js";
+import { secretProxyCommands } from "./secret-proxies.js";
+import { treasuryCommands } from "./treasury.js";
+import { branchCommands } from "./branches.js";
 
 export const registry: CommandDef[] = [
   ...workspaceCommands,
@@ -27,6 +31,10 @@ export const registry: CommandDef[] = [
   ...workItemCommands,
   ...serviceCommands,
   ...adminCommands,
+  ...executionCommands,
+  ...secretProxyCommands,
+  ...treasuryCommands,
+  ...branchCommands,
 ];
 
 /** Attach produces/successTemplate to a web-route entry if present on the CommandDef */

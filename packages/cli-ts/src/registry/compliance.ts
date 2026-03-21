@@ -173,4 +173,68 @@ export const complianceCommands: CommandDef[] = [
     produces: { kind: "deadline" },
     successTemplate: "Deadline tracked",
   },
+
+  // ── Auto-generated from OpenAPI ──────────────────────────────
+  {
+    name: "compliance escalations-scan",
+    description: "/v1/compliance/escalations/scan",
+    route: { method: "POST", path: "/v1/compliance/escalations/scan" },
+  },
+  {
+    name: "compliance escalations-resolve-with-evidence",
+    description: "/v1/compliance/escalations/{escalation_id}/resolve-with-evidence",
+    route: { method: "POST", path: "/v1/compliance/escalations/{pos}/resolve-with-evidence" },
+    args: [{ name: "escalation-id", required: true, description: "Escalation Id" }],
+    options: [
+      { flags: "--evidence-type <evidence-type>", description: "Evidence Type" },
+      { flags: "--filing-reference <filing-reference>", description: "Filing Reference" },
+      { flags: "--notes <notes>", description: "Notes" },
+      { flags: "--packet-id <packet-id>", description: "Packet Id" },
+      { flags: "--resolve-incident", description: "Resolve Incident" },
+      { flags: "--resolve-obligation", description: "Resolve Obligation" },
+    ],
+  },
+  {
+    name: "contractors classify",
+    description: "/v1/contractors/classify",
+    route: { method: "POST", path: "/v1/contractors/classify" },
+    options: [
+      { flags: "--contractor-name <contractor-name>", description: "Contractor Name", required: true },
+      { flags: "--duration-months <duration-months>", description: "Duration Months" },
+      { flags: "--exclusive-client <exclusive-client>", description: "Exclusive Client" },
+      { flags: "--factors <factors>", description: "Factors" },
+      { flags: "--hours-per-week <hours-per-week>", description: "Hours Per Week" },
+      { flags: "--provides-tools <provides-tools>", description: "Provides Tools" },
+      { flags: "--state <state>", description: "State" },
+    ],
+  },
+  {
+    name: "deadlines",
+    description: "/v1/deadlines",
+    route: { method: "POST", path: "/v1/deadlines" },
+    options: [
+      { flags: "--deadline-type <deadline-type>", description: "Deadline Type", required: true },
+      { flags: "--description <description>", description: "Description", required: true },
+      { flags: "--due-date <due-date>", description: "Due Date", required: true },
+      { flags: "--recurrence <recurrence>", description: "Recurrence pattern for a deadline.", choices: ["one_time", "monthly", "quarterly", "annual"] },
+      { flags: "--severity <severity>", description: "Risk severity of missing a deadline.", choices: ["low", "medium", "high", "critical"] },
+    ],
+  },
+  {
+    name: "entities compliance-escalations",
+    description: "/v1/entities/{entity_id}/compliance/escalations",
+    route: { method: "GET", path: "/v1/entities/{eid}/compliance/escalations" },
+    entity: true,
+    display: { title: "Entities Compliance Escalations", cols: ["action>Action", "authority>Authority", "@created_at>Created At", "#deadline_id>ID", "#entity_id>ID", "#escalation_id>ID", "#incident_id>ID", "milestone>Milestone"] },
+  },
+  {
+    name: "tax filings",
+    description: "/v1/tax/filings",
+    route: { method: "POST", path: "/v1/tax/filings" },
+    options: [
+      { flags: "--document-type <document-type>", description: "Document Type", required: true },
+      { flags: "--tax-year <tax-year>", description: "Tax Year", required: true, type: "int" },
+    ],
+  },
+
 ];

@@ -342,4 +342,197 @@ export const adminCommands: CommandDef[] = [
       process.exit(1);
     },
   },
+
+  // ── Auto-generated from OpenAPI ──────────────────────────────
+  {
+    name: "admin audit-events",
+    description: "/v1/admin/audit-events",
+    route: { method: "GET", path: "/v1/admin/audit-events" },
+    display: { title: "Admin Audit Events", cols: ["details>Details", "#event_id>ID", "event_type>Event Type", "timestamp>Timestamp"] },
+  },
+  {
+    name: "admin system-health",
+    description: "/v1/admin/system-health",
+    route: { method: "GET", path: "/v1/admin/system-health" },
+    display: { title: "Admin System Health", cols: ["git_storage>Git Storage", "status>Status", "uptime_seconds>Uptime Seconds", "version>Version", "workspace_count>Workspace Count"] },
+  },
+  {
+    name: "admin workspaces",
+    description: "/v1/admin/workspaces",
+    route: { method: "GET", path: "/v1/admin/workspaces" },
+    display: { title: "Admin Workspaces", cols: ["entity_count>Entity Count", "name>Name", "#workspace_id>ID"] },
+  },
+  {
+    name: "billing plans",
+    description: "/v1/billing/plans",
+    route: { method: "GET", path: "/v1/billing/plans" },
+    display: { title: "Billing Plans", cols: ["plans>Plans"] },
+  },
+  {
+    name: "billing status",
+    description: "/v1/billing/status",
+    route: { method: "GET", path: "/v1/billing/status" },
+    display: { title: "Billing Status", cols: ["current_period_end>Current Period End", "plan>Plan", "status>Status", "#workspace_id>ID"] },
+  },
+  {
+    name: "config",
+    description: "/v1/config",
+    route: { method: "GET", path: "/v1/config" },
+    display: { title: "Config", cols: ["environment>Environment", "features>Features", "version>Version"] },
+  },
+  {
+    name: "demo seed",
+    description: "/v1/demo/seed",
+    route: { method: "POST", path: "/v1/demo/seed" },
+    options: [
+      { flags: "--name <name>", description: "Name" },
+      { flags: "--scenario <scenario>", description: "Scenario" },
+    ],
+  },
+  {
+    name: "digests trigger",
+    description: "/v1/digests/trigger",
+    route: { method: "POST", path: "/v1/digests/trigger" },
+  },
+  {
+    name: "digests",
+    description: "/v1/digests/{digest_key}",
+    route: { method: "GET", path: "/v1/digests/{pos}" },
+    args: [{ name: "digest-key", required: true, description: "Digest Key" }],
+  },
+  {
+    name: "service-token",
+    description: "/v1/service-token",
+    route: { method: "GET", path: "/v1/service-token" },
+    display: { title: "Service Token", cols: ["#api_key_id>ID", "expires_in>Expires In", "token>Token", "token_type>Token Type"] },
+  },
+  {
+    name: "workspace entities",
+    description: "/v1/workspace/entities",
+    route: { method: "GET", path: "/v1/workspace/entities" },
+    display: { title: "Workspace Entities", cols: ["#entity_id>ID"] },
+  },
+  {
+    name: "workspace status",
+    description: "/v1/workspace/status",
+    route: { method: "GET", path: "/v1/workspace/status" },
+    display: { title: "Workspace Status", cols: ["entity_count>Entity Count", "name>Name", "status>Status", "#workspace_id>ID"] },
+  },
+  {
+    name: "workspaces claim",
+    description: "/v1/workspaces/claim",
+    route: { method: "POST", path: "/v1/workspaces/claim" },
+    options: [
+      { flags: "--claim-token <claim-token>", description: "Claim Token", required: true },
+    ],
+  },
+  {
+    name: "workspaces contacts",
+    description: "/v1/workspaces/{workspace_id}/contacts",
+    route: { method: "GET", path: "/v1/workspaces/{workspace_id}/contacts" },
+    display: { title: "Workspaces Contacts", cols: ["#contact_id>ID", "#entity_id>ID"] },
+  },
+  {
+    name: "workspaces entities",
+    description: "/v1/workspaces/{workspace_id}/entities",
+    route: { method: "GET", path: "/v1/workspaces/{workspace_id}/entities" },
+    display: { title: "Workspaces Entities", cols: ["#entity_id>ID"] },
+  },
+
+
+  // ── Auto-generated from OpenAPI ──────────────────────────────
+  {
+    name: "auth token-exchange",
+    description: "/v1/auth/token-exchange",
+    route: { method: "POST", path: "/v1/auth/token-exchange" },
+    options: [
+      { flags: "--api-key <api-key>", description: "Api Key", required: true },
+      { flags: "--ttl-seconds <ttl-seconds>", description: "Ttl Seconds", type: "int" },
+    ],
+  },
+  {
+    name: "ssh-keys",
+    description: "/v1/ssh-keys",
+    route: { method: "GET", path: "/v1/ssh-keys" },
+    display: { title: "Ssh Keys", cols: ["algorithm>Algorithm", "#contact_id>ID", "@created_at>Created At", "entity_ids>Entity Ids", "fingerprint>Fingerprint", "#key_id>ID", "name>Name", "scopes>Scopes"] },
+  },
+  {
+    name: "ssh-keys",
+    description: "/v1/ssh-keys",
+    route: { method: "POST", path: "/v1/ssh-keys" },
+    options: [
+      { flags: "--contact-id <contact-id>", description: "Contact Id" },
+      { flags: "--entity-ids <entity-ids>", description: "Entity Ids" },
+      { flags: "--name <name>", description: "Name", required: true },
+      { flags: "--public-key <public-key>", description: "Public Key", required: true },
+      { flags: "--scopes <scopes>", description: "Scopes", type: "array" },
+    ],
+  },
+  {
+    name: "ssh-keys",
+    description: "/v1/ssh-keys/{key_id}",
+    route: { method: "DELETE", path: "/v1/ssh-keys/{pos}" },
+    args: [{ name: "key-id", required: true, description: "Key Id" }],
+  },
+  {
+    name: "workspaces provision",
+    description: "/v1/workspaces/provision",
+    route: { method: "POST", path: "/v1/workspaces/provision" },
+    options: [
+      { flags: "--name <name>", description: "Name", required: true },
+      { flags: "--owner-email <owner-email>", description: "Owner Email" },
+    ],
+  },
+
+
+  // ── Auto-generated from OpenAPI ──────────────────────────────
+  {
+    name: "references sync",
+    description: "/v1/references/sync",
+    route: { method: "POST", path: "/v1/references/sync" },
+    options: [
+      { flags: "--items <items>", description: "Items", required: true, type: "array" },
+      { flags: "--kind <kind>", description: "Kind", required: true, choices: ["entity", "contact", "share_transfer", "invoice", "bank_account", "payment", "payroll_run", "distribution", "reconciliation", "tax_filing", "deadline", "classification", "body", "meeting", "seat", "agenda_item", "resolution", "document", "work_item", "agent", "valuation", "safe_note", "instrument", "share_class", "round"] },
+    ],
+  },
+
+
+  // ── Auto-generated from OpenAPI ──────────────────────────────
+  {
+    name: "secrets interpolate",
+    description: "/v1/secrets/interpolate",
+    route: { method: "POST", path: "/v1/secrets/interpolate" },
+    options: [
+      { flags: "--execution-id <execution-id>", description: "Execution Id", required: true },
+      { flags: "--template <template>", description: "Template", required: true },
+    ],
+  },
+  {
+    name: "secrets resolve",
+    description: "/v1/secrets/resolve",
+    route: { method: "POST", path: "/v1/secrets/resolve" },
+    options: [
+      { flags: "--token <token>", description: "Token", required: true },
+    ],
+  },
+
+  // ── workspace-scoped endpoints ──────────────────────────────────────
+  {
+    name: "workspaces contacts",
+    description: "List contacts across a workspace",
+    route: { method: "GET", path: "/v1/workspaces/{wid}/contacts" },
+    display: { title: "Workspace Contacts", cols: ["name>Name", "email>Email", "category>Category", "#contact_id>ID"] },
+  },
+  {
+    name: "workspaces entities",
+    description: "List entities in a workspace",
+    route: { method: "GET", path: "/v1/workspaces/{wid}/entities" },
+    display: { title: "Workspace Entities", cols: ["legal_name>Name", "entity_type>Type", "#entity_id>ID"] },
+  },
+  {
+    name: "documents validate-preview",
+    description: "Validate a PDF preview without generating",
+    route: { method: "GET", path: "/v1/documents/preview/pdf/validate" },
+    entity: true,
+  },
 ];

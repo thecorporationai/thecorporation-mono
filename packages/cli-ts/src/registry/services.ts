@@ -182,4 +182,45 @@ export const serviceCommands: CommandDef[] = [
       printJson(result);
     },
   },
+
+  // ── Auto-generated from OpenAPI ──────────────────────────────
+  {
+    name: "services requests",
+    description: "Create a new service request.",
+    route: { method: "POST", path: "/v1/services/requests" },
+    options: [
+      { flags: "--obligation-id <obligation-id>", description: "Obligation Id" },
+      { flags: "--service-slug <service-slug>", description: "Service Slug", required: true },
+    ],
+  },
+  {
+    name: "services requests",
+    description: "Get a service request by ID.",
+    route: { method: "GET", path: "/v1/services/requests/{pos}" },
+    entity: true,
+    args: [{ name: "request-id", required: true, description: "Request Id" }],
+    display: { title: "Services Requests", cols: ["amount_cents>Amount Cents", "checkout_url>Checkout Url", "@created_at>Created At", "#entity_id>ID", "failed_at>Failed At", "fulfilled_at>Fulfilled At", "fulfillment_note>Fulfillment Note", "#obligation_id>ID"] },
+  },
+  {
+    name: "services requests-cancel",
+    description: "Cancel a service request.",
+    route: { method: "POST", path: "/v1/services/requests/{pos}/cancel" },
+    args: [{ name: "request-id", required: true, description: "Request Id" }],
+  },
+  {
+    name: "services requests-checkout",
+    description: "Begin checkout for a service request (sets Stripe session ID, returns checkout URL).",
+    route: { method: "POST", path: "/v1/services/requests/{pos}/checkout" },
+    args: [{ name: "request-id", required: true, description: "Request Id" }],
+  },
+  {
+    name: "services requests-fulfill",
+    description: "Fulfill a service request (operator: Paid -> Fulfilling -> Fulfilled in one call).",
+    route: { method: "POST", path: "/v1/services/requests/{pos}/fulfill" },
+    args: [{ name: "request-id", required: true, description: "Request Id" }],
+    options: [
+      { flags: "--note <note>", description: "Note" },
+    ],
+  },
+
 ];

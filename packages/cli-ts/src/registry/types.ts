@@ -13,7 +13,7 @@ export interface CommandDef {
   name: string;
   description: string;
   aliases?: string[];
-  route?: { method: "GET" | "POST" | "PUT" | "DELETE"; path: string };
+  route?: { method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE"; path: string };
   entity?: boolean | "query";
   args?: ArgDef[];
   options?: OptionDef[];
