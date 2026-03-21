@@ -242,7 +242,7 @@ export const complianceCommands: CommandDef[] = [
     examples: ["corp entities compliance-escalations", "corp entities compliance-escalations --json"],
   },
   {
-    name: "tax filings",
+    name: "tax create-filing",
     description: "Create a tax filing record",
     route: { method: "POST", path: "/v1/tax/filings" },
     options: [

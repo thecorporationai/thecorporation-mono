@@ -1073,7 +1073,7 @@ export const capTableCommands: CommandDef[] = [
     successTemplate: "Entities created",
   },
   {
-    name: "equity fundraising-workflows",
+    name: "equity create-fundraising-workflow",
     description: "Start or view a fundraising workflow",
     route: { method: "POST", path: "/v1/equity/fundraising-workflows" },
     options: [
@@ -1379,7 +1379,7 @@ export const capTableCommands: CommandDef[] = [
     successTemplate: "Rounds Securities created",
   },
   {
-    name: "equity transfer-workflows",
+    name: "equity create-transfer-workflow",
     description: "Start or view a share transfer workflow",
     route: { method: "POST", path: "/v1/equity/transfer-workflows" },
     options: [

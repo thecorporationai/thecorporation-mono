@@ -441,13 +441,13 @@ export const formationCommands: CommandDef[] = [
     successTemplate: "Contracts created",
   },
   {
-    name: "documents",
-    description: "List formation and governance documents",
+    name: "documents show",
+    description: "View a document by ID",
     route: { method: "GET", path: "/v1/documents/{pos}" },
     entity: true,
     args: [{ name: "document-id", required: true, description: "Document ID" }],
-    display: { title: "Documents", cols: ["content>Content", "content_hash>Content Hash", "document_type>Document Type", "signatures>Signatures", "@created_at>Created At", "#document_id>ID"] },
-    examples: ["corp documents", "corp documents --json"],
+    display: { title: "Document", cols: ["document_type>Type", "status>Status", "title>Title", "signature_count>Signatures", "@created_at>Created", "#document_id>ID"] },
+    examples: ["corp documents show <document-id>", "corp documents show <document-id> --json"],
   },
   {
     name: "documents amendment-history",
@@ -478,11 +478,11 @@ export const formationCommands: CommandDef[] = [
     successTemplate: "Request Copy created",
   },
   {
-    name: "entities",
-    description: "List all entities",
+    name: "entities list",
+    description: "List all entities in the workspace",
     route: { method: "GET", path: "/v1/entities" },
-    display: { title: "Entities", cols: ["entity_type>Entity Type", "formation_date>Formation Date", "formation_state>Formation State", "formation_status>Formation Status", "#entity_id>ID"] },
-    examples: ["corp entities"],
+    display: { title: "Entities", cols: ["legal_name>Name", "entity_type>Type", "formation_status>Status", "jurisdiction>Jurisdiction", "#entity_id>ID"] },
+    examples: ["corp entities list", "corp entities list --json"],
   },
   {
     name: "entities governance-documents",
@@ -501,7 +501,7 @@ export const formationCommands: CommandDef[] = [
     examples: ["corp entities governance-documents-current", "corp entities governance-documents-current --json"],
   },
   {
-    name: "formations",
+    name: "formations create",
     description: "View formation status for an entity",
     route: { method: "POST", path: "/v1/formations" },
     options: [

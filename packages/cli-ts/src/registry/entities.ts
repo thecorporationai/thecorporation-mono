@@ -333,7 +333,7 @@ export const entityCommands: CommandDef[] = [
     examples: ["corp contacts notification-prefs"],
   },
   {
-    name: "contacts notification-prefs",
+    name: "contacts update-notification-prefs",
     description: "View notification preferences for a contact",
     route: { method: "PATCH", path: "/v1/contacts/{pos}/notification-prefs" },
     args: [{ name: "contact-id", required: true, description: "Contact ID" }],

@@ -209,7 +209,7 @@ export const executionCommands: CommandDef[] = [
     examples: ["corp obligations document-requests", "corp obligations document-requests --json"],
   },
   {
-    name: "obligations document-requests",
+    name: "obligations create-document-request",
     description: "List or create document requests for an obligation",
     route: { method: "POST", path: "/v1/obligations/{pos}/document-requests" },
     args: [{ name: "obligation-id", required: true, description: "Obligation ID" }],

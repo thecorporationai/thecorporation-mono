@@ -192,7 +192,7 @@ export const serviceCommands: CommandDef[] = [
 
   // ── Auto-generated from OpenAPI ──────────────────────────────
   {
-    name: "services requests",
+    name: "services create-request",
     description: "Submit a new service request",
     route: { method: "POST", path: "/v1/services/requests" },
     options: [

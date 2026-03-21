@@ -745,7 +745,7 @@ export const governanceCommands: CommandDef[] = [
     successTemplate: "Governance Doc Bundles Generate created",
   },
   {
-    name: "entities governance-doc-bundles",
+    name: "entities governance-doc-bundle",
     description: "List governance document bundles",
     route: { method: "GET", path: "/v1/entities/{eid}/governance/doc-bundles/{pos}" },
     entity: true,
@@ -778,7 +778,7 @@ export const governanceCommands: CommandDef[] = [
     examples: ["corp governance-bodies", "corp governance-bodies --json"],
   },
   {
-    name: "governance-bodies",
+    name: "governance-bodies create",
     description: "List all governance bodies",
     route: { method: "POST", path: "/v1/governance-bodies" },
     options: [
@@ -893,7 +893,7 @@ export const governanceCommands: CommandDef[] = [
     successTemplate: "Evaluate created",
   },
   {
-    name: "governance incidents",
+    name: "governance report-incident",
     description: "Report a governance incident",
     route: { method: "POST", path: "/v1/governance/incidents" },
     options: [
