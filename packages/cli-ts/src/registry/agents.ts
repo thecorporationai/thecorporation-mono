@@ -117,7 +117,7 @@ export const agentCommands: CommandDef[] = [
     options: [
       { flags: "--name <name>", description: "Agent name", required: true },
       { flags: "--prompt <prompt>", description: "System prompt", required: true },
-      { flags: "--model <model>", description: "Model" },
+      { flags: "--model <model>", description: "LLM model name" },
     ],
     handler: async (ctx) => {
       const data: ApiRecord = {
@@ -155,7 +155,7 @@ export const agentCommands: CommandDef[] = [
   // --- agents pause <agent-ref> ---
   {
     name: "agents pause",
-    description: "Pause an agent",
+    description: "Pause an active agent",
     route: { method: "POST", path: "/v1/agents/{pos}/pause" },
     args: [{ name: "agent-ref", required: true, description: "Agent reference" }],
     handler: async (ctx) => {
@@ -264,7 +264,7 @@ export const agentCommands: CommandDef[] = [
     options: [
       { flags: "--name <name>", description: "Skill name", required: true },
       { flags: "--description <desc>", description: "Skill description", required: true },
-      { flags: "--instructions <text>", description: "Instructions" },
+      { flags: "--instructions <text>", description: "Skill instructions text" },
       { flags: "--instructions-file <path>", description: "Read skill instructions from a file" },
     ],
     handler: async (ctx) => {
@@ -365,9 +365,9 @@ export const agentCommands: CommandDef[] = [
   // ── Auto-generated from OpenAPI ──────────────────────────────
   {
     name: "agents executions-logs",
-    description: "Agents Executions Logs",
+    description: "View execution logs for an agent run",
     route: { method: "GET", path: "/v1/agents/{pos}/executions/{pos2}/logs" },
-    args: [{ name: "agent-id", required: true, description: "Agent Id" }, { name: "execution-id", required: true, description: "Execution Id" }],
+    args: [{ name: "agent-id", required: true, description: "Agent ID" }, { name: "execution-id", required: true, description: "Agent execution ID" }],
     examples: ["corp agents executions-logs"],
   },
 
@@ -375,9 +375,9 @@ export const agentCommands: CommandDef[] = [
   // ── Auto-generated from OpenAPI ──────────────────────────────
   {
     name: "agents messages",
-    description: "Agents Messages",
+    description: "View a specific agent message",
     route: { method: "GET", path: "/v1/agents/{pos}/messages/{pos2}" },
-    args: [{ name: "agent-id", required: true, description: "Agent Id" }, { name: "message-id", required: true, description: "Message Id" }],
+    args: [{ name: "agent-id", required: true, description: "Agent ID" }, { name: "message-id", required: true, description: "Message Id" }],
     examples: ["corp agents messages"],
   },
 

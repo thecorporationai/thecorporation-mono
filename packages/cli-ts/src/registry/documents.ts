@@ -53,7 +53,7 @@ export const documentCommands: CommandDef[] = [
   // --- documents (list) ---
   {
     name: "documents",
-    description: "Documents and signing",
+    description: "List formation and governance documents",
     route: { method: "GET", path: "/v1/formations/{eid}/documents" },
     entity: true,
     display: {

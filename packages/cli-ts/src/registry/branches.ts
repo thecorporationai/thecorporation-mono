@@ -3,7 +3,7 @@ import type { CommandDef } from "./types.js";
 export const branchCommands: CommandDef[] = [
   {
     name: "branches",
-    description: "List branches for an entity",
+    description: "List branches for an entity repo",
     route: { method: "GET", path: "/v1/branches" },
     entity: "query",
     display: {
@@ -14,7 +14,7 @@ export const branchCommands: CommandDef[] = [
   },
   {
     name: "branches create",
-    description: "Create a new branch",
+    description: "Create a new branch from an existing one",
     route: { method: "POST", path: "/v1/branches" },
     entity: "query",
     options: [
@@ -26,7 +26,7 @@ export const branchCommands: CommandDef[] = [
   },
   {
     name: "branches merge",
-    description: "Merge a branch into another",
+    description: "Merge a branch into another (default: main)",
     route: { method: "POST", path: "/v1/branches/{pos}/merge" },
     entity: "query",
     args: [{ name: "branch", required: true, description: "Branch to merge" }],
@@ -48,7 +48,7 @@ export const branchCommands: CommandDef[] = [
   },
   {
     name: "branches prune",
-    description: "Prune merged branches",
+    description: "Prune a merged branch",
     route: { method: "POST", path: "/v1/branches/{pos}/prune" },
     entity: "query",
     args: [{ name: "branch", required: true, description: "Branch to prune" }],

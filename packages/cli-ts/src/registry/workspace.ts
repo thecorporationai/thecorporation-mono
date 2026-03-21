@@ -476,7 +476,7 @@ export const workspaceCommands: CommandDef[] = [
   // ── Auto-generated from OpenAPI ──────────────────────────────
   {
     name: "entities next-steps",
-    description: "Entities Next Steps",
+    description: "View recommended next actions for an entity",
     route: { method: "GET", path: "/v1/entities/{eid}/next-steps" },
     entity: true,
     display: { title: "Entities Next Steps", cols: ["backlog>Backlog", "summary>Summary", "top>Top"] },
@@ -484,7 +484,7 @@ export const workspaceCommands: CommandDef[] = [
   },
   {
     name: "workspaces next-steps",
-    description: "Workspaces Next Steps",
+    description: "View recommended next actions across the workspace",
     route: { method: "GET", path: "/v1/workspaces/{workspace_id}/next-steps" },
     display: { title: "Workspaces Next Steps", cols: ["backlog>Backlog", "summary>Summary", "top>Top"] },
     examples: ["corp workspaces next-steps"],

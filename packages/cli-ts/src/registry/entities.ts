@@ -222,7 +222,7 @@ export const entityCommands: CommandDef[] = [
   // ── entities ──
   {
     name: "entities",
-    description: "List entities, show detail, convert, or dissolve",
+    description: "List all entities",
     handler: entitiesHandler,
     examples: ["corp entities"],
   },
@@ -296,7 +296,7 @@ export const entityCommands: CommandDef[] = [
       { flags: "--address <address>", description: "Mailing address" },
       { flags: "--mailing-address <address>", description: "Alias for --address" },
       { flags: "--phone <phone>", description: "Phone number" },
-      { flags: "--notes <notes>", description: "Notes" },
+      { flags: "--notes <notes>", description: "Additional notes" },
     ],
     handler: contactsAddHandler,
     produces: { kind: "contact" },
@@ -317,7 +317,7 @@ export const entityCommands: CommandDef[] = [
       { flags: "--address <address>", description: "Mailing address" },
       { flags: "--mailing-address <address>", description: "Alias for --address" },
       { flags: "--phone <phone>", description: "Phone number" },
-      { flags: "--notes <notes>", description: "Notes" },
+      { flags: "--notes <notes>", description: "Additional notes" },
     ],
     handler: contactsEditHandler,
     examples: ["corp contacts edit <contact-ref>", "corp contacts edit --json"],
@@ -326,23 +326,24 @@ export const entityCommands: CommandDef[] = [
   // ── Auto-generated from OpenAPI ──────────────────────────────
   {
     name: "contacts notification-prefs",
-    description: "Contacts Notification Prefs",
+    description: "View notification preferences for a contact",
     route: { method: "GET", path: "/v1/contacts/{pos}/notification-prefs" },
-    args: [{ name: "contact-id", required: true, description: "Contact Id" }],
+    args: [{ name: "contact-id", required: true, description: "Contact ID" }],
     display: { title: "Contacts Notification Prefs", cols: ["#contact_id>ID", "email_enabled>Email Enabled", "sms_enabled>Sms Enabled", "@updated_at>Updated At", "webhook_enabled>Webhook Enabled"] },
     examples: ["corp contacts notification-prefs"],
   },
   {
     name: "contacts notification-prefs",
-    description: "Contacts Notification Prefs",
+    description: "View notification preferences for a contact",
     route: { method: "PATCH", path: "/v1/contacts/{pos}/notification-prefs" },
-    args: [{ name: "contact-id", required: true, description: "Contact Id" }],
+    args: [{ name: "contact-id", required: true, description: "Contact ID" }],
     options: [
       { flags: "--email-enabled <email-enabled>", description: "Email Enabled" },
       { flags: "--sms-enabled <sms-enabled>", description: "Sms Enabled" },
       { flags: "--webhook-enabled <webhook-enabled>", description: "Webhook Enabled" },
     ],
     examples: ["corp contacts notification-prefs <contact-id>", "corp contacts notification-prefs --json"],
+    successTemplate: "Notification Prefs updated",
   },
 
 ];

@@ -18,7 +18,7 @@ export const secretProxyCommands: CommandDef[] = [
     options: [
       { flags: "--name <name>", description: "Proxy name", required: true },
       { flags: "--url <url>", description: "Proxy URL (or 'self' for local encrypted secrets)", required: true },
-      { flags: "--description <desc>", description: "Description" },
+      { flags: "--description <desc>", description: "Description text" },
     ],
     successTemplate: "Secret proxy {name} created",
     examples: ["corp secret-proxies create --name 'name' --url 'url'", "corp secret-proxies create --json"],

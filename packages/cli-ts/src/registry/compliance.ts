@@ -64,7 +64,7 @@ export const complianceCommands: CommandDef[] = [
   // --- tax filings ---
   {
     name: "tax filings",
-    description: "List tax filings",
+    description: "Create a tax filing record",
     route: { method: "GET", path: "/v1/entities/{eid}/tax-filings" },
     entity: true,
     display: {
@@ -149,7 +149,7 @@ export const complianceCommands: CommandDef[] = [
     options: [
       { flags: "--type <type>", description: "Deadline type", required: true },
       { flags: "--due-date <date>", description: "Due date (ISO 8601)", required: true },
-      { flags: "--description <desc>", description: "Description", required: true },
+      { flags: "--description <desc>", description: "Description text", required: true },
       { flags: "--recurrence <recurrence>", description: "Recurrence (e.g. annual; 'yearly' is normalized). Required for annual_report type." },
     ],
     handler: async (ctx) => {
@@ -182,28 +182,30 @@ export const complianceCommands: CommandDef[] = [
   // ── Auto-generated from OpenAPI ──────────────────────────────
   {
     name: "compliance escalations-scan",
-    description: "Compliance Escalations Scan",
+    description: "Scan for compliance issues and create escalations",
     route: { method: "POST", path: "/v1/compliance/escalations/scan" },
     examples: ["corp compliance escalations-scan"],
+    successTemplate: "Escalations Scan created",
   },
   {
     name: "compliance escalations-resolve-with-evidence",
-    description: "Compliance Escalations Resolve With Evidence",
+    description: "Resolve a compliance escalation with evidence",
     route: { method: "POST", path: "/v1/compliance/escalations/{pos}/resolve-with-evidence" },
-    args: [{ name: "escalation-id", required: true, description: "Escalation Id" }],
+    args: [{ name: "escalation-id", required: true, description: "Escalation ID" }],
     options: [
       { flags: "--evidence-type <evidence-type>", description: "Evidence Type" },
       { flags: "--filing-reference <filing-reference>", description: "Filing Reference" },
-      { flags: "--notes <notes>", description: "Notes" },
-      { flags: "--packet-id <packet-id>", description: "Packet Id" },
+      { flags: "--notes <notes>", description: "Additional notes" },
+      { flags: "--packet-id <packet-id>", description: "Document packet ID" },
       { flags: "--resolve-incident", description: "Resolve Incident" },
       { flags: "--resolve-obligation", description: "Resolve Obligation" },
     ],
     examples: ["corp compliance escalations-resolve-with-evidence <escalation-id>", "corp compliance escalations-resolve-with-evidence --json"],
+    successTemplate: "Escalations Resolve With Evidence created",
   },
   {
     name: "contractors classify",
-    description: "Contractors Classify",
+    description: "Classify a worker as employee or contractor",
     route: { method: "POST", path: "/v1/contractors/classify" },
     options: [
       { flags: "--contractor-name <contractor-name>", description: "Contractor Name", required: true },
@@ -215,37 +217,40 @@ export const complianceCommands: CommandDef[] = [
       { flags: "--state <state>", description: "State" },
     ],
     examples: ["corp contractors classify --contractor-name 'contractor-name'", "corp contractors classify --json"],
+    successTemplate: "Classify created",
   },
   {
     name: "deadlines",
-    description: "Deadlines",
+    description: "Create a compliance deadline",
     route: { method: "POST", path: "/v1/deadlines" },
     options: [
       { flags: "--deadline-type <deadline-type>", description: "Deadline Type", required: true },
-      { flags: "--description <description>", description: "Description", required: true },
-      { flags: "--due-date <due-date>", description: "Due Date", required: true },
+      { flags: "--description <description>", description: "Description text", required: true },
+      { flags: "--due-date <due-date>", description: "Due date (ISO 8601, e.g. 2026-06-30)", required: true },
       { flags: "--recurrence <recurrence>", description: "Recurrence pattern for a deadline.", choices: ["one_time", "monthly", "quarterly", "annual"] },
       { flags: "--severity <severity>", description: "Risk severity of missing a deadline.", choices: ["low", "medium", "high", "critical"] },
     ],
     examples: ["corp deadlines --deadline-type 'deadline-type' --description 'description' --due-date one_time", "corp deadlines --json"],
+    successTemplate: "Deadlines created",
   },
   {
     name: "entities compliance-escalations",
-    description: "Entities Compliance Escalations",
+    description: "List compliance escalations for an entity",
     route: { method: "GET", path: "/v1/entities/{eid}/compliance/escalations" },
     entity: true,
-    display: { title: "Entities Compliance Escalations", cols: ["action>Action", "authority>Authority", "@created_at>Created At", "#deadline_id>ID", "#entity_id>ID", "#escalation_id>ID", "#incident_id>ID", "milestone>Milestone"] },
+    display: { title: "Entities Compliance Escalations", cols: ["action>Action", "authority>Authority", "milestone>Milestone", "@created_at>Created At", "#deadline_id>ID"] },
     examples: ["corp entities compliance-escalations", "corp entities compliance-escalations --json"],
   },
   {
     name: "tax filings",
-    description: "Tax Filings",
+    description: "Create a tax filing record",
     route: { method: "POST", path: "/v1/tax/filings" },
     options: [
-      { flags: "--document-type <document-type>", description: "Document Type", required: true },
+      { flags: "--document-type <document-type>", description: "Type of document required", required: true },
       { flags: "--tax-year <tax-year>", description: "Tax Year", required: true, type: "int" },
     ],
     examples: ["corp tax filings --document-type 'document-type' --tax-year 'tax-year'"],
+    successTemplate: "Filings created",
   },
 
 ];

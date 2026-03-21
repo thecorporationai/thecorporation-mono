@@ -180,7 +180,7 @@ export const financeCommands: CommandDef[] = [
       { flags: "--amount-cents <n>", description: "Amount in cents (e.g. 500000 = $5,000.00)", type: "int" },
       { flags: "--amount <n>", description: "Amount in dollars (converted to cents)", type: "int" },
       { flags: "--due-date <date>", description: "Due date (ISO 8601)", required: true },
-      { flags: "--description <desc>", description: "Description", default: "Services rendered" },
+      { flags: "--description <desc>", description: "Description text", default: "Services rendered" },
     ],
     handler: async (ctx) => {
       const eid = await ctx.resolver.resolveEntity(ctx.opts.entityId as string | undefined);
