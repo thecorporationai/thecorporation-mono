@@ -174,6 +174,7 @@ define_id!(ServiceRequestId);
 pub use agent_types::{AgentId, ExecutionId, MessageId, WorkspaceId};
 
 define_id!(ApiKeyId);
+define_id!(SshKeyId);
 define_id!(SubscriptionId);
 define_id!(StripeConnectionId);
 define_id!(NotificationPrefsId);

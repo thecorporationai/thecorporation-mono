@@ -63,6 +63,7 @@ fn build_app(tmp: &TempDir) -> Router {
         creation_rate_limiter: Arc::new(api_rs::routes::CreationRateLimiter::default()),
         storage_backend: api_rs::store::StorageBackendKind::Git,
         valkey_client: None,
+        ssh_key_index: Arc::new(api_rs::domain::auth::ssh_key::SshKeyIndex::empty()),
     };
 
     Router::new()

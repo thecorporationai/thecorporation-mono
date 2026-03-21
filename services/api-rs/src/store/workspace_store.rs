@@ -6,7 +6,8 @@ use std::rc::Rc;
 use serde::Serialize;
 
 use crate::domain::auth::api_key::ApiKeyRecord;
-use crate::domain::ids::{ApiKeyId, WorkspaceId};
+use crate::domain::auth::ssh_key::SshKeyRecord;
+use crate::domain::ids::{ApiKeyId, SshKeyId, WorkspaceId};
 use crate::git::commit::{FileWrite, commit_files};
 use crate::git::error::GitStorageError;
 use crate::git::repo::CorpRepo;
@@ -230,6 +231,20 @@ impl<'a> WorkspaceStore<'a> {
     pub fn list_api_key_ids(&self) -> Result<Vec<ApiKeyId>, GitStorageError> {
         self.list_ids_in_dir("api-keys")
     }
+
+    // ── SSH key CRUD ─────────────────────────────────────────────────
+
+    /// Read an SSH key record by ID.
+    pub fn read_ssh_key(&self, key_id: SshKeyId) -> Result<SshKeyRecord, GitStorageError> {
+        self.dispatch_read_json(&format!("ssh-keys/{}.json", key_id))
+    }
+
+    /// List all SSH key IDs.
+    pub fn list_ssh_key_ids(&self) -> Result<Vec<SshKeyId>, GitStorageError> {
+        self.list_ids_in_dir("ssh-keys")
+    }
+
+    // ── API key CRUD (continued) ─────────────────────────────────────
 
     /// Delete an API key by overwriting with a tombstone marker.
     pub fn delete_api_key(&self, key_id: ApiKeyId) -> Result<(), GitStorageError> {

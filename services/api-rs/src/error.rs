@@ -11,6 +11,7 @@ use serde_json::json;
 
 use crate::domain::agents::error::AgentError;
 use crate::domain::auth::error::AuthError;
+use crate::git::protocol::GitProtocolError;
 use crate::domain::contacts::error::ContactError;
 use crate::domain::equity::error::EquityError;
 use crate::domain::execution::error::ExecutionError;
@@ -94,6 +95,18 @@ impl IntoResponse for AppError {
 }
 
 // ── Domain error conversions ───────────────────────────────────────────
+
+impl From<GitProtocolError> for AppError {
+    fn from(e: GitProtocolError) -> Self {
+        match e {
+            GitProtocolError::RepoNotFound => Self::NotFound("repository not found".to_owned()),
+            GitProtocolError::InvalidService(s) => Self::BadRequest(format!("invalid service: {s}")),
+            GitProtocolError::InvalidPath(s) => Self::BadRequest(format!("invalid path: {s}")),
+            GitProtocolError::SubprocessError(s) => Self::Internal(s),
+            GitProtocolError::Io(e) => Self::Internal(format!("git I/O error: {e}")),
+        }
+    }
+}
 
 impl From<GitStorageError> for AppError {
     fn from(e: GitStorageError) -> Self {

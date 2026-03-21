@@ -40,6 +40,10 @@ pub enum Scope {
     ServicesRead,
     ServicesWrite,
 
+    // ── Git protocol ────────────────────────────────────────────────────
+    GitRead,
+    GitWrite,
+
     // ── Branch management ─────────────────────────────────────────────
     BranchCreate,
     BranchMerge,

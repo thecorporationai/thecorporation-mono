@@ -16,8 +16,9 @@ use crate::domain::auth::{
     api_key::generate_api_key,
     claims::{Claims, PrincipalType, encode_token},
     scopes::{Scope, ScopeSet},
+    ssh_key::{SshKeyLookup, SshKeyRecord, parse_public_key},
 };
-use crate::domain::ids::{ApiKeyId, ContactId, EntityId, WorkspaceId};
+use crate::domain::ids::{ApiKeyId, ContactId, EntityId, SshKeyId, WorkspaceId};
 use crate::error::AppError;
 use crate::store::workspace_store::WorkspaceStore;
 
@@ -489,6 +490,230 @@ async fn token_exchange(
     }))
 }
 
+// ── SSH key management ───────────────────────────────────────────────
+
+#[derive(Deserialize, utoipa::ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct AddSshKeyRequest {
+    pub name: String,
+    pub public_key: String,
+    #[serde(default = "default_scopes")]
+    pub scopes: Vec<Scope>,
+    #[serde(default)]
+    pub entity_ids: Option<Vec<EntityId>>,
+    #[serde(default)]
+    pub contact_id: Option<ContactId>,
+}
+
+#[derive(Serialize, utoipa::ToSchema)]
+pub struct SshKeyResponse {
+    pub key_id: SshKeyId,
+    pub workspace_id: WorkspaceId,
+    pub name: String,
+    pub fingerprint: String,
+    pub algorithm: String,
+    pub scopes: Vec<Scope>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub entity_ids: Option<Vec<EntityId>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub contact_id: Option<ContactId>,
+    pub created_at: String,
+}
+
+#[utoipa::path(
+    post,
+    path = "/v1/ssh-keys",
+    tag = "auth",
+    request_body = AddSshKeyRequest,
+    responses(
+        (status = 201, description = "SSH key added", body = SshKeyResponse),
+        (status = 400, description = "Invalid public key"),
+    ),
+)]
+async fn add_ssh_key(
+    RequireAdmin(auth): RequireAdmin,
+    State(state): State<AppState>,
+    Json(req): Json<AddSshKeyRequest>,
+) -> Result<(StatusCode, Json<SshKeyResponse>), AppError> {
+    if req.name.is_empty() || req.name.len() > 128 {
+        return Err(AppError::BadRequest(
+            "SSH key name must be between 1 and 128 characters".to_owned(),
+        ));
+    }
+
+    let (fingerprint, algorithm) = parse_public_key(&req.public_key)
+        .map_err(|e| AppError::BadRequest(e))?;
+
+    // Check for duplicate fingerprint
+    if state.ssh_key_index.lookup(&fingerprint).is_some() {
+        return Err(AppError::Conflict(format!(
+            "SSH key with fingerprint {fingerprint} is already registered"
+        )));
+    }
+
+    let workspace_id = auth.workspace_id();
+    let key_id = SshKeyId::new();
+    let scopes = ScopeSet::from_vec(req.scopes.clone());
+
+    let record = SshKeyRecord {
+        key_id,
+        workspace_id,
+        name: req.name.clone(),
+        public_key_openssh: req.public_key.clone(),
+        fingerprint: fingerprint.clone(),
+        algorithm: algorithm.clone(),
+        scopes: scopes.clone(),
+        entity_ids: req.entity_ids.clone(),
+        contact_id: req.contact_id,
+        created_at: chrono::Utc::now(),
+        revoked_at: None,
+    };
+
+    let record_clone = record.clone();
+    tokio::task::spawn_blocking({
+        let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
+        move || {
+            let ws_store = WorkspaceStore::open(&layout, workspace_id, valkey_client.as_ref())
+                .map_err(|e| AppError::NotFound(format!("workspace not found: {e}")))?;
+            let path = format!("ssh-keys/{}.json", key_id);
+            ws_store
+                .write_json(&path, &record_clone, &format!("Add SSH key {key_id}"))
+                .map_err(|e| AppError::Internal(format!("commit: {e}")))?;
+            Ok::<_, AppError>(())
+        }
+    })
+    .await
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+
+    // Update in-memory index
+    state.ssh_key_index.insert(
+        fingerprint.clone(),
+        SshKeyLookup {
+            workspace_id,
+            key_id,
+            scopes,
+            entity_ids: req.entity_ids.clone(),
+            contact_id: req.contact_id,
+        },
+    );
+
+    Ok((
+        StatusCode::CREATED,
+        Json(SshKeyResponse {
+            key_id,
+            workspace_id,
+            name: record.name,
+            fingerprint,
+            algorithm,
+            scopes: record.scopes.to_vec(),
+            entity_ids: record.entity_ids,
+            contact_id: record.contact_id,
+            created_at: record.created_at.to_rfc3339(),
+        }),
+    ))
+}
+
+#[utoipa::path(
+    get,
+    path = "/v1/ssh-keys",
+    tag = "auth",
+    responses(
+        (status = 200, description = "List of SSH keys", body = Vec<SshKeyResponse>),
+    ),
+)]
+async fn list_ssh_keys(
+    RequireAdmin(auth): RequireAdmin,
+    State(state): State<AppState>,
+) -> Result<Json<Vec<SshKeyResponse>>, AppError> {
+    let workspace_id = auth.workspace_id();
+
+    let keys = tokio::task::spawn_blocking({
+        let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
+        move || {
+            let ws_store = WorkspaceStore::open(&layout, workspace_id, valkey_client.as_ref())
+                .map_err(|e| AppError::NotFound(format!("workspace not found: {e}")))?;
+
+            let ids = ws_store
+                .list_ssh_key_ids()
+                .map_err(|e| AppError::Internal(format!("list keys: {e}")))?;
+
+            let mut results = Vec::new();
+            for id in ids {
+                if let Ok(record) = ws_store.read_ssh_key(id) {
+                    if record.is_valid() {
+                        results.push(SshKeyResponse {
+                            key_id: record.key_id,
+                            workspace_id: record.workspace_id,
+                            name: record.name,
+                            fingerprint: record.fingerprint,
+                            algorithm: record.algorithm,
+                            scopes: record.scopes.to_vec(),
+                            entity_ids: record.entity_ids,
+                            contact_id: record.contact_id,
+                            created_at: record.created_at.to_rfc3339(),
+                        });
+                    }
+                }
+            }
+            Ok::<_, AppError>(results)
+        }
+    })
+    .await
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+
+    Ok(Json(keys))
+}
+
+#[utoipa::path(
+    delete,
+    path = "/v1/ssh-keys/{key_id}",
+    tag = "auth",
+    params(("key_id" = SshKeyId, Path, description = "SSH key ID to revoke")),
+    responses(
+        (status = 204, description = "SSH key revoked"),
+        (status = 404, description = "SSH key not found"),
+    ),
+)]
+async fn revoke_ssh_key(
+    RequireAdmin(auth): RequireAdmin,
+    State(state): State<AppState>,
+    Path(key_id): Path<SshKeyId>,
+) -> Result<StatusCode, AppError> {
+    let workspace_id = auth.workspace_id();
+
+    let fingerprint = tokio::task::spawn_blocking({
+        let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
+        move || {
+            let ws_store = WorkspaceStore::open(&layout, workspace_id, valkey_client.as_ref())
+                .map_err(|e| AppError::NotFound(format!("workspace not found: {e}")))?;
+
+            let mut record = ws_store
+                .read_ssh_key(key_id)
+                .map_err(|_| AppError::NotFound(format!("SSH key {} not found", key_id)))?;
+
+            let fingerprint = record.fingerprint.clone();
+            record.revoke();
+
+            let path = format!("ssh-keys/{}.json", key_id);
+            ws_store
+                .write_json(&path, &record, &format!("Revoke SSH key {key_id}"))
+                .map_err(|e| AppError::Internal(format!("commit: {e}")))?;
+
+            Ok::<_, AppError>(fingerprint)
+        }
+    })
+    .await
+    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+
+    // Remove from in-memory index
+    state.ssh_key_index.remove(&fingerprint);
+
+    Ok(StatusCode::NO_CONTENT)
+}
+
 // ── Router ───────────────────────────────────────────────────────────
 
 pub fn auth_routes() -> Router<AppState> {
@@ -498,6 +723,8 @@ pub fn auth_routes() -> Router<AppState> {
         .route("/v1/api-keys/{key_id}", delete(revoke_api_key))
         .route("/v1/api-keys/{key_id}/rotate", post(rotate_api_key))
         .route("/v1/auth/token-exchange", post(token_exchange))
+        .route("/v1/ssh-keys", post(add_ssh_key).get(list_ssh_keys))
+        .route("/v1/ssh-keys/{key_id}", delete(revoke_ssh_key))
 }
 
 #[derive(utoipa::OpenApi)]
@@ -509,6 +736,9 @@ pub fn auth_routes() -> Router<AppState> {
         revoke_api_key,
         rotate_api_key,
         token_exchange,
+        add_ssh_key,
+        list_ssh_keys,
+        revoke_ssh_key,
     ),
     components(schemas(
         ProvisionWorkspaceRequest,
@@ -517,6 +747,8 @@ pub fn auth_routes() -> Router<AppState> {
         ApiKeyResponse,
         TokenExchangeRequest,
         TokenExchangeResponse,
+        AddSshKeyRequest,
+        SshKeyResponse,
     ))
 )]
 pub struct AuthApi;

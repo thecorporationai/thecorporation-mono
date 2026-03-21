@@ -119,6 +119,10 @@ define_scoped_extractor!(RequireExecutionWrite, Scope::ExecutionWrite);
 define_scoped_extractor!(RequireServicesRead, Scope::ServicesRead);
 define_scoped_extractor!(RequireServicesWrite, Scope::ServicesWrite);
 
+// Git protocol
+define_scoped_extractor!(RequireGitRead, Scope::GitRead);
+define_scoped_extractor!(RequireGitWrite, Scope::GitWrite);
+
 // Branches
 define_scoped_extractor!(RequireBranchCreate, Scope::BranchCreate);
 define_scoped_extractor!(RequireBranchMerge, Scope::BranchMerge);

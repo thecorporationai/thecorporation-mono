@@ -43,6 +43,8 @@ pub fn commit_files(
             // SHA-1 ↔ SHA-256 lookup tables.
             oid_pipe.hset_nx(keys::oid_1to256_key(), oid.sha1_hex(), oid.sha256_hex());
             oid_pipe.hset_nx(keys::oid_256to1_key(), oid.sha256_hex(), oid.sha1_hex());
+            // Git object type tag.
+            oid_pipe.hset_nx(keys::git_obj_type_key(), oid.sha1_hex(), "blob");
             blob_oids.push((fw.path.clone(), oid));
         }
 
@@ -91,19 +93,30 @@ pub fn commit_files(
         tree.insert(path.clone(), blob_oid.clone());
     }
 
-    // 4. Compute tree hash.
-    let (root_tree_oid, _sub_trees) = oid::compute_root_tree(&tree);
+    // 4. Compute tree hash and store raw tree objects.
+    let (root_tree_oid, all_trees) = oid::compute_root_tree(&tree);
+
+    {
+        let mut tree_pipe = pipe();
+        for (tree_oid, raw_content) in &all_trees {
+            tree_pipe.hset_nx(keys::blob_key(), tree_oid.sha256_hex(), raw_content);
+            tree_pipe.hset_nx(keys::oid_1to256_key(), tree_oid.sha1_hex(), tree_oid.sha256_hex());
+            tree_pipe.hset_nx(keys::oid_256to1_key(), tree_oid.sha256_hex(), tree_oid.sha1_hex());
+            tree_pipe.hset_nx(keys::git_obj_type_key(), tree_oid.sha1_hex(), "tree");
+        }
+        tree_pipe.query::<()>(con)?;
+    }
 
     // 5. Get parent commit.
     let ref_key = keys::ref_key(ws, ent);
     let parent_sha1: Option<String> = con.hget(&ref_key, branch)?;
 
-    // 6. Compute commit hash.
+    // 6. Compute commit hash and store raw commit object.
     let unix_ts = timestamp.timestamp();
     let author_name = actor.map_or("corp-engine", |_| "corp-engine");
     let author_email = actor.map_or("engine@thecorporation.ai", |_| "engine@thecorporation.ai");
 
-    let commit_oid = oid::hash_commit(&CommitHash {
+    let (commit_oid, commit_raw) = oid::build_commit(&CommitHash {
         tree_sha1_hex: &root_tree_oid.sha1_hex(),
         parent_sha1_hex: parent_sha1.as_deref(),
         author_name,
@@ -111,6 +124,14 @@ pub fn commit_files(
         author_timestamp: unix_ts,
         message,
     });
+
+    store_raw_git_object(
+        con,
+        &commit_oid.sha1_hex(),
+        &commit_oid.sha256_hex(),
+        GitObjectType::Commit,
+        &commit_raw,
+    )?;
 
     // 7. Build commit entry.
     let seq: u64 = con.incr(keys::seq_key(ws, ent), 1)?;
@@ -311,6 +332,89 @@ pub fn delete_file(
     p.query::<()>(con)?;
 
     Ok(commit_oid)
+}
+
+// ── Raw git object storage ───────────────────────────────────────────
+
+/// Git object type tag.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GitObjectType {
+    Blob,
+    Tree,
+    Commit,
+}
+
+impl GitObjectType {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Blob => "blob",
+            Self::Tree => "tree",
+            Self::Commit => "commit",
+        }
+    }
+
+    pub fn from_str(s: &str) -> Result<Self, StoreError> {
+        match s {
+            "blob" => Ok(Self::Blob),
+            "tree" => Ok(Self::Tree),
+            "commit" => Ok(Self::Commit),
+            other => Err(StoreError::NotFound(format!("unknown object type: {other}"))),
+        }
+    }
+
+    /// The git pack object type number.
+    pub fn pack_type(self) -> u8 {
+        match self {
+            Self::Commit => 1,
+            Self::Tree => 2,
+            Self::Blob => 3,
+        }
+    }
+}
+
+/// Store a raw git object (blob, tree, or commit content without header).
+///
+/// Content is stored in `corp:blob` under SHA-256. The object type is
+/// stored in `corp:git-obj-type` under SHA-1 so upload-pack can
+/// reconstruct the correct git object header.
+pub fn store_raw_git_object(
+    con: &mut impl ConnectionLike,
+    sha1_hex: &str,
+    sha256_hex: &str,
+    obj_type: GitObjectType,
+    content: &[u8],
+) -> Result<(), StoreError> {
+    let mut p = pipe();
+    p.hset_nx(keys::blob_key(), sha256_hex, content);
+    p.hset_nx(keys::oid_1to256_key(), sha1_hex, sha256_hex);
+    p.hset_nx(keys::oid_256to1_key(), sha256_hex, sha1_hex);
+    p.hset_nx(keys::git_obj_type_key(), sha1_hex, obj_type.as_str());
+    p.query::<()>(con)?;
+    Ok(())
+}
+
+/// Read a raw git object by SHA-1.
+///
+/// Returns `(type, content)` where content is the object body without
+/// the git header (`{type} {len}\0`).
+pub fn read_raw_git_object(
+    con: &mut impl ConnectionLike,
+    sha1_hex: &str,
+) -> Result<(GitObjectType, Vec<u8>), StoreError> {
+    let type_str: Option<String> = con.hget(keys::git_obj_type_key(), sha1_hex)?;
+    let type_str = type_str
+        .ok_or_else(|| StoreError::NotFound(format!("git object type {sha1_hex}")))?;
+    let obj_type = GitObjectType::from_str(&type_str)?;
+    let content = blob_by_sha1(con, sha1_hex)?;
+    Ok((obj_type, content))
+}
+
+/// Check if a git object exists by SHA-1.
+pub fn git_object_exists(
+    con: &mut impl ConnectionLike,
+    sha1_hex: &str,
+) -> Result<bool, StoreError> {
+    Ok(con.hexists(keys::git_obj_type_key(), sha1_hex)?)
 }
 
 // ── Read operations ──────────────────────────────────────────────────

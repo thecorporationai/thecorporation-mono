@@ -61,3 +61,8 @@ pub fn entities_key(ws: &str) -> String {
 pub fn workspaces_key() -> &'static str {
     "corp:workspaces"
 }
+
+/// Git object type by SHA-1: `HSET corp:git-obj-type {sha1_hex} "blob"|"tree"|"commit"`
+pub fn git_obj_type_key() -> &'static str {
+    "corp:git-obj-type"
+}

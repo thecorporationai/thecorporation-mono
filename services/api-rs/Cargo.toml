@@ -19,7 +19,7 @@ hyper = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
-# Git storage (replaces PostgreSQL) — no SSH/HTTPS needed, local bare repos only
+# Git storage (replaces PostgreSQL) — bare repos on disk, served via HTTP smart protocol
 git2 = { version = "0.20", default-features = false }
 
 # Commit signing — Ed25519 SSH signatures for cryptographic provenance
@@ -72,6 +72,15 @@ typst-pdf = "0.14"
 typst-syntax = "0.14"
 comemo = "0.5"
 typst-assets = { version = "0.14", features = ["fonts"] }
+
+# Streaming response bodies
+tokio-util = { version = "0.7", features = ["io"] }
+
+# Zlib compression for git pack protocol
+flate2 = "1"
+
+# SHA-1 hashing for git object IDs in pack protocol
+sha1 = "0.10"
 
 # OpenAPI — auto-generated from code via utoipa derive macros
 utoipa = { version = "5", features = ["axum_extras", "chrono", "uuid"] }

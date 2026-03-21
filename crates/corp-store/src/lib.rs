@@ -49,6 +49,7 @@ pub mod branch;
 pub mod durable;
 pub mod entry;
 pub mod error;
+pub mod git_protocol;
 pub mod keys;
 pub mod merge;
 pub mod oid;
@@ -56,3 +57,4 @@ pub mod store;
 
 pub use error::StoreError;
 pub use oid::DualOid;
+pub use store::GitObjectType;

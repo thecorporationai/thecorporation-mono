@@ -326,6 +326,11 @@ fn init_state(skip_validation: bool) -> routes::AppState {
         }
     };
 
+    // Build SSH public key fingerprint index for git protocol auth
+    let ssh_key_index = Arc::new(
+        domain::auth::ssh_key::SshKeyIndex::build(&layout, valkey_client.as_ref()),
+    );
+
     routes::AppState {
         layout,
         jwt_secret,
@@ -339,6 +344,7 @@ fn init_state(skip_validation: bool) -> routes::AppState {
         creation_rate_limiter: Arc::new(routes::CreationRateLimiter::default()),
         storage_backend,
         valkey_client,
+        ssh_key_index,
     }
 }
 
@@ -366,6 +372,7 @@ fn build_router(state: routes::AppState) -> Router {
         .merge(routes::next_steps::next_steps_routes())
         .merge(routes::admin::admin_routes())
         .merge(routes::admin::admin_billing_routes())
+        .merge(routes::git_http::git_http_routes())
         .with_state(state)
         .layer(middleware::map_response(security_headers))
 }

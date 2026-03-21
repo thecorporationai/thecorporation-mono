@@ -8,6 +8,7 @@ pub mod contacts;
 pub mod equity;
 pub mod execution;
 pub mod formation;
+pub mod git_http;
 pub mod governance;
 pub mod governance_enforcement;
 pub mod llm_proxy;
@@ -26,6 +27,7 @@ use std::time::{Duration, Instant};
 
 use axum::extract::FromRef;
 
+use crate::domain::auth::ssh_key::SshKeyIndex;
 use crate::domain::ids::{EntityId, WorkspaceId};
 use crate::error::AppError;
 use crate::git::signing::CommitSigner;
@@ -78,6 +80,8 @@ pub struct AppState {
     /// Sync Redis/Valkey client for store operations inside `spawn_blocking`.
     /// Required when `storage_backend` is `Valkey`, ignored for `Git`.
     pub valkey_client: Option<redis::Client>,
+    /// In-memory SSH public key fingerprint index for O(1) auth lookups.
+    pub ssh_key_index: Arc<SshKeyIndex>,
 }
 
 #[derive(Default)]
@@ -149,5 +153,11 @@ impl FromRef<AppState> for Arc<[u8]> {
 impl FromRef<AppState> for ValkeyClient {
     fn from_ref(state: &AppState) -> ValkeyClient {
         ValkeyClient(state.valkey_client.clone())
+    }
+}
+
+impl FromRef<AppState> for Arc<SshKeyIndex> {
+    fn from_ref(state: &AppState) -> Arc<SshKeyIndex> {
+        state.ssh_key_index.clone()
     }
 }

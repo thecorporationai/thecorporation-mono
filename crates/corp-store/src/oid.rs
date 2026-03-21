@@ -64,13 +64,15 @@ pub struct TreeEntry {
     pub sha256: [u8; 32],
 }
 
-/// Hash a list of tree entries using git's tree format.
+/// Build raw tree content (without git header) and compute its dual OID.
 ///
 /// Git format per entry: `{mode} {name}\0{20-byte-raw-sha1}`
 /// Entries MUST be sorted by name (git's tree sorting rules).
 /// The full object: `tree {content_len}\0{entries}`
-pub fn hash_tree(entries: &[TreeEntry]) -> DualOid {
-    // Build the raw tree content (without the header).
+///
+/// Returns `(oid, raw_content)` where `raw_content` is the tree body
+/// (entries only, no header). This is what goes into the pack protocol.
+pub fn build_tree(entries: &[TreeEntry]) -> (DualOid, Vec<u8>) {
     let mut content = Vec::new();
     for entry in entries {
         content.extend_from_slice(entry.mode.as_bytes());
@@ -90,6 +92,33 @@ pub fn hash_tree(entries: &[TreeEntry]) -> DualOid {
     sha256.update(header.as_bytes());
     sha256.update(&content);
 
+    let oid = DualOid {
+        sha1: sha1.finalize().into(),
+        sha256: sha256.finalize().into(),
+    };
+    (oid, content)
+}
+
+/// Hash a list of tree entries using git's tree format.
+///
+/// Convenience wrapper around [`build_tree`] that discards the raw content.
+pub fn hash_tree(entries: &[TreeEntry]) -> DualOid {
+    build_tree(entries).0
+}
+
+/// Hash raw tree content (already in git tree format, without the header).
+///
+/// Used when processing objects from a received pack.
+pub fn hash_tree_raw(content: &[u8]) -> DualOid {
+    let header = format!("tree {}\0", content.len());
+    let mut sha1 = sha1::Sha1::new();
+    sha1.update(header.as_bytes());
+    sha1.update(content);
+
+    let mut sha256 = sha2::Sha256::new();
+    sha256.update(header.as_bytes());
+    sha256.update(content);
+
     DualOid {
         sha1: sha1.finalize().into(),
         sha256: sha256.finalize().into(),
@@ -108,7 +137,7 @@ pub struct CommitHash<'a> {
     pub message: &'a str,
 }
 
-/// Hash a commit using git's exact commit format.
+/// Build raw commit body (without git header) and compute its dual OID.
 ///
 /// Git format:
 /// ```text
@@ -119,7 +148,10 @@ pub struct CommitHash<'a> {
 /// \n
 /// {message}\n
 /// ```
-pub fn hash_commit(params: &CommitHash<'_>) -> DualOid {
+///
+/// Returns `(oid, raw_body)` where `raw_body` is the commit text
+/// (no header). This is what goes into the pack protocol.
+pub fn build_commit(params: &CommitHash<'_>) -> (DualOid, Vec<u8>) {
     let mut body = String::new();
     body.push_str(&format!("tree {}\n", params.tree_sha1_hex));
     if let Some(parent) = params.parent_sha1_hex {
@@ -143,6 +175,33 @@ pub fn hash_commit(params: &CommitHash<'_>) -> DualOid {
     sha256.update(header.as_bytes());
     sha256.update(body.as_bytes());
 
+    let oid = DualOid {
+        sha1: sha1.finalize().into(),
+        sha256: sha256.finalize().into(),
+    };
+    (oid, body.into_bytes())
+}
+
+/// Hash a commit using git's exact commit format.
+///
+/// Convenience wrapper around [`build_commit`] that discards the raw body.
+pub fn hash_commit(params: &CommitHash<'_>) -> DualOid {
+    build_commit(params).0
+}
+
+/// Hash raw commit content (already in git commit format, without the header).
+///
+/// Used when processing objects from a received pack.
+pub fn hash_commit_raw(content: &[u8]) -> DualOid {
+    let header = format!("commit {}\0", content.len());
+    let mut sha1 = sha1::Sha1::new();
+    sha1.update(header.as_bytes());
+    sha1.update(content);
+
+    let mut sha256 = sha2::Sha256::new();
+    sha256.update(header.as_bytes());
+    sha256.update(content);
+
     DualOid {
         sha1: sha1.finalize().into(),
         sha256: sha256.finalize().into(),
@@ -154,21 +213,23 @@ pub fn hash_commit(params: &CommitHash<'_>) -> DualOid {
 /// Build nested git tree OIDs from a flat path→blob map.
 ///
 /// Takes a `BTreeMap<path, (sha1, sha256)>` of the current file tree and
-/// returns the root tree's dual OID. Sub-trees are computed recursively.
+/// returns the root tree's dual OID plus all tree objects (root + subtrees)
+/// as `(oid, raw_content)` pairs suitable for storing as raw git objects.
 pub fn compute_root_tree(
     files: &BTreeMap<String, DualOid>,
-) -> (DualOid, Vec<(DualOid, Vec<TreeEntry>)>) {
-    // Collect all tree objects generated (for storage).
-    let mut all_trees = Vec::new();
+) -> (DualOid, Vec<(DualOid, Vec<u8>)>) {
+    let mut all_trees: Vec<(DualOid, Vec<u8>)> = Vec::new();
     let root = build_tree_level(files, "", &mut all_trees);
+    // Add the root tree itself.
+    all_trees.push((root.0.clone(), root.1));
     (root.0, all_trees)
 }
 
 fn build_tree_level(
     files: &BTreeMap<String, DualOid>,
     prefix: &str,
-    all_trees: &mut Vec<(DualOid, Vec<TreeEntry>)>,
-) -> (DualOid, Vec<TreeEntry>) {
+    all_trees: &mut Vec<(DualOid, Vec<u8>)>,
+) -> (DualOid, Vec<u8>) {
     let mut entries: BTreeMap<String, Vec<(String, DualOid)>> = BTreeMap::new();
     let mut direct_files: Vec<(String, DualOid)> = Vec::new();
 
@@ -210,8 +271,8 @@ fn build_tree_level(
         } else {
             format!("{prefix}{dir_name}/")
         };
-        let (sub_oid, sub_entries) = build_tree_level(files, &sub_prefix, all_trees);
-        all_trees.push((sub_oid.clone(), sub_entries));
+        let (sub_oid, sub_raw) = build_tree_level(files, &sub_prefix, all_trees);
+        all_trees.push((sub_oid.clone(), sub_raw));
         tree_entries.push(TreeEntry {
             mode: "40000",
             name: dir_name.clone(),
@@ -223,8 +284,7 @@ fn build_tree_level(
     // Sort entries by name (git's tree sort order).
     tree_entries.sort_by(|a, b| tree_sort_key(a).cmp(&tree_sort_key(b)));
 
-    let oid = hash_tree(&tree_entries);
-    (oid, tree_entries)
+    build_tree(&tree_entries)
 }
 
 /// Git sorts tree entries by name, with directories treated as if
@@ -293,10 +353,15 @@ mod tests {
         files.insert("dir/b.txt".to_owned(), hash_blob(b"bbb"));
         files.insert("dir/sub/c.txt".to_owned(), hash_blob(b"ccc"));
 
-        let (root, sub_trees) = compute_root_tree(&files);
+        let (root, all_trees) = compute_root_tree(&files);
         assert!(!root.sha1_hex().is_empty());
-        // Should have 2 sub-trees: dir/ and dir/sub/
-        assert_eq!(sub_trees.len(), 2);
+        // Should have 3 trees: dir/sub/, dir/, and root
+        assert_eq!(all_trees.len(), 3);
+        // Each tree should have non-empty raw content
+        for (oid, raw) in &all_trees {
+            assert!(!oid.sha1_hex().is_empty());
+            assert!(!raw.is_empty());
+        }
     }
 
     #[test]
