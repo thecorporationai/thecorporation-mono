@@ -106,6 +106,7 @@ export const agentCommands: CommandDef[] = [
       }
       console.log(chalk.magenta("\u2500".repeat(40)));
     },
+    examples: ["corp agents show"],
   },
 
   // --- agents create ---
@@ -148,6 +149,7 @@ export const agentCommands: CommandDef[] = [
     },
     produces: { kind: "agent" },
     successTemplate: "Agent created: {name}",
+    examples: ["corp agents create --name 'name' --prompt 'prompt'", "corp agents create --json"],
   },
 
   // --- agents pause <agent-ref> ---
@@ -162,6 +164,7 @@ export const agentCommands: CommandDef[] = [
       const result = await ctx.client.updateAgent(resolvedAgentId, { status: "paused" });
       ctx.writer.writeResult(result, `Agent ${resolvedAgentId} paused.`, { jsonOnly: ctx.opts.json });
     },
+    examples: ["corp agents pause <agent-ref>"],
   },
 
   // --- agents resume <agent-ref> ---
@@ -190,6 +193,7 @@ export const agentCommands: CommandDef[] = [
         process.exit(1);
       }
     },
+    examples: ["corp agents resume <agent-ref>"],
   },
 
   // --- agents delete <agent-ref> ---
@@ -214,6 +218,7 @@ export const agentCommands: CommandDef[] = [
       const result = await ctx.client.deleteAgent(resolvedAgentId);
       ctx.writer.writeResult(result, `Agent ${resolvedAgentId} deleted.`, { jsonOnly: ctx.opts.json });
     },
+    examples: ["corp agents delete <agent-ref>", "corp agents delete --json"],
   },
 
   // --- agents message <agent-ref> ---
@@ -247,6 +252,7 @@ export const agentCommands: CommandDef[] = [
         process.exit(1);
       }
     },
+    examples: ["corp agents message <agent-ref>", "corp agents message --json"],
   },
 
   // --- agents skill <agent-ref> ---
@@ -276,6 +282,7 @@ export const agentCommands: CommandDef[] = [
       });
       ctx.writer.writeResult(result, `Skill '${ctx.opts.name}' added to agent ${resolvedAgentId}.`, { jsonOnly: ctx.opts.json });
     },
+    examples: ["corp agents skill <agent-ref> --name 'name' --description 'desc'", "corp agents skill --json"],
   },
 
   // --- agents execution <agent-ref> <execution-id> ---
@@ -304,6 +311,7 @@ export const agentCommands: CommandDef[] = [
       if (result.completed_at) console.log(`  ${chalk.bold("Completed:")} ${result.completed_at}`);
       console.log(chalk.magenta("\u2500".repeat(40)));
     },
+    examples: ["corp agents execution"],
   },
 
   // --- agents execution-result <agent-ref> <execution-id> ---
@@ -325,6 +333,7 @@ export const agentCommands: CommandDef[] = [
       ctx.writer.success(`Result for execution ${executionId}:`);
       printJson(result);
     },
+    examples: ["corp agents execution-result"],
   },
 
   // --- agents kill <agent-ref> <execution-id> ---
@@ -350,23 +359,26 @@ export const agentCommands: CommandDef[] = [
       const result = await ctx.client.killAgentExecution(resolvedAgentId, executionId);
       ctx.writer.writeResult(result, `Execution ${executionId} killed.`, { jsonOnly: ctx.opts.json });
     },
+    examples: ["corp agents kill <agent-ref> <execution-id>", "corp agents kill --json"],
   },
 
   // ── Auto-generated from OpenAPI ──────────────────────────────
   {
     name: "agents executions-logs",
-    description: "/v1/agents/{agent_id}/executions/{execution_id}/logs",
+    description: "Agents Executions Logs",
     route: { method: "GET", path: "/v1/agents/{pos}/executions/{pos2}/logs" },
     args: [{ name: "agent-id", required: true, description: "Agent Id" }, { name: "execution-id", required: true, description: "Execution Id" }],
+    examples: ["corp agents executions-logs"],
   },
 
 
   // ── Auto-generated from OpenAPI ──────────────────────────────
   {
     name: "agents messages",
-    description: "/v1/agents/{agent_id}/messages/{message_id}",
+    description: "Agents Messages",
     route: { method: "GET", path: "/v1/agents/{pos}/messages/{pos2}" },
     args: [{ name: "agent-id", required: true, description: "Agent Id" }, { name: "message-id", required: true, description: "Message Id" }],
+    examples: ["corp agents messages"],
   },
 
 ];

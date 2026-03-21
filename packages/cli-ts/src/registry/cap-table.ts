@@ -100,6 +100,7 @@ export const capTableCommands: CommandDef[] = [
       if (safes.length === 0) { ctx.writer.writeln("No SAFE notes found."); return; }
       printSafesTable(safes);
     },
+    examples: ["corp cap-table safes", "corp cap-table safes --json"],
   },
 
   // --- cap-table transfers ---
@@ -120,6 +121,7 @@ export const capTableCommands: CommandDef[] = [
       if (transfers.length === 0) { ctx.writer.writeln("No share transfers found."); return; }
       printTransfersTable(transfers);
     },
+    examples: ["corp cap-table transfers", "corp cap-table transfers --json"],
   },
 
   // --- cap-table instruments ---
@@ -142,6 +144,7 @@ export const capTableCommands: CommandDef[] = [
       if (instruments.length === 0) { ctx.writer.writeln("No instruments found."); return; }
       printInstrumentsTable(instruments);
     },
+    examples: ["corp cap-table instruments", "corp cap-table instruments --json"],
   },
 
   // --- cap-table share-classes ---
@@ -164,6 +167,7 @@ export const capTableCommands: CommandDef[] = [
       if (shareClasses.length === 0) { ctx.writer.writeln("No share classes found."); return; }
       printShareClassesTable(shareClasses);
     },
+    examples: ["corp cap-table share-classes", "corp cap-table share-classes --json"],
   },
 
   // --- cap-table rounds ---
@@ -184,6 +188,7 @@ export const capTableCommands: CommandDef[] = [
       if (rounds.length === 0) { ctx.writer.writeln("No rounds found."); return; }
       printRoundsTable(rounds);
     },
+    examples: ["corp cap-table rounds", "corp cap-table rounds --json"],
   },
 
   // --- cap-table valuations ---
@@ -204,6 +209,7 @@ export const capTableCommands: CommandDef[] = [
       if (valuations.length === 0) { ctx.writer.writeln("No valuations found."); return; }
       printValuationsTable(valuations);
     },
+    examples: ["corp cap-table valuations", "corp cap-table valuations --json"],
   },
 
   // --- cap-table 409a ---
@@ -253,6 +259,7 @@ export const capTableCommands: CommandDef[] = [
         process.exit(1);
       }
     },
+    examples: ["corp cap-table 409a", "corp cap-table 409a --json"],
   },
 
   // --- cap-table control-map ---
@@ -295,6 +302,7 @@ export const capTableCommands: CommandDef[] = [
       if (ctx.opts.json) { ctx.writer.json(result); return; }
       ctx.writer.json(result);
     },
+    examples: ["corp cap-table control-map", "corp cap-table control-map --json"],
   },
 
   // --- cap-table dilution ---
@@ -318,6 +326,7 @@ export const capTableCommands: CommandDef[] = [
       }
       ctx.writer.json(result);
     },
+    examples: ["corp cap-table dilution", "corp cap-table dilution --json"],
   },
 
   // --- cap-table create-instrument ---
@@ -372,6 +381,7 @@ export const capTableCommands: CommandDef[] = [
     },
     produces: { kind: "instrument" },
     successTemplate: "Instrument created: {symbol}",
+    examples: ["corp cap-table create-instrument --kind 'kind' --symbol 'symbol'", "corp cap-table create-instrument --json"],
   },
 
   // --- cap-table issue-equity ---
@@ -460,6 +470,7 @@ export const capTableCommands: CommandDef[] = [
     },
     produces: { kind: "round" },
     successTemplate: "Equity issued: {round_name}",
+    examples: ["corp cap-table issue-equity --grant-type 'type' --shares 'n' --recipient 'name'", "corp cap-table issue-equity --json"],
   },
 
   // --- cap-table issue-safe ---
@@ -533,6 +544,7 @@ export const capTableCommands: CommandDef[] = [
     },
     produces: { kind: "safe_note" },
     successTemplate: "SAFE created: {investor_name}",
+    examples: ["corp cap-table issue-safe --investor 'name' --amount-cents 'n' --valuation-cap-cents 'n'", "corp cap-table issue-safe --json"],
   },
 
   // --- cap-table transfer ---
@@ -621,6 +633,7 @@ export const capTableCommands: CommandDef[] = [
     },
     produces: { kind: "share_transfer" },
     successTemplate: "Transfer created",
+    examples: ["corp cap-table transfer --from 'ref' --to 'ref' --shares 'n' --share-class-id 'ref' --governing-doc-type 'type' --transferee-rights 'rights'", "corp cap-table transfer --json"],
   },
 
   // --- cap-table distribute ---
@@ -658,6 +671,7 @@ export const capTableCommands: CommandDef[] = [
       ctx.writer.success(`Distribution calculated: ${result.distribution_id ?? "OK"}`);
       printReferenceSummary("distribution", result, { showReuseHint: true });
     },
+    examples: ["corp cap-table distribute --amount-cents 'n' --description 'desc'", "corp cap-table distribute --json"],
   },
 
   // --- cap-table start-round ---
@@ -692,6 +706,7 @@ export const capTableCommands: CommandDef[] = [
     },
     produces: { kind: "round" },
     successTemplate: "Round started: {round_name}",
+    examples: ["corp cap-table start-round --name 'name' --issuer-legal-entity-id 'ref'"],
   },
 
   // --- cap-table add-security ---
@@ -733,6 +748,7 @@ export const capTableCommands: CommandDef[] = [
       if (ctx.opts.json) { ctx.writer.json(result); return; }
       ctx.writer.success(`Security added for ${ctx.opts.recipientName}`);
     },
+    examples: ["corp cap-table add-security --round-id 'ref' --instrument-id 'ref' --quantity 'n' --recipient-name 'name'", "corp cap-table add-security --json"],
   },
 
   // --- cap-table issue-round ---
@@ -783,6 +799,7 @@ export const capTableCommands: CommandDef[] = [
         printReferenceSummary("round", roundMatch.raw, { showReuseHint: true });
       }
     },
+    examples: ["corp cap-table issue-round --round-id 'ref'", "corp cap-table issue-round --json"],
   },
 
   // --- cap-table create-valuation ---
@@ -822,6 +839,7 @@ export const capTableCommands: CommandDef[] = [
     },
     produces: { kind: "valuation" },
     successTemplate: "Valuation created",
+    examples: ["corp cap-table create-valuation --type 'type' --date 'date' --methodology 'method'", "corp cap-table create-valuation --json"],
   },
 
   // --- cap-table submit-valuation <valuation-ref> ---
@@ -880,6 +898,7 @@ export const capTableCommands: CommandDef[] = [
         process.exit(1);
       }
     },
+    examples: ["corp cap-table submit-valuation <valuation-ref>"],
   },
 
   // --- cap-table approve-valuation <valuation-ref> ---
@@ -924,6 +943,7 @@ export const capTableCommands: CommandDef[] = [
         process.exit(1);
       }
     },
+    examples: ["corp cap-table approve-valuation <valuation-ref>", "corp cap-table approve-valuation --json"],
   },
 
   // --- cap-table preview-conversion ---
@@ -951,6 +971,7 @@ export const capTableCommands: CommandDef[] = [
       if (result.ownership_pct) console.log(`  Post-conversion ownership: ${result.ownership_pct}%`);
       ctx.writer.json(result);
     },
+    examples: ["corp cap-table preview-conversion", "corp cap-table preview-conversion --json"],
   },
 
   // --- cap-table convert ---
@@ -982,12 +1003,13 @@ export const capTableCommands: CommandDef[] = [
       if (ctx.opts.json) { ctx.writer.json(result); return; }
       ctx.writer.success(`Conversion executed for SAFE ${safeId}`);
     },
+    examples: ["corp cap-table convert --safe-id 'ref' --price-per-share-cents 'n'"],
   },
 
   // ── Auto-generated from OpenAPI ──────────────────────────────
   {
     name: "equity control-links",
-    description: "/v1/equity/control-links",
+    description: "Equity Control Links",
     route: { method: "POST", path: "/v1/equity/control-links" },
     options: [
       { flags: "--child-legal-entity-id <child-legal-entity-id>", description: "Child Legal Entity Id", required: true },
@@ -996,53 +1018,59 @@ export const capTableCommands: CommandDef[] = [
       { flags: "--parent-legal-entity-id <parent-legal-entity-id>", description: "Parent Legal Entity Id", required: true },
       { flags: "--voting-power-bps <voting-power-bps>", description: "Voting Power Bps" },
     ],
+    examples: ["corp equity control-links --child-legal-entity-id voting --control-type voting --parent-legal-entity-id 'parent-legal-entity-id'", "corp equity control-links --json"],
   },
   {
     name: "equity control-map",
-    description: "/v1/equity/control-map",
+    description: "Equity Control Map",
     route: { method: "GET", path: "/v1/equity/control-map" },
     entity: true,
     display: { title: "Equity Control Map", cols: ["edges>Edges", "#root_entity_id>ID", "traversed_entities>Traversed Entities"] },
+    examples: ["corp equity control-map", "corp equity control-map --json"],
   },
   {
     name: "equity conversions-execute",
-    description: "/v1/equity/conversions/execute",
+    description: "Equity Conversions Execute",
     route: { method: "POST", path: "/v1/equity/conversions/execute" },
     options: [
       { flags: "--intent-id <intent-id>", description: "Intent Id", required: true },
       { flags: "--round-id <round-id>", description: "Round Id", required: true },
       { flags: "--source-reference <source-reference>", description: "Source Reference" },
     ],
+    examples: ["corp equity conversions-execute --intent-id 'intent-id' --round-id 'round-id'", "corp equity conversions-execute --json"],
   },
   {
     name: "equity conversions-preview",
-    description: "/v1/equity/conversions/preview",
+    description: "Equity Conversions Preview",
     route: { method: "POST", path: "/v1/equity/conversions/preview" },
     options: [
       { flags: "--round-id <round-id>", description: "Round Id", required: true },
       { flags: "--source-reference <source-reference>", description: "Source Reference" },
     ],
+    examples: ["corp equity conversions-preview --round-id 'round-id'", "corp equity conversions-preview --json"],
   },
   {
     name: "equity dilution-preview",
-    description: "/v1/equity/dilution/preview",
+    description: "Equity Dilution Preview",
     route: { method: "GET", path: "/v1/equity/dilution/preview" },
     entity: true,
     display: { title: "Equity Dilution Preview", cols: ["#issuer_legal_entity_id>ID", "pre_round_outstanding_units>Pre Round Outstanding Units", "projected_dilution_bps>Projected Dilution Bps", "projected_new_units>Projected New Units", "projected_post_outstanding_units>Projected Post Outstanding Units", "#round_id>ID"] },
+    examples: ["corp equity dilution-preview", "corp equity dilution-preview --json"],
   },
   {
     name: "equity entities",
-    description: "/v1/equity/entities",
+    description: "Equity Entities",
     route: { method: "POST", path: "/v1/equity/entities" },
     options: [
       { flags: "--linked-entity-id <linked-entity-id>", description: "Linked Entity Id" },
       { flags: "--name <name>", description: "Name", required: true },
       { flags: "--role <role>", description: "Role this legal entity plays in the ownership/control graph.", required: true, choices: ["operating", "control", "investment", "nonprofit", "spv", "other"] },
     ],
+    examples: ["corp equity entities --name 'name' --role operating", "corp equity entities --json"],
   },
   {
     name: "equity fundraising-workflows",
-    description: "/v1/equity/fundraising-workflows",
+    description: "Equity Fundraising Workflows",
     route: { method: "POST", path: "/v1/equity/fundraising-workflows" },
     options: [
       { flags: "--conversion-target-instrument-id <conversion-target-instrument-id>", description: "Conversion Target Instrument Id" },
@@ -1054,18 +1082,20 @@ export const capTableCommands: CommandDef[] = [
       { flags: "--round-price-cents <round-price-cents>", description: "Round Price Cents" },
       { flags: "--target-raise-cents <target-raise-cents>", description: "Target Raise Cents" },
     ],
+    examples: ["corp equity fundraising-workflows --issuer-legal-entity-id 'issuer-legal-entity-id' --name 'name' --prepare-intent-id 'prepare-intent-id'", "corp equity fundraising-workflows --json"],
   },
   {
     name: "equity fundraising-workflows",
-    description: "/v1/equity/fundraising-workflows/{workflow_id}",
+    description: "Equity Fundraising Workflows",
     route: { method: "GET", path: "/v1/equity/fundraising-workflows/{pos}" },
     entity: true,
     args: [{ name: "workflow-id", required: true, description: "Workflow Id" }],
     display: { title: "Equity Fundraising Workflows", cols: ["#accept_intent_id>ID", "#active_packet_id>ID", "#board_approval_meeting_id>ID", "#board_approval_resolution_id>ID", "board_packet_documents>Board Packet Documents", "#close_intent_id>ID", "closing_packet_documents>Closing Packet Documents", "@created_at>Created At"] },
+    examples: ["corp equity fundraising-workflows", "corp equity fundraising-workflows --json"],
   },
   {
     name: "equity fundraising-workflows-apply-terms",
-    description: "/v1/equity/fundraising-workflows/{workflow_id}/apply-terms",
+    description: "Equity Fundraising Workflows Apply Terms",
     route: { method: "POST", path: "/v1/equity/fundraising-workflows/{pos}/apply-terms" },
     args: [{ name: "workflow-id", required: true, description: "Workflow Id" }],
     options: [
@@ -1073,47 +1103,52 @@ export const capTableCommands: CommandDef[] = [
       { flags: "--conversion-precedence <conversion-precedence>", description: "Conversion Precedence", type: "array" },
       { flags: "--protective-provisions <protective-provisions>", description: "Protective Provisions" },
     ],
+    examples: ["corp equity fundraising-workflows-apply-terms <workflow-id> --anti-dilution-method none", "corp equity fundraising-workflows-apply-terms --json"],
   },
   {
     name: "equity fundraising-workflows-compile-packet",
-    description: "/v1/equity/fundraising-workflows/{workflow_id}/compile-packet",
+    description: "Equity Fundraising Workflows Compile Packet",
     route: { method: "POST", path: "/v1/equity/fundraising-workflows/{pos}/compile-packet" },
     args: [{ name: "workflow-id", required: true, description: "Workflow Id" }],
     options: [
       { flags: "--phase <phase>", description: "Phase" },
       { flags: "--required-signers <required-signers>", description: "Required Signers", type: "array" },
     ],
+    examples: ["corp equity fundraising-workflows-compile-packet <workflow-id>", "corp equity fundraising-workflows-compile-packet --json"],
   },
   {
     name: "equity fundraising-workflows-finalize",
-    description: "/v1/equity/fundraising-workflows/{workflow_id}/finalize",
+    description: "Equity Fundraising Workflows Finalize",
     route: { method: "POST", path: "/v1/equity/fundraising-workflows/{pos}/finalize" },
     args: [{ name: "workflow-id", required: true, description: "Workflow Id" }],
     options: [
       { flags: "--phase <phase>", description: "Phase" },
     ],
+    examples: ["corp equity fundraising-workflows-finalize <workflow-id>", "corp equity fundraising-workflows-finalize --json"],
   },
   {
     name: "equity fundraising-workflows-generate-board-packet",
-    description: "/v1/equity/fundraising-workflows/{workflow_id}/generate-board-packet",
+    description: "Equity Fundraising Workflows Generate Board Packet",
     route: { method: "POST", path: "/v1/equity/fundraising-workflows/{pos}/generate-board-packet" },
     args: [{ name: "workflow-id", required: true, description: "Workflow Id" }],
     options: [
       { flags: "--documents <documents>", description: "Documents", type: "array" },
     ],
+    examples: ["corp equity fundraising-workflows-generate-board-packet <workflow-id>", "corp equity fundraising-workflows-generate-board-packet --json"],
   },
   {
     name: "equity fundraising-workflows-generate-closing-packet",
-    description: "/v1/equity/fundraising-workflows/{workflow_id}/generate-closing-packet",
+    description: "Equity Fundraising Workflows Generate Closing Packet",
     route: { method: "POST", path: "/v1/equity/fundraising-workflows/{pos}/generate-closing-packet" },
     args: [{ name: "workflow-id", required: true, description: "Workflow Id" }],
     options: [
       { flags: "--documents <documents>", description: "Documents", type: "array" },
     ],
+    examples: ["corp equity fundraising-workflows-generate-closing-packet <workflow-id>", "corp equity fundraising-workflows-generate-closing-packet --json"],
   },
   {
     name: "equity fundraising-workflows-prepare-execution",
-    description: "/v1/equity/fundraising-workflows/{workflow_id}/prepare-execution",
+    description: "Equity Fundraising Workflows Prepare Execution",
     route: { method: "POST", path: "/v1/equity/fundraising-workflows/{pos}/prepare-execution" },
     args: [{ name: "workflow-id", required: true, description: "Workflow Id" }],
     options: [
@@ -1122,65 +1157,72 @@ export const capTableCommands: CommandDef[] = [
       { flags: "--intent-id <intent-id>", description: "Intent Id", required: true },
       { flags: "--phase <phase>", description: "Phase" },
     ],
+    examples: ["corp equity fundraising-workflows-prepare-execution <workflow-id> --approval-artifact-id 'approval-artifact-id' --intent-id 'intent-id'", "corp equity fundraising-workflows-prepare-execution --json"],
   },
   {
     name: "equity fundraising-workflows-record-board-approval",
-    description: "/v1/equity/fundraising-workflows/{workflow_id}/record-board-approval",
+    description: "Equity Fundraising Workflows Record Board Approval",
     route: { method: "POST", path: "/v1/equity/fundraising-workflows/{pos}/record-board-approval" },
     args: [{ name: "workflow-id", required: true, description: "Workflow Id" }],
     options: [
       { flags: "--meeting-id <meeting-id>", description: "Meeting Id", required: true },
       { flags: "--resolution-id <resolution-id>", description: "Resolution Id", required: true },
     ],
+    examples: ["corp equity fundraising-workflows-record-board-approval <workflow-id> --meeting-id 'meeting-id' --resolution-id 'resolution-id'"],
   },
   {
     name: "equity fundraising-workflows-record-close",
-    description: "/v1/equity/fundraising-workflows/{workflow_id}/record-close",
+    description: "Equity Fundraising Workflows Record Close",
     route: { method: "POST", path: "/v1/equity/fundraising-workflows/{pos}/record-close" },
     args: [{ name: "workflow-id", required: true, description: "Workflow Id" }],
     options: [
       { flags: "--intent-id <intent-id>", description: "Intent Id", required: true },
     ],
+    examples: ["corp equity fundraising-workflows-record-close <workflow-id> --intent-id 'intent-id'"],
   },
   {
     name: "equity fundraising-workflows-record-investor-acceptance",
-    description: "/v1/equity/fundraising-workflows/{workflow_id}/record-investor-acceptance",
+    description: "Equity Fundraising Workflows Record Investor Acceptance",
     route: { method: "POST", path: "/v1/equity/fundraising-workflows/{pos}/record-investor-acceptance" },
     args: [{ name: "workflow-id", required: true, description: "Workflow Id" }],
     options: [
       { flags: "--accepted-by-contact-id <accepted-by-contact-id>", description: "Accepted By Contact Id" },
       { flags: "--intent-id <intent-id>", description: "Intent Id", required: true },
     ],
+    examples: ["corp equity fundraising-workflows-record-investor-acceptance <workflow-id> --intent-id 'intent-id'", "corp equity fundraising-workflows-record-investor-acceptance --json"],
   },
   {
     name: "equity fundraising-workflows-record-signature",
-    description: "/v1/equity/fundraising-workflows/{workflow_id}/record-signature",
+    description: "Equity Fundraising Workflows Record Signature",
     route: { method: "POST", path: "/v1/equity/fundraising-workflows/{pos}/record-signature" },
     args: [{ name: "workflow-id", required: true, description: "Workflow Id" }],
     options: [
       { flags: "--channel <channel>", description: "Channel" },
       { flags: "--signer-identity <signer-identity>", description: "Signer Identity", required: true },
     ],
+    examples: ["corp equity fundraising-workflows-record-signature <workflow-id> --signer-identity 'signer-identity'", "corp equity fundraising-workflows-record-signature --json"],
   },
   {
     name: "equity fundraising-workflows-start-signatures",
-    description: "/v1/equity/fundraising-workflows/{workflow_id}/start-signatures",
+    description: "Equity Fundraising Workflows Start Signatures",
     route: { method: "POST", path: "/v1/equity/fundraising-workflows/{pos}/start-signatures" },
     args: [{ name: "workflow-id", required: true, description: "Workflow Id" }],
+    examples: ["corp equity fundraising-workflows-start-signatures <workflow-id>"],
   },
   {
     name: "equity grants",
-    description: "/v1/equity/grants",
+    description: "Equity Grants",
     route: { method: "POST", path: "/v1/equity/grants" },
     options: [
       { flags: "--grant-type <grant-type>", description: "The type of equity grant.", required: true, choices: ["common_stock", "preferred_stock", "membership_unit", "stock_option", "iso", "nso", "rsa", "svu"] },
       { flags: "--recipient-name <recipient-name>", description: "Recipient Name", required: true },
       { flags: "--shares <shares>", description: "Shares", required: true, type: "int" },
     ],
+    examples: ["corp equity grants --grant-type common_stock --recipient-name 'recipient-name' --shares 'shares'"],
   },
   {
     name: "equity holders",
-    description: "/v1/equity/holders",
+    description: "Equity Holders",
     route: { method: "POST", path: "/v1/equity/holders" },
     options: [
       { flags: "--contact-id <contact-id>", description: "Contact Id", required: true },
@@ -1189,10 +1231,11 @@ export const capTableCommands: CommandDef[] = [
       { flags: "--linked-entity-id <linked-entity-id>", description: "Linked Entity Id" },
       { flags: "--name <name>", description: "Name", required: true },
     ],
+    examples: ["corp equity holders --contact-id 'contact-id' --holder-type individual --name 'name'", "corp equity holders --json"],
   },
   {
     name: "equity instruments",
-    description: "/v1/equity/instruments",
+    description: "Equity Instruments",
     route: { method: "POST", path: "/v1/equity/instruments" },
     options: [
       { flags: "--authorized-units <authorized-units>", description: "Authorized Units" },
@@ -1202,10 +1245,11 @@ export const capTableCommands: CommandDef[] = [
       { flags: "--symbol <symbol>", description: "Symbol", required: true },
       { flags: "--terms <terms>", description: "Terms" },
     ],
+    examples: ["corp equity instruments --issuer-legal-entity-id 'issuer-legal-entity-id' --kind common_equity --symbol 'symbol'", "corp equity instruments --json"],
   },
   {
     name: "equity positions-adjust",
-    description: "/v1/equity/positions/adjust",
+    description: "Equity Positions Adjust",
     route: { method: "POST", path: "/v1/equity/positions/adjust" },
     options: [
       { flags: "--holder-id <holder-id>", description: "Holder Id", required: true },
@@ -1215,10 +1259,11 @@ export const capTableCommands: CommandDef[] = [
       { flags: "--quantity-delta <quantity-delta>", description: "Quantity Delta", required: true, type: "int" },
       { flags: "--source-reference <source-reference>", description: "Source Reference" },
     ],
+    examples: ["corp equity positions-adjust --holder-id 'holder-id' --instrument-id 'instrument-id' --issuer-legal-entity-id 'issuer-legal-entity-id' --quantity-delta 'quantity-delta'", "corp equity positions-adjust --json"],
   },
   {
     name: "equity rounds",
-    description: "/v1/equity/rounds",
+    description: "Equity Rounds",
     route: { method: "POST", path: "/v1/equity/rounds" },
     options: [
       { flags: "--conversion-target-instrument-id <conversion-target-instrument-id>", description: "Conversion Target Instrument Id" },
@@ -1229,10 +1274,11 @@ export const capTableCommands: CommandDef[] = [
       { flags: "--round-price-cents <round-price-cents>", description: "Round Price Cents" },
       { flags: "--target-raise-cents <target-raise-cents>", description: "Target Raise Cents" },
     ],
+    examples: ["corp equity rounds --issuer-legal-entity-id 'issuer-legal-entity-id' --name 'name'", "corp equity rounds --json"],
   },
   {
     name: "equity rounds-staged",
-    description: "/v1/equity/rounds/staged",
+    description: "Equity Rounds Staged",
     route: { method: "POST", path: "/v1/equity/rounds/staged" },
     options: [
       { flags: "--issuer-legal-entity-id <issuer-legal-entity-id>", description: "Issuer Legal Entity Id", required: true },
@@ -1242,20 +1288,22 @@ export const capTableCommands: CommandDef[] = [
       { flags: "--round-price-cents <round-price-cents>", description: "Round Price Cents" },
       { flags: "--target-raise-cents <target-raise-cents>", description: "Target Raise Cents" },
     ],
+    examples: ["corp equity rounds-staged --issuer-legal-entity-id 'issuer-legal-entity-id' --name 'name'", "corp equity rounds-staged --json"],
   },
   {
     name: "equity rounds-accept",
-    description: "/v1/equity/rounds/{round_id}/accept",
+    description: "Equity Rounds Accept",
     route: { method: "POST", path: "/v1/equity/rounds/{pos}/accept" },
     args: [{ name: "round-id", required: true, description: "Round Id" }],
     options: [
       { flags: "--accepted-by-contact-id <accepted-by-contact-id>", description: "Accepted By Contact Id" },
       { flags: "--intent-id <intent-id>", description: "Intent Id", required: true },
     ],
+    examples: ["corp equity rounds-accept <round-id> --intent-id 'intent-id'", "corp equity rounds-accept --json"],
   },
   {
     name: "equity rounds-apply-terms",
-    description: "/v1/equity/rounds/{round_id}/apply-terms",
+    description: "Equity Rounds Apply Terms",
     route: { method: "POST", path: "/v1/equity/rounds/{pos}/apply-terms" },
     args: [{ name: "round-id", required: true, description: "Round Id" }],
     options: [
@@ -1263,30 +1311,33 @@ export const capTableCommands: CommandDef[] = [
       { flags: "--conversion-precedence <conversion-precedence>", description: "Conversion Precedence", type: "array" },
       { flags: "--protective-provisions <protective-provisions>", description: "Protective Provisions" },
     ],
+    examples: ["corp equity rounds-apply-terms <round-id> --anti-dilution-method none", "corp equity rounds-apply-terms --json"],
   },
   {
     name: "equity rounds-board-approve",
-    description: "/v1/equity/rounds/{round_id}/board-approve",
+    description: "Equity Rounds Board Approve",
     route: { method: "POST", path: "/v1/equity/rounds/{pos}/board-approve" },
     args: [{ name: "round-id", required: true, description: "Round Id" }],
     options: [
       { flags: "--meeting-id <meeting-id>", description: "Meeting Id", required: true },
       { flags: "--resolution-id <resolution-id>", description: "Resolution Id", required: true },
     ],
+    examples: ["corp equity rounds-board-approve <round-id> --meeting-id 'meeting-id' --resolution-id 'resolution-id'"],
   },
   {
     name: "equity rounds-issue",
-    description: "/v1/equity/rounds/{round_id}/issue",
+    description: "Equity Rounds Issue",
     route: { method: "POST", path: "/v1/equity/rounds/{pos}/issue" },
     args: [{ name: "round-id", required: true, description: "Round Id" }],
     options: [
       { flags: "--meeting-id <meeting-id>", description: "Meeting Id" },
       { flags: "--resolution-id <resolution-id>", description: "Resolution Id" },
     ],
+    examples: ["corp equity rounds-issue <round-id>", "corp equity rounds-issue --json"],
   },
   {
     name: "equity rounds-securities",
-    description: "/v1/equity/rounds/{round_id}/securities",
+    description: "Equity Rounds Securities",
     route: { method: "POST", path: "/v1/equity/rounds/{pos}/securities" },
     args: [{ name: "round-id", required: true, description: "Round Id" }],
     options: [
@@ -1298,10 +1349,11 @@ export const capTableCommands: CommandDef[] = [
       { flags: "--quantity <quantity>", description: "Quantity", required: true, type: "int" },
       { flags: "--recipient-name <recipient-name>", description: "Recipient Name", required: true },
     ],
+    examples: ["corp equity rounds-securities <round-id> --instrument-id 'instrument-id' --quantity 'quantity' --recipient-name 'recipient-name'", "corp equity rounds-securities --json"],
   },
   {
     name: "equity transfer-workflows",
-    description: "/v1/equity/transfer-workflows",
+    description: "Equity Transfer Workflows",
     route: { method: "POST", path: "/v1/equity/transfer-workflows" },
     options: [
       { flags: "--from-contact-id <from-contact-id>", description: "From Contact Id", required: true },
@@ -1315,46 +1367,51 @@ export const capTableCommands: CommandDef[] = [
       { flags: "--transfer-type <transfer-type>", description: "Type of share transfer.", required: true, choices: ["gift", "trust_transfer", "secondary_sale", "estate", "other"] },
       { flags: "--transferee-rights <transferee-rights>", description: "Rights granted to the transferee.", required: true, choices: ["full_member", "economic_only", "limited"] },
     ],
+    examples: ["corp equity transfer-workflows --from-contact-id 'from-contact-id' --governing-doc-type bylaws --prepare-intent-id 'prepare-intent-id' --share-class-id 'share-class-id' --share-count 'share-count' --to-contact-id gift --transfer-type gift --transferee-rights full_member", "corp equity transfer-workflows --json"],
   },
   {
     name: "equity transfer-workflows",
-    description: "/v1/equity/transfer-workflows/{workflow_id}",
+    description: "Equity Transfer Workflows",
     route: { method: "GET", path: "/v1/equity/transfer-workflows/{pos}" },
     entity: true,
     args: [{ name: "workflow-id", required: true, description: "Workflow Id" }],
     display: { title: "Equity Transfer Workflows", cols: ["#active_packet_id>ID", "#board_approval_meeting_id>ID", "#board_approval_resolution_id>ID", "@created_at>Created At", "#execute_intent_id>ID", "execution_status>Execution Status", "generated_documents>Generated Documents", "last_packet_hash>Last Packet Hash"] },
+    examples: ["corp equity transfer-workflows", "corp equity transfer-workflows --json"],
   },
   {
     name: "equity transfer-workflows-compile-packet",
-    description: "/v1/equity/transfer-workflows/{workflow_id}/compile-packet",
+    description: "Equity Transfer Workflows Compile Packet",
     route: { method: "POST", path: "/v1/equity/transfer-workflows/{pos}/compile-packet" },
     args: [{ name: "workflow-id", required: true, description: "Workflow Id" }],
     options: [
       { flags: "--phase <phase>", description: "Phase" },
       { flags: "--required-signers <required-signers>", description: "Required Signers", type: "array" },
     ],
+    examples: ["corp equity transfer-workflows-compile-packet <workflow-id>", "corp equity transfer-workflows-compile-packet --json"],
   },
   {
     name: "equity transfer-workflows-finalize",
-    description: "/v1/equity/transfer-workflows/{workflow_id}/finalize",
+    description: "Equity Transfer Workflows Finalize",
     route: { method: "POST", path: "/v1/equity/transfer-workflows/{pos}/finalize" },
     args: [{ name: "workflow-id", required: true, description: "Workflow Id" }],
     options: [
       { flags: "--phase <phase>", description: "Phase" },
     ],
+    examples: ["corp equity transfer-workflows-finalize <workflow-id>", "corp equity transfer-workflows-finalize --json"],
   },
   {
     name: "equity transfer-workflows-generate-docs",
-    description: "/v1/equity/transfer-workflows/{workflow_id}/generate-docs",
+    description: "Equity Transfer Workflows Generate Docs",
     route: { method: "POST", path: "/v1/equity/transfer-workflows/{pos}/generate-docs" },
     args: [{ name: "workflow-id", required: true, description: "Workflow Id" }],
     options: [
       { flags: "--documents <documents>", description: "Documents", type: "array" },
     ],
+    examples: ["corp equity transfer-workflows-generate-docs <workflow-id>", "corp equity transfer-workflows-generate-docs --json"],
   },
   {
     name: "equity transfer-workflows-prepare-execution",
-    description: "/v1/equity/transfer-workflows/{workflow_id}/prepare-execution",
+    description: "Equity Transfer Workflows Prepare Execution",
     route: { method: "POST", path: "/v1/equity/transfer-workflows/{pos}/prepare-execution" },
     args: [{ name: "workflow-id", required: true, description: "Workflow Id" }],
     options: [
@@ -1363,29 +1420,32 @@ export const capTableCommands: CommandDef[] = [
       { flags: "--intent-id <intent-id>", description: "Intent Id", required: true },
       { flags: "--phase <phase>", description: "Phase" },
     ],
+    examples: ["corp equity transfer-workflows-prepare-execution <workflow-id> --approval-artifact-id 'approval-artifact-id' --intent-id 'intent-id'", "corp equity transfer-workflows-prepare-execution --json"],
   },
   {
     name: "equity transfer-workflows-record-board-approval",
-    description: "/v1/equity/transfer-workflows/{workflow_id}/record-board-approval",
+    description: "Equity Transfer Workflows Record Board Approval",
     route: { method: "POST", path: "/v1/equity/transfer-workflows/{pos}/record-board-approval" },
     args: [{ name: "workflow-id", required: true, description: "Workflow Id" }],
     options: [
       { flags: "--meeting-id <meeting-id>", description: "Meeting Id", required: true },
       { flags: "--resolution-id <resolution-id>", description: "Resolution Id", required: true },
     ],
+    examples: ["corp equity transfer-workflows-record-board-approval <workflow-id> --meeting-id 'meeting-id' --resolution-id 'resolution-id'"],
   },
   {
     name: "equity transfer-workflows-record-execution",
-    description: "/v1/equity/transfer-workflows/{workflow_id}/record-execution",
+    description: "Equity Transfer Workflows Record Execution",
     route: { method: "POST", path: "/v1/equity/transfer-workflows/{pos}/record-execution" },
     args: [{ name: "workflow-id", required: true, description: "Workflow Id" }],
     options: [
       { flags: "--intent-id <intent-id>", description: "Intent Id", required: true },
     ],
+    examples: ["corp equity transfer-workflows-record-execution <workflow-id> --intent-id 'intent-id'"],
   },
   {
     name: "equity transfer-workflows-record-review",
-    description: "/v1/equity/transfer-workflows/{workflow_id}/record-review",
+    description: "Equity Transfer Workflows Record Review",
     route: { method: "POST", path: "/v1/equity/transfer-workflows/{pos}/record-review" },
     args: [{ name: "workflow-id", required: true, description: "Workflow Id" }],
     options: [
@@ -1393,50 +1453,56 @@ export const capTableCommands: CommandDef[] = [
       { flags: "--notes <notes>", description: "Notes", required: true },
       { flags: "--reviewer <reviewer>", description: "Reviewer", required: true },
     ],
+    examples: ["corp equity transfer-workflows-record-review <workflow-id> --approved --notes 'notes' --reviewer 'reviewer'"],
   },
   {
     name: "equity transfer-workflows-record-rofr",
-    description: "/v1/equity/transfer-workflows/{workflow_id}/record-rofr",
+    description: "Equity Transfer Workflows Record Rofr",
     route: { method: "POST", path: "/v1/equity/transfer-workflows/{pos}/record-rofr" },
     args: [{ name: "workflow-id", required: true, description: "Workflow Id" }],
     options: [
       { flags: "--offered", description: "Offered", required: true },
       { flags: "--waived", description: "Waived", required: true },
     ],
+    examples: ["corp equity transfer-workflows-record-rofr <workflow-id> --offered --waived"],
   },
   {
     name: "equity transfer-workflows-record-signature",
-    description: "/v1/equity/transfer-workflows/{workflow_id}/record-signature",
+    description: "Equity Transfer Workflows Record Signature",
     route: { method: "POST", path: "/v1/equity/transfer-workflows/{pos}/record-signature" },
     args: [{ name: "workflow-id", required: true, description: "Workflow Id" }],
     options: [
       { flags: "--channel <channel>", description: "Channel" },
       { flags: "--signer-identity <signer-identity>", description: "Signer Identity", required: true },
     ],
+    examples: ["corp equity transfer-workflows-record-signature <workflow-id> --signer-identity 'signer-identity'", "corp equity transfer-workflows-record-signature --json"],
   },
   {
     name: "equity transfer-workflows-start-signatures",
-    description: "/v1/equity/transfer-workflows/{workflow_id}/start-signatures",
+    description: "Equity Transfer Workflows Start Signatures",
     route: { method: "POST", path: "/v1/equity/transfer-workflows/{pos}/start-signatures" },
     args: [{ name: "workflow-id", required: true, description: "Workflow Id" }],
+    examples: ["corp equity transfer-workflows-start-signatures <workflow-id>"],
   },
   {
     name: "equity transfer-workflows-submit-review",
-    description: "/v1/equity/transfer-workflows/{workflow_id}/submit-review",
+    description: "Equity Transfer Workflows Submit Review",
     route: { method: "POST", path: "/v1/equity/transfer-workflows/{pos}/submit-review" },
     args: [{ name: "workflow-id", required: true, description: "Workflow Id" }],
+    examples: ["corp equity transfer-workflows-submit-review <workflow-id>"],
   },
   {
     name: "equity workflows-status",
-    description: "/v1/equity/workflows/{workflow_type}/{workflow_id}/status",
+    description: "Equity Workflows Status",
     route: { method: "GET", path: "/v1/equity/workflows/{pos}/{pos2}/status" },
     entity: true,
     args: [{ name: "workflow-type", required: true, description: "Workflow Type" }, { name: "workflow-id", required: true, description: "Workflow Id" }],
     display: { title: "Equity Workflows Status", cols: ["#active_packet_id>ID", "execution_status>Execution Status", "fundraising_workflow>Fundraising Workflow", "packet>Packet", "transfer_workflow>Transfer Workflow", "#workflow_id>ID", "workflow_type>Workflow Type"] },
+    examples: ["corp equity workflows-status", "corp equity workflows-status --json"],
   },
   {
     name: "safe-notes",
-    description: "/v1/safe-notes",
+    description: "Safe Notes",
     route: { method: "POST", path: "/v1/safe-notes" },
     options: [
       { flags: "--conversion-unit-type <conversion-unit-type>", description: "Conversion Unit Type" },
@@ -1452,10 +1518,11 @@ export const capTableCommands: CommandDef[] = [
       { flags: "--safe-type <safe-type>", description: "Safe Type", choices: ["post_money", "pre_money", "mfn"] },
       { flags: "--valuation-cap-cents <valuation-cap-cents>", description: "Valuation Cap Cents" },
     ],
+    examples: ["corp safe-notes --investor-name 'investor-name' --principal-amount-cents 'principal-amount-cents'", "corp safe-notes --json"],
   },
   {
     name: "share-transfers",
-    description: "/v1/share-transfers",
+    description: "Share Transfers",
     route: { method: "POST", path: "/v1/share-transfers" },
     options: [
       { flags: "--from-holder <from-holder>", description: "From Holder", required: true },
@@ -1466,10 +1533,11 @@ export const capTableCommands: CommandDef[] = [
       { flags: "--transfer-type <transfer-type>", description: "Type of share transfer.", required: true, choices: ["gift", "trust_transfer", "secondary_sale", "estate", "other"] },
       { flags: "--transferee-rights <transferee-rights>", description: "Transferee Rights", choices: ["full_member", "economic_only", "limited"] },
     ],
+    examples: ["corp share-transfers --from-holder bylaws --share-class-id 'share-class-id' --shares 'shares' --to-holder gift --transfer-type gift", "corp share-transfers --json"],
   },
   {
     name: "valuations",
-    description: "/v1/valuations",
+    description: "Valuations",
     route: { method: "POST", path: "/v1/valuations" },
     options: [
       { flags: "--dlom <dlom>", description: "Dlom" },
@@ -1483,12 +1551,14 @@ export const capTableCommands: CommandDef[] = [
       { flags: "--report-document-id <report-document-id>", description: "Report Document Id" },
       { flags: "--valuation-type <valuation-type>", description: "Type of 409A or equivalent valuation.", required: true, choices: ["four_oh_nine_a", "llc_profits_interest", "fair_market_value", "gift", "estate", "other"] },
     ],
+    examples: ["corp valuations --effective-date 'effective-date' --methodology income --valuation-type four_oh_nine_a", "corp valuations --json"],
   },
   {
     name: "valuations submit-for-approval",
-    description: "/v1/valuations/{valuation_id}/submit-for-approval",
+    description: "Valuations Submit For Approval",
     route: { method: "POST", path: "/v1/valuations/{pos}/submit-for-approval" },
     args: [{ name: "valuation-id", required: true, description: "Valuation Id" }],
+    examples: ["corp valuations submit-for-approval <valuation-id>"],
   },
 
 ];

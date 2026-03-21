@@ -105,6 +105,7 @@ export const workItemCommands: CommandDef[] = [
       console.log(`  ${chalk.bold("Created at:")} ${w.created_at ?? "N/A"}`);
       console.log(chalk.cyan("\u2500".repeat(40)));
     },
+    examples: ["corp work-items show", "corp work-items show --json"],
   },
 
   // --- work-items create ---
@@ -144,6 +145,7 @@ export const workItemCommands: CommandDef[] = [
     },
     produces: { kind: "work_item" },
     successTemplate: "Work item created: {title}",
+    examples: ["corp work-items create --title 'title'", "corp work-items create --json"],
   },
 
   // --- work-items claim <item-ref> ---
@@ -174,6 +176,7 @@ export const workItemCommands: CommandDef[] = [
       const result = await ctx.client.claimWorkItem(eid, resolvedWorkItemId, data);
       ctx.writer.writeResult(result, `Work item ${resolvedWorkItemId} claimed by ${claimedBy}.`, { jsonOnly: ctx.opts.json });
     },
+    examples: ["corp work-items claim <item-ref>", "corp work-items claim --json"],
   },
 
   // --- work-items complete <item-ref> ---
@@ -206,6 +209,7 @@ export const workItemCommands: CommandDef[] = [
       const result = await ctx.client.completeWorkItem(eid, resolvedWorkItemId, data);
       ctx.writer.writeResult(result, `Work item ${resolvedWorkItemId} completed.`, { jsonOnly: ctx.opts.json });
     },
+    examples: ["corp work-items complete <item-ref>", "corp work-items complete --json"],
   },
 
   // --- work-items release <item-ref> ---
@@ -222,6 +226,7 @@ export const workItemCommands: CommandDef[] = [
       const result = await ctx.client.releaseWorkItem(eid, resolvedWorkItemId);
       ctx.writer.writeResult(result, `Work item ${resolvedWorkItemId} claim released.`, { jsonOnly: ctx.opts.json });
     },
+    examples: ["corp work-items release <item-ref>"],
   },
 
   // --- work-items cancel <item-ref> ---
@@ -248,5 +253,6 @@ export const workItemCommands: CommandDef[] = [
       const result = await ctx.client.cancelWorkItem(eid, resolvedWorkItemId);
       ctx.writer.writeResult(result, `Work item ${resolvedWorkItemId} cancelled.`, { jsonOnly: ctx.opts.json });
     },
+    examples: ["corp work-items cancel <item-ref>", "corp work-items cancel --json"],
   },
 ];

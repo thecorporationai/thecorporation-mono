@@ -68,6 +68,7 @@ export const documentCommands: CommandDef[] = [
       if (docs.length === 0) { ctx.writer.writeln("No documents found."); return; }
       printDocumentsTable(docs);
     },
+    examples: ["corp documents", "corp documents --json"],
   },
 
   // --- documents signing-link <doc-ref> ---
@@ -102,6 +103,7 @@ export const documentCommands: CommandDef[] = [
       }
       console.log(shareUrl);
     },
+    examples: ["corp documents signing-link", "corp documents signing-link --json"],
   },
 
   // --- documents sign <doc-ref> ---
@@ -160,6 +162,7 @@ export const documentCommands: CommandDef[] = [
       printReferenceSummary("document", result.document, { showReuseHint: true });
       printJson(result.document);
     },
+    examples: ["corp documents sign <doc-ref>", "corp documents sign --json"],
   },
 
   // --- documents sign-all ---
@@ -185,6 +188,7 @@ export const documentCommands: CommandDef[] = [
         signatures: Array.isArray(document.signatures) ? document.signatures.length : document.signatures,
       })));
     },
+    examples: ["corp documents sign-all"],
   },
 
   // --- documents generate ---
@@ -262,6 +266,7 @@ export const documentCommands: CommandDef[] = [
     },
     produces: { kind: "document" },
     successTemplate: "Document generated: {title}",
+    examples: ["corp documents generate --template 'type' --counterparty 'name'", "corp documents generate --json"],
   },
 
   // --- documents preview-pdf ---
@@ -286,5 +291,6 @@ export const documentCommands: CommandDef[] = [
       ctx.writer.success(`Preview PDF URL: ${url}`);
       console.log("The document definition was validated successfully. Use your API key to download the PDF.");
     },
+    examples: ["corp documents preview-pdf", "corp documents preview-pdf --json"],
   },
 ];

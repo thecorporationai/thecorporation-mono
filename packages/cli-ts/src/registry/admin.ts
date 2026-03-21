@@ -14,6 +14,7 @@ export const adminCommands: CommandDef[] = [
       const { setupCommand } = await import("../commands/setup.js");
       await setupCommand();
     },
+    examples: ["corp setup"],
   },
 
   // ── config (local) ──────────────────────────────────────────────────
@@ -21,6 +22,7 @@ export const adminCommands: CommandDef[] = [
     name: "config",
     description: "Manage configuration",
     local: true,
+    examples: ["corp config"],
   },
   {
     name: "config set",
@@ -41,6 +43,7 @@ export const adminCommands: CommandDef[] = [
         { force: ctx.opts.force as boolean | undefined },
       );
     },
+    examples: ["corp config set"],
   },
   {
     name: "config get",
@@ -53,6 +56,7 @@ export const adminCommands: CommandDef[] = [
       const { configGetCommand } = await import("../commands/config.js");
       configGetCommand(ctx.positional[0]);
     },
+    examples: ["corp config get"],
   },
   {
     name: "config list",
@@ -62,6 +66,7 @@ export const adminCommands: CommandDef[] = [
       const { configListCommand } = await import("../commands/config.js");
       configListCommand();
     },
+    examples: ["corp config list"],
   },
 
   // ── schema (local, special) ─────────────────────────────────────────
@@ -91,6 +96,7 @@ export const adminCommands: CommandDef[] = [
         ctx.writer.json(schema);
       }
     },
+    examples: ["corp schema"],
   },
 
   // ── serve (local, complex) ──────────────────────────────────────────
@@ -109,6 +115,7 @@ export const adminCommands: CommandDef[] = [
         dataDir: (ctx.opts.dataDir as string) ?? "./data/repos",
       });
     },
+    examples: ["corp serve"],
   },
 
   // ── demo (complex, uses API) ────────────────────────────────────────
@@ -131,6 +138,7 @@ export const adminCommands: CommandDef[] = [
         json: ctx.opts.json as boolean | undefined,
       });
     },
+    examples: ["corp demo"],
   },
 
   // ── chat (local, interactive) ───────────────────────────────────────
@@ -142,6 +150,7 @@ export const adminCommands: CommandDef[] = [
       const { chatCommand } = await import("../chat.js");
       await chatCommand();
     },
+    examples: ["corp chat"],
   },
 
   // ── api-keys (API, parent + subcommands) ────────────────────────────
@@ -157,6 +166,7 @@ export const adminCommands: CommandDef[] = [
       const { apiKeysListCommand } = await import("../commands/api-keys.js");
       await apiKeysListCommand({ json: ctx.opts.json as boolean | undefined });
     },
+    examples: ["corp api-keys"],
   },
   {
     name: "api-keys create",
@@ -177,6 +187,7 @@ export const adminCommands: CommandDef[] = [
     },
     produces: { kind: "api_key" },
     successTemplate: "API key created",
+    examples: ["corp api-keys create --name 'name'", "corp api-keys create --json"],
   },
   {
     name: "api-keys revoke",
@@ -196,6 +207,7 @@ export const adminCommands: CommandDef[] = [
         json: ctx.opts.json as boolean | undefined,
       });
     },
+    examples: ["corp api-keys revoke <key-id>", "corp api-keys revoke --json"],
   },
   {
     name: "api-keys rotate",
@@ -215,6 +227,7 @@ export const adminCommands: CommandDef[] = [
     },
     produces: { kind: "api_key" },
     successTemplate: "API key rotated",
+    examples: ["corp api-keys rotate <key-id>", "corp api-keys rotate --json"],
   },
 
   // ── link (API, write) ───────────────────────────────────────────────
@@ -233,6 +246,7 @@ export const adminCommands: CommandDef[] = [
         provider: ctx.opts.provider as string,
       });
     },
+    examples: ["corp link --external-id 'id' --provider 'provider'"],
   },
 
   // ── claim (API, write) ──────────────────────────────────────────────
@@ -248,6 +262,7 @@ export const adminCommands: CommandDef[] = [
       await claimCommand(ctx.positional[0]);
     },
     produces: { kind: "entity", trackEntity: true },
+    examples: ["corp claim <code>"],
   },
 
   // ── feedback (API, write) ───────────────────────────────────────────
@@ -270,6 +285,7 @@ export const adminCommands: CommandDef[] = [
         json: ctx.opts.json as boolean | undefined,
       });
     },
+    examples: ["corp feedback <message>", "corp feedback --json"],
   },
 
   // ── resolve (API, read) ─────────────────────────────────────────────
@@ -293,6 +309,7 @@ export const adminCommands: CommandDef[] = [
         meetingId: ctx.opts.meetingId as string | undefined,
       });
     },
+    examples: ["corp resolve"],
   },
 
   // ── find (API, read) ────────────────────────────────────────────────
@@ -318,6 +335,7 @@ export const adminCommands: CommandDef[] = [
         json: ctx.opts.json as boolean | undefined,
       });
     },
+    examples: ["corp find"],
   },
 
   // ── approvals (informational) ───────────────────────────────────────
@@ -341,124 +359,142 @@ export const adminCommands: CommandDef[] = [
       );
       process.exit(1);
     },
+    examples: ["corp approvals"],
   },
 
   // ── Auto-generated from OpenAPI ──────────────────────────────
   {
     name: "admin audit-events",
-    description: "/v1/admin/audit-events",
+    description: "Admin Audit Events",
     route: { method: "GET", path: "/v1/admin/audit-events" },
     display: { title: "Admin Audit Events", cols: ["details>Details", "#event_id>ID", "event_type>Event Type", "timestamp>Timestamp"] },
+    examples: ["corp admin audit-events"],
   },
   {
     name: "admin system-health",
-    description: "/v1/admin/system-health",
+    description: "Admin System Health",
     route: { method: "GET", path: "/v1/admin/system-health" },
     display: { title: "Admin System Health", cols: ["git_storage>Git Storage", "status>Status", "uptime_seconds>Uptime Seconds", "version>Version", "workspace_count>Workspace Count"] },
+    examples: ["corp admin system-health"],
   },
   {
     name: "admin workspaces",
-    description: "/v1/admin/workspaces",
+    description: "Admin Workspaces",
     route: { method: "GET", path: "/v1/admin/workspaces" },
     display: { title: "Admin Workspaces", cols: ["entity_count>Entity Count", "name>Name", "#workspace_id>ID"] },
+    examples: ["corp admin workspaces"],
   },
   {
     name: "billing plans",
-    description: "/v1/billing/plans",
+    description: "Billing Plans",
     route: { method: "GET", path: "/v1/billing/plans" },
     display: { title: "Billing Plans", cols: ["plans>Plans"] },
+    examples: ["corp billing plans"],
   },
   {
     name: "billing status",
-    description: "/v1/billing/status",
+    description: "Billing Status",
     route: { method: "GET", path: "/v1/billing/status" },
     display: { title: "Billing Status", cols: ["current_period_end>Current Period End", "plan>Plan", "status>Status", "#workspace_id>ID"] },
+    examples: ["corp billing status"],
   },
   {
     name: "config",
-    description: "/v1/config",
+    description: "Config",
     route: { method: "GET", path: "/v1/config" },
     display: { title: "Config", cols: ["environment>Environment", "features>Features", "version>Version"] },
+    examples: ["corp config"],
   },
   {
     name: "demo seed",
-    description: "/v1/demo/seed",
+    description: "Demo Seed",
     route: { method: "POST", path: "/v1/demo/seed" },
     options: [
       { flags: "--name <name>", description: "Name" },
       { flags: "--scenario <scenario>", description: "Scenario" },
     ],
+    examples: ["corp demo seed", "corp demo seed --json"],
   },
   {
     name: "digests trigger",
-    description: "/v1/digests/trigger",
+    description: "Digests Trigger",
     route: { method: "POST", path: "/v1/digests/trigger" },
+    examples: ["corp digests trigger"],
   },
   {
     name: "digests",
-    description: "/v1/digests/{digest_key}",
+    description: "Digests",
     route: { method: "GET", path: "/v1/digests/{pos}" },
     args: [{ name: "digest-key", required: true, description: "Digest Key" }],
+    examples: ["corp digests"],
   },
   {
     name: "service-token",
-    description: "/v1/service-token",
+    description: "Service Token",
     route: { method: "GET", path: "/v1/service-token" },
     display: { title: "Service Token", cols: ["#api_key_id>ID", "expires_in>Expires In", "token>Token", "token_type>Token Type"] },
+    examples: ["corp service-token"],
   },
   {
     name: "workspace entities",
-    description: "/v1/workspace/entities",
+    description: "Workspace Entities",
     route: { method: "GET", path: "/v1/workspace/entities" },
     display: { title: "Workspace Entities", cols: ["#entity_id>ID"] },
+    examples: ["corp workspace entities"],
   },
   {
     name: "workspace status",
-    description: "/v1/workspace/status",
+    description: "Workspace Status",
     route: { method: "GET", path: "/v1/workspace/status" },
     display: { title: "Workspace Status", cols: ["entity_count>Entity Count", "name>Name", "status>Status", "#workspace_id>ID"] },
+    examples: ["corp workspace status"],
   },
   {
     name: "workspaces claim",
-    description: "/v1/workspaces/claim",
+    description: "Workspaces Claim",
     route: { method: "POST", path: "/v1/workspaces/claim" },
     options: [
       { flags: "--claim-token <claim-token>", description: "Claim Token", required: true },
     ],
+    examples: ["corp workspaces claim --claim-token 'claim-token'"],
   },
   {
     name: "workspaces contacts",
-    description: "/v1/workspaces/{workspace_id}/contacts",
+    description: "Workspaces Contacts",
     route: { method: "GET", path: "/v1/workspaces/{workspace_id}/contacts" },
     display: { title: "Workspaces Contacts", cols: ["#contact_id>ID", "#entity_id>ID"] },
+    examples: ["corp workspaces contacts"],
   },
   {
     name: "workspaces entities",
-    description: "/v1/workspaces/{workspace_id}/entities",
+    description: "Workspaces Entities",
     route: { method: "GET", path: "/v1/workspaces/{workspace_id}/entities" },
     display: { title: "Workspaces Entities", cols: ["#entity_id>ID"] },
+    examples: ["corp workspaces entities"],
   },
 
 
   // ── Auto-generated from OpenAPI ──────────────────────────────
   {
     name: "auth token-exchange",
-    description: "/v1/auth/token-exchange",
+    description: "Auth Token Exchange",
     route: { method: "POST", path: "/v1/auth/token-exchange" },
     options: [
       { flags: "--api-key <api-key>", description: "Api Key", required: true },
       { flags: "--ttl-seconds <ttl-seconds>", description: "Ttl Seconds", type: "int" },
     ],
+    examples: ["corp auth token-exchange --api-key 'api-key'", "corp auth token-exchange --json"],
   },
   {
     name: "ssh-keys",
-    description: "/v1/ssh-keys",
+    description: "Ssh Keys",
     route: { method: "GET", path: "/v1/ssh-keys" },
     display: { title: "Ssh Keys", cols: ["algorithm>Algorithm", "#contact_id>ID", "@created_at>Created At", "entity_ids>Entity Ids", "fingerprint>Fingerprint", "#key_id>ID", "name>Name", "scopes>Scopes"] },
+    examples: ["corp ssh-keys"],
   },
   {
     name: "ssh-keys",
-    description: "/v1/ssh-keys",
+    description: "Ssh Keys",
     route: { method: "POST", path: "/v1/ssh-keys" },
     options: [
       { flags: "--contact-id <contact-id>", description: "Contact Id" },
@@ -467,53 +503,59 @@ export const adminCommands: CommandDef[] = [
       { flags: "--public-key <public-key>", description: "Public Key", required: true },
       { flags: "--scopes <scopes>", description: "Scopes", type: "array" },
     ],
+    examples: ["corp ssh-keys --name 'name' --public-key 'public-key'", "corp ssh-keys --json"],
   },
   {
     name: "ssh-keys",
-    description: "/v1/ssh-keys/{key_id}",
+    description: "Ssh Keys",
     route: { method: "DELETE", path: "/v1/ssh-keys/{pos}" },
     args: [{ name: "key-id", required: true, description: "Key Id" }],
+    examples: ["corp ssh-keys <key-id>"],
   },
   {
     name: "workspaces provision",
-    description: "/v1/workspaces/provision",
+    description: "Workspaces Provision",
     route: { method: "POST", path: "/v1/workspaces/provision" },
     options: [
       { flags: "--name <name>", description: "Name", required: true },
       { flags: "--owner-email <owner-email>", description: "Owner Email" },
     ],
+    examples: ["corp workspaces provision --name 'name'", "corp workspaces provision --json"],
   },
 
 
   // ── Auto-generated from OpenAPI ──────────────────────────────
   {
     name: "references sync",
-    description: "/v1/references/sync",
+    description: "References Sync",
     route: { method: "POST", path: "/v1/references/sync" },
     options: [
       { flags: "--items <items>", description: "Items", required: true, type: "array" },
       { flags: "--kind <kind>", description: "Kind", required: true, choices: ["entity", "contact", "share_transfer", "invoice", "bank_account", "payment", "payroll_run", "distribution", "reconciliation", "tax_filing", "deadline", "classification", "body", "meeting", "seat", "agenda_item", "resolution", "document", "work_item", "agent", "valuation", "safe_note", "instrument", "share_class", "round"] },
     ],
+    examples: ["corp references sync --items 'items' --kind 'kind'"],
   },
 
 
   // ── Auto-generated from OpenAPI ──────────────────────────────
   {
     name: "secrets interpolate",
-    description: "/v1/secrets/interpolate",
+    description: "Secrets Interpolate",
     route: { method: "POST", path: "/v1/secrets/interpolate" },
     options: [
       { flags: "--execution-id <execution-id>", description: "Execution Id", required: true },
       { flags: "--template <template>", description: "Template", required: true },
     ],
+    examples: ["corp secrets interpolate --execution-id 'execution-id' --template 'template'"],
   },
   {
     name: "secrets resolve",
-    description: "/v1/secrets/resolve",
+    description: "Secrets Resolve",
     route: { method: "POST", path: "/v1/secrets/resolve" },
     options: [
       { flags: "--token <token>", description: "Token", required: true },
     ],
+    examples: ["corp secrets resolve --token 'token'"],
   },
 
   // ── workspace-scoped endpoints ──────────────────────────────────────
@@ -522,17 +564,20 @@ export const adminCommands: CommandDef[] = [
     description: "List contacts across a workspace",
     route: { method: "GET", path: "/v1/workspaces/{wid}/contacts" },
     display: { title: "Workspace Contacts", cols: ["name>Name", "email>Email", "category>Category", "#contact_id>ID"] },
+    examples: ["corp workspaces contacts"],
   },
   {
     name: "workspaces entities",
     description: "List entities in a workspace",
     route: { method: "GET", path: "/v1/workspaces/{wid}/entities" },
     display: { title: "Workspace Entities", cols: ["legal_name>Name", "entity_type>Type", "#entity_id>ID"] },
+    examples: ["corp workspaces entities"],
   },
   {
     name: "documents validate-preview",
     description: "Validate a PDF preview without generating",
     route: { method: "GET", path: "/v1/documents/preview/pdf/validate" },
     entity: true,
+    examples: ["corp documents validate-preview", "corp documents validate-preview --json"],
   },
 ];

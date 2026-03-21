@@ -85,6 +85,7 @@ export const governanceCommands: CommandDef[] = [
       if (seats.length === 0) { ctx.writer.writeln("No seats found."); return; }
       printSeatsTable(seats);
     },
+    examples: ["corp governance seats", "corp governance seats --json"],
   },
 
   // --- governance meetings <body-ref> ---
@@ -108,6 +109,7 @@ export const governanceCommands: CommandDef[] = [
       if (meetings.length === 0) { ctx.writer.writeln("No meetings found."); return; }
       printMeetingsTable(meetings);
     },
+    examples: ["corp governance meetings", "corp governance meetings --json"],
   },
 
   // --- governance resolutions <meeting-ref> ---
@@ -131,6 +133,7 @@ export const governanceCommands: CommandDef[] = [
       if (resolutions.length === 0) { ctx.writer.writeln("No resolutions found."); return; }
       printResolutionsTable(resolutions);
     },
+    examples: ["corp governance resolutions", "corp governance resolutions --json"],
   },
 
   // --- governance agenda-items <meeting-ref> ---
@@ -154,6 +157,7 @@ export const governanceCommands: CommandDef[] = [
       if (items.length === 0) { ctx.writer.writeln("No agenda items found."); return; }
       printAgendaItemsTable(items);
     },
+    examples: ["corp governance agenda-items", "corp governance agenda-items --json"],
   },
 
   // --- governance incidents ---
@@ -174,6 +178,7 @@ export const governanceCommands: CommandDef[] = [
         console.log(`  [${colored}] ${inc.incident_type ?? "unknown"}: ${inc.description ?? inc.id}`);
       }
     },
+    examples: ["corp governance incidents", "corp governance incidents --json"],
   },
 
   // --- governance profile ---
@@ -197,6 +202,7 @@ export const governanceCommands: CommandDef[] = [
       }
       console.log(chalk.blue("\u2500".repeat(40)));
     },
+    examples: ["corp governance profile", "corp governance profile --json"],
   },
 
   // --- governance mode ---
@@ -227,6 +233,7 @@ export const governanceCommands: CommandDef[] = [
         if (result.reason) console.log(`  ${chalk.bold("Reason:")} ${result.reason}`);
       }
     },
+    examples: ["corp governance mode", "corp governance mode --json"],
   },
 
   // --- governance create-body ---
@@ -268,6 +275,7 @@ export const governanceCommands: CommandDef[] = [
     },
     produces: { kind: "body" },
     successTemplate: "Governance body created: {name}",
+    examples: ["corp governance create-body --name 'name' --body-type 'type'", "corp governance create-body --json"],
   },
 
   // --- governance add-seat <body-ref> ---
@@ -301,6 +309,7 @@ export const governanceCommands: CommandDef[] = [
     },
     produces: { kind: "seat" },
     successTemplate: "Seat added to {body_id}",
+    examples: ["corp governance add-seat <body-ref> --holder 'contact-ref'", "corp governance add-seat --json"],
   },
 
   // --- governance convene ---
@@ -346,6 +355,7 @@ export const governanceCommands: CommandDef[] = [
     },
     produces: { kind: "meeting" },
     successTemplate: "Meeting scheduled: {title}",
+    examples: ["corp governance convene --body 'ref' --type 'type' --title 'title'", "corp governance convene --json"],
   },
 
   // --- governance open <meeting-ref> ---
@@ -376,6 +386,7 @@ export const governanceCommands: CommandDef[] = [
       if (ctx.opts.json) { ctx.writer.json(result); return; }
       ctx.writer.success(`Meeting opened: ${resolvedMeetingId}`);
     },
+    examples: ["corp governance open <meeting-ref> --present-seat 'ref'"],
   },
 
   // --- governance vote <meeting-ref> <item-ref> ---
@@ -424,6 +435,7 @@ export const governanceCommands: CommandDef[] = [
         }
       }
     },
+    examples: ["corp governance vote <meeting-ref> <item-ref> --voter for --vote for"],
   },
 
   // --- governance notice <meeting-ref> ---
@@ -446,6 +458,7 @@ export const governanceCommands: CommandDef[] = [
       if (ctx.opts.json) { ctx.writer.json(result); return; }
       ctx.writer.success(`Notice sent for meeting ${resolvedMeetingId}`);
     },
+    examples: ["corp governance notice <meeting-ref>"],
   },
 
   // --- governance adjourn <meeting-ref> ---
@@ -468,6 +481,7 @@ export const governanceCommands: CommandDef[] = [
       if (ctx.opts.json) { ctx.writer.json(result); return; }
       ctx.writer.success(`Meeting ${resolvedMeetingId} adjourned`);
     },
+    examples: ["corp governance adjourn <meeting-ref>"],
   },
 
   // --- governance reopen <meeting-ref> ---
@@ -490,6 +504,7 @@ export const governanceCommands: CommandDef[] = [
       if (ctx.opts.json) { ctx.writer.json(result); return; }
       ctx.writer.success(`Meeting ${resolvedMeetingId} re-opened`);
     },
+    examples: ["corp governance reopen <meeting-ref>"],
   },
 
   // --- governance cancel <meeting-ref> ---
@@ -525,6 +540,7 @@ export const governanceCommands: CommandDef[] = [
       if (ctx.opts.json) { ctx.writer.json(result); return; }
       ctx.writer.success(`Meeting ${resolvedMeetingId} cancelled`);
     },
+    examples: ["corp governance cancel <meeting-ref>", "corp governance cancel --json"],
   },
 
   // --- governance finalize-item <meeting-ref> <item-ref> ---
@@ -561,6 +577,7 @@ export const governanceCommands: CommandDef[] = [
       if (ctx.opts.json) { ctx.writer.json(result); return; }
       ctx.writer.success(`Agenda item ${resolvedItemId} finalized as ${ctx.opts.status}`);
     },
+    examples: ["corp governance finalize-item <meeting-ref> <item-ref>"],
   },
 
   // --- governance resolve <meeting-ref> <item-ref> ---
@@ -599,6 +616,7 @@ export const governanceCommands: CommandDef[] = [
     },
     produces: { kind: "resolution" },
     successTemplate: "Resolution computed",
+    examples: ["corp governance resolve <meeting-ref> <item-ref> --text 'resolution_text'"],
   },
 
   // --- governance written-consent ---
@@ -649,6 +667,7 @@ export const governanceCommands: CommandDef[] = [
     },
     produces: { kind: "meeting" },
     successTemplate: "Written consent created: {title}",
+    examples: ["corp governance written-consent --body 'ref' --title 'title' --description 'desc'"],
   },
 
   // --- governance resign <seat-ref> ---
@@ -670,85 +689,96 @@ export const governanceCommands: CommandDef[] = [
       if (ctx.opts.json) { ctx.writer.json(result); return; }
       ctx.writer.success(`Seat ${seatId} resigned.`);
     },
+    examples: ["corp governance resign <seat-ref>", "corp governance resign --json"],
   },
 
   // ── Auto-generated from OpenAPI ──────────────────────────────
   {
     name: "entities governance-audit-checkpoints",
-    description: "/v1/entities/{entity_id}/governance/audit/checkpoints",
+    description: "Entities Governance Audit Checkpoints",
     route: { method: "GET", path: "/v1/entities/{eid}/governance/audit/checkpoints" },
     entity: true,
     display: { title: "Entities Governance Audit Checkpoints", cols: ["#checkpoint_id>ID", "@created_at>Created At", "#entity_id>ID", "latest_entry_hash>Latest Entry Hash", "#latest_entry_id>ID", "total_entries>Total Entries"] },
+    examples: ["corp entities governance-audit-checkpoints", "corp entities governance-audit-checkpoints --json"],
   },
   {
     name: "entities governance-audit-entries",
-    description: "/v1/entities/{entity_id}/governance/audit/entries",
+    description: "Entities Governance Audit Entries",
     route: { method: "GET", path: "/v1/entities/{eid}/governance/audit/entries" },
     entity: true,
     display: { title: "Entities Governance Audit Entries", cols: ["action>Action", "#audit_entry_id>ID", "@created_at>Created At", "details>Details", "#entity_id>ID", "entry_hash>Entry Hash", "event_type>Event Type", "evidence_refs>Evidence Refs"] },
+    examples: ["corp entities governance-audit-entries", "corp entities governance-audit-entries --json"],
   },
   {
     name: "entities governance-audit-verifications",
-    description: "/v1/entities/{entity_id}/governance/audit/verifications",
+    description: "Entities Governance Audit Verifications",
     route: { method: "GET", path: "/v1/entities/{eid}/governance/audit/verifications" },
     entity: true,
     display: { title: "Entities Governance Audit Verifications", cols: ["anomalies>Anomalies", "@created_at>Created At", "#entity_id>ID", "#incident_id>ID", "latest_entry_hash>Latest Entry Hash", "ok>Ok", "total_entries>Total Entries", "#trigger_id>ID"] },
+    examples: ["corp entities governance-audit-verifications", "corp entities governance-audit-verifications --json"],
   },
   {
     name: "entities governance-doc-bundles",
-    description: "/v1/entities/{entity_id}/governance/doc-bundles",
+    description: "Entities Governance Doc Bundles",
     route: { method: "GET", path: "/v1/entities/{eid}/governance/doc-bundles" },
     entity: true,
     display: { title: "Entities Governance Doc Bundles", cols: ["#bundle_id>ID", "document_count>Document Count", "#entity_id>ID", "entity_type>Entity Type", "generated_at>Generated At", "profile_version>Profile Version", "template_version>Template Version"] },
+    examples: ["corp entities governance-doc-bundles", "corp entities governance-doc-bundles --json"],
   },
   {
     name: "entities governance-doc-bundles-current",
-    description: "/v1/entities/{entity_id}/governance/doc-bundles/current",
+    description: "Entities Governance Doc Bundles Current",
     route: { method: "GET", path: "/v1/entities/{eid}/governance/doc-bundles/current" },
     entity: true,
     display: { title: "Entities Governance Doc Bundles Current", cols: ["#bundle_id>ID", "#entity_id>ID", "generated_at>Generated At", "manifest_path>Manifest Path", "template_version>Template Version"] },
+    examples: ["corp entities governance-doc-bundles-current", "corp entities governance-doc-bundles-current --json"],
   },
   {
     name: "entities governance-doc-bundles-generate",
-    description: "/v1/entities/{entity_id}/governance/doc-bundles/generate",
+    description: "Entities Governance Doc Bundles Generate",
     route: { method: "POST", path: "/v1/entities/{eid}/governance/doc-bundles/generate" },
     entity: true,
     options: [
       { flags: "--template-version <template-version>", description: "Template Version" },
     ],
+    examples: ["corp entities governance-doc-bundles-generate", "corp entities governance-doc-bundles-generate --json"],
   },
   {
     name: "entities governance-doc-bundles",
-    description: "/v1/entities/{entity_id}/governance/doc-bundles/{bundle_id}",
+    description: "Entities Governance Doc Bundles",
     route: { method: "GET", path: "/v1/entities/{eid}/governance/doc-bundles/{pos}" },
     entity: true,
     args: [{ name: "bundle-id", required: true, description: "Bundle Id" }],
     display: { title: "Entities Governance Doc Bundles", cols: ["#bundle_id>ID", "documents>Documents", "#entity_id>ID", "entity_type>Entity Type", "generated_at>Generated At", "profile_version>Profile Version", "source_root>Source Root", "template_version>Template Version"] },
+    examples: ["corp entities governance-doc-bundles", "corp entities governance-doc-bundles --json"],
   },
   {
     name: "entities governance-mode-history",
-    description: "/v1/entities/{entity_id}/governance/mode-history",
+    description: "Entities Governance Mode History",
     route: { method: "GET", path: "/v1/entities/{eid}/governance/mode-history" },
     entity: true,
     display: { title: "Entities Governance Mode History", cols: ["@created_at>Created At", "#entity_id>ID", "evidence_refs>Evidence Refs", "from_mode>From Mode", "incident_ids>Incident Ids", "#mode_event_id>ID", "reason>Reason", "to_mode>To Mode"] },
+    examples: ["corp entities governance-mode-history", "corp entities governance-mode-history --json"],
   },
   {
     name: "entities governance-triggers",
-    description: "/v1/entities/{entity_id}/governance/triggers",
+    description: "Entities Governance Triggers",
     route: { method: "GET", path: "/v1/entities/{eid}/governance/triggers" },
     entity: true,
     display: { title: "Entities Governance Triggers", cols: ["@created_at>Created At", "description>Description", "#entity_id>ID", "evidence_refs>Evidence Refs", "idempotency_key_hash>Idempotency Key Hash", "#incident_id>ID", "#linked_escalation_id>ID", "#linked_intent_id>ID"] },
+    examples: ["corp entities governance-triggers", "corp entities governance-triggers --json"],
   },
   {
     name: "governance-bodies",
-    description: "/v1/governance-bodies",
+    description: "Governance Bodies",
     route: { method: "GET", path: "/v1/governance-bodies" },
     entity: true,
     display: { title: "Governance Bodies", cols: ["#body_id>ID", "body_type>Body Type", "@created_at>Created At", "#entity_id>ID", "name>Name", "quorum_rule>Quorum Rule", "status>Status", "voting_method>Voting Method"] },
+    examples: ["corp governance-bodies", "corp governance-bodies --json"],
   },
   {
     name: "governance-bodies",
-    description: "/v1/governance-bodies",
+    description: "Governance Bodies",
     route: { method: "POST", path: "/v1/governance-bodies" },
     options: [
       { flags: "--body-type <body-type>", description: "The type of governance body.", required: true, choices: ["board_of_directors", "llc_member_vote"] },
@@ -756,28 +786,32 @@ export const governanceCommands: CommandDef[] = [
       { flags: "--quorum-rule <quorum-rule>", description: "The threshold required for a vote to pass.", required: true, choices: ["majority", "supermajority", "unanimous"] },
       { flags: "--voting-method <voting-method>", description: "How votes are counted.", required: true, choices: ["per_capita", "per_unit"] },
     ],
+    examples: ["corp governance-bodies --body-type board_of_directors --name majority --quorum-rule majority --voting-method per_capita"],
   },
   {
     name: "governance-seats scan-expired",
-    description: "/v1/governance-seats/scan-expired",
+    description: "Governance Seats Scan Expired",
     route: { method: "POST", path: "/v1/governance-seats/scan-expired" },
     entity: true,
+    examples: ["corp governance-seats scan-expired"],
   },
   {
     name: "governance-seats resign",
-    description: "/v1/governance-seats/{seat_id}/resign",
+    description: "Governance Seats Resign",
     route: { method: "POST", path: "/v1/governance-seats/{pos}/resign" },
     entity: true,
     args: [{ name: "seat-id", required: true, description: "Seat Id" }],
+    examples: ["corp governance-seats resign <seat-id>"],
   },
   {
     name: "governance audit-checkpoints",
-    description: "/v1/governance/audit/checkpoints",
+    description: "Governance Audit Checkpoints",
     route: { method: "POST", path: "/v1/governance/audit/checkpoints" },
+    examples: ["corp governance audit-checkpoints"],
   },
   {
     name: "governance audit-events",
-    description: "/v1/governance/audit/events",
+    description: "Governance Audit Events",
     route: { method: "POST", path: "/v1/governance/audit/events" },
     options: [
       { flags: "--action <action>", description: "Action", required: true },
@@ -789,22 +823,25 @@ export const governanceCommands: CommandDef[] = [
       { flags: "--linked-mode-event-id <linked-mode-event-id>", description: "Linked Mode Event Id" },
       { flags: "--linked-trigger-id <linked-trigger-id>", description: "Linked Trigger Id" },
     ],
+    examples: ["corp governance audit-events --action 'action' --event-type mode_changed", "corp governance audit-events --json"],
   },
   {
     name: "governance audit-verify",
-    description: "/v1/governance/audit/verify",
+    description: "Governance Audit Verify",
     route: { method: "POST", path: "/v1/governance/audit/verify" },
+    examples: ["corp governance audit-verify"],
   },
   {
     name: "governance delegation-schedule",
-    description: "/v1/governance/delegation-schedule",
+    description: "Governance Delegation Schedule",
     route: { method: "GET", path: "/v1/governance/delegation-schedule" },
     entity: true,
     display: { title: "Governance Delegation Schedule", cols: ["#adopted_resolution_id>ID", "allowed_tier1_intent_types>Allowed Tier1 Intent Types", "@created_at>Created At", "#entity_id>ID", "last_reauthorized_at>Last Reauthorized At", "next_mandatory_review_at>Next Mandatory Review At", "reauth_full_suspension_at_days>Reauth Full Suspension At Days", "reauth_reduced_limits_at_days>Reauth Reduced Limits At Days"] },
+    examples: ["corp governance delegation-schedule", "corp governance delegation-schedule --json"],
   },
   {
     name: "governance delegation-schedule-amend",
-    description: "/v1/governance/delegation-schedule/amend",
+    description: "Governance Delegation Schedule Amend",
     route: { method: "POST", path: "/v1/governance/delegation-schedule/amend" },
     options: [
       { flags: "--adopted-resolution-id <adopted-resolution-id>", description: "Adopted Resolution Id" },
@@ -814,63 +851,70 @@ export const governanceCommands: CommandDef[] = [
       { flags: "--rationale <rationale>", description: "Rationale" },
       { flags: "--tier1-max-amount-cents <tier1-max-amount-cents>", description: "Tier1 Max Amount Cents" },
     ],
+    examples: ["corp governance delegation-schedule-amend", "corp governance delegation-schedule-amend --json"],
   },
   {
     name: "governance delegation-schedule-history",
-    description: "/v1/governance/delegation-schedule/history",
+    description: "Governance Delegation Schedule History",
     route: { method: "GET", path: "/v1/governance/delegation-schedule/history" },
     entity: true,
     display: { title: "Governance Delegation Schedule History", cols: ["added_tier1_intent_types>Added Tier1 Intent Types", "#adopted_resolution_id>ID", "authority_expansion>Authority Expansion", "@created_at>Created At", "#entity_id>ID", "from_version>From Version", "new_tier1_max_amount_cents>New Tier1 Max Amount Cents", "previous_tier1_max_amount_cents>Previous Tier1 Max Amount Cents"] },
+    examples: ["corp governance delegation-schedule-history", "corp governance delegation-schedule-history --json"],
   },
   {
     name: "governance delegation-schedule-reauthorize",
-    description: "/v1/governance/delegation-schedule/reauthorize",
+    description: "Governance Delegation Schedule Reauthorize",
     route: { method: "POST", path: "/v1/governance/delegation-schedule/reauthorize" },
     options: [
       { flags: "--adopted-resolution-id <adopted-resolution-id>", description: "Adopted Resolution Id", required: true },
       { flags: "--meeting-id <meeting-id>", description: "Meeting Id", required: true },
       { flags: "--rationale <rationale>", description: "Rationale" },
     ],
+    examples: ["corp governance delegation-schedule-reauthorize --adopted-resolution-id 'adopted-resolution-id' --meeting-id 'meeting-id'", "corp governance delegation-schedule-reauthorize --json"],
   },
   {
     name: "governance evaluate",
-    description: "/v1/governance/evaluate",
+    description: "Governance Evaluate",
     route: { method: "POST", path: "/v1/governance/evaluate" },
     options: [
       { flags: "--intent-type <intent-type>", description: "Intent Type", required: true },
       { flags: "--metadata <metadata>", description: "Metadata" },
     ],
+    examples: ["corp governance evaluate --intent-type 'intent-type'", "corp governance evaluate --json"],
   },
   {
     name: "governance incidents",
-    description: "/v1/governance/incidents",
+    description: "Governance Incidents",
     route: { method: "POST", path: "/v1/governance/incidents" },
     options: [
       { flags: "--description <description>", description: "Description", required: true },
       { flags: "--severity <severity>", description: "Severity", required: true, choices: ["low", "medium", "high", "critical"] },
       { flags: "--title <title>", description: "Title", required: true },
     ],
+    examples: ["corp governance incidents --description low --severity low --title 'title'"],
   },
   {
     name: "governance incidents-resolve",
-    description: "/v1/governance/incidents/{incident_id}/resolve",
+    description: "Governance Incidents Resolve",
     route: { method: "POST", path: "/v1/governance/incidents/{pos}/resolve" },
     entity: true,
     args: [{ name: "incident-id", required: true, description: "Incident Id" }],
+    examples: ["corp governance incidents-resolve <incident-id>"],
   },
   {
     name: "meetings written-consent",
-    description: "/v1/meetings/written-consent",
+    description: "Meetings Written Consent",
     route: { method: "POST", path: "/v1/meetings/written-consent" },
     options: [
       { flags: "--body-id <body-id>", description: "Body Id", required: true },
       { flags: "--description <description>", description: "Description", required: true },
       { flags: "--title <title>", description: "Title", required: true },
     ],
+    examples: ["corp meetings written-consent --body-id 'body-id' --description 'description' --title 'title'"],
   },
   {
     name: "meetings agenda-items-vote",
-    description: "/v1/meetings/{meeting_id}/agenda-items/{item_id}/vote",
+    description: "Meetings Agenda Items Vote",
     route: { method: "POST", path: "/v1/meetings/{pos}/agenda-items/{pos2}/vote" },
     entity: true,
     args: [{ name: "meeting-id", required: true, description: "Meeting Id" }, { name: "item-id", required: true, description: "Item Id" }],
@@ -878,25 +922,28 @@ export const governanceCommands: CommandDef[] = [
       { flags: "--vote-value <vote-value>", description: "How a participant voted.", required: true, choices: ["for", "against", "abstain", "recusal"] },
       { flags: "--voter-id <voter-id>", description: "Voter Id", required: true },
     ],
+    examples: ["corp meetings agenda-items-vote <meeting-id> <item-id> --vote-value for --voter-id 'voter-id'"],
   },
   {
     name: "meetings convene",
-    description: "/v1/meetings/{meeting_id}/convene",
+    description: "Meetings Convene",
     route: { method: "POST", path: "/v1/meetings/{pos}/convene" },
     entity: true,
     args: [{ name: "meeting-id", required: true, description: "Meeting Id" }],
     options: [
       { flags: "--present-seat-ids <present-seat-ids>", description: "Present Seat Ids", required: true, type: "array" },
     ],
+    examples: ["corp meetings convene <meeting-id> --present-seat-ids 'present-seat-ids'"],
   },
   {
     name: "meetings resolutions-attach-document",
-    description: "/v1/meetings/{meeting_id}/resolutions/{resolution_id}/attach-document",
+    description: "Meetings Resolutions Attach Document",
     route: { method: "POST", path: "/v1/meetings/{pos}/resolutions/{pos2}/attach-document" },
     args: [{ name: "meeting-id", required: true, description: "Meeting Id" }, { name: "resolution-id", required: true, description: "Resolution Id" }],
     options: [
       { flags: "--document-id <document-id>", description: "Document Id", required: true },
     ],
+    examples: ["corp meetings resolutions-attach-document <meeting-id> <resolution-id> --document-id 'document-id'"],
   },
 
 ];

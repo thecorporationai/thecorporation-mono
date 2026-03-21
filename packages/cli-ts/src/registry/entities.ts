@@ -224,12 +224,14 @@ export const entityCommands: CommandDef[] = [
     name: "entities",
     description: "List entities, show detail, convert, or dissolve",
     handler: entitiesHandler,
+    examples: ["corp entities"],
   },
   {
     name: "entities show",
     description: "Show entity detail",
     args: [{ name: "entity-ref", required: true }],
     handler: entitiesShowHandler,
+    examples: ["corp entities show"],
   },
   {
     name: "entities convert",
@@ -241,6 +243,7 @@ export const entityCommands: CommandDef[] = [
       { flags: "--jurisdiction <jurisdiction>", description: "New jurisdiction" },
     ],
     handler: entitiesConvertHandler,
+    examples: ["corp entities convert <entity-ref> --to 'type'", "corp entities convert --json"],
   },
   {
     name: "entities dissolve",
@@ -253,6 +256,7 @@ export const entityCommands: CommandDef[] = [
       { flags: "--yes, -y", description: "Skip confirmation prompt" },
     ],
     handler: entitiesDissolveHandler,
+    examples: ["corp entities dissolve <entity-ref> --reason 'reason'", "corp entities dissolve --json"],
   },
 
   // ── contacts ──
@@ -266,6 +270,7 @@ export const entityCommands: CommandDef[] = [
       cols: ["name>Name", "email>Email", "category>Category", "#contact_id>ID"],
     },
     handler: contactsHandler,
+    examples: ["corp contacts", "corp contacts --json"],
   },
   {
     name: "contacts show",
@@ -275,6 +280,7 @@ export const entityCommands: CommandDef[] = [
     display: { title: "Contact Profile" },
     args: [{ name: "contact-ref", required: true }],
     handler: contactsShowHandler,
+    examples: ["corp contacts show", "corp contacts show --json"],
   },
   {
     name: "contacts add",
@@ -295,6 +301,7 @@ export const entityCommands: CommandDef[] = [
     handler: contactsAddHandler,
     produces: { kind: "contact" },
     successTemplate: "Contact created: {name}",
+    examples: ["corp contacts add --name 'name' --email 'email'", "corp contacts add --json"],
   },
   {
     name: "contacts edit",
@@ -313,19 +320,21 @@ export const entityCommands: CommandDef[] = [
       { flags: "--notes <notes>", description: "Notes" },
     ],
     handler: contactsEditHandler,
+    examples: ["corp contacts edit <contact-ref>", "corp contacts edit --json"],
   },
 
   // ── Auto-generated from OpenAPI ──────────────────────────────
   {
     name: "contacts notification-prefs",
-    description: "/v1/contacts/{contact_id}/notification-prefs",
+    description: "Contacts Notification Prefs",
     route: { method: "GET", path: "/v1/contacts/{pos}/notification-prefs" },
     args: [{ name: "contact-id", required: true, description: "Contact Id" }],
     display: { title: "Contacts Notification Prefs", cols: ["#contact_id>ID", "email_enabled>Email Enabled", "sms_enabled>Sms Enabled", "@updated_at>Updated At", "webhook_enabled>Webhook Enabled"] },
+    examples: ["corp contacts notification-prefs"],
   },
   {
     name: "contacts notification-prefs",
-    description: "/v1/contacts/{contact_id}/notification-prefs",
+    description: "Contacts Notification Prefs",
     route: { method: "PATCH", path: "/v1/contacts/{pos}/notification-prefs" },
     args: [{ name: "contact-id", required: true, description: "Contact Id" }],
     options: [
@@ -333,6 +342,7 @@ export const entityCommands: CommandDef[] = [
       { flags: "--sms-enabled <sms-enabled>", description: "Sms Enabled" },
       { flags: "--webhook-enabled <webhook-enabled>", description: "Webhook Enabled" },
     ],
+    examples: ["corp contacts notification-prefs <contact-id>", "corp contacts notification-prefs --json"],
   },
 
 ];

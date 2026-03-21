@@ -123,6 +123,7 @@ export const workspaceCommands: CommandDef[] = [
         process.exit(1);
       }
     },
+    examples: ["corp status"],
   },
 
   // --- context / whoami ---
@@ -217,6 +218,7 @@ export const workspaceCommands: CommandDef[] = [
         process.exit(1);
       }
     },
+    examples: ["corp context", "corp context --json"],
   },
 
   // --- use <entity-ref> ---
@@ -240,6 +242,7 @@ export const workspaceCommands: CommandDef[] = [
         process.exit(1);
       }
     },
+    examples: ["corp use", "corp use --json"],
   },
 
   // --- next ---
@@ -337,6 +340,7 @@ export const workspaceCommands: CommandDef[] = [
     },
     optQP: ["tier"],
     options: [{ flags: "--tier <tier>", description: "Filter by urgency tier" }],
+    examples: ["corp obligations"],
   },
 
   // --- digest ---
@@ -386,6 +390,7 @@ export const workspaceCommands: CommandDef[] = [
         process.exit(1);
       }
     },
+    examples: ["corp digest"],
   },
 
   // --- billing ---
@@ -410,6 +415,7 @@ export const workspaceCommands: CommandDef[] = [
         process.exit(1);
       }
     },
+    examples: ["corp billing"],
   },
 
   // --- billing portal ---
@@ -432,6 +438,7 @@ export const workspaceCommands: CommandDef[] = [
         process.exit(1);
       }
     },
+    examples: ["corp billing portal"],
   },
 
   // --- billing upgrade ---
@@ -463,21 +470,24 @@ export const workspaceCommands: CommandDef[] = [
         process.exit(1);
       }
     },
+    examples: ["corp billing upgrade"],
   },
 
   // ── Auto-generated from OpenAPI ──────────────────────────────
   {
     name: "entities next-steps",
-    description: "/v1/entities/{entity_id}/next-steps",
+    description: "Entities Next Steps",
     route: { method: "GET", path: "/v1/entities/{eid}/next-steps" },
     entity: true,
     display: { title: "Entities Next Steps", cols: ["backlog>Backlog", "summary>Summary", "top>Top"] },
+    examples: ["corp entities next-steps", "corp entities next-steps --json"],
   },
   {
     name: "workspaces next-steps",
-    description: "/v1/workspaces/{workspace_id}/next-steps",
+    description: "Workspaces Next Steps",
     route: { method: "GET", path: "/v1/workspaces/{workspace_id}/next-steps" },
     display: { title: "Workspaces Next Steps", cols: ["backlog>Backlog", "summary>Summary", "top>Top"] },
+    examples: ["corp workspaces next-steps"],
   },
 
 ];

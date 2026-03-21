@@ -9,6 +9,7 @@ export const secretProxyCommands: CommandDef[] = [
       title: "Secret Proxies",
       cols: ["name>Name", "url>URL", "description>Description", "secret_count>Secrets", "@created_at>Created"],
     },
+    examples: ["corp secret-proxies"],
   },
   {
     name: "secret-proxies create",
@@ -20,6 +21,7 @@ export const secretProxyCommands: CommandDef[] = [
       { flags: "--description <desc>", description: "Description" },
     ],
     successTemplate: "Secret proxy {name} created",
+    examples: ["corp secret-proxies create --name 'name' --url 'url'", "corp secret-proxies create --json"],
   },
   {
     name: "secret-proxies show",
@@ -30,6 +32,7 @@ export const secretProxyCommands: CommandDef[] = [
       title: "Secret Proxy",
       cols: ["name>Name", "url>URL", "description>Description", "secret_count>Secrets", "@created_at>Created"],
     },
+    examples: ["corp secret-proxies show"],
   },
   {
     name: "secret-proxies secrets",
@@ -40,6 +43,7 @@ export const secretProxyCommands: CommandDef[] = [
       title: "Secrets",
       cols: ["names>Secret Names", "proxy_name>Proxy"],
     },
+    examples: ["corp secret-proxies secrets"],
   },
   {
     name: "secret-proxies set-secrets",
@@ -50,5 +54,6 @@ export const secretProxyCommands: CommandDef[] = [
       { flags: "--secrets <json>", description: "JSON object of key-value secret pairs", required: true },
     ],
     successTemplate: "Secrets updated for {proxy_name}",
+    examples: ["corp secret-proxies set-secrets <proxy-name> --secrets 'json'"],
   },
 ];

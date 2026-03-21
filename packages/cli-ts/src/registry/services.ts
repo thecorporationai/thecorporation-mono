@@ -31,6 +31,7 @@ export const serviceCommands: CommandDef[] = [
       if (ctx.opts.json) { ctx.writer.json(items); return; }
       printServiceCatalogTable(items);
     },
+    examples: ["corp services", "corp services --json"],
   },
 
   // --- services catalog ---
@@ -47,6 +48,7 @@ export const serviceCommands: CommandDef[] = [
       if (ctx.opts.json) { ctx.writer.json(items); return; }
       printServiceCatalogTable(items);
     },
+    examples: ["corp services catalog"],
   },
 
   // --- services list ---
@@ -66,6 +68,7 @@ export const serviceCommands: CommandDef[] = [
       if (ctx.opts.json) { ctx.writer.json(stable); return; }
       printServiceRequestsTable(stable);
     },
+    examples: ["corp services list", "corp services list --json"],
   },
 
   // --- services show <ref> ---
@@ -87,6 +90,7 @@ export const serviceCommands: CommandDef[] = [
       printReferenceSummary("service_request", result);
       printJson(result);
     },
+    examples: ["corp services show", "corp services show --json"],
   },
 
   // --- services buy <slug> ---
@@ -131,6 +135,7 @@ export const serviceCommands: CommandDef[] = [
     },
     produces: { kind: "service_request" },
     successTemplate: "Service request created",
+    examples: ["corp services buy <slug>"],
   },
 
   // --- services fulfill <ref> ---
@@ -158,6 +163,7 @@ export const serviceCommands: CommandDef[] = [
       printReferenceSummary("service_request", result, { showReuseHint: true });
       printJson(result);
     },
+    examples: ["corp services fulfill <ref>", "corp services fulfill --json"],
   },
 
   // --- services cancel <ref> ---
@@ -181,6 +187,7 @@ export const serviceCommands: CommandDef[] = [
       printReferenceSummary("service_request", result, { showReuseHint: true });
       printJson(result);
     },
+    examples: ["corp services cancel <ref>"],
   },
 
   // ── Auto-generated from OpenAPI ──────────────────────────────
@@ -192,6 +199,7 @@ export const serviceCommands: CommandDef[] = [
       { flags: "--obligation-id <obligation-id>", description: "Obligation Id" },
       { flags: "--service-slug <service-slug>", description: "Service Slug", required: true },
     ],
+    examples: ["corp services requests --service-slug 'service-slug'", "corp services requests --json"],
   },
   {
     name: "services requests",
@@ -200,18 +208,21 @@ export const serviceCommands: CommandDef[] = [
     entity: true,
     args: [{ name: "request-id", required: true, description: "Request Id" }],
     display: { title: "Services Requests", cols: ["amount_cents>Amount Cents", "checkout_url>Checkout Url", "@created_at>Created At", "#entity_id>ID", "failed_at>Failed At", "fulfilled_at>Fulfilled At", "fulfillment_note>Fulfillment Note", "#obligation_id>ID"] },
+    examples: ["corp services requests", "corp services requests --json"],
   },
   {
     name: "services requests-cancel",
     description: "Cancel a service request.",
     route: { method: "POST", path: "/v1/services/requests/{pos}/cancel" },
     args: [{ name: "request-id", required: true, description: "Request Id" }],
+    examples: ["corp services requests-cancel <request-id>"],
   },
   {
     name: "services requests-checkout",
     description: "Begin checkout for a service request (sets Stripe session ID, returns checkout URL).",
     route: { method: "POST", path: "/v1/services/requests/{pos}/checkout" },
     args: [{ name: "request-id", required: true, description: "Request Id" }],
+    examples: ["corp services requests-checkout <request-id>"],
   },
   {
     name: "services requests-fulfill",
@@ -221,6 +232,7 @@ export const serviceCommands: CommandDef[] = [
     options: [
       { flags: "--note <note>", description: "Note" },
     ],
+    examples: ["corp services requests-fulfill <request-id>", "corp services requests-fulfill --json"],
   },
 
 ];

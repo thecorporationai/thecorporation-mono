@@ -166,6 +166,7 @@ export const financeCommands: CommandDef[] = [
       if (invoices.length === 0) { ctx.writer.writeln("No invoices found."); return; }
       printInvoicesTable(invoices);
     },
+    examples: ["corp finance invoices", "corp finance invoices --json"],
   },
 
   // --- finance invoice (create) ---
@@ -205,6 +206,7 @@ export const financeCommands: CommandDef[] = [
     },
     produces: { kind: "invoice" },
     successTemplate: "Invoice created: {customer_name}",
+    examples: ["corp finance invoice --customer 'name' --due-date 'date'", "corp finance invoice --json"],
   },
 
   // --- finance payments ---
@@ -225,6 +227,7 @@ export const financeCommands: CommandDef[] = [
       if (payments.length === 0) { ctx.writer.writeln("No payments found."); return; }
       printPaymentsTable(payments);
     },
+    examples: ["corp finance payments", "corp finance payments --json"],
   },
 
   // --- finance pay ---
@@ -264,6 +267,7 @@ export const financeCommands: CommandDef[] = [
     },
     produces: { kind: "payment" },
     successTemplate: "Payment submitted: {recipient_name}",
+    examples: ["corp finance pay --recipient 'name'", "corp finance pay --json"],
   },
 
   // --- finance bank-accounts ---
@@ -284,6 +288,7 @@ export const financeCommands: CommandDef[] = [
       if (accounts.length === 0) { ctx.writer.writeln("No bank accounts found."); return; }
       printBankAccountsTable(accounts);
     },
+    examples: ["corp finance bank-accounts", "corp finance bank-accounts --json"],
   },
 
   // --- finance open-account ---
@@ -308,6 +313,7 @@ export const financeCommands: CommandDef[] = [
     },
     produces: { kind: "bank_account" },
     successTemplate: "Bank account opened: {bank_name}",
+    examples: ["corp finance open-account", "corp finance open-account --json"],
   },
 
   // --- finance activate-account <account-ref> ---
@@ -330,6 +336,7 @@ export const financeCommands: CommandDef[] = [
         showReuseHint: true,
       });
     },
+    examples: ["corp finance activate-account <account-ref>"],
   },
 
   // --- finance payroll-runs ---
@@ -350,6 +357,7 @@ export const financeCommands: CommandDef[] = [
       if (runs.length === 0) { ctx.writer.writeln("No payroll runs found."); return; }
       printPayrollRunsTable(runs);
     },
+    examples: ["corp finance payroll-runs", "corp finance payroll-runs --json"],
   },
 
   // --- finance payroll ---
@@ -379,6 +387,7 @@ export const financeCommands: CommandDef[] = [
     },
     produces: { kind: "payroll_run" },
     successTemplate: "Payroll run created",
+    examples: ["corp finance payroll --period-start 'date' --period-end 'date'"],
   },
 
   // --- finance distributions ---
@@ -399,6 +408,7 @@ export const financeCommands: CommandDef[] = [
       if (distributions.length === 0) { ctx.writer.writeln("No distributions found."); return; }
       printDistributionsTable(distributions);
     },
+    examples: ["corp finance distributions", "corp finance distributions --json"],
   },
 
   // --- finance reconciliations ---
@@ -419,6 +429,7 @@ export const financeCommands: CommandDef[] = [
       if (reconciliations.length === 0) { ctx.writer.writeln("No reconciliations found."); return; }
       printReconciliationsTable(reconciliations);
     },
+    examples: ["corp finance reconciliations", "corp finance reconciliations --json"],
   },
 
   // --- finance reconcile ---
@@ -448,6 +459,7 @@ export const financeCommands: CommandDef[] = [
     },
     produces: { kind: "reconciliation" },
     successTemplate: "Reconciliation created",
+    examples: ["corp finance reconcile --start-date 'date' --end-date 'date'"],
   },
 
   // --- finance classifications ---
@@ -468,6 +480,7 @@ export const financeCommands: CommandDef[] = [
       if (classifications.length === 0) { ctx.writer.writeln("No contractor classifications found."); return; }
       printClassificationsTable(classifications);
     },
+    examples: ["corp finance classifications", "corp finance classifications --json"],
   },
 
   // --- finance classify-contractor ---
@@ -505,6 +518,7 @@ export const financeCommands: CommandDef[] = [
     },
     produces: { kind: "classification" },
     successTemplate: "Classification created: {contractor_name}",
+    examples: ["corp finance classify-contractor --name 'name' --state 'code' --hours 'n' --duration 'n'", "corp finance classify-contractor --json"],
   },
 
   // --- finance statements ---
@@ -525,5 +539,6 @@ export const financeCommands: CommandDef[] = [
       if (ctx.opts.json) { ctx.writer.json(result); return; }
       printJson(result);
     },
+    examples: ["corp finance statements", "corp finance statements --json"],
   },
 ];
