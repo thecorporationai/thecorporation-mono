@@ -234,6 +234,7 @@ export const entityCommands: CommandDef[] = [
   {
     name: "entities convert",
     description: "Convert entity to a different type",
+    route: { method: "POST", path: "/v1/entities/{pos}/convert" },
     args: [{ name: "entity-ref", required: true }],
     options: [
       { flags: "--to <type>", description: "Target entity type (llc, c_corp)", required: true },
@@ -244,6 +245,7 @@ export const entityCommands: CommandDef[] = [
   {
     name: "entities dissolve",
     description: "Dissolve an entity",
+    route: { method: "POST", path: "/v1/entities/{pos}/dissolve" },
     args: [{ name: "entity-ref", required: true }],
     options: [
       { flags: "--reason <reason>", description: "Dissolution reason", required: true },
@@ -257,19 +259,27 @@ export const entityCommands: CommandDef[] = [
   {
     name: "contacts",
     description: "Contact management",
+    route: { method: "GET", path: "/v1/entities/{eid}/contacts" },
     entity: true,
+    display: {
+      title: "Contacts",
+      cols: ["name>Name", "email>Email", "category>Category", "#contact_id>ID"],
+    },
     handler: contactsHandler,
   },
   {
     name: "contacts show",
     description: "Show contact detail/profile",
-    entity: true,
+    route: { method: "GET", path: "/v1/contacts/{pos}/profile" },
+    entity: "query",
+    display: { title: "Contact Profile" },
     args: [{ name: "contact-ref", required: true }],
     handler: contactsShowHandler,
   },
   {
     name: "contacts add",
     description: "Add a new contact",
+    route: { method: "POST", path: "/v1/contacts" },
     entity: true,
     options: [
       { flags: "--name <name>", description: "Contact name", required: true },
@@ -289,6 +299,7 @@ export const entityCommands: CommandDef[] = [
   {
     name: "contacts edit",
     description: "Edit an existing contact",
+    route: { method: "PATCH", path: "/v1/contacts/{pos}" },
     entity: true,
     args: [{ name: "contact-ref", required: true }],
     options: [

@@ -148,6 +148,11 @@ export const adminCommands: CommandDef[] = [
   {
     name: "api-keys",
     description: "API key management",
+    route: { method: "GET", path: "/v1/api-keys" },
+    display: {
+      title: "API Keys",
+      cols: ["name>Name", "key_prefix|prefix>Prefix", "@created_at>Created", "#api_key_id>ID"],
+    },
     handler: async (ctx) => {
       const { apiKeysListCommand } = await import("../commands/api-keys.js");
       await apiKeysListCommand({ json: ctx.opts.json as boolean | undefined });
@@ -156,6 +161,7 @@ export const adminCommands: CommandDef[] = [
   {
     name: "api-keys create",
     description: "Create a new API key",
+    route: { method: "POST", path: "/v1/api-keys" },
     options: [
       { flags: "--name <name>", description: "Key name/label", required: true },
       { flags: "--scopes <scopes>", description: "Comma-separated scopes" },
@@ -175,6 +181,7 @@ export const adminCommands: CommandDef[] = [
   {
     name: "api-keys revoke",
     description: "Revoke an API key",
+    route: { method: "DELETE", path: "/v1/api-keys/{pos}" },
     args: [
       { name: "key-id", required: true, description: "API key ID to revoke" },
     ],
@@ -193,6 +200,7 @@ export const adminCommands: CommandDef[] = [
   {
     name: "api-keys rotate",
     description: "Rotate an API key (returns new key)",
+    route: { method: "POST", path: "/v1/api-keys/{pos}/rotate" },
     args: [
       { name: "key-id", required: true, description: "API key ID to rotate" },
     ],
@@ -213,6 +221,7 @@ export const adminCommands: CommandDef[] = [
   {
     name: "link",
     description: "Link workspace to an external provider",
+    route: { method: "POST", path: "/v1/workspaces/link" },
     options: [
       { flags: "--external-id <id>", description: "External ID to link", required: true },
       { flags: "--provider <provider>", description: "Provider name (e.g. stripe, github)", required: true },
@@ -230,6 +239,7 @@ export const adminCommands: CommandDef[] = [
   {
     name: "claim",
     description: "Redeem a claim code to join a workspace",
+    route: { method: "POST", path: "/v1/entities/claim" },
     args: [
       { name: "code", required: true, description: "Claim code to redeem" },
     ],
@@ -244,6 +254,7 @@ export const adminCommands: CommandDef[] = [
   {
     name: "feedback",
     description: "Submit feedback to TheCorporation",
+    route: { method: "POST", path: "/v1/feedback" },
     args: [
       { name: "message", required: true, description: "Feedback message" },
     ],

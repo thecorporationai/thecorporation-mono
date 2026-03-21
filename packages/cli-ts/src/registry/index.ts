@@ -43,35 +43,29 @@ export function generateWebRoutes(commands: CommandDef[]): { commands: Record<st
     if (cmd.hidden) continue;
     if (cmd.local) {
       entries[cmd.name] = { local: true };
-    } else if (cmd.display && cmd.handler && cmd.route) {
-      entries[cmd.name] = attachProducesFields({
-        method: cmd.route.method,
-        path: cmd.route.path,
-        ...(cmd.entity !== undefined && { entity: cmd.entity }),
-        title: cmd.display.title,
-        ...(cmd.display.cols && { cols: cmd.display.cols }),
-        ...(cmd.display.listKey && { listKey: cmd.display.listKey }),
-        ...(cmd.optQP && { optQP: cmd.optQP }),
-        custom: true,
-      }, cmd);
-    } else if (cmd.display && !cmd.handler && cmd.route) {
-      entries[cmd.name] = attachProducesFields({
-        method: cmd.route.method,
-        path: cmd.route.path,
-        ...(cmd.entity !== undefined && { entity: cmd.entity }),
-        title: cmd.display.title,
-        ...(cmd.display.cols && { cols: cmd.display.cols }),
-        ...(cmd.display.listKey && { listKey: cmd.display.listKey }),
-        ...(cmd.optQP && { optQP: cmd.optQP }),
-      }, cmd);
-    } else if (cmd.route && cmd.route.method !== "GET") {
-      entries[cmd.name] = attachProducesFields(
-        { method: cmd.route.method, write: true },
-        cmd,
-      );
-    } else if (cmd.handler && !cmd.local) {
-      entries[cmd.name] = attachProducesFields({ custom: true }, cmd);
+      continue;
     }
+    const entry: WebRouteEntry = {};
+    // Route info — always emit path when available so the web generic executor can use it
+    if (cmd.route) {
+      entry.method = cmd.route.method;
+      entry.path = cmd.route.path;
+      if (cmd.route.method !== "GET") entry.write = true;
+    }
+    // Entity scoping
+    if (cmd.entity !== undefined) entry.entity = cmd.entity;
+    // Display metadata
+    if (cmd.display) {
+      entry.title = cmd.display.title;
+      if (cmd.display.cols) entry.cols = cmd.display.cols;
+      if (cmd.display.listKey) entry.listKey = cmd.display.listKey;
+    }
+    if (cmd.optQP) entry.optQP = cmd.optQP;
+    // Custom handler flag — tells web CLI a CUSTOM handler should override generic
+    if (cmd.handler) entry.custom = true;
+    // Skip commands with no route and no handler (nothing the web CLI can do)
+    if (!cmd.route && !cmd.handler) continue;
+    entries[cmd.name] = attachProducesFields(entry, cmd);
   }
   return { commands: entries };
 }

@@ -343,6 +343,8 @@ export const workspaceCommands: CommandDef[] = [
   {
     name: "digest",
     description: "View or trigger daily digests",
+    route: { method: "GET", path: "/v1/digests" },
+    display: { title: "Digests" },
     options: [
       { flags: "--trigger", description: "Trigger digest now" },
       { flags: "--key <key>", description: "Get specific digest by key" },
