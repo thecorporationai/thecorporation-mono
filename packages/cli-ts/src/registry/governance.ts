@@ -764,12 +764,14 @@ export const governanceCommands: CommandDef[] = [
         await ctx.client.conveneMeeting(meetingId, eid, { present_seat_ids: seatIds });
       }
 
-      // Step 4: Cast votes — all seated members vote "for"
-      for (const seatId of seatIds) {
+      // Step 4: Cast votes — each seat's holder votes "for"
+      for (const seat of filledSeats) {
+        const voterId = String(seat.holder_id);
+        if (!voterId) continue;
         try {
           await ctx.client.castVote(eid, meetingId, itemId, {
-            seat_id: seatId,
-            vote: "for",
+            voter_id: voterId,
+            vote_value: "for",
           });
         } catch {
           // Seat may have already voted or be ineligible — continue
