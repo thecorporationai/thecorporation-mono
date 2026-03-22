@@ -374,6 +374,14 @@ mod tests {
         }
     }
 
+    const TEST_JWT_SECRET: &[u8] = b"dev-secret-do-not-use-in-production";
+
+    impl FromRef<TestState> for Arc<[u8]> {
+        fn from_ref(_state: &TestState) -> Arc<[u8]> {
+            Arc::from(TEST_JWT_SECRET)
+        }
+    }
+
     /// Helper: extract Principal from a request with the given Authorization header.
     async fn extract_principal(auth_value: &str) -> Result<Principal, AuthRejection> {
         let state = TestState::new();
