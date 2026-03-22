@@ -1294,6 +1294,7 @@ export const capTableCommands: CommandDef[] = [
     name: "equity grants",
     description: "Issue an equity grant (options, RSUs, etc.)",
     route: { method: "POST", path: "/v1/equity/grants" },
+    entity: true,
     options: [
       { flags: "--grant-type <grant-type>", description: "The type of equity grant.", required: true, choices: ["common", "common_stock", "preferred", "preferred_stock", "membership_unit", "stock_option", "iso", "nso", "rsa", "svu"] },
       { flags: "--recipient-name <recipient-name>", description: "Payment recipient name", required: true },
