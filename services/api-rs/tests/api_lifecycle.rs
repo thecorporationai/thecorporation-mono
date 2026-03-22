@@ -64,6 +64,7 @@ fn build_app(tmp: &TempDir) -> Router {
         storage_backend: api_rs::store::StorageBackendKind::Git,
         valkey_client: None,
         ssh_key_index: Arc::new(api_rs::domain::auth::ssh_key::SshKeyIndex::empty()),
+        s3_backend: None,
     };
 
     Router::new()

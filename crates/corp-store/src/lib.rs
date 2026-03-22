@@ -55,6 +55,9 @@ pub mod merge;
 pub mod oid;
 pub mod store;
 
+#[cfg(feature = "s3")]
+pub mod s3_backend;
+
 pub use error::StoreError;
 pub use oid::DualOid;
 pub use store::GitObjectType;

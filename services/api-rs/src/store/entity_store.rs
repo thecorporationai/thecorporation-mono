@@ -44,6 +44,7 @@ enum Backend {
         con: Rc<RefCell<redis::Connection>>,
         ws: String,
         ent: String,
+        durable: Option<std::sync::Arc<corp_store::s3_backend::S3Backend>>,
     },
 }
 
@@ -92,6 +93,7 @@ impl<'a> EntityStore<'a> {
                     con: Rc::new(RefCell::new(con)),
                     ws,
                     ent,
+                    durable: None,
                 }
             }
         };
@@ -129,6 +131,7 @@ impl<'a> EntityStore<'a> {
                     con: Rc::new(RefCell::new(con)),
                     ws,
                     ent,
+                    durable: None,
                 }
             }
         };
@@ -165,7 +168,7 @@ impl<'a> EntityStore<'a> {
                         Err(e) => return Err(GitStorageError::from(e)),
                     }
                 }
-                Backend::Valkey { con, ws, ent }
+                Backend::Valkey { con, ws, ent, durable: None }
             }
         };
         Ok(Self { backend, layout })
@@ -207,6 +210,15 @@ impl<'a> EntityStore<'a> {
         files: Vec<FileWrite>,
     ) -> Result<(), GitStorageError> {
         self.dispatch_commit(branch, message, &files)
+    }
+
+    /// Attach an S3 durable backend to this store.
+    /// When set, all writes go to S3 first (two-phase durable commit).
+    pub fn with_durable(mut self, s3: Option<std::sync::Arc<corp_store::s3_backend::S3Backend>>) -> Self {
+        if let Backend::Valkey { ref mut durable, .. } = self.backend {
+            *durable = s3;
+        }
+        self
     }
 
     /// Get the layout reference.
@@ -395,7 +407,7 @@ impl<'a> EntityStore<'a> {
     pub fn read_blob(&self, branch: &str, path: &str) -> Result<Vec<u8>, GitStorageError> {
         match &self.backend {
             Backend::Git { repo } => repo.read_blob(branch, path),
-            Backend::Valkey { con, ws, ent } => {
+            Backend::Valkey { con, ws, ent, .. } => {
                 let mut con = con.borrow_mut();
                 Ok(corp_store::store::read_blob(&mut *con, ws, ent, branch, path)?)
             }
@@ -436,7 +448,7 @@ impl<'a> EntityStore<'a> {
     pub fn path_exists(&self, branch: &str, path: &str) -> Result<bool, GitStorageError> {
         match &self.backend {
             Backend::Git { repo } => repo.path_exists(branch, path),
-            Backend::Valkey { con, ws, ent } => {
+            Backend::Valkey { con, ws, ent, .. } => {
                 let mut con = con.borrow_mut();
                 Ok(corp_store::store::path_exists(
                     &mut *con, ws, ent, branch, path,
@@ -493,7 +505,7 @@ impl<'a> EntityStore<'a> {
                     head_oid: info.head_oid.to_string(),
                 })
             }
-            Backend::Valkey { con, ws, ent } => {
+            Backend::Valkey { con, ws, ent, .. } => {
                 let mut con = con.borrow_mut();
                 let info =
                     corp_store::branch::create_branch(&mut *con, ws, ent, name, from_ref)?;
@@ -518,7 +530,7 @@ impl<'a> EntityStore<'a> {
                     })
                     .collect())
             }
-            Backend::Valkey { con, ws, ent } => {
+            Backend::Valkey { con, ws, ent, .. } => {
                 let mut con = con.borrow_mut();
                 let branches = corp_store::branch::list_branches(&mut *con, ws, ent)?;
                 Ok(branches
@@ -536,7 +548,7 @@ impl<'a> EntityStore<'a> {
     pub fn delete_branch(&self, name: &str) -> Result<(), GitStorageError> {
         match &self.backend {
             Backend::Git { repo } => crate::git::branch::delete_branch(repo, name),
-            Backend::Valkey { con, ws, ent } => {
+            Backend::Valkey { con, ws, ent, .. } => {
                 let mut con = con.borrow_mut();
                 Ok(corp_store::branch::delete_branch(&mut *con, ws, ent, name)?)
             }
@@ -578,7 +590,7 @@ impl<'a> EntityStore<'a> {
                     }
                 })
             }
-            Backend::Valkey { con, ws, ent } => {
+            Backend::Valkey { con, ws, ent, .. } => {
                 let mut con = con.borrow_mut();
                 let result = if squash {
                     corp_store::merge::merge_branch_squash(
@@ -614,7 +626,7 @@ impl<'a> EntityStore<'a> {
     ) -> Result<T, GitStorageError> {
         match &self.backend {
             Backend::Git { repo } => repo.read_json(branch, path),
-            Backend::Valkey { con, ws, ent } => {
+            Backend::Valkey { con, ws, ent, .. } => {
                 let mut con = con.borrow_mut();
                 Ok(corp_store::store::read_json(&mut *con, ws, ent, branch, path)?)
             }
@@ -632,22 +644,38 @@ impl<'a> EntityStore<'a> {
                 commit_files(repo, branch, message, files, None)?;
                 Ok(())
             }
-            Backend::Valkey { con, ws, ent } => {
+            Backend::Valkey { con, ws, ent, durable } => {
                 let mut con = con.borrow_mut();
                 let vfiles: Vec<corp_store::entry::FileWrite> = files
                     .iter()
                     .map(|f| corp_store::entry::FileWrite::new(&f.path, f.content.clone()))
                     .collect();
-                corp_store::store::commit_files(
-                    &mut *con,
-                    ws,
-                    ent,
-                    branch,
-                    message,
-                    &vfiles,
-                    None,
-                    chrono::Utc::now(),
-                )?;
+                if let Some(s3) = durable {
+                    // Two-phase durable commit: S3 first, then Valkey.
+                    corp_store::durable::durable_commit_files(
+                        &mut *con,
+                        s3.as_ref(),
+                        ws,
+                        ent,
+                        branch,
+                        message,
+                        &vfiles,
+                        None,
+                        chrono::Utc::now(),
+                    )?;
+                } else {
+                    // Valkey-only (no durable backend).
+                    corp_store::store::commit_files(
+                        &mut *con,
+                        ws,
+                        ent,
+                        branch,
+                        message,
+                        &vfiles,
+                        None,
+                        chrono::Utc::now(),
+                    )?;
+                }
                 Ok(())
             }
         }
@@ -660,7 +688,7 @@ impl<'a> EntityStore<'a> {
     ) -> Result<Vec<(String, bool)>, GitStorageError> {
         match &self.backend {
             Backend::Git { repo } => repo.list_dir(branch, dir_path),
-            Backend::Valkey { con, ws, ent } => {
+            Backend::Valkey { con, ws, ent, .. } => {
                 let mut con = con.borrow_mut();
                 Ok(corp_store::store::list_dir(
                     &mut *con, ws, ent, branch, dir_path,

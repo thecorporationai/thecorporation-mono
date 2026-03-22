@@ -82,6 +82,10 @@ pub struct AppState {
     pub valkey_client: Option<redis::Client>,
     /// In-memory SSH public key fingerprint index for O(1) auth lookups.
     pub ssh_key_index: Arc<SshKeyIndex>,
+    /// Optional S3 durable backend. When present, every Valkey write is
+    /// persisted to S3 first (two-phase commit). Valkey becomes a
+    /// rebuildable materialized index.
+    pub s3_backend: Option<Arc<corp_store::s3_backend::S3Backend>>,
 }
 
 #[derive(Default)]

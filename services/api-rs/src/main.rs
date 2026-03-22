@@ -331,6 +331,23 @@ fn init_state(skip_validation: bool) -> routes::AppState {
         domain::auth::ssh_key::SshKeyIndex::build(&layout, valkey_client.as_ref()),
     );
 
+    // S3 durable backend (opt-in via S3_BUCKET env var)
+    let s3_backend = if std::env::var("S3_BUCKET").is_ok() {
+        match corp_store::s3_backend::S3Backend::from_env() {
+            Ok(backend) => {
+                tracing::info!("S3 durable backend enabled");
+                Some(Arc::new(backend))
+            }
+            Err(e) => {
+                tracing::warn!("S3 durable backend init failed, running without durability: {e}");
+                None
+            }
+        }
+    } else {
+        tracing::info!("S3_BUCKET not set — running without durable backend");
+        None
+    };
+
     routes::AppState {
         layout,
         jwt_secret,
@@ -345,6 +362,7 @@ fn init_state(skip_validation: bool) -> routes::AppState {
         storage_backend,
         valkey_client,
         ssh_key_index,
+        s3_backend,
     }
 }
 
