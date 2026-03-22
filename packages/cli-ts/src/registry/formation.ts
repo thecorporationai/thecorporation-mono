@@ -267,11 +267,30 @@ async function formFinalizeHandler(ctx: CommandContext): Promise<void> {
     }
   } catch (err) {
     const msg = String(err);
+    // Collect all missing-field hints and show them at once
+    const hints: string[] = [];
+    if (msg.includes("incorporator_address")) {
+      hints.push('--incorporator-address "123 Main St,City,ST,12345"');
+    }
+    if (msg.includes("company_address")) {
+      hints.push('--company-address "123 Main St,City,ST,12345"');
+    }
+    if (msg.includes("principal_name")) {
+      hints.push('--principal-name "Managing Member Name"');
+    }
     if (msg.includes("officers_list") || msg.includes("officer")) {
+      hints.push("Add a founder with --officer-title: corp form add-founder @last --role director --officer-title ceo ...");
+    }
+    if (msg.includes("incorporator_name")) {
+      hints.push('--incorporator-name "Incorporator Name"');
+    }
+    if (hints.length > 0) {
       printError(
-        `Finalization failed: ${msg}\n` +
-        "  Hint: C-Corp entities require at least one founder with an officer_title.\n" +
-        "  Add a founder with: corp form add-founder @last:entity --name '...' --email '...' --role director --pct 100 --officer-title ceo",
+        `Finalization failed: ${msg}\n\n` +
+        "  To fix, re-run finalize with the missing fields:\n" +
+        hints.map((h) => `    ${h}`).join("\n") + "\n\n" +
+        "  Example:\n" +
+        `    corp form finalize @last ${hints.filter((h) => h.startsWith("--")).join(" ")}`,
       );
     } else {
       printError(`Failed to finalize formation: ${err}`);

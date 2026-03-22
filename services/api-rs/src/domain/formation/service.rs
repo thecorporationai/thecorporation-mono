@@ -1110,7 +1110,25 @@ fn generate_ast_formation_documents(
 ) -> Result<Vec<Document>, FormationError> {
     let ast = doc_ast::default_doc_ast();
     let mut documents = Vec::new();
-    for (governance_tag, document_type) in formation_document_bindings(entity.entity_type()) {
+    // Validate ALL documents first, collecting all errors at once
+    let mut all_errors: Vec<String> = Vec::new();
+    let bindings = formation_document_bindings(entity.entity_type());
+    for (governance_tag, _) in &bindings {
+        let mut content = serde_json::json!({});
+        let signature_requirements =
+            formation_signature_requirements(entity.entity_type(), governance_tag, members);
+        if !signature_requirements.is_empty() {
+            content["signature_requirements"] = serde_json::Value::Array(signature_requirements);
+        }
+        if let Err(e) = validate_ast_document(entity.entity_type(), governance_tag, profile, &content) {
+            all_errors.push(e.to_string());
+        }
+    }
+    if !all_errors.is_empty() {
+        return Err(FormationError::Validation(all_errors.join("; ")));
+    }
+    // Now generate documents (all validated)
+    for (governance_tag, document_type) in bindings {
         let doc_def = ast
             .documents
             .iter()
@@ -1123,11 +1141,10 @@ fn generate_ast_formation_documents(
             })?;
         let mut content = serde_json::json!({});
         let signature_requirements =
-            formation_signature_requirements(entity.entity_type(), governance_tag, members);
+            formation_signature_requirements(entity.entity_type(), &governance_tag, members);
         if !signature_requirements.is_empty() {
             content["signature_requirements"] = serde_json::Value::Array(signature_requirements);
         }
-        validate_ast_document(entity.entity_type(), governance_tag, profile, &content)?;
         documents.push(Document::new(
             DocumentId::new(),
             entity.entity_id(),

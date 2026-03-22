@@ -688,12 +688,24 @@ export async function formCommand(opts: FormOptions): Promise<void> {
   } catch (err) {
     if (err instanceof Error && err.message.includes("exit")) throw err;
     const msg = String(err);
+    const hints: string[] = [];
+    if (msg.includes("incorporator_address")) {
+      hints.push("Add an address to a founder: --member \"Name,email,director,100,street|city|state|zip,ceo,true\"");
+    }
+    if (msg.includes("company_address")) {
+      hints.push("Add --address \"street,city,state,zip\" for the company address (required for C-Corps)");
+    }
+    if (msg.includes("principal_name")) {
+      hints.push("Add --principal-name \"Manager Name\" (auto-set from first member for LLCs)");
+    }
     if (msg.includes("officers_list") || msg.includes("officer")) {
+      hints.push("C-Corp directors need an officer_title: --member \"Name,email,director,100,,,ceo\"");
+    }
+    if (hints.length > 0) {
       printError(
-        `Formation failed: ${msg}\n` +
-        "  Hint: C-Corp directors need an officer_title. Use --member with officer_title field, e.g.:\n" +
-        "    --member 'name=Alice,email=a@co.com,role=director,officer_title=ceo,pct=100'\n" +
-        "  Or use --member-json with {\"officer_title\": \"ceo\"}",
+        `Formation failed: ${msg}\n\n` +
+        "  Missing fields — fix all at once:\n" +
+        hints.map((h) => `    - ${h}`).join("\n"),
       );
     } else {
       printError(`Failed to create formation: ${err}`);
