@@ -16,11 +16,13 @@
 use axum::{
     Router,
     body::Body,
-    extract::{Path, Query, State},
+    extract::{DefaultBodyLimit, Path, Query, State},
     http::Response,
     routing::{get, post},
 };
 use serde::Deserialize;
+
+use crate::git::pack::MAX_PACK_SIZE;
 
 use super::AppState;
 use crate::auth::Principal;
@@ -228,4 +230,8 @@ pub fn git_http_routes() -> Router<AppState> {
             "/git/{workspace_id}/{repo}/git-receive-pack",
             post(receive_pack),
         )
+        // Git protocol routes need larger body limits than the default 2MB.
+        // MAX_PACK_SIZE (2 GB) is the upper bound; individual blob/object
+        // limits are enforced in pack.rs during parsing.
+        .layer(DefaultBodyLimit::max(MAX_PACK_SIZE))
 }

@@ -14,6 +14,14 @@ use flate2::write::ZlibEncoder;
 use flate2::Compression;
 use sha1::Digest;
 
+/// Maximum size of a single blob object (10 MB).
+/// Corp data is structured JSON/text — anything larger is likely a mistake.
+pub const MAX_BLOB_SIZE: u64 = 10 * 1024 * 1024;
+
+/// Maximum total pack upload size (2 GB).
+/// This caps the raw data a single push can transmit.
+pub const MAX_PACK_SIZE: usize = 2 * 1024 * 1024 * 1024;
+
 /// A parsed git object from a pack.
 #[derive(Debug, Clone)]
 pub struct PackObject {
@@ -34,6 +42,14 @@ pub struct PackObject {
 /// return an error — the server should NOT advertise `ofs-delta` to
 /// prevent clients from sending deltas.
 pub fn parse_pack(data: &[u8]) -> Result<Vec<PackObject>, String> {
+    if data.len() > MAX_PACK_SIZE {
+        return Err(format!(
+            "pack size {} bytes exceeds maximum allowed {} bytes ({})",
+            data.len(),
+            MAX_PACK_SIZE,
+            "2 GB"
+        ));
+    }
     if data.len() < 12 {
         return Err("pack too short for header".to_owned());
     }
@@ -103,6 +119,15 @@ pub fn parse_pack(data: &[u8]) -> Result<Vec<PackObject>, String> {
             return Err(format!(
                 "decompressed size mismatch: expected {size}, got {}",
                 content.len()
+            ));
+        }
+
+        // Enforce blob size limit.
+        if obj_type == GitObjectType::Blob && size > MAX_BLOB_SIZE {
+            return Err(format!(
+                "blob object is {} bytes, which exceeds the {} byte limit (10 MB). \
+                 Corp repos are for structured data — large files should be stored elsewhere.",
+                size, MAX_BLOB_SIZE
             ));
         }
 

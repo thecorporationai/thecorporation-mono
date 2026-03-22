@@ -186,8 +186,16 @@ pub fn receive_pack(
         ));
     }
 
-    // Parse PACK data from remaining body.
+    // Enforce pack size limit before parsing.
     let pack_data = &body[pos..];
+    if pack_data.len() > pack::MAX_PACK_SIZE {
+        return Err(GitProtocolError::SubprocessError(format!(
+            "push rejected: pack data is {} bytes, exceeds 2 GB limit",
+            pack_data.len()
+        )));
+    }
+
+    // Parse PACK data.
     let objects = if pack_data.len() >= 12 && &pack_data[0..4] == b"PACK" {
         let parsed = pack::parse_pack(pack_data)
             .map_err(|e| GitProtocolError::SubprocessError(format!("parse pack: {e}")))?;
