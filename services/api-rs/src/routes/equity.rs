@@ -2563,7 +2563,7 @@ async fn create_legal_entity(
         let valkey_client = state.valkey_client.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id, valkey_client.as_ref())?;
-            // Enforce unique legal entity names within an entity
+            // Idempotent: if a legal entity with the same name and role exists, return it
             let existing_ids = store
                 .list_ids::<LegalEntity>("main")
                 .unwrap_or_default();
@@ -2571,10 +2571,7 @@ async fn create_legal_entity(
             for existing_id in existing_ids {
                 if let Ok(existing) = store.read::<LegalEntity>("main", existing_id) {
                     if existing.name().trim().to_lowercase() == normalized_name {
-                        return Err(AppError::Conflict(format!(
-                            "a legal entity named '{}' already exists",
-                            existing.name()
-                        )));
+                        return Ok(existing);
                     }
                 }
             }
