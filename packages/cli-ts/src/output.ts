@@ -665,7 +665,7 @@ export function printSeatsTable(seats: ApiRecord[]): void {
   for (const st of seats) {
     table.push([
       formatReferenceCell("seat", st),
-      s(st.holder_name ?? st.holder),
+      s(st.holder_name ?? st.holder ?? st.holder_id),
       s(st.role),
       s(st.status),
     ]);

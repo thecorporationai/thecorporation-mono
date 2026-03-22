@@ -61,6 +61,7 @@ export function buildCLI(commands: CommandDef[], version: string): Command {
       // Parent not explicitly defined — create a stub so children have a home.
       const parentDescriptions: Record<string, string> = {
         workspaces: "Workspace management",
+        workspace: "Workspace settings",
         equity: "Equity system (low-level grants, holders, instruments)",
         execution: "Execution intents, obligations, and approval artifacts",
         meetings: "Meeting management (convene, adjourn, notice)",
@@ -74,15 +75,27 @@ export function buildCLI(commands: CommandDef[], version: string): Command {
         intents: "Execution intent management",
         "bank-accounts": "Bank account management",
         "journal-entries": "Ledger journal entries",
-        ledger: "Ledger operations",
+        ledger: "Ledger operations and reconciliation",
         payroll: "Payroll runs",
+        payments: "Payment submission and tracking",
+        invoices: "Invoice management",
         treasury: "Treasury, invoices, payments, and payouts",
         "governance-seats": "Governance seat management",
+        "governance-bodies": "Governance body management",
         "human-obligations": "Human obligation fulfillment",
         "ssh-keys": "SSH key management",
         "secret-proxies": "Secret proxy configuration",
         formations: "Formation workflows (low-level API)",
         valuations: "Valuation management",
+        branches: "Git branch management",
+        digests: "Digest generation and viewing",
+        obligations: "Obligation tracking and fulfillment",
+        "spending-limits": "Spending limit management",
+        receipts: "Execution receipts",
+        "share-transfers": "Share transfer workflows",
+        "safe-notes": "SAFE note management",
+        distributions: "Distribution management",
+        deadlines: "Compliance deadline management",
       };
       parentCmd = program.command(parentName).description(parentDescriptions[parentName] ?? "");
       parentCmds.set(parentName, parentCmd);

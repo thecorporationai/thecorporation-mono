@@ -751,14 +751,18 @@ export const governanceCommands: CommandDef[] = [
       }
       const itemId = String((agendaItems[0] as ApiRecord).agenda_item_id);
 
-      // Step 3: Convene (open) the meeting with all seats present, then auto-vote
+      // Step 3: Convene (open) the meeting if not already convened
       const seats = await ctx.client.getGovernanceSeats(resolvedBodyId, eid);
       const filledSeats = seats.filter((s: ApiRecord) => s.status === "filled" || s.status === "active");
       const seatIds = filledSeats.map((s: ApiRecord) => String(s.seat_id));
       if (seatIds.length === 0) {
         throw new Error("No filled seats found on this governance body. Add seats first: corp governance add-seat <body-ref>");
       }
-      await ctx.client.conveneMeeting(meetingId, eid, { present_seat_ids: seatIds });
+      // Written consent creates meetings already in "convened" state — skip if so
+      const meetingStatus = consentResult.data?.status ?? consentResult.data?.meeting_status;
+      if (meetingStatus !== "convened") {
+        await ctx.client.conveneMeeting(meetingId, eid, { present_seat_ids: seatIds });
+      }
 
       // Step 4: Cast votes — all seated members vote "for"
       for (const seatId of seatIds) {
