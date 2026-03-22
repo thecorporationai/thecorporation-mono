@@ -27,7 +27,7 @@
     "@thecorporation/server-darwin-arm64": "26.3.24",
     "@thecorporation/server-darwin-x64": "26.3.24",
     "@thecorporation/server-linux-arm64-gnu": "26.3.24",
-    "@thecorporation/server-linux-x64-gnu": "^26.3.24",
+    "@thecorporation/server-linux-x64-gnu": "26.3.24",
     "@thecorporation/server-win32-x64-msvc": "26.3.24"
   },
   "devDependencies": {

@@ -37,7 +37,7 @@ export async function serveCommand(opts: ServeOptions): Promise<void> {
   }
 
   const port = parseInt(opts.port, 10);
-  if (isNaN(port) || port > 65535) {
+  if (isNaN(port) || port < 1 || port > 65535) {
     console.error(`Error: Invalid port "${opts.port}"`);
     process.exit(1);
   }

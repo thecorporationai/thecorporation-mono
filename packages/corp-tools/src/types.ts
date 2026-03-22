@@ -1,3 +1,5 @@
+export type CapTableInstrument = { instrument_id: string; kind: string; symbol: string; status?: string };
+
 export interface CorpConfig {
   api_url: string;
   api_key: string;

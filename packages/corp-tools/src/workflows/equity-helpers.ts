@@ -4,9 +4,9 @@
 // ---------------------------------------------------------------------------
 
 import type { CorpAPIClient } from "../api-client.js";
-import type { CapTableInstrument } from "../tools.js";
+import type { CapTableInstrument } from "../types.js";
 
-export type { CapTableInstrument } from "../tools.js";
+export type { CapTableInstrument } from "../types.js";
 
 // ---------------------------------------------------------------------------
 // Grant-type normalization
@@ -39,6 +39,11 @@ export function expectedInstrumentKinds(grantType: string): string[] {
       return ["option_grant"];
     case "rsa":
       return ["common_equity", "preferred_equity"];
+    case "safe":
+    case "post_money":
+    case "pre_money":
+    case "mfn":
+      return ["safe"];
     default:
       return [];
   }

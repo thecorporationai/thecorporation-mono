@@ -1,7 +1,6 @@
 import type { CommandDef, CommandContext } from "./types.js";
 import {
   printDocumentsTable,
-  printError,
   printReferenceSummary,
   printSuccess,
   printJson,
@@ -86,13 +85,11 @@ export const documentCommands: CommandDef[] = [
       try {
         resolvedDocumentId = await ctx.resolver.resolveDocument(eid, docRef);
       } catch {
-        printError(
+        throw new Error(
           `Could not resolve '${docRef}' as a document. If you just generated a contract, ` +
           "use the document_id from the generate output, not @last (which may reference the contract_id).\n" +
           "  List documents with: corp documents",
         );
-        process.exit(1);
-        return;
       }
       const result = await ctx.client.getSigningLink(resolvedDocumentId, eid);
       const shareUrl = formatSigningLink(resolvedDocumentId, result);
@@ -252,7 +249,7 @@ export const documentCommands: CommandDef[] = [
       } catch (err) {
         const msg = String(err);
         if (template === "employment_offer" && (msg.includes("base_salary") || msg.includes("required"))) {
-          printError(
+          throw new Error(
             `Failed to generate employment_offer: ${msg}\n` +
             "  Hint: employment_offer requires base_salary. Use:\n" +
             "    --base-salary 150000\n" +
@@ -261,16 +258,15 @@ export const documentCommands: CommandDef[] = [
             "    bonus_terms, equity_terms, benefits_summary, governing_law",
           );
         } else if (template === "safe_agreement" && (msg.includes("purchase_amount") || msg.includes("investment_amount") || msg.includes("valuation_cap") || msg.includes("investor_notice") || msg.includes("required"))) {
-          printError(
+          throw new Error(
             `Failed to generate safe_agreement: ${msg}\n` +
             "  Hint: safe_agreement requires purchase_amount, valuation_cap, and investor_notice_address. Use:\n" +
             "    --param purchase_amount=50000000 --param valuation_cap=10000000\n" +
             '    --param investor_notice_address="123 Main St, City, ST 12345"',
           );
         } else {
-          printError(`Failed to generate contract: ${err}`);
+          throw new Error(`Failed to generate contract: ${err}`);
         }
-        process.exit(1);
       }
     },
     produces: { kind: "document" },
@@ -291,8 +287,7 @@ export const documentCommands: CommandDef[] = [
     handler: async (ctx) => {
       const documentId = (ctx.opts.definitionId as string | undefined) ?? (ctx.opts.documentId as string | undefined);
       if (!documentId || documentId.trim().length === 0) {
-        printError("preview-pdf requires --definition-id (or deprecated alias --document-id)");
-        process.exit(1);
+        throw new Error("preview-pdf requires --definition-id (or deprecated alias --document-id)");
       }
       const eid = await ctx.resolver.resolveEntity(ctx.opts.entityId as string | undefined);
       await ctx.client.validatePreviewPdf(eid, documentId);

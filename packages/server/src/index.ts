@@ -141,8 +141,12 @@ export function startServer(options: StartServerOptions = {}): ChildProcess {
  *
  * Resolution order:
  * 1. CORP_WORKER_BIN environment variable
- * 2. Platform-specific npm package (installed via optionalDependencies)
- * 3. Local dev build at services/agent-worker/target/release/agent-worker
+ * 2. Local dev build at services/agent-worker/target/release/agent-worker
+ *
+ * Note: agent-worker does not have its own npm platform packages yet (dev-build
+ * only). PLATFORM_PACKAGES maps to server binaries, so we intentionally skip
+ * the npm-package lookup here to avoid finding a stale server binary at the
+ * wrong path.
  */
 export function getWorkerBinaryPath(): string | null {
   // 1. Explicit env override
@@ -151,22 +155,7 @@ export function getWorkerBinaryPath(): string | null {
     return envBin;
   }
 
-  // 2. Platform npm package
-  const key = getPlatformKey();
-  const pkg = PLATFORM_PACKAGES[key];
-  if (pkg) {
-    try {
-      const pkgDir = resolve(require.resolve(`${pkg}/package.json`), "..");
-      const binPath = join(pkgDir, "bin", getWorkerBinaryName());
-      if (existsSync(binPath)) {
-        return binPath;
-      }
-    } catch {
-      // Package not installed — fall through
-    }
-  }
-
-  // 3. Local dev build (monorepo layout)
+  // 2. Local dev build (monorepo layout)
   const devBuild = resolve(__dirname, "..", "..", "services", "agent-worker", "target", "release", getWorkerBinaryName());
   if (existsSync(devBuild)) {
     return devBuild;

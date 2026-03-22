@@ -4,6 +4,9 @@ import { execSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { resolve, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { createRequire } from "node:module";
+
+const require = createRequire(import.meta.url);
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 

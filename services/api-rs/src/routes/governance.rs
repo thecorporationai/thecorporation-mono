@@ -82,7 +82,6 @@ use crate::routes::governance_enforcement::{
     set_mode_with_history,
 };
 use crate::store::entity_store::EntityStore;
-use crate::store::stored_entity::StoredEntity;
 
 // ── Query types ──────────────────────────────────────────────────────
 
@@ -556,21 +555,6 @@ fn incident_to_response(incident: &GovernanceIncident) -> IncidentResponse {
 }
 
 
-fn read_all<T: StoredEntity>(store: &EntityStore<'_>) -> Result<Vec<T>, AppError> {
-    let ids = store
-        .list_ids::<T>("main")
-        .map_err(|e| AppError::Internal(format!("list {}: {e}", T::storage_dir())))?;
-
-    let mut records = Vec::new();
-    for id in ids {
-        let record = store
-            .read::<T>("main", id)
-            .map_err(|e| AppError::Internal(format!("read {} {}: {e}", T::storage_dir(), id)))?;
-        records.push(record);
-    }
-    Ok(records)
-}
-
 fn validate_meeting_type_for_body(
     body_type: BodyType,
     meeting_type: MeetingType,
@@ -721,7 +705,7 @@ fn eligible_voting_power_for_body(
     store: &EntityStore<'_>,
     body_id: GovernanceBodyId,
 ) -> Result<u32, AppError> {
-    Ok(read_all::<GovernanceSeat>(store)?
+    Ok(store.read_all::<GovernanceSeat>("main").map_err(|e| AppError::Internal(e.to_string()))?
         .into_iter()
         .filter(|seat| seat.body_id() == body_id && seat.can_vote())
         .map(|seat| seat.voting_power().raw())
@@ -732,7 +716,7 @@ fn ensure_meeting_can_be_cancelled(
     store: &EntityStore<'_>,
     meeting: &Meeting,
 ) -> Result<(), AppError> {
-    for round in read_all::<EquityRound>(store)? {
+    for round in store.read_all::<EquityRound>("main").map_err(|e| AppError::Internal(e.to_string()))? {
         if round.board_approval_meeting_id() == Some(meeting.meeting_id())
             && !matches!(
                 round.status(),
@@ -747,7 +731,7 @@ fn ensure_meeting_can_be_cancelled(
         }
     }
 
-    for workflow in read_all::<TransferWorkflow>(store)? {
+    for workflow in store.read_all::<TransferWorkflow>("main").map_err(|e| AppError::Internal(e.to_string()))? {
         if workflow.board_approval_meeting_id() == Some(meeting.meeting_id())
             && !matches!(
                 workflow.execution_status(),
@@ -764,7 +748,7 @@ fn ensure_meeting_can_be_cancelled(
         }
     }
 
-    for workflow in read_all::<FundraisingWorkflow>(store)? {
+    for workflow in store.read_all::<FundraisingWorkflow>("main").map_err(|e| AppError::Internal(e.to_string()))? {
         if workflow.board_approval_meeting_id() == Some(meeting.meeting_id())
             && !matches!(
                 workflow.execution_status(),
@@ -781,7 +765,7 @@ fn ensure_meeting_can_be_cancelled(
         }
     }
 
-    for valuation in read_all::<Valuation>(store)? {
+    for valuation in store.read_all::<Valuation>("main").map_err(|e| AppError::Internal(e.to_string()))? {
         if valuation.board_approval_meeting_id() == Some(meeting.meeting_id())
             && valuation.status() == ValuationStatus::PendingApproval
         {
@@ -793,7 +777,7 @@ fn ensure_meeting_can_be_cancelled(
         }
     }
 
-    for safe_note in read_all::<SafeNote>(store)? {
+    for safe_note in store.read_all::<SafeNote>("main").map_err(|e| AppError::Internal(e.to_string()))? {
         if safe_note.board_approval_meeting_id() == Some(meeting.meeting_id())
             && safe_note.status() == SafeStatus::Issued
         {
@@ -816,7 +800,7 @@ fn ensure_meeting_can_be_cancelled(
         })
         .any(|item| item.title().starts_with("Approve 409A Valuation"));
     if has_legacy_409a_agenda
-        && read_all::<Valuation>(store)?.into_iter().any(|valuation| {
+        && store.read_all::<Valuation>("main").map_err(|e| AppError::Internal(e.to_string()))?.into_iter().any(|valuation| {
             valuation.status() == ValuationStatus::PendingApproval
                 && valuation.board_approval_meeting_id().is_none()
         })
@@ -1107,6 +1091,7 @@ async fn generate_governance_doc_bundle(
     Json(req): Json<GenerateGovernanceDocBundleRequest>,
 ) -> Result<Json<GenerateGovernanceDocBundleResponse>, AppError> {
     let workspace_id = auth.workspace_id();
+    state.enforce_creation_rate_limit("governance.doc_bundle.generate", workspace_id, 120, 60)?;
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
     let response = tokio::task::spawn_blocking({
@@ -1506,6 +1491,7 @@ async fn create_governance_audit_event(
     let workspace_id = auth.workspace_id();
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = req.entity_id;
+    state.enforce_creation_rate_limit("governance.audit_event.create", workspace_id, 120, 60)?;
 
     if req.action.trim().is_empty() {
         return Err(AppError::BadRequest(
@@ -1567,6 +1553,7 @@ async fn write_governance_audit_checkpoint(
     let workspace_id = auth.workspace_id();
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = req.entity_id;
+    state.enforce_creation_rate_limit("governance.audit_checkpoint.create", workspace_id, 120, 60)?;
 
     let checkpoint = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
@@ -2143,6 +2130,7 @@ async fn create_incident(
     let workspace_id = auth.workspace_id();
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = req.entity_id;
+    state.enforce_creation_rate_limit("governance.incident.create", workspace_id, 120, 60)?;
 
     let incident = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
@@ -2864,6 +2852,7 @@ async fn schedule_meeting(
     let workspace_id = auth.workspace_id();
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = req.entity_id;
+    state.enforce_creation_rate_limit("governance.meeting.create", workspace_id, 120, 60)?;
     let title = require_non_empty_trimmed(&req.title, "title")?;
     if req.meeting_type != MeetingType::WrittenConsent && req.scheduled_date.is_none() {
         return Err(AppError::BadRequest(

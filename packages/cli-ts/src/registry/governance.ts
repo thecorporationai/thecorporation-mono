@@ -457,7 +457,7 @@ export const governanceCommands: CommandDef[] = [
         }
       }
     },
-    examples: ["corp governance vote <meeting-ref> <item-ref> --voter for --vote for"],
+    examples: ["corp governance vote <meeting-ref> <item-ref> --voter <contact-ref> --vote for"],
   },
 
   // --- governance notice <meeting-ref> ---
@@ -538,7 +538,7 @@ export const governanceCommands: CommandDef[] = [
     dryRun: true,
     args: [{ name: "meeting-ref", required: true, description: "Meeting reference" }],
     options: [
-      { flags: "--yes, -y", description: "Skip confirmation prompt" },
+      { flags: "--yes -y", description: "Skip confirmation prompt" },
     ],
     handler: async (ctx) => {
       const meetingRef = ctx.positional[0];
@@ -915,7 +915,7 @@ export const governanceCommands: CommandDef[] = [
   },
   {
     name: "governance-bodies create",
-    description: "List all governance bodies",
+    description: "Create a governance body",
     route: { method: "POST", path: "/v1/governance-bodies" },
     options: [
       { flags: "--body-type <body-type>", description: "The type of governance body.", required: true, choices: ["board_of_directors", "llc_member_vote"] },
@@ -924,7 +924,7 @@ export const governanceCommands: CommandDef[] = [
       { flags: "--voting-method <voting-method>", description: "How votes are counted.", required: true, choices: ["per_capita", "per_unit"] },
     ],
     examples: ["corp governance-bodies --body-type board_of_directors --name majority --quorum-rule majority --voting-method per_capita"],
-    successTemplate: "Governance Bodies created",
+    successTemplate: "Governance body created",
   },
   {
     name: "governance-seats scan-expired",
@@ -932,7 +932,7 @@ export const governanceCommands: CommandDef[] = [
     route: { method: "POST", path: "/v1/governance-seats/scan-expired" },
     entity: true,
     examples: ["corp governance-seats scan-expired"],
-    successTemplate: "Scan Expired created",
+    successTemplate: "Expired seats scanned",
   },
   {
     name: "governance-seats resign",
@@ -941,7 +941,7 @@ export const governanceCommands: CommandDef[] = [
     entity: true,
     args: [{ name: "seat-id", required: true, description: "Governance seat ID" }],
     examples: ["corp governance-seats resign <seat-id>"],
-    successTemplate: "Resign created",
+    successTemplate: "Seat resigned",
   },
   {
     name: "governance audit-checkpoints",
@@ -1032,7 +1032,7 @@ export const governanceCommands: CommandDef[] = [
       { flags: "--metadata <metadata>", description: "Additional metadata (JSON)" },
     ],
     examples: ["corp governance evaluate --intent-type 'intent-type'", "corp governance evaluate --json"],
-    successTemplate: "Evaluate created",
+    successTemplate: "Governance evaluated",
   },
   {
     name: "governance report-incident",

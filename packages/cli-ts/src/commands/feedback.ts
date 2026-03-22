@@ -29,7 +29,7 @@ export async function feedbackCommand(message: string, opts: FeedbackOptions): P
       return;
     }
     console.log(`\n${chalk.green("✓")} Feedback submitted (${chalk.dim(result.feedback_id)})`);
-  } catch (err: any) {
+  } catch (err) {
     const detail = String(err);
     if (detail.includes("404") || detail.includes("Not found") || detail.includes("not found")) {
       printError(

@@ -566,4 +566,32 @@ mod tests {
         );
         assert!(result.is_err());
     }
+
+    #[test]
+    fn conversion_rejects_zero_post_money_shares() {
+        let result = calculate_safe_conversion(
+            SafeType::PostMoney,
+            Cents::new(100_000_00),
+            Some(Cents::new(10_000_000_00)),
+            None,
+            Cents::new(2_00),
+            ShareCount::new(8_000_000),
+            ShareCount::new(0), // post_money_shares is zero
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn conversion_rejects_zero_pre_money_shares() {
+        let result = calculate_safe_conversion(
+            SafeType::PreMoney,
+            Cents::new(100_000_00),
+            Some(Cents::new(8_000_000_00)),
+            None,
+            Cents::new(2_00),
+            ShareCount::new(0), // pre_money_shares is zero
+            ShareCount::new(10_000_000),
+        );
+        assert!(result.is_err());
+    }
 }

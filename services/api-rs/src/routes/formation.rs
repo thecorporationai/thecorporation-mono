@@ -115,6 +115,19 @@ pub struct FormationStatusResponse {
     pub next_action: Option<String>,
 }
 
+fn entity_to_status_response(entity: &Entity, next_action: Option<String>) -> FormationStatusResponse {
+    FormationStatusResponse {
+        entity_id: entity.entity_id(),
+        legal_name: entity.legal_name().to_owned(),
+        entity_type: entity.entity_type(),
+        jurisdiction: entity.jurisdiction().to_owned(),
+        formation_state: entity.formation_state(),
+        formation_status: entity.formation_status(),
+        formation_date: entity.formation_date().map(|d| d.to_rfc3339()),
+        next_action,
+    }
+}
+
 #[derive(Serialize, utoipa::ToSchema)]
 pub struct DocumentSummary {
     pub document_id: DocumentId,
@@ -822,16 +835,7 @@ async fn get_formation(
 
     let next_action = service::next_formation_action(entity.formation_status()).map(String::from);
 
-    Ok(Json(FormationStatusResponse {
-        entity_id: entity.entity_id(),
-        legal_name: entity.legal_name().to_owned(),
-        entity_type: entity.entity_type(),
-        jurisdiction: entity.jurisdiction().to_owned(),
-        formation_state: entity.formation_state(),
-        formation_status: entity.formation_status(),
-        formation_date: entity.formation_date().map(|d| d.to_rfc3339()),
-        next_action,
-    }))
+    Ok(Json(entity_to_status_response(&entity, next_action)))
 }
 
 #[utoipa::path(
@@ -1128,16 +1132,7 @@ async fn mark_documents_signed(
 
     let next_action = service::next_formation_action(entity.formation_status()).map(String::from);
 
-    Ok(Json(FormationStatusResponse {
-        entity_id: entity.entity_id(),
-        legal_name: entity.legal_name().to_owned(),
-        entity_type: entity.entity_type(),
-        jurisdiction: entity.jurisdiction().to_owned(),
-        formation_state: entity.formation_state(),
-        formation_status: entity.formation_status(),
-        formation_date: entity.formation_date().map(|d| d.to_rfc3339()),
-        next_action,
-    }))
+    Ok(Json(entity_to_status_response(&entity, next_action)))
 }
 
 #[utoipa::path(
@@ -1195,16 +1190,7 @@ async fn submit_filing(
 
     let next_action = service::next_formation_action(entity.formation_status()).map(String::from);
 
-    Ok(Json(FormationStatusResponse {
-        entity_id: entity.entity_id(),
-        legal_name: entity.legal_name().to_owned(),
-        entity_type: entity.entity_type(),
-        jurisdiction: entity.jurisdiction().to_owned(),
-        formation_state: entity.formation_state(),
-        formation_status: entity.formation_status(),
-        formation_date: entity.formation_date().map(|d| d.to_rfc3339()),
-        next_action,
-    }))
+    Ok(Json(entity_to_status_response(&entity, next_action)))
 }
 
 #[utoipa::path(
@@ -1521,16 +1507,7 @@ async fn confirm_filing(
 
     let next_action = service::next_formation_action(entity.formation_status()).map(String::from);
 
-    Ok(Json(FormationStatusResponse {
-        entity_id: entity.entity_id(),
-        legal_name: entity.legal_name().to_owned(),
-        entity_type: entity.entity_type(),
-        jurisdiction: entity.jurisdiction().to_owned(),
-        formation_state: entity.formation_state(),
-        formation_status: entity.formation_status(),
-        formation_date: entity.formation_date().map(|d| d.to_rfc3339()),
-        next_action,
-    }))
+    Ok(Json(entity_to_status_response(&entity, next_action)))
 }
 
 #[utoipa::path(
@@ -1578,16 +1555,7 @@ async fn apply_ein(
 
     let next_action = service::next_formation_action(entity.formation_status()).map(String::from);
 
-    Ok(Json(FormationStatusResponse {
-        entity_id: entity.entity_id(),
-        legal_name: entity.legal_name().to_owned(),
-        entity_type: entity.entity_type(),
-        jurisdiction: entity.jurisdiction().to_owned(),
-        formation_state: entity.formation_state(),
-        formation_status: entity.formation_status(),
-        formation_date: entity.formation_date().map(|d| d.to_rfc3339()),
-        next_action,
-    }))
+    Ok(Json(entity_to_status_response(&entity, next_action)))
 }
 
 #[utoipa::path(
@@ -1678,16 +1646,7 @@ async fn confirm_ein(
 
     let next_action = service::next_formation_action(entity.formation_status()).map(String::from);
 
-    Ok(Json(FormationStatusResponse {
-        entity_id: entity.entity_id(),
-        legal_name: entity.legal_name().to_owned(),
-        entity_type: entity.entity_type(),
-        jurisdiction: entity.jurisdiction().to_owned(),
-        formation_state: entity.formation_state(),
-        formation_status: entity.formation_status(),
-        formation_date: entity.formation_date().map(|d| d.to_rfc3339()),
-        next_action,
-    }))
+    Ok(Json(entity_to_status_response(&entity, next_action)))
 }
 
 // ── Contract / Document management ──────────────────────────────────
@@ -3155,16 +3114,7 @@ async fn list_entities(
                     if let Ok(entity) = store.read_entity("main") {
                         let next_action = service::next_formation_action(entity.formation_status())
                             .map(String::from);
-                        results.push(FormationStatusResponse {
-                            entity_id: entity.entity_id(),
-                            legal_name: entity.legal_name().to_owned(),
-                            entity_type: entity.entity_type(),
-                            jurisdiction: entity.jurisdiction().to_owned(),
-                            formation_state: entity.formation_state(),
-                            formation_status: entity.formation_status(),
-                            formation_date: entity.formation_date().map(|d| d.to_rfc3339()),
-                            next_action,
-                        });
+                        results.push(entity_to_status_response(&entity, next_action));
                     }
                 }
             }
@@ -3279,16 +3229,7 @@ async fn convert_entity(
 
     let next_action = service::next_formation_action(entity.formation_status()).map(String::from);
 
-    Ok(Json(FormationStatusResponse {
-        entity_id: entity.entity_id(),
-        legal_name: entity.legal_name().to_owned(),
-        entity_type: entity.entity_type(),
-        jurisdiction: entity.jurisdiction().to_owned(),
-        formation_state: entity.formation_state(),
-        formation_status: entity.formation_status(),
-        formation_date: entity.formation_date().map(|d| d.to_rfc3339()),
-        next_action,
-    }))
+    Ok(Json(entity_to_status_response(&entity, next_action)))
 }
 
 #[derive(Deserialize, utoipa::ToSchema)]

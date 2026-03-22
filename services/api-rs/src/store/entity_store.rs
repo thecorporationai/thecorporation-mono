@@ -235,6 +235,16 @@ impl<'a> EntityStore<'a> {
         self.list_ids_in_dir(branch, T::storage_dir())
     }
 
+    /// Read all stored entities of a given type from a branch.
+    pub fn read_all<T: StoredEntity>(&self, branch: &str) -> Result<Vec<T>, GitStorageError> {
+        let ids = self.list_ids::<T>(branch)?;
+        let mut items = Vec::with_capacity(ids.len());
+        for id in ids {
+            items.push(self.read::<T>(branch, id)?);
+        }
+        Ok(items)
+    }
+
     /// Write a stored entity and commit.
     pub fn write<T: StoredEntity>(
         &self,

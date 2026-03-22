@@ -119,8 +119,7 @@ export const workspaceCommands: CommandDef[] = [
           printStatusPanel(data);
         }
       } catch (err) {
-        ctx.writer.error(`Failed to fetch status: ${err}`);
-        process.exit(1);
+        throw new Error(`Failed to fetch status: ${err}`);
       }
     },
     examples: ["corp status"],
@@ -214,8 +213,7 @@ export const workspaceCommands: CommandDef[] = [
         }
         console.log(chalk.blue("\u2500".repeat(50)));
       } catch (err) {
-        ctx.writer.error(`Failed to fetch context: ${err}`);
-        process.exit(1);
+        throw new Error(`Failed to fetch context: ${err}`);
       }
     },
     examples: ["corp context", "corp context --json"],
@@ -238,8 +236,7 @@ export const workspaceCommands: CommandDef[] = [
         const alias = getReferenceAlias("entity", { entity_id: entityId }) ?? entityId;
         ctx.writer.success(`Active entity set to ${alias} (${entityId})`);
       } catch (err) {
-        ctx.writer.error(`Failed to resolve entity: ${err}`);
-        process.exit(1);
+        throw new Error(`Failed to resolve entity: ${err}`);
       }
     },
     examples: ["corp use", "corp use --json"],
@@ -263,8 +260,7 @@ export const workspaceCommands: CommandDef[] = [
       const opts = ctx.opts as { entityId?: string; workspace?: boolean; json?: boolean };
 
       if (opts.entityId && opts.workspace) {
-        ctx.writer.error("--entity-id and --workspace are mutually exclusive");
-        process.exit(1);
+        throw new Error("--entity-id and --workspace are mutually exclusive");
       }
 
       const localItems = localChecks();
@@ -338,8 +334,7 @@ export const workspaceCommands: CommandDef[] = [
             console.log("  corp form finalize @last");
           }
         } else {
-          ctx.writer.error(`Failed to fetch next steps: ${err}`);
-          process.exit(1);
+          throw new Error(`Failed to fetch next steps: ${err}`);
         }
       }
     },
@@ -409,8 +404,7 @@ export const workspaceCommands: CommandDef[] = [
           }
         }
       } catch (err) {
-        ctx.writer.error(`Failed: ${err}`);
-        process.exit(1);
+        throw new Error(`Failed: ${err}`);
       }
     },
     examples: ["corp digest"],
@@ -434,8 +428,7 @@ export const workspaceCommands: CommandDef[] = [
           printBillingPanel(enrichedStatus, plans);
         }
       } catch (err) {
-        ctx.writer.error(`Failed to fetch billing info: ${err}`);
-        process.exit(1);
+        throw new Error(`Failed to fetch billing info: ${err}`);
       }
     },
     examples: ["corp billing"],
@@ -451,14 +444,12 @@ export const workspaceCommands: CommandDef[] = [
         const result = await ctx.client.createBillingPortal();
         const url = result.portal_url as string;
         if (!url) {
-          ctx.writer.error("No portal URL returned. Ensure you have an active subscription.");
-          process.exit(1);
+          throw new Error("No portal URL returned. Ensure you have an active subscription.");
         }
         ctx.writer.success("Stripe Customer Portal URL:");
         ctx.writer.writeln(url);
       } catch (err) {
-        ctx.writer.error(`Failed to create portal session: ${err}`);
-        process.exit(1);
+        throw new Error(`Failed to create portal session: ${err}`);
       }
     },
     examples: ["corp billing portal"],
@@ -483,14 +474,12 @@ export const workspaceCommands: CommandDef[] = [
         const result = await ctx.client.createBillingCheckout(opts.plan);
         const url = result.checkout_url as string;
         if (!url) {
-          ctx.writer.error("No checkout URL returned.");
-          process.exit(1);
+          throw new Error("No checkout URL returned.");
         }
         ctx.writer.success(`Stripe Checkout URL for ${opts.plan}:`);
         ctx.writer.writeln(url);
       } catch (err) {
-        ctx.writer.error(`Failed to create checkout session: ${err}`);
-        process.exit(1);
+        throw new Error(`Failed to create checkout session: ${err}`);
       }
     },
     examples: ["corp billing upgrade"],

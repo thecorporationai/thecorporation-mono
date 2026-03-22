@@ -260,7 +260,7 @@ export async function demoCommand(opts: DemoOptions): Promise<void> {
       entity_id: entityId,
       template_type: "nda",
       counterparty_name: "Example Counterparty",
-      effective_date: "2026-03-12",
+      effective_date: new Date().toISOString().slice(0, 10),
       parameters: {},
     });
     await resolver.stabilizeRecord("document", contract, entityId);

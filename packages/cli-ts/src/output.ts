@@ -273,13 +273,13 @@ function makeTable(title: string, columns: string[]): Table.Table {
   return new Table({ head: columns.map((c) => chalk.dim(c)) });
 }
 
-function s(val: unknown, maxLen?: number): string {
+export function s(val: unknown, maxLen?: number): string {
   const str = val == null ? "" : String(val);
   if (maxLen && str.length > maxLen) return str.slice(0, maxLen);
   return str;
 }
 
-function money(val: unknown, cents = true): string {
+export function money(val: unknown, cents = true): string {
   if (typeof val === "number") {
     const dollars = cents ? val / 100 : val;
     return `$${dollars.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -287,7 +287,7 @@ function money(val: unknown, cents = true): string {
   return String(val ?? "");
 }
 
-function date(val: unknown): string {
+export function date(val: unknown): string {
   const str = s(val);
   if (!str) return "";
   const parsed = new Date(str);

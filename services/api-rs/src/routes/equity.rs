@@ -49,7 +49,7 @@ use crate::domain::execution::{
     document_request::DocumentRequest,
     intent::Intent,
     transaction_packet::{PacketItem, TransactionPacket, TransactionPacketStatus, WorkflowType},
-    types::{AuthorityTier, IntentStatus},
+    types::{AuthorityTier, IntentStatus, required_document_types_for_intent},
 };
 use crate::domain::formation::{
     document::Document,
@@ -798,21 +798,6 @@ const MAX_INSTRUMENT_SYMBOL_LEN: usize = 32;
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
-fn read_all<T: StoredEntity>(store: &EntityStore<'_>) -> Result<Vec<T>, AppError> {
-    let ids = store
-        .list_ids::<T>("main")
-        .map_err(|e| AppError::Internal(format!("list {}: {e}", T::storage_dir())))?;
-
-    let mut out = Vec::new();
-    for id in ids {
-        let rec = store
-            .read::<T>("main", id)
-            .map_err(|e| AppError::Internal(format!("read {} {}: {e}", T::storage_dir(), id)))?;
-        out.push(rec);
-    }
-    Ok(out)
-}
-
 fn ensure_entity_is_active_for_governance(
     store: &EntityStore<'_>,
     action: &str,
@@ -879,7 +864,7 @@ fn grant_requires_current_409a(grant_type: Option<&str>, instrument: &Instrument
 }
 
 fn ensure_current_409a_exists(store: &EntityStore<'_>) -> Result<(), AppError> {
-    let has_current = read_all::<Valuation>(store)?
+    let has_current = store.read_all::<Valuation>("main").map_err(|e| AppError::Internal(e.to_string()))?
         .into_iter()
         .any(|valuation| valuation.is_current_409a());
     if has_current {
@@ -980,7 +965,7 @@ fn resolve_or_prepare_investor_contact(
 
     let trimmed_email = email.map(str::trim).filter(|value| !value.is_empty());
     if let Some(email) = trimmed_email {
-        let contacts = read_all::<Contact>(store)?;
+        let contacts = store.read_all::<Contact>("main").map_err(|e| AppError::Internal(e.to_string()))?;
         if let Some(contact) = contacts.iter().find(|contact| {
             contact
                 .email()
@@ -1068,7 +1053,7 @@ fn ensure_equity_resolution_unused(
     resolution_id: ResolutionId,
 ) -> Result<(), AppError> {
     let hint = ". Each issuance requires its own board approval. Run: corp governance quick-approve --text \"RESOLVED: ...\"";
-    for round in read_all::<EquityRound>(store)? {
+    for round in store.read_all::<EquityRound>("main").map_err(|e| AppError::Internal(e.to_string()))? {
         if round.board_approval_resolution_id() == Some(resolution_id) {
             return Err(AppError::Conflict(format!(
                 "resolution {} is already bound to equity round {}{}",
@@ -1076,7 +1061,7 @@ fn ensure_equity_resolution_unused(
             )));
         }
     }
-    for workflow in read_all::<FundraisingWorkflow>(store)? {
+    for workflow in store.read_all::<FundraisingWorkflow>("main").map_err(|e| AppError::Internal(e.to_string()))? {
         if workflow.board_approval_resolution_id() == Some(resolution_id) {
             return Err(AppError::Conflict(format!(
                 "resolution {} is already bound to fundraising workflow {}{}",
@@ -1084,7 +1069,7 @@ fn ensure_equity_resolution_unused(
             )));
         }
     }
-    for workflow in read_all::<TransferWorkflow>(store)? {
+    for workflow in store.read_all::<TransferWorkflow>("main").map_err(|e| AppError::Internal(e.to_string()))? {
         if workflow.board_approval_resolution_id() == Some(resolution_id) {
             return Err(AppError::Conflict(format!(
                 "resolution {} is already bound to transfer workflow {}{}",
@@ -1092,7 +1077,7 @@ fn ensure_equity_resolution_unused(
             )));
         }
     }
-    for transfer in read_all::<ShareTransfer>(store)? {
+    for transfer in store.read_all::<ShareTransfer>("main").map_err(|e| AppError::Internal(e.to_string()))? {
         if transfer.board_approval_resolution_id() == Some(resolution_id) {
             return Err(AppError::Conflict(format!(
                 "resolution {} is already bound to share transfer {}{}",
@@ -1100,7 +1085,7 @@ fn ensure_equity_resolution_unused(
             )));
         }
     }
-    for note in read_all::<SafeNote>(store)? {
+    for note in store.read_all::<SafeNote>("main").map_err(|e| AppError::Internal(e.to_string()))? {
         if note.board_approval_resolution_id() == Some(resolution_id) {
             return Err(AppError::Conflict(format!(
                 "resolution {} is already bound to SAFE note {}{}",
@@ -1108,7 +1093,7 @@ fn ensure_equity_resolution_unused(
             )));
         }
     }
-    for valuation in read_all::<Valuation>(store)? {
+    for valuation in store.read_all::<Valuation>("main").map_err(|e| AppError::Internal(e.to_string()))? {
         if valuation.board_approval_resolution_id() == Some(resolution_id) {
             return Err(AppError::Conflict(format!(
                 "resolution {} is already bound to valuation {}{}",
@@ -1651,19 +1636,6 @@ fn amount_from_metadata_cents(metadata: &serde_json::Value) -> Option<i64> {
         })
 }
 
-fn required_document_types_for_intent(intent_type: &str) -> &'static [&'static str] {
-    match intent_type {
-        "equity.transfer.execute" => &["stock_transfer_agreement", "transfer_board_consent"],
-        "equity.fundraising.accept" => &[
-            "board_consent",
-            "equity_issuance_approval",
-            "subscription_agreement",
-        ],
-        "equity.fundraising.close" => &["investor_rights_agreement", "subscription_agreement"],
-        _ => &[],
-    }
-}
-
 fn verify_bound_artifacts_for_intent(
     store: &EntityStore<'_>,
     intent: &Intent,
@@ -1727,11 +1699,12 @@ fn verify_bound_artifacts_for_intent(
     Ok(())
 }
 
-fn validate_board_resolution_for_round(
+fn validate_equity_resolution(
     store: &EntityStore<'_>,
     entity_id: EntityId,
     meeting_id: MeetingId,
     resolution_id: ResolutionId,
+    allowed_body_types: &[BodyType],
 ) -> Result<(), AppError> {
     let meeting = store
         .read::<Meeting>("main", meeting_id)
@@ -1749,56 +1722,18 @@ fn validate_board_resolution_for_round(
             meeting_id, entity_id
         )));
     }
-    if body.body_type() != BodyType::BoardOfDirectors {
+    if !allowed_body_types.contains(&body.body_type()) {
+        let allowed_names: Vec<&str> = allowed_body_types
+            .iter()
+            .map(|t| match t {
+                BodyType::BoardOfDirectors => "board_of_directors",
+                BodyType::LlcMemberVote => "llc_member_vote",
+            })
+            .collect();
         return Err(AppError::UnprocessableEntity(format!(
-            "meeting {} is not associated with a board_of_directors body",
-            meeting_id
-        )));
-    }
-
-    let resolution: Resolution = store
-        .read_resolution("main", meeting_id, resolution_id)
-        .map_err(|_| AppError::NotFound(format!("resolution {} not found", resolution_id)))?;
-    if !resolution.passed() {
-        return Err(AppError::UnprocessableEntity(format!(
-            "resolution {} did not pass",
-            resolution_id
-        )));
-    }
-    ensure_equity_resolution_unused(store, resolution_id)?;
-
-    Ok(())
-}
-
-fn validate_resolution_for_equity_workflow(
-    store: &EntityStore<'_>,
-    entity_id: EntityId,
-    meeting_id: MeetingId,
-    resolution_id: ResolutionId,
-) -> Result<(), AppError> {
-    let meeting = store
-        .read::<Meeting>("main", meeting_id)
-        .map_err(|_| AppError::NotFound(format!("meeting {} not found", meeting_id)))?;
-
-    let body = store
-        .read::<GovernanceBody>("main", meeting.body_id())
-        .map_err(|_| {
-            AppError::NotFound(format!("governance body {} not found", meeting.body_id()))
-        })?;
-
-    if body.entity_id() != entity_id {
-        return Err(AppError::BadRequest(format!(
-            "meeting {} does not belong to entity {}",
-            meeting_id, entity_id
-        )));
-    }
-    if !matches!(
-        body.body_type(),
-        BodyType::BoardOfDirectors | BodyType::LlcMemberVote
-    ) {
-        return Err(AppError::UnprocessableEntity(format!(
-            "meeting {} must be associated with board_of_directors or llc_member_vote",
-            meeting_id
+            "meeting {} must be associated with {}",
+            meeting_id,
+            allowed_names.join(" or ")
         )));
     }
 
@@ -2612,7 +2547,7 @@ async fn create_control_link(
         let valkey_client = state.valkey_client.clone();
         move || {
             let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
-            let entities = read_all::<LegalEntity>(&store)?;
+            let entities = store.read_all::<LegalEntity>("main").map_err(|e| AppError::Internal(e.to_string()))?;
             let known: HashSet<LegalEntityId> =
                 entities.iter().map(|e| e.legal_entity_id()).collect();
             if !known.contains(&req.parent_legal_entity_id)
@@ -2691,7 +2626,7 @@ async fn create_instrument(
         let symbol = symbol.clone();
         move || {
             let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
-            let entities = read_all::<LegalEntity>(&store)?;
+            let entities = store.read_all::<LegalEntity>("main").map_err(|e| AppError::Internal(e.to_string()))?;
             if !entities
                 .iter()
                 .any(|e| e.legal_entity_id() == req.issuer_legal_entity_id)
@@ -2756,12 +2691,12 @@ async fn adjust_position(
         move || {
             let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
 
-            let holders = read_all::<Holder>(&store)?;
+            let holders = store.read_all::<Holder>("main").map_err(|e| AppError::Internal(e.to_string()))?;
             if !holders.iter().any(|h| h.holder_id() == req.holder_id) {
                 return Err(AppError::BadRequest("holder_id does not exist".to_owned()));
             }
 
-            let instruments = read_all::<Instrument>(&store)?;
+            let instruments = store.read_all::<Instrument>("main").map_err(|e| AppError::Internal(e.to_string()))?;
             let instrument = instruments
                 .iter()
                 .find(|i| i.instrument_id() == req.instrument_id)
@@ -2772,7 +2707,7 @@ async fn adjust_position(
                 ));
             }
 
-            let all_positions = read_all::<Position>(&store)?;
+            let all_positions = store.read_all::<Position>("main").map_err(|e| AppError::Internal(e.to_string()))?;
             let existing = all_positions.into_iter().find(|p| {
                 p.issuer_legal_entity_id() == req.issuer_legal_entity_id
                     && p.holder_id() == req.holder_id
@@ -2870,7 +2805,7 @@ async fn create_round(
         let round_name = round_name.clone();
         move || {
             let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
-            let entities = read_all::<LegalEntity>(&store)?;
+            let entities = store.read_all::<LegalEntity>("main").map_err(|e| AppError::Internal(e.to_string()))?;
             if !entities
                 .iter()
                 .any(|e| e.legal_entity_id() == req.issuer_legal_entity_id)
@@ -2881,7 +2816,7 @@ async fn create_round(
             }
 
             if let Some(target) = req.conversion_target_instrument_id {
-                let instruments = read_all::<Instrument>(&store)?;
+                let instruments = store.read_all::<Instrument>("main").map_err(|e| AppError::Internal(e.to_string()))?;
                 if !instruments.iter().any(|i| i.instrument_id() == target) {
                     return Err(AppError::BadRequest(
                         "conversion_target_instrument_id does not exist".to_owned(),
@@ -3027,11 +2962,12 @@ async fn board_approve_round(
                 .read::<EquityRound>("main", round_id)
                 .map_err(|_| AppError::NotFound(format!("equity round {} not found", round_id)))?;
 
-            validate_board_resolution_for_round(
+            validate_equity_resolution(
                 &store,
                 entity_id,
                 req.meeting_id,
                 req.resolution_id,
+                &[BodyType::BoardOfDirectors],
             )?;
             round.record_board_approval(req.meeting_id, req.resolution_id)?;
 
@@ -3618,11 +3554,12 @@ async fn record_transfer_workflow_board_approval(
                     AppError::NotFound(format!("transfer {} not found", workflow.transfer_id()))
                 })?;
 
-            validate_resolution_for_equity_workflow(
+            validate_equity_resolution(
                 &store,
                 entity_id,
                 req.meeting_id,
                 req.resolution_id,
+                &[BodyType::BoardOfDirectors, BodyType::LlcMemberVote],
             )?;
             transfer.approve(Some(req.resolution_id))?;
             workflow.record_board_approval(req.meeting_id, req.resolution_id);
@@ -3844,7 +3781,7 @@ async fn create_fundraising_workflow(
         let round_name = round_name.clone();
         move || {
             let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
-            let entities = read_all::<LegalEntity>(&store)?;
+            let entities = store.read_all::<LegalEntity>("main").map_err(|e| AppError::Internal(e.to_string()))?;
             if !entities
                 .iter()
                 .any(|e| e.legal_entity_id() == req.issuer_legal_entity_id)
@@ -3855,7 +3792,7 @@ async fn create_fundraising_workflow(
             }
 
             if let Some(target) = req.conversion_target_instrument_id {
-                let instruments = read_all::<Instrument>(&store)?;
+                let instruments = store.read_all::<Instrument>("main").map_err(|e| AppError::Internal(e.to_string()))?;
                 if !instruments.iter().any(|i| i.instrument_id() == target) {
                     return Err(AppError::BadRequest(
                         "conversion_target_instrument_id does not exist".to_owned(),
@@ -4156,11 +4093,12 @@ async fn record_fundraising_workflow_board_approval(
                     AppError::NotFound(format!("equity round {} not found", workflow.round_id()))
                 })?;
 
-            validate_resolution_for_equity_workflow(
+            validate_equity_resolution(
                 &store,
                 entity_id,
                 req.meeting_id,
                 req.resolution_id,
+                &[BodyType::BoardOfDirectors, BodyType::LlcMemberVote],
             )?;
             round.record_board_approval(req.meeting_id, req.resolution_id)?;
             workflow.sync_from_round(&round);
@@ -5690,11 +5628,11 @@ async fn get_cap_table(
         let valkey_client = state.valkey_client.clone();
         move || {
             let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
-            let holders = read_all::<Holder>(&store)?;
-            let legal_entities = read_all::<LegalEntity>(&store)?;
-            let instruments = read_all::<Instrument>(&store)?;
-            let positions = read_all::<Position>(&store)?;
-            let share_classes = read_all::<ShareClass>(&store).unwrap_or_default();
+            let holders = store.read_all::<Holder>("main").map_err(|e| AppError::Internal(e.to_string()))?;
+            let legal_entities = store.read_all::<LegalEntity>("main").map_err(|e| AppError::Internal(e.to_string()))?;
+            let instruments = store.read_all::<Instrument>("main").map_err(|e| AppError::Internal(e.to_string()))?;
+            let positions = store.read_all::<Position>("main").map_err(|e| AppError::Internal(e.to_string()))?;
+            let share_classes = store.read_all::<ShareClass>("main").map_err(|e| AppError::Internal(e.to_string())).unwrap_or_default();
 
             let issuer_legal_entity_id =
                 infer_issuer(entity_id, &legal_entities, query.issuer_legal_entity_id)?;
@@ -5756,8 +5694,8 @@ async fn preview_conversion(
                 .read::<EquityRuleSet>("main", rule_set_id)
                 .map_err(|_| AppError::NotFound(format!("rule set {} not found", rule_set_id)))?;
 
-            let instruments = read_all::<Instrument>(&store)?;
-            let positions = read_all::<Position>(&store)?;
+            let instruments = store.read_all::<Instrument>("main").map_err(|e| AppError::Internal(e.to_string()))?;
+            let positions = store.read_all::<Position>("main").map_err(|e| AppError::Internal(e.to_string()))?;
 
             let target_instrument_id =
                 round.conversion_target_instrument_id().ok_or_else(|| {
@@ -5843,8 +5781,8 @@ async fn execute_conversion(
                     AppError::BadRequest("conversion_target_instrument_id is required".to_owned())
                 })?;
 
-            let instruments = read_all::<Instrument>(&store)?;
-            let mut positions = read_all::<Position>(&store)?;
+            let instruments = store.read_all::<Instrument>("main").map_err(|e| AppError::Internal(e.to_string()))?;
+            let mut positions = store.read_all::<Position>("main").map_err(|e| AppError::Internal(e.to_string()))?;
             let (lines, anti_dilution_adjustment_units) =
                 compute_conversion_preview(&round, &rules, &instruments, &positions)?;
 
@@ -5945,7 +5883,7 @@ async fn execute_conversion(
             // Anti-dilution adjustment units are added to a synthetic holder-neutral position only
             // if positive and target instrument exists.
             if anti_dilution_adjustment_units > 0 {
-                let mut anti_holder = read_all::<Holder>(&store)?
+                let mut anti_holder = store.read_all::<Holder>("main").map_err(|e| AppError::Internal(e.to_string()))?
                     .into_iter()
                     .find(|h| h.external_reference() == Some("anti_dilution_pool"));
                 if anti_holder.is_none() {
@@ -6086,8 +6024,8 @@ async fn get_control_map(
         let valkey_client = state.valkey_client.clone();
         move || {
             let store = super::shared::open_entity_store(&layout, workspace_id, query.entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
-            let links = read_all::<ControlLink>(&store)?;
-            let entities = read_all::<LegalEntity>(&store)?;
+            let links = store.read_all::<ControlLink>("main").map_err(|e| AppError::Internal(e.to_string()))?;
+            let entities = store.read_all::<LegalEntity>("main").map_err(|e| AppError::Internal(e.to_string()))?;
             let entity_ids: HashSet<LegalEntityId> =
                 entities.iter().map(|e| e.legal_entity_id()).collect();
             if !entity_ids.contains(&query.root_entity_id) {
@@ -6164,8 +6102,8 @@ async fn get_dilution_preview(
                     AppError::NotFound(format!("equity round {} not found", query.round_id))
                 })?;
 
-            let instruments = read_all::<Instrument>(&store)?;
-            let positions = read_all::<Position>(&store)?;
+            let instruments = store.read_all::<Instrument>("main").map_err(|e| AppError::Internal(e.to_string()))?;
+            let positions = store.read_all::<Position>("main").map_err(|e| AppError::Internal(e.to_string()))?;
 
             let pre_round_outstanding_units = positions
                 .iter()
@@ -6250,7 +6188,7 @@ async fn start_staged_round(
             let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
 
             // Validate issuer legal entity exists
-            let entities = read_all::<LegalEntity>(&store)?;
+            let entities = store.read_all::<LegalEntity>("main").map_err(|e| AppError::Internal(e.to_string()))?;
             if !entities
                 .iter()
                 .any(|e| e.legal_entity_id() == req.issuer_legal_entity_id)
@@ -6334,7 +6272,7 @@ async fn list_equity_rounds(
         let valkey_client = state.valkey_client.clone();
         move || {
             let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
-            let all = read_all::<EquityRound>(&store)?;
+            let all = store.read_all::<EquityRound>("main").map_err(|e| AppError::Internal(e.to_string()))?;
             Ok::<_, AppError>(all.iter().map(round_to_response).collect::<Vec<_>>())
         }
     })
@@ -6395,7 +6333,7 @@ async fn add_round_security(
             }
 
             // Validate instrument exists
-            let instruments = read_all::<Instrument>(&store)?;
+            let instruments = store.read_all::<Instrument>("main").map_err(|e| AppError::Internal(e.to_string()))?;
             let instrument = instruments
                 .iter()
                 .find(|i| i.instrument_id() == req.instrument_id)
@@ -6407,7 +6345,7 @@ async fn add_round_security(
 
             // Resolve holder — collect file writes without committing so that
             // the capacity check runs before any data is persisted.
-            let holders = read_all::<Holder>(&store)?;
+            let holders = store.read_all::<Holder>("main").map_err(|e| AppError::Internal(e.to_string()))?;
             let mut deferred_writes: Vec<FileWrite> = Vec::new();
             let holder_id = if let Some(hid) = req.holder_id {
                 // Direct holder_id — validate it exists
@@ -6417,7 +6355,7 @@ async fn add_round_security(
                 hid
             } else if let Some(ref email) = req.email {
                 // Look up contact by email, then find linked holder
-                let contacts = read_all::<Contact>(&store)?;
+                let contacts = store.read_all::<Contact>("main").map_err(|e| AppError::Internal(e.to_string()))?;
                 let contact = contacts.iter().find(|c| {
                     c.email()
                         .map(|e| e.eq_ignore_ascii_case(email))
@@ -6526,7 +6464,7 @@ async fn add_round_security(
                 store.read_json("main", &pending_path).map_err(|e| {
                     AppError::NotFound(format!("pending securities file not found: {e}"))
                 })?;
-            let all_positions = read_all::<Position>(&store)?;
+            let all_positions = store.read_all::<Position>("main").map_err(|e| AppError::Internal(e.to_string()))?;
             ensure_instrument_has_capacity(
                 &all_positions,
                 &pending.securities,
@@ -6582,6 +6520,7 @@ async fn issue_staged_round(
     if !auth.allows_entity(entity_id) {
         return Err(AppError::Forbidden("entity access denied".to_owned()));
     }
+    state.enforce_creation_rate_limit("equity.round.issue", workspace_id, 120, 60)?;
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
     let (round, positions, board_meeting_id) = tokio::task::spawn_blocking({
@@ -6613,8 +6552,8 @@ async fn issue_staged_round(
             }
 
             // Read all existing positions and instruments.
-            let all_positions = read_all::<Position>(&store)?;
-            let instrument_map: HashMap<InstrumentId, Instrument> = read_all::<Instrument>(&store)?
+            let all_positions = store.read_all::<Position>("main").map_err(|e| AppError::Internal(e.to_string()))?;
+            let instrument_map: HashMap<InstrumentId, Instrument> = store.read_all::<Instrument>("main").map_err(|e| AppError::Internal(e.to_string()))?
                 .into_iter()
                 .map(|instrument| (instrument.instrument_id(), instrument))
                 .collect();
@@ -6685,7 +6624,7 @@ async fn issue_staged_round(
 
             // Require board approval when a board exists; otherwise preserve the
             // boardless draft-close path used for pre-governance entities.
-            let has_board = read_all::<GovernanceBody>(&store)?
+            let has_board = store.read_all::<GovernanceBody>("main").map_err(|e| AppError::Internal(e.to_string()))?
                 .into_iter()
                 .any(|body| body.body_type() == BodyType::BoardOfDirectors);
             let mut board_meeting_id = None;
@@ -6703,11 +6642,12 @@ async fn issue_staged_round(
                                 .to_owned(),
                         )
                     })?;
-                    validate_board_resolution_for_round(
+                    validate_equity_resolution(
                         &store,
                         entity_id,
                         meeting_id,
                         resolution_id,
+                        &[BodyType::BoardOfDirectors],
                     )?;
                     round
                         .record_board_approval(meeting_id, resolution_id)
@@ -6970,7 +6910,7 @@ async fn create_safe_note(
                 req.email.as_deref(),
             )?;
 
-            let approval_required = read_all::<GovernanceBody>(&store)?.into_iter().any(|body| {
+            let approval_required = store.read_all::<GovernanceBody>("main").map_err(|e| AppError::Internal(e.to_string()))?.into_iter().any(|body| {
                 body.status() == BodyStatus::Active
                     && matches!(
                         body.body_type(),
@@ -7000,11 +6940,12 @@ async fn create_safe_note(
             .map_err(|e| AppError::BadRequest(format!("{e}")))?;
 
             if let (Some(meeting_id), Some(resolution_id)) = (req.meeting_id, req.resolution_id) {
-                validate_resolution_for_equity_workflow(
+                validate_equity_resolution(
                     &store,
                     entity_id,
                     meeting_id,
                     resolution_id,
+                    &[BodyType::BoardOfDirectors, BodyType::LlcMemberVote],
                 )?;
                 safe_note.record_board_approval(meeting_id, resolution_id);
             } else if approval_required {
@@ -7057,7 +6998,7 @@ async fn list_safe_notes(
         let valkey_client = state.valkey_client.clone();
         move || {
             let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
-            let mut notes = read_all::<SafeNote>(&store)?;
+            let mut notes = store.read_all::<SafeNote>("main").map_err(|e| AppError::Internal(e.to_string()))?;
             notes.sort_by_key(|note| note.created_at());
             Ok::<_, AppError>(
                 notes
@@ -7249,7 +7190,7 @@ async fn list_valuations(
         let valkey_client = state.valkey_client.clone();
         move || {
             let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
-            let all = read_all::<Valuation>(&store)?;
+            let all = store.read_all::<Valuation>("main").map_err(|e| AppError::Internal(e.to_string()))?;
             Ok::<_, AppError>(all.iter().map(valuation_to_response).collect::<Vec<_>>())
         }
     })
@@ -7287,7 +7228,7 @@ async fn get_current_409a(
         let valkey_client = state.valkey_client.clone();
         move || {
             let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
-            let all = read_all::<Valuation>(&store)?;
+            let all = store.read_all::<Valuation>("main").map_err(|e| AppError::Internal(e.to_string()))?;
             all.into_iter()
                 .find(|v| v.is_current_409a())
                 .ok_or_else(|| {
@@ -7344,7 +7285,7 @@ async fn submit_valuation_for_approval(
                 .map_err(|e| AppError::BadRequest(format!("{e}")))?;
 
             // Find the board body for this entity.
-            let bodies = read_all::<GovernanceBody>(&store)?;
+            let bodies = store.read_all::<GovernanceBody>("main").map_err(|e| AppError::Internal(e.to_string()))?;
             let board_body = bodies
                 .iter()
                 .find(|b| b.body_type() == BodyType::BoardOfDirectors)
@@ -7354,7 +7295,7 @@ async fn submit_valuation_for_approval(
             let body_id = board_body.body_id();
 
             // Look for an existing Draft or Noticed meeting for this board body.
-            let meetings = read_all::<Meeting>(&store)?;
+            let meetings = store.read_all::<Meeting>("main").map_err(|e| AppError::Internal(e.to_string()))?;
             let existing_meeting = meetings.iter().find(|m| {
                 m.body_id() == body_id
                     && (m.status() == MeetingStatus::Draft || m.status() == MeetingStatus::Noticed)
@@ -7473,7 +7414,7 @@ async fn approve_valuation(
                 .read::<Valuation>("main", valuation_id)
                 .map_err(|_| AppError::NotFound(format!("valuation {} not found", valuation_id)))?;
             if let Some(resolution_id) = req.resolution_id {
-                let meetings = read_all::<Meeting>(&store)?;
+                let meetings = store.read_all::<Meeting>("main").map_err(|e| AppError::Internal(e.to_string()))?;
                 let mut found = false;
                 for meeting in meetings {
                     let resolution_ids = store
@@ -7531,7 +7472,7 @@ async fn approve_valuation(
             ];
 
             if valuation.valuation_type() == ValuationType::FourOhNineA {
-                let all = read_all::<Valuation>(&store)?;
+                let all = store.read_all::<Valuation>("main").map_err(|e| AppError::Internal(e.to_string()))?;
                 for prev in all {
                     if prev.valuation_id() != valuation_id
                         && prev.valuation_type() == ValuationType::FourOhNineA
@@ -7633,7 +7574,7 @@ async fn create_legacy_share_transfer(
                     "from_holder and to_holder must resolve to different contacts".to_owned(),
                 ));
             }
-            let share_class = read_all::<ShareClass>(&store)?
+            let share_class = store.read_all::<ShareClass>("main").map_err(|e| AppError::Internal(e.to_string()))?
                 .into_iter()
                 .find(|sc| sc.share_class_id() == share_class_id)
                 .ok_or_else(|| {
@@ -7710,7 +7651,7 @@ async fn list_legacy_share_transfers(
         let valkey_client = state.valkey_client.clone();
         move || {
             let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
-            let all = read_all::<ShareTransfer>(&store)?;
+            let all = store.read_all::<ShareTransfer>("main").map_err(|e| AppError::Internal(e.to_string()))?;
             Ok::<_, AppError>(
                 all.into_iter()
                     .filter(|transfer| transfer.entity_id() == entity_id)

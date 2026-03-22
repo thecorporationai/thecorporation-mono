@@ -178,4 +178,34 @@ mod tests {
         assert_eq!(parsed.deadline_id(), d.deadline_id());
         assert_eq!(parsed.severity(), DeadlineSeverity::High);
     }
+
+    #[test]
+    fn current_status_overdue_for_past_date() {
+        // Use a date well in the past so it is always overdue when the test runs.
+        let d = Deadline::new(
+            DeadlineId::new(),
+            EntityId::new(),
+            "old_filing".to_owned(),
+            NaiveDate::from_ymd_opt(2020, 1, 1).unwrap(),
+            "Ancient filing deadline".to_owned(),
+            Recurrence::OneTime,
+            DeadlineSeverity::Low,
+        );
+        assert_eq!(d.current_status(), DeadlineStatus::Overdue);
+    }
+
+    #[test]
+    fn current_status_upcoming_for_future_date() {
+        // Use a date far in the future so it is always upcoming when the test runs.
+        let d = Deadline::new(
+            DeadlineId::new(),
+            EntityId::new(),
+            "future_filing".to_owned(),
+            NaiveDate::from_ymd_opt(2099, 12, 31).unwrap(),
+            "Far-future filing deadline".to_owned(),
+            Recurrence::OneTime,
+            DeadlineSeverity::Low,
+        );
+        assert_eq!(d.current_status(), DeadlineStatus::Upcoming);
+    }
 }

@@ -226,6 +226,26 @@ impl fmt::Display for DocumentRequestStatus {
     }
 }
 
+// ── required_document_types_for_intent ─────────────────────────────────────
+
+/// Returns the document types that must be satisfied before an intent of the
+/// given `intent_type` can be executed.
+///
+/// This is the canonical source of truth shared by both the equity and
+/// execution route layers.
+pub fn required_document_types_for_intent(intent_type: &str) -> &'static [&'static str] {
+    match intent_type {
+        "equity.transfer.execute" => &["stock_transfer_agreement", "transfer_board_consent"],
+        "equity.fundraising.accept" => &[
+            "board_consent",
+            "equity_issuance_approval",
+            "subscription_agreement",
+        ],
+        "equity.fundraising.close" => &["investor_rights_agreement", "subscription_agreement"],
+        _ => &[],
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

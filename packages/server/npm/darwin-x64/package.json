@@ -1,6 +1,6 @@
 {
   "name": "@thecorporation/server-darwin-x64",
-  "version": "26.3.8",
+  "version": "26.3.24",
   "description": "macOS x64 binary for the Corporation API server",
   "os": [
     "darwin"

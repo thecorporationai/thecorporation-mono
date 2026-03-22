@@ -119,7 +119,11 @@ impl From<GitStorageError> for AppError {
                 Self::Conflict(format!("branch already exists: {name}"))
             }
             GitStorageError::MergeConflict(msg) => Self::Conflict(msg),
-            _ => Self::Internal(e.to_string()),
+            GitStorageError::RepoNotFound(msg) => Self::NotFound(msg),
+            GitStorageError::SerializationError(msg) => Self::Internal(msg),
+            GitStorageError::Git(msg) => Self::Internal(msg),
+            GitStorageError::SigningError(msg) => Self::Internal(msg),
+            GitStorageError::Io(e) => Self::Internal(e.to_string()),
         }
     }
 }
@@ -142,7 +146,12 @@ impl From<FormationError> for AppError {
             FormationError::DocumentNotFound(_) => Self::NotFound(e.to_string()),
             FormationError::InvalidTransition { .. } => Self::UnprocessableEntity(e.to_string()),
             FormationError::Storage(_) => Self::Internal(e.to_string()),
-            _ => Self::UnprocessableEntity(e.to_string()),
+            FormationError::Validation(_) => Self::UnprocessableEntity(e.to_string()),
+            FormationError::DocumentAlreadySigned(_) => Self::Conflict(e.to_string()),
+            FormationError::AllSignaturesRequired { .. } => Self::UnprocessableEntity(e.to_string()),
+            FormationError::ContentHashMismatch(_) => Self::UnprocessableEntity(e.to_string()),
+            FormationError::EinAlreadyAssigned(_) => Self::Conflict(e.to_string()),
+            FormationError::InvalidEntityType { .. } => Self::UnprocessableEntity(e.to_string()),
         }
     }
 }
@@ -156,8 +165,33 @@ impl From<EquityError> for AppError {
             | EquityError::SafeNotFound(_)
             | EquityError::ValuationNotFound(_)
             | EquityError::TransferNotFound(_)
-            | EquityError::FundingRoundNotFound(_) => Self::NotFound(e.to_string()),
-            _ => Self::UnprocessableEntity(e.to_string()),
+            | EquityError::FundingRoundNotFound(_)
+            | EquityError::RepurchaseNotFound(_) => Self::NotFound(e.to_string()),
+            EquityError::OutstandingExceedsAuthorized { .. } => {
+                Self::UnprocessableEntity(e.to_string())
+            }
+            EquityError::InsufficientShares { .. } => Self::UnprocessableEntity(e.to_string()),
+            EquityError::InvalidGrantTransition { .. } => Self::UnprocessableEntity(e.to_string()),
+            EquityError::InvalidSafeTransition { .. } => Self::UnprocessableEntity(e.to_string()),
+            EquityError::InvalidTransferTransition { .. } => {
+                Self::UnprocessableEntity(e.to_string())
+            }
+            EquityError::InvalidValuationTransition { .. } => {
+                Self::UnprocessableEntity(e.to_string())
+            }
+            EquityError::InvalidFundingRoundTransition { .. } => {
+                Self::UnprocessableEntity(e.to_string())
+            }
+            EquityError::InvalidRoundTransition { .. } => Self::UnprocessableEntity(e.to_string()),
+            EquityError::ValuationExpired(_) => Self::UnprocessableEntity(e.to_string()),
+            EquityError::ValuationCapBelowPrincipal { .. } => {
+                Self::UnprocessableEntity(e.to_string())
+            }
+            EquityError::ExercisePriceBelowFmv { .. } => Self::UnprocessableEntity(e.to_string()),
+            EquityError::InvalidVestingEventTransition { .. } => {
+                Self::UnprocessableEntity(e.to_string())
+            }
+            EquityError::Validation(_) => Self::UnprocessableEntity(e.to_string()),
         }
     }
 }
@@ -168,7 +202,20 @@ impl From<GovernanceError> for AppError {
             GovernanceError::BodyNotFound(_)
             | GovernanceError::SeatNotFound(_)
             | GovernanceError::MeetingNotFound(_) => Self::NotFound(e.to_string()),
-            _ => Self::UnprocessableEntity(e.to_string()),
+            GovernanceError::SeatAlreadyFilled(_)
+            | GovernanceError::ResolutionAlreadyExists(_)
+            | GovernanceError::DuplicateVote { .. }
+            | GovernanceError::SeatNotActive(_) => Self::Conflict(e.to_string()),
+            GovernanceError::InvalidMeetingTransition { .. } => {
+                Self::UnprocessableEntity(e.to_string())
+            }
+            GovernanceError::QuorumNotMet { .. } => Self::UnprocessableEntity(e.to_string()),
+            GovernanceError::VotingSessionNotOpen => Self::UnprocessableEntity(e.to_string()),
+            GovernanceError::VotingSessionAlreadyClosed => {
+                Self::UnprocessableEntity(e.to_string())
+            }
+            GovernanceError::CannotVoteAsObserver => Self::UnprocessableEntity(e.to_string()),
+            GovernanceError::Validation(_) => Self::UnprocessableEntity(e.to_string()),
         }
     }
 }
@@ -178,8 +225,25 @@ impl From<TreasuryError> for AppError {
         match e {
             TreasuryError::AccountNotFound(_)
             | TreasuryError::InvoiceNotFound(_)
-            | TreasuryError::BankAccountNotFound(_) => Self::NotFound(e.to_string()),
-            _ => Self::UnprocessableEntity(e.to_string()),
+            | TreasuryError::BankAccountNotFound(_)
+            | TreasuryError::KybNotFound(_) => Self::NotFound(e.to_string()),
+            TreasuryError::AlreadyPosted(_) => Self::Conflict(e.to_string()),
+            TreasuryError::AlreadyVoided(_) => Self::Conflict(e.to_string()),
+            TreasuryError::DuplicateAccount(_) => Self::Conflict(e.to_string()),
+            TreasuryError::UnbalancedEntry { .. } => Self::UnprocessableEntity(e.to_string()),
+            TreasuryError::CannotVoidDraft => Self::UnprocessableEntity(e.to_string()),
+            TreasuryError::InvalidInvoiceTransition { .. } => {
+                Self::UnprocessableEntity(e.to_string())
+            }
+            TreasuryError::BankAccountNotActive(_) => Self::UnprocessableEntity(e.to_string()),
+            TreasuryError::InvalidBankAccountTransition { .. } => {
+                Self::UnprocessableEntity(e.to_string())
+            }
+            TreasuryError::InvalidKybTransition { .. } => Self::UnprocessableEntity(e.to_string()),
+            TreasuryError::SpendingLimitExceeded { .. } => Self::UnprocessableEntity(e.to_string()),
+            TreasuryError::NoSpendingPolicy => Self::UnprocessableEntity(e.to_string()),
+            TreasuryError::PaymentFailed(_, _) => Self::UnprocessableEntity(e.to_string()),
+            TreasuryError::ConnectorError(_) => Self::Internal(e.to_string()),
         }
     }
 }
@@ -190,7 +254,17 @@ impl From<ExecutionError> for AppError {
             ExecutionError::IntentNotFound(_)
             | ExecutionError::ReceiptNotFound(_)
             | ExecutionError::ObligationNotFound(_) => Self::NotFound(e.to_string()),
-            _ => Self::UnprocessableEntity(e.to_string()),
+            ExecutionError::DuplicateExecution { .. } => Self::Conflict(e.to_string()),
+            ExecutionError::InvalidIntentTransition { .. } => {
+                Self::UnprocessableEntity(e.to_string())
+            }
+            ExecutionError::InvalidObligationTransition { .. } => {
+                Self::UnprocessableEntity(e.to_string())
+            }
+            ExecutionError::CannotAssignInState(_) => Self::UnprocessableEntity(e.to_string()),
+            ExecutionError::InvalidDocumentRequestTransition { .. } => {
+                Self::UnprocessableEntity(e.to_string())
+            }
         }
     }
 }

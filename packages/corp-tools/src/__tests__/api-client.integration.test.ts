@@ -186,7 +186,7 @@ describe("entity lifecycle", () => {
         },
       ],
     });
-    formationId = formation.entity_id as string ?? formation.id as string;
+    formationId = formation.entity_id as string;
     entityId = formationId;
   });
 
@@ -310,7 +310,7 @@ describe("equity rounds", () => {
       jurisdiction: "Delaware",
       members: [{ name: "Founder", investor_type: "natural_person", email: "f@test.com", ownership_pct: 100 }],
     });
-    entityId = (formation.entity_id ?? formation.id) as string;
+    entityId = formation.entity_id as string;
   });
 
   it.skipIf(!canRun)("createEquityRound", async () => {
@@ -359,7 +359,7 @@ describe("intent lifecycle", () => {
       jurisdiction: "Delaware",
       members: [{ name: "Founder", investor_type: "natural_person", email: "f@test.com", ownership_pct: 100 }],
     });
-    entityId = (formation.entity_id ?? formation.id) as string;
+    entityId = formation.entity_id as string;
   });
 
   it.skipIf(!canRun)("createExecutionIntent", async () => {
@@ -411,7 +411,7 @@ describe("governance", () => {
       jurisdiction: "Delaware",
       members: [{ name: "Founder", investor_type: "natural_person", email: "f@test.com", ownership_pct: 100 }],
     });
-    entityId = (formation.entity_id ?? formation.id) as string;
+    entityId = formation.entity_id as string;
   });
 
   it.skipIf(!canRun)("scheduleMeeting", async () => {
@@ -467,7 +467,7 @@ describe("contacts", () => {
       jurisdiction: "US-WY",
       members: [{ name: "Owner", investor_type: "natural_person", email: "o@test.com", ownership_pct: 100 }],
     });
-    entityId = (formation.entity_id ?? formation.id) as string;
+    entityId = formation.entity_id as string;
   });
 
   it.skipIf(!canRun)("createContact", async () => {
@@ -590,7 +590,7 @@ describe("agents", () => {
 describe("demo", () => {
   it.skipIf(!canRun)("seedDemo", async () => {
     const { client } = await freshClient("Demo Seed Test");
-    const result = await client.seedDemo("integration-test-corp");
+    const result = await client.seedDemo({ name: "integration-test-corp" });
     expectStructuredResponse(result);
   });
 });

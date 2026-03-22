@@ -2,7 +2,6 @@ import type { CommandDef, CommandContext } from "./types.js";
 import {
   printReferenceSummary,
   printWorkItemsTable,
-  printError,
   printJson,
   printWriteResult,
 } from "../output.js";
@@ -126,8 +125,7 @@ export const workItemCommands: CommandDef[] = [
       const eid = await ctx.resolver.resolveEntity(ctx.opts.entityId as string | undefined);
       const category = ctx.opts.category as string | undefined;
       if (!category) {
-        printError("required option '--category <category>' not specified");
-        process.exit(1);
+        throw new Error("required option '--category <category>' not specified");
       }
       const data: Record<string, unknown> = { title: ctx.opts.title as string, category };
       if (ctx.opts.description) data.description = ctx.opts.description as string;
@@ -166,8 +164,7 @@ export const workItemCommands: CommandDef[] = [
       const resolvedWorkItemId = await ctx.resolver.resolveWorkItem(eid, itemRef);
       const claimedBy = (ctx.opts.by as string | undefined) ?? (ctx.opts.claimer as string | undefined);
       if (!claimedBy) {
-        printError("required option '--by <name>' not specified");
-        process.exit(1);
+        throw new Error("required option '--by <name>' not specified");
       }
       const data: Record<string, unknown> = {
         claimed_by_actor: await ctx.resolver.resolveWorkItemActor(eid, claimedBy),
@@ -198,8 +195,7 @@ export const workItemCommands: CommandDef[] = [
       const resolvedWorkItemId = await ctx.resolver.resolveWorkItem(eid, itemRef);
       const completedBy = (ctx.opts.by as string | undefined) ?? (ctx.opts.completedBy as string | undefined);
       if (!completedBy) {
-        printError("required option '--by <name>' not specified");
-        process.exit(1);
+        throw new Error("required option '--by <name>' not specified");
       }
       const data: Record<string, unknown> = {
         completed_by_actor: await ctx.resolver.resolveWorkItemActor(eid, completedBy),
@@ -237,7 +233,7 @@ export const workItemCommands: CommandDef[] = [
     entity: true,
     args: [{ name: "item-ref", required: true, description: "Work item reference" }],
     options: [
-      { flags: "--yes, -y", description: "Skip confirmation prompt" },
+      { flags: "--yes -y", description: "Skip confirmation prompt" },
     ],
     handler: async (ctx) => {
       const itemRef = ctx.positional[0];

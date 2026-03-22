@@ -280,19 +280,6 @@ fn read_schedule_or_default(store: &EntityStore<'_>, entity_id: EntityId) -> Del
 // and helpers (amount_from_metadata_cents, mapped_tier_requires_manual_artifacts)
 // are now in crate::domain::governance::policy_engine.
 
-fn required_document_types(intent_type: &str) -> &'static [&'static str] {
-    match intent_type {
-        "equity.transfer.execute" => &["stock_transfer_agreement", "transfer_board_consent"],
-        "equity.fundraising.accept" => &[
-            "board_consent",
-            "equity_issuance_approval",
-            "subscription_agreement",
-        ],
-        "equity.fundraising.close" => &["investor_rights_agreement", "subscription_agreement"],
-        _ => &[],
-    }
-}
-
 #[derive(Debug, Clone)]
 enum ExecutionPrerequisiteViolation {
     MissingApprovalArtifact {
@@ -400,7 +387,7 @@ fn enforce_execution_prerequisites(
         });
     }
 
-    let required = required_document_types(&canonical_intent_type);
+    let required = required_document_types_for_intent(&canonical_intent_type);
     if required.is_empty() {
         return Ok(());
     }

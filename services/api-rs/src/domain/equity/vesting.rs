@@ -497,4 +497,34 @@ mod tests {
         // Attempting to cancel from Vested should fail
         assert!(events[0].cancel().is_err());
     }
+
+    #[test]
+    fn cannot_vest_already_vested_event() {
+        let schedule = make_schedule(1000, 0, 1);
+        let mut events = materialize_vesting_events(&schedule);
+        events[0].vest().unwrap();
+        assert_eq!(events[0].status(), VestingEventStatus::Vested);
+        // Vesting an already-Vested event must return Err
+        assert!(events[0].vest().is_err());
+    }
+
+    #[test]
+    fn cannot_forfeit_vested_event() {
+        let schedule = make_schedule(1000, 0, 1);
+        let mut events = materialize_vesting_events(&schedule);
+        events[0].vest().unwrap();
+        assert_eq!(events[0].status(), VestingEventStatus::Vested);
+        // Forfeiting a Vested event must return Err
+        assert!(events[0].forfeit().is_err());
+    }
+
+    #[test]
+    fn cannot_cancel_vested_event() {
+        let schedule = make_schedule(1000, 0, 1);
+        let mut events = materialize_vesting_events(&schedule);
+        events[0].vest().unwrap();
+        assert_eq!(events[0].status(), VestingEventStatus::Vested);
+        // Cancelling a Vested event must return Err
+        assert!(events[0].cancel().is_err());
+    }
 }

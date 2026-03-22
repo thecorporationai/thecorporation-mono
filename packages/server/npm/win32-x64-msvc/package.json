@@ -1,6 +1,6 @@
 {
   "name": "@thecorporation/server-win32-x64-msvc",
-  "version": "26.3.8",
+  "version": "26.3.24",
   "description": "Windows x64 binary for the Corporation API server",
   "os": [
     "win32"

@@ -179,6 +179,20 @@ mod tests {
     }
 
     #[test]
+    fn resign_non_active_seat_returns_seat_not_active() {
+        let mut s = make_seat(SeatRole::Member);
+        // First resignation succeeds, putting the seat into Resigned status.
+        s.resign().unwrap();
+        assert_eq!(s.status(), SeatStatus::Resigned);
+        // Second resignation on a non-active (Resigned) seat must return SeatNotActive.
+        let err = s.resign().unwrap_err();
+        assert!(
+            matches!(err, GovernanceError::SeatNotActive(_)),
+            "expected SeatNotActive, got {err:?}",
+        );
+    }
+
+    #[test]
     fn serde_roundtrip() {
         let s = make_seat(SeatRole::Officer);
         let json = serde_json::to_string(&s).unwrap();

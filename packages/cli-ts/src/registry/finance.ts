@@ -3,10 +3,8 @@ import {
   printBankAccountsTable,
   printClassificationsTable,
   printDistributionsTable,
-  printError,
   printFinanceSummaryPanel,
   printInvoicesTable,
-  printJson,
   printPaymentsTable,
   printPayrollRunsTable,
   printReconciliationsTable,
@@ -185,13 +183,11 @@ export const financeCommands: CommandDef[] = [
     handler: async (ctx) => {
       const eid = await ctx.resolver.resolveEntity(ctx.opts.entityId as string | undefined);
       if (ctx.opts.amountCents != null && ctx.opts.amountDollars != null) {
-        printError("--amount-cents and --amount-dollars are mutually exclusive. Use one or the other.");
-        process.exit(1);
+        throw new Error("--amount-cents and --amount-dollars are mutually exclusive. Use one or the other.");
       }
       const amountCents = (ctx.opts.amountCents as number | undefined) ?? ((ctx.opts.amountDollars as number | undefined) != null ? (ctx.opts.amountDollars as number) * 100 : undefined);
       if (amountCents == null) {
-        printError("required: --amount-cents <n> or --amount-dollars <n>");
-        process.exit(1);
+        throw new Error("required: --amount-cents <n> or --amount-dollars <n>");
       }
       const result = await ctx.client.createInvoice({
         entity_id: eid,
@@ -249,13 +245,11 @@ export const financeCommands: CommandDef[] = [
     handler: async (ctx) => {
       const eid = await ctx.resolver.resolveEntity(ctx.opts.entityId as string | undefined);
       if (ctx.opts.amountCents != null && ctx.opts.amountDollars != null) {
-        printError("--amount-cents and --amount-dollars are mutually exclusive. Use one or the other.");
-        process.exit(1);
+        throw new Error("--amount-cents and --amount-dollars are mutually exclusive. Use one or the other.");
       }
       const amountCents = (ctx.opts.amountCents as number | undefined) ?? ((ctx.opts.amountDollars as number | undefined) != null ? (ctx.opts.amountDollars as number) * 100 : undefined);
       if (amountCents == null) {
-        printError("required: --amount-cents <n> or --amount-dollars <n>");
-        process.exit(1);
+        throw new Error("required: --amount-cents <n> or --amount-dollars <n>");
       }
       const method = ctx.opts.method as string;
       const result = await ctx.client.submitPayment({
@@ -545,7 +539,17 @@ export const financeCommands: CommandDef[] = [
       if (ctx.opts.period) params.period = ctx.opts.period as string;
       const result = await ctx.client.getFinancialStatements(eid, params);
       if (ctx.opts.json) { ctx.writer.json(result); return; }
-      printJson(result);
+      if (result && typeof result === "object" && !Array.isArray(result)) {
+        const rec = result as Record<string, unknown>;
+        const lines = Object.entries(rec).map(([key, val]) => {
+          const label = key.replace(/_/g, " ").replace(/\b\w/g, (ch) => ch.toUpperCase());
+          const formatted = typeof val === "object" ? JSON.stringify(val) : String(val ?? "");
+          return `${label}: ${formatted}`;
+        });
+        ctx.writer.panel("Financial Statements", "green", lines);
+      } else {
+        ctx.writer.json(result);
+      }
     },
     examples: ["corp finance statements", "corp finance statements --json"],
   },

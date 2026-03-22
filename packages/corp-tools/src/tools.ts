@@ -2,6 +2,12 @@ import type { CorpAPIClient } from "./api-client.js";
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { GENERATED_TOOL_DEFINITIONS } from "./tool-defs.generated.js";
+import type { CapTableInstrument } from "./types.js";
+import {
+  resolveInstrumentForGrant,
+  ensureIssuancePreflight,
+} from "./workflows/equity-helpers.js";
+export type { CapTableInstrument } from "./types.js";
 
 export interface ToolContext {
   dataDir: string;
@@ -134,126 +140,6 @@ const entityActions: Record<string, ToolHandler> = {
   },
   dissolve: async (args, client) => client.dissolveEntity(requiredString(args, "entity_id"), args),
 };
-
-export type CapTableInstrument = { instrument_id: string; kind: string; symbol: string; status?: string };
-
-function normalizedGrantType(grantType: string): string {
-  return grantType.trim().toLowerCase().replaceAll("-", "_").replaceAll(" ", "_");
-}
-
-function expectedInstrumentKinds(grantType: string): string[] {
-  switch (normalizedGrantType(grantType)) {
-    case "common":
-    case "common_stock":
-      return ["common_equity"];
-    case "preferred":
-    case "preferred_stock":
-      return ["preferred_equity"];
-    case "unit":
-    case "membership_unit":
-      return ["membership_unit"];
-    case "option":
-    case "options":
-    case "stock_option":
-    case "iso":
-    case "nso":
-      return ["option_grant"];
-    case "rsa":
-      return ["common_equity", "preferred_equity"];
-    case "safe":
-    case "post_money":
-    case "pre_money":
-    case "mfn":
-      return ["safe"];
-    default:
-      return [];
-  }
-}
-
-function grantRequiresCurrent409a(grantType: string, instrumentKind?: string): boolean {
-  return instrumentKind?.toLowerCase() === "option_grant" || expectedInstrumentKinds(grantType).includes("option_grant");
-}
-
-function instrumentCreationHint(grantType: string): string {
-  const normalized = normalizedGrantType(grantType);
-  switch (normalized) {
-    case "preferred":
-    case "preferred_stock":
-      return "Create a preferred instrument first, then re-run issuance with that instrument ID.";
-    case "option":
-    case "options":
-    case "stock_option":
-    case "iso":
-    case "nso":
-      return "Create an option_grant instrument first, then re-run issuance with that instrument ID.";
-    case "membership_unit":
-    case "unit":
-      return "Create a membership_unit instrument first, then re-run issuance with that instrument ID.";
-    default:
-      return "Create a matching instrument first, then re-run issuance with that instrument ID.";
-  }
-}
-
-function resolveInstrumentForGrant(
-  instruments: CapTableInstrument[],
-  grantType: string,
-  explicitInstrumentId?: string,
-): CapTableInstrument {
-  if (explicitInstrumentId) {
-    const explicit = instruments.find((instrument) => instrument.instrument_id === explicitInstrumentId);
-    if (!explicit) {
-      throw new Error(`Instrument ${explicitInstrumentId} was not found on the cap table.`);
-    }
-    return explicit;
-  }
-
-  const expectedKinds = expectedInstrumentKinds(grantType);
-  if (!expectedKinds.length) {
-    throw new Error(`No default instrument mapping exists for grant type "${grantType}". ${instrumentCreationHint(grantType)}`);
-  }
-  const match = instruments.find((instrument) => expectedKinds.includes(instrument.kind.toLowerCase()));
-  if (!match) {
-    throw new Error(
-      `No instrument found for grant type "${grantType}". Expected one of: ${expectedKinds.join(", ")}. ${instrumentCreationHint(grantType)}`,
-    );
-  }
-  return match;
-}
-
-async function entityHasActiveBoard(client: CorpAPIClient, entityId: string): Promise<boolean> {
-  const bodies = await client.listGovernanceBodies(entityId);
-  return bodies.some((body) =>
-    String(body.body_type ?? "").toLowerCase() === "board_of_directors"
-      && String(body.status ?? "active").toLowerCase() === "active"
-  );
-}
-
-async function ensureIssuancePreflight(
-  client: CorpAPIClient,
-  entityId: string,
-  grantType: string,
-  instrument: CapTableInstrument | undefined,
-  meetingId: string | undefined,
-  resolutionId: string | undefined,
-): Promise<void> {
-  if ((!meetingId || !resolutionId) && await entityHasActiveBoard(client, entityId)) {
-    throw new Error("Board approval is required before issuing this round. Provide meeting_id and resolution_id from a passed board vote.");
-  }
-
-  if (!grantRequiresCurrent409a(grantType, instrument?.kind)) {
-    return;
-  }
-
-  try {
-    await client.getCurrent409a(entityId);
-  } catch (err) {
-    const msg = String(err);
-    if (msg.includes("404")) {
-      throw new Error("Stock option issuances require a current approved 409A valuation.");
-    }
-    throw err;
-  }
-}
 
 export async function ensureSafeInstrument(
   client: CorpAPIClient,
@@ -559,24 +445,11 @@ const documentActions: Record<string, ToolHandler> = {
 
   download_link: async (args, client) => {
     const docId = args.document_id as string;
-    try {
-      const resp = await fetch(`${client.apiUrl}/v1/documents/${docId}/request-copy`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${client.apiKey}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ email: "owner@workspace" }),
-      });
-      if (!resp.ok) throw new Error("request-copy failed");
-      const result = await resp.json() as Record<string, string>;
-      let downloadUrl = result.download_url ?? "";
-      if (downloadUrl.startsWith("/")) downloadUrl = client.apiUrl + downloadUrl;
-      return { document_id: docId, download_url: downloadUrl, expires_in: "24 hours" };
-    } catch {
-      return {
-        document_id: docId,
-        download_url: `${client.apiUrl}/v1/documents/${docId}/pdf`,
-        note: "Use your API key to authenticate the download.",
-      };
-    }
+    return {
+      document_id: docId,
+      download_url: `${client.apiUrl}/v1/documents/${docId}/pdf`,
+      note: "Use your API key to authenticate the download.",
+    };
   },
 
   preview_pdf: async (args, client) => {
@@ -687,6 +560,8 @@ const TOOL_DISPATCH: Record<string, Record<string, ToolHandler>> = {
 // Tool definitions are generated from the backend OpenAPI spec.
 // Regenerate: make generate-tools
 export const TOOL_DEFINITIONS: Record<string, unknown>[] = GENERATED_TOOL_DEFINITIONS;
+
+export const TOOL_DISPATCH_COUNT = Object.keys(TOOL_DISPATCH).length;
 
 // Actions that are read-only (no user confirmation needed)
 const READ_ONLY_ACTIONS = new Set([

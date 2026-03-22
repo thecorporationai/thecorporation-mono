@@ -34,23 +34,6 @@ export const serviceCommands: CommandDef[] = [
     examples: ["corp services", "corp services --json"],
   },
 
-  // --- services catalog ---
-  {
-    name: "services catalog",
-    description: "List the service catalog",
-    route: { method: "GET", path: "/v1/services/catalog" },
-    display: {
-      title: "Service Catalog",
-      cols: ["name>Name", "slug>Slug", "$price_cents>Price", "#service_id|id>ID"],
-    },
-    handler: async (ctx) => {
-      const items = await ctx.client.listServiceCatalog();
-      if (ctx.opts.json) { ctx.writer.json(items); return; }
-      printServiceCatalogTable(items);
-    },
-    examples: ["corp services catalog"],
-  },
-
   // --- services list ---
   {
     name: "services list",
@@ -204,7 +187,7 @@ export const serviceCommands: CommandDef[] = [
   },
   {
     name: "services requests",
-    description: "Submit a new service request",
+    description: "View a service request by ID",
     route: { method: "GET", path: "/v1/services/requests/{pos}" },
     entity: true,
     args: [{ name: "request-id", required: true, description: "Document request ID", posKind: "service_request" }],
@@ -217,7 +200,7 @@ export const serviceCommands: CommandDef[] = [
     route: { method: "POST", path: "/v1/services/requests/{pos}/cancel" },
     args: [{ name: "request-id", required: true, description: "Document request ID", posKind: "service_request" }],
     examples: ["corp services requests-cancel <request-id>"],
-    successTemplate: "Requests Cancel created",
+    successTemplate: "Request cancelled",
   },
   {
     name: "services requests-checkout",
@@ -225,7 +208,7 @@ export const serviceCommands: CommandDef[] = [
     route: { method: "POST", path: "/v1/services/requests/{pos}/checkout" },
     args: [{ name: "request-id", required: true, description: "Document request ID", posKind: "service_request" }],
     examples: ["corp services requests-checkout <request-id>"],
-    successTemplate: "Requests Checkout created",
+    successTemplate: "Checkout started",
   },
   {
     name: "services requests-fulfill",

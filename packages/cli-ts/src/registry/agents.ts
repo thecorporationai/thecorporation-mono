@@ -1,7 +1,6 @@
 import type { CommandDef, CommandContext } from "./types.js";
 import {
   printAgentsTable,
-  printError,
   printJson,
   printReferenceSummary,
   printSuccess,
@@ -137,14 +136,13 @@ export const agentCommands: CommandDef[] = [
       } catch (err) {
         const msg = String(err);
         if (msg.includes("409") || msg.includes("conflict") || msg.includes("already exists")) {
-          printError(
+          throw new Error(
             `Agent name '${ctx.opts.name}' is already in use (deleted agents still reserve their name).\n` +
             "  Choose a different name, e.g.: corp agents create --name '...-v2' --prompt '...'",
           );
         } else {
-          printError(`Failed to create agent: ${err}`);
+          throw new Error(`Failed to create agent: ${err}`);
         }
-        process.exit(1);
       }
     },
     produces: { kind: "agent" },
@@ -182,15 +180,14 @@ export const agentCommands: CommandDef[] = [
       } catch (err) {
         const msg = String(err);
         if (msg.includes("409") || msg.includes("disabled") || msg.includes("deleted")) {
-          printError(
+          throw new Error(
             `Cannot resume agent ${agentRef}: the agent may be disabled or deleted.\n` +
             "  Disabled/deleted agents cannot be resumed. Create a new agent instead:\n" +
             "    corp agents create --name '...' --prompt '...'",
           );
         } else {
-          printError(`Failed to resume agent: ${err}`);
+          throw new Error(`Failed to resume agent: ${err}`);
         }
-        process.exit(1);
       }
     },
     examples: ["corp agents resume <agent-ref>"],
@@ -203,7 +200,7 @@ export const agentCommands: CommandDef[] = [
     route: { method: "DELETE", path: "/v1/agents/{pos}" },
     args: [{ name: "agent-ref", required: true, description: "Agent reference" }],
     options: [
-      { flags: "--yes, -y", description: "Skip confirmation prompt" },
+      { flags: "--yes -y", description: "Skip confirmation prompt" },
     ],
     handler: async (ctx) => {
       const agentRef = ctx.positional[0];
@@ -241,15 +238,14 @@ export const agentCommands: CommandDef[] = [
       } catch (err) {
         const msg = String(err);
         if (msg.includes("409")) {
-          printError(
+          throw new Error(
             `Cannot message agent: the agent must be active or paused (not disabled/deleted).\n` +
             "  Check agent status: corp agents show " + agentRef + "\n" +
             "  Resume a paused agent: corp agents resume " + agentRef,
           );
         } else {
-          printError(`Failed to send message: ${err}`);
+          throw new Error(`Failed to send message: ${err}`);
         }
-        process.exit(1);
       }
     },
     examples: ["corp agents message <agent-ref>", "corp agents message --json"],

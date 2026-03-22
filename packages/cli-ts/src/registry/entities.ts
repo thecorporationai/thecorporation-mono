@@ -1,5 +1,5 @@
 import type { CommandDef, CommandContext } from "./types.js";
-import { printEntitiesTable, printContactsTable, printError, printJson, printReferenceSummary, printSuccess, printWriteResult } from "../output.js";
+import { printEntitiesTable, printContactsTable, printJson, printReferenceSummary, printSuccess, printWriteResult } from "../output.js";
 import { withSpinner } from "../spinner.js";
 import { confirm } from "@inquirer/prompts";
 import chalk from "chalk";
@@ -20,8 +20,7 @@ async function entitiesHandler(ctx: CommandContext): Promise<void> {
       printEntitiesTable(entities);
     }
   } catch (err) {
-    printError(`Failed to fetch entities: ${err}`);
-    process.exit(1);
+    throw new Error(`Failed to fetch entities: ${err}`);
   }
 }
 
@@ -34,8 +33,7 @@ async function entitiesShowHandler(ctx: CommandContext): Promise<void> {
     const entities = await ctx.client.listEntities();
     const entity = entities.find((e: ApiRecord) => e.entity_id === resolvedEntityId);
     if (!entity) {
-      printError(`Entity not found: ${entityRef}`);
-      process.exit(1);
+      throw new Error(`Entity not found: ${entityRef}`);
     }
     await ctx.resolver.stabilizeRecord("entity", entity);
     if (quiet) {
@@ -59,8 +57,7 @@ async function entitiesShowHandler(ctx: CommandContext): Promise<void> {
       console.log(chalk.blue("\u2500".repeat(40)));
     }
   } catch (err) {
-    printError(`Failed to fetch entities: ${err}`);
-    process.exit(1);
+    throw new Error(`Failed to fetch entities: ${err}`);
   }
 }
 
@@ -74,8 +71,7 @@ async function entitiesConvertHandler(ctx: CommandContext): Promise<void> {
     printSuccess(`Entity conversion initiated: ${result.conversion_id ?? "OK"}`);
     printJson(result);
   } catch (err) {
-    printError(`Failed to convert entity: ${err}`);
-    process.exit(1);
+    throw new Error(`Failed to convert entity: ${err}`);
   }
 }
 
@@ -101,11 +97,10 @@ async function entitiesDissolveHandler(ctx: CommandContext): Promise<void> {
   } catch (err) {
     const msg = String(err);
     if (msg.includes("InvalidTransition") || msg.includes("422")) {
-      printError(`Cannot dissolve entity: only entities with 'active' status can be dissolved. Check the entity's current status with: corp entities show ${entityRef}`);
+      throw new Error(`Cannot dissolve entity: only entities with 'active' status can be dissolved. Check the entity's current status with: corp entities show ${entityRef}`);
     } else {
-      printError(`Failed to dissolve entity: ${err}`);
+      throw new Error(`Failed to dissolve entity: ${err}`);
     }
-    process.exit(1);
   }
 }
 
@@ -121,8 +116,7 @@ async function contactsHandler(ctx: CommandContext): Promise<void> {
     else if (contacts.length === 0) console.log("No contacts found.");
     else printContactsTable(contacts);
   } catch (err) {
-    printError(`Failed to fetch contacts: ${err}`);
-    process.exit(1);
+    throw new Error(`Failed to fetch contacts: ${err}`);
   }
 }
 
@@ -156,8 +150,7 @@ async function contactsShowHandler(ctx: CommandContext): Promise<void> {
       console.log(chalk.cyan("\u2500".repeat(40)));
     }
   } catch (err) {
-    printError(`Failed to fetch contact: ${err}`);
-    process.exit(1);
+    throw new Error(`Failed to fetch contact: ${err}`);
   }
 }
 
@@ -185,8 +178,7 @@ async function contactsAddHandler(ctx: CommandContext): Promise<void> {
       { jsonOnly: jsonOutput, referenceKind: "contact", showReuseHint: true },
     );
   } catch (err) {
-    printError(`Failed to create contact: ${err}`);
-    process.exit(1);
+    throw new Error(`Failed to create contact: ${err}`);
   }
 }
 
@@ -216,8 +208,7 @@ async function contactsEditHandler(ctx: CommandContext): Promise<void> {
     ctx.resolver.remember("contact", resolvedContactId, eid);
     printWriteResult(result, "Contact updated.", jsonOutput);
   } catch (err) {
-    printError(`Failed to update contact: ${err}`);
-    process.exit(1);
+    throw new Error(`Failed to update contact: ${err}`);
   }
 }
 
@@ -258,7 +249,7 @@ export const entityCommands: CommandDef[] = [
     options: [
       { flags: "--reason <reason>", description: "Dissolution reason", required: true },
       { flags: "--effective-date <date>", description: "Effective date (ISO 8601)" },
-      { flags: "--yes, -y", description: "Skip confirmation prompt" },
+      { flags: "--yes -y", description: "Skip confirmation prompt" },
     ],
     handler: entitiesDissolveHandler,
     examples: ["corp entities dissolve <entity-ref> --reason 'reason'", "corp entities dissolve --json"],
@@ -347,7 +338,7 @@ export const entityCommands: CommandDef[] = [
       { flags: "--sms-enabled <sms-enabled>", description: "Sms Enabled" },
       { flags: "--webhook-enabled <webhook-enabled>", description: "Webhook Enabled" },
     ],
-    examples: ["corp contacts notification-prefs <contact-id>", "corp contacts notification-prefs --json"],
+    examples: ["corp contacts update-notification-prefs <contact-id>", "corp contacts update-notification-prefs --json"],
     successTemplate: "Notification Prefs updated",
   },
 

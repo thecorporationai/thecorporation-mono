@@ -117,7 +117,6 @@ export async function servicesShowCommand(
       return;
     }
     printReferenceSummary("service_request", result);
-    printJson(result);
   } catch (err) {
     printError(`Failed to show service request: ${err}`);
     process.exit(1);
@@ -146,7 +145,6 @@ export async function servicesFulfillCommand(
     }
     printSuccess(`Service request fulfilled: ${requestId}`);
     printReferenceSummary("service_request", result, { showReuseHint: true });
-    printJson(result);
   } catch (err) {
     printError(`Failed to fulfill service request: ${err}`);
     process.exit(1);
@@ -174,7 +172,6 @@ export async function servicesCancelCommand(
     }
     printSuccess(`Service request cancelled: ${requestId}`);
     printReferenceSummary("service_request", result, { showReuseHint: true });
-    printJson(result);
   } catch (err) {
     printError(`Failed to cancel service request: ${err}`);
     process.exit(1);

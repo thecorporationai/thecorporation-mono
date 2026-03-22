@@ -1,33 +1,8 @@
 import type { CommandDef, CommandContext } from "./registry/types.js";
 import type { ResourceKind } from "./references.js";
+import { shortId } from "./references.js";
+import { s, money, date } from "./output.js";
 import { withSpinner } from "./spinner.js";
-
-// ── Formatting helpers (local versions matching output.ts private helpers) ──
-
-function s(val: unknown, maxLen?: number): string {
-  const str = val == null ? "" : String(val);
-  if (maxLen && str.length > maxLen) return str.slice(0, maxLen);
-  return str;
-}
-
-function money(val: unknown): string {
-  if (typeof val === "number") {
-    const dollars = val / 100;
-    return `$${dollars.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-  }
-  return s(val);
-}
-
-function fmtDate(val: unknown): string {
-  const str = s(val);
-  if (!str) return "";
-  const parsed = new Date(str);
-  return Number.isNaN(parsed.getTime()) ? str : parsed.toISOString().slice(0, 10);
-}
-
-function shortId(val: string): string {
-  return val.length > 8 ? val.slice(0, 8) + "\u2026" : val;
-}
 
 // ── Column spec parsing ──
 
@@ -64,7 +39,7 @@ function getField(obj: Record<string, unknown>, keys: string[]): unknown {
 function fmtField(val: unknown, fmt: ColSpec["fmt"]): string {
   if (val == null) return "";
   if (fmt === "money") return money(val);
-  if (fmt === "date") return fmtDate(val);
+  if (fmt === "date") return date(val);
   if (fmt === "id") return shortId(String(val));
   return String(val);
 }
@@ -118,7 +93,7 @@ function displayPanel(data: Record<string, unknown>, title: string, ctx: Command
       .replace(/\b\w/g, (ch) => ch.toUpperCase());
     let formatted: string;
     if (k.endsWith("_cents") && typeof v === "number") formatted = money(v);
-    else if ((k.includes("date") || k.endsWith("_at")) && v) formatted = fmtDate(v);
+    else if ((k.includes("date") || k.endsWith("_at")) && v) formatted = date(v);
     else if (k.endsWith("_id")) formatted = shortId(String(v));
     else formatted = String(v);
     return `${label}: ${formatted}`;

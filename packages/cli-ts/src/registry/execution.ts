@@ -131,7 +131,7 @@ export const executionCommands: CommandDef[] = [
     entity: true,
     args: [{ name: "intent-id", required: true, description: "Execution intent ID" }],
     examples: ["corp intents authorize <intent-id>"],
-    successTemplate: "Authorize created",
+    successTemplate: "Intent authorized",
   },
   {
     name: "intents bind-approval-artifact",
@@ -162,7 +162,7 @@ export const executionCommands: CommandDef[] = [
     entity: true,
     args: [{ name: "intent-id", required: true, description: "Execution intent ID" }],
     examples: ["corp intents cancel <intent-id>"],
-    successTemplate: "Cancel created",
+    successTemplate: "Intent cancelled",
   },
   {
     name: "intents evaluate",
@@ -171,7 +171,7 @@ export const executionCommands: CommandDef[] = [
     entity: true,
     args: [{ name: "intent-id", required: true, description: "Execution intent ID" }],
     examples: ["corp intents evaluate <intent-id>"],
-    successTemplate: "Evaluate created",
+    successTemplate: "Intent evaluated",
   },
   {
     name: "intents execute",
@@ -180,7 +180,7 @@ export const executionCommands: CommandDef[] = [
     entity: true,
     args: [{ name: "intent-id", required: true, description: "Execution intent ID" }],
     examples: ["corp intents execute <intent-id>"],
-    successTemplate: "Execute created",
+    successTemplate: "Intent executed",
   },
   {
     name: "intents receipts",
@@ -205,7 +205,7 @@ export const executionCommands: CommandDef[] = [
   },
   {
     name: "obligations document-requests",
-    description: "List or create document requests for an obligation",
+    description: "List document requests for an obligation",
     route: { method: "GET", path: "/v1/obligations/{pos}/document-requests" },
     entity: true,
     args: [{ name: "obligation-id", required: true, description: "Obligation ID" }],
@@ -214,7 +214,7 @@ export const executionCommands: CommandDef[] = [
   },
   {
     name: "obligations create-document-request",
-    description: "List or create document requests for an obligation",
+    description: "Create a document request for an obligation",
     route: { method: "POST", path: "/v1/obligations/{pos}/document-requests" },
     entity: true,
     args: [{ name: "obligation-id", required: true, description: "Obligation ID" }],
@@ -232,7 +232,7 @@ export const executionCommands: CommandDef[] = [
     entity: true,
     args: [{ name: "obligation-id", required: true, description: "Obligation ID" }],
     examples: ["corp obligations expire <obligation-id>"],
-    successTemplate: "Expire created",
+    successTemplate: "Obligation expired",
   },
   {
     name: "obligations fulfill",
@@ -241,7 +241,7 @@ export const executionCommands: CommandDef[] = [
     entity: true,
     args: [{ name: "obligation-id", required: true, description: "Obligation ID" }],
     examples: ["corp obligations fulfill <obligation-id>"],
-    successTemplate: "Fulfill created",
+    successTemplate: "Obligation fulfilled",
   },
   {
     name: "obligations waive",
@@ -250,7 +250,7 @@ export const executionCommands: CommandDef[] = [
     entity: true,
     args: [{ name: "obligation-id", required: true, description: "Obligation ID" }],
     examples: ["corp obligations waive <obligation-id>"],
-    successTemplate: "Waive created",
+    successTemplate: "Obligation waived",
   },
   {
     name: "receipts",

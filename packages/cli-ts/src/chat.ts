@@ -27,7 +27,7 @@ export async function chatCommand(): Promise<void> {
 
   console.log(chalk.blue.bold("corp chat") + " — type /help for commands, /quit to exit\n");
 
-  const slashHandlers: Record<string, (args: string) => void> = {
+  const slashHandlers: Record<string, (args: string) => void | Promise<void>> = {
     "/status": async () => {
       try { printStatusPanel(await client.getStatus()); } catch (e) { printError(`Status error: ${e}`); }
     },

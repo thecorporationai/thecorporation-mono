@@ -357,7 +357,7 @@ export const adminCommands: CommandDef[] = [
         "    corp governance agenda-items <meeting>  # see items awaiting votes\n" +
         "    corp cap-table valuations               # see pending valuations\n",
       );
-      process.exit(1);
+      process.exit(0);
     },
     examples: ["corp approvals"],
   },
@@ -488,7 +488,7 @@ export const adminCommands: CommandDef[] = [
       { flags: "--ttl-seconds <ttl-seconds>", description: "Token TTL in seconds (60-86400)", type: "int" },
     ],
     examples: ["corp auth token-exchange --api-key 'api-key'", "corp auth token-exchange --json"],
-    successTemplate: "Token Exchange created",
+    successTemplate: "Token exchanged",
   },
   {
     name: "ssh-keys",
@@ -542,7 +542,7 @@ export const adminCommands: CommandDef[] = [
       { flags: "--kind <kind>", description: "Resource kind", required: true, choices: ["entity", "contact", "share_transfer", "invoice", "bank_account", "payment", "payroll_run", "distribution", "reconciliation", "tax_filing", "deadline", "classification", "body", "meeting", "seat", "agenda_item", "resolution", "document", "work_item", "agent", "valuation", "safe_note", "instrument", "share_class", "round"] },
     ],
     examples: ["corp references sync --items 'items' --kind 'kind'"],
-    successTemplate: "Sync created",
+    successTemplate: "References synced",
   },
 
 

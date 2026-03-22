@@ -73,8 +73,7 @@ export const capTableCommands: CommandDef[] = [
       await ctx.resolver.stabilizeRecords("share_class", shareClasses, eid);
       if (ctx.opts.json) { ctx.writer.json(data); return; }
       if ((data.access_level as string) === "none") {
-        ctx.writer.error("You do not have access to this entity's cap table.");
-        process.exit(1);
+        throw new Error("You do not have access to this entity's cap table.");
       }
       printCapTable(data);
       try {
@@ -262,10 +261,10 @@ export const capTableCommands: CommandDef[] = [
               "  corp cap-table create-valuation --type four_oh_nine_a --date YYYY-MM-DD --methodology <method>",
             );
           }
+          return;
         } else {
-          ctx.writer.error(`Failed to fetch 409A valuation: ${err}`);
+          throw new Error(`Failed to fetch 409A valuation: ${err}`);
         }
-        process.exit(1);
       }
     },
     examples: ["corp cap-table 409a", "corp cap-table 409a --json"],
@@ -984,11 +983,10 @@ export const capTableCommands: CommandDef[] = [
       } catch (err) {
         const msg = String(err);
         if (msg.includes("404") || msg.includes("Not found") || msg.includes("not found")) {
-          ctx.writer.error(`Valuation not found. List valuations with: corp cap-table valuations`);
+          throw new Error(`Valuation not found. List valuations with: corp cap-table valuations`);
         } else {
-          ctx.writer.error(`Failed to submit valuation: ${err}`);
+          throw new Error(`Failed to submit valuation: ${err}`);
         }
-        process.exit(1);
       }
     },
     examples: ["corp cap-table submit-valuation <valuation-ref>"],
@@ -1029,11 +1027,10 @@ export const capTableCommands: CommandDef[] = [
       } catch (err) {
         const msg = String(err);
         if (msg.includes("400")) {
-          ctx.writer.error(`Bad request \u2014 a --resolution-id from a board vote may be required. Submit for approval first: corp cap-table submit-valuation <valuation-ref>`);
+          throw new Error(`Bad request \u2014 a --resolution-id from a board vote may be required. Submit for approval first: corp cap-table submit-valuation <valuation-ref>`);
         } else {
-          ctx.writer.error(`Failed to approve valuation: ${err}`);
+          throw new Error(`Failed to approve valuation: ${err}`);
         }
-        process.exit(1);
       }
     },
     examples: ["corp cap-table approve-valuation <valuation-ref>", "corp cap-table approve-valuation --json"],

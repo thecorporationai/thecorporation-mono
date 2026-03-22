@@ -4,60 +4,7 @@ import { requireConfig } from "../config.js";
 import { CorpAPIClient } from "../api-client.js";
 import { printError, printJson } from "../output.js";
 import { ReferenceResolver, type ResourceKind } from "../references.js";
-
-const KINDS = new Set<ResourceKind>([
-  "entity",
-  "contact",
-  "share_transfer",
-  "invoice",
-  "bank_account",
-  "payment",
-  "payroll_run",
-  "distribution",
-  "reconciliation",
-  "tax_filing",
-  "deadline",
-  "classification",
-  "body",
-  "meeting",
-  "seat",
-  "agenda_item",
-  "resolution",
-  "document",
-  "work_item",
-  "agent",
-  "valuation",
-  "safe_note",
-  "instrument",
-  "share_class",
-  "round",
-]);
-
-const ENTITY_SCOPED_KINDS = new Set<ResourceKind>([
-  "contact",
-  "share_transfer",
-  "invoice",
-  "bank_account",
-  "payment",
-  "payroll_run",
-  "distribution",
-  "reconciliation",
-  "tax_filing",
-  "deadline",
-  "classification",
-  "body",
-  "meeting",
-  "seat",
-  "agenda_item",
-  "resolution",
-  "document",
-  "work_item",
-  "valuation",
-  "safe_note",
-  "instrument",
-  "share_class",
-  "round",
-]);
+import { KINDS, ENTITY_SCOPED_KINDS } from "../resource-kinds.js";
 
 export async function findCommand(
   kind: string,

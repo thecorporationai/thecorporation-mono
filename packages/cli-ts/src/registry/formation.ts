@@ -1,5 +1,5 @@
 import type { CommandDef, CommandContext } from "./types.js";
-import { printDryRun, printError, printJson, printReferenceSummary, printSuccess } from "../output.js";
+import { printDryRun, printJson, printReferenceSummary, printSuccess } from "../output.js";
 import { setActiveEntityId, setLastReference, saveConfig, updateConfig, requireConfig } from "../config.js";
 import { activateFormationEntity } from "../formation-automation.js";
 import chalk from "chalk";
@@ -56,30 +56,25 @@ async function formCreateHandler(ctx: CommandContext): Promise<void> {
   const opts = ctx.opts;
   // Reject options that belong to form finalize, not form create
   if (opts.shares || opts.authorizedShares) {
-    ctx.writer.error(
+    throw new Error(
       "--shares / --authorized-shares is not accepted on form create.\n" +
       "  Set authorized shares during finalize:\n" +
       "    corp form finalize @last:entity --authorized-shares 10000000",
     );
-    process.exit(1);
   }
   const resolvedType = opts.type as string | undefined;
   const resolvedName = opts.name as string | undefined;
   if (!resolvedType) {
-    ctx.writer.error("required option '--type <type>' not specified");
-    process.exit(1);
+    throw new Error("required option '--type <type>' not specified");
   }
   if (!SUPPORTED_ENTITY_TYPES.includes(resolvedType)) {
-    ctx.writer.error(`unsupported entity type '${resolvedType}'. Supported types: ${SUPPORTED_ENTITY_TYPES.join(", ")}`);
-    process.exit(1);
+    throw new Error(`unsupported entity type '${resolvedType}'. Supported types: ${SUPPORTED_ENTITY_TYPES.join(", ")}`);
   }
   if (!resolvedName) {
-    ctx.writer.error("required option '--name <name>' not specified");
-    process.exit(1);
+    throw new Error("required option '--name <name>' not specified");
   }
   if (!resolvedName.trim()) {
-    ctx.writer.error("--name cannot be empty or whitespace");
-    process.exit(1);
+    throw new Error("--name cannot be empty or whitespace");
   }
 
   const cfg = requireConfig("api_url", "api_key", "workspace_id");
@@ -139,8 +134,7 @@ async function formCreateHandler(ctx: CommandContext): Promise<void> {
     console.log(`  Status: ${result.formation_status}`);
     console.log(chalk.yellow(`\n  Next: corp form add-founder @last:entity --name "..." --email "..." --role member --pct 50`));
   } catch (err) {
-    printError(`Failed to create pending entity: ${err}`);
-    process.exit(1);
+    throw new Error(`Failed to create pending entity: ${err}`);
   }
 }
 
@@ -153,13 +147,11 @@ async function formAddFounderHandler(ctx: CommandContext): Promise<void> {
     const resolvedEntityId = await resolveEntityRefForFormCommand(ctx.resolver, entityRef, ctx.dryRun);
     const rawPct = (opts.ownershipPct ?? opts.pct) as string | undefined;
     if (!rawPct) {
-      ctx.writer.error("required option '--ownership-pct <percent>' not specified");
-      process.exit(1);
+      throw new Error("required option '--ownership-pct <percent>' not specified");
     }
     const pctValue = parseFloat(rawPct);
     if (isNaN(pctValue) || pctValue <= 0 || pctValue > 100) {
-      ctx.writer.error(`--ownership-pct must be between 0 and 100 (e.g. 60 for 60%), got: ${rawPct}`);
-      process.exit(1);
+      throw new Error(`--ownership-pct must be between 0 and 100 (e.g. 60 for 60%), got: ${rawPct}`);
     }
     const payload: ApiRecord = {
       name: opts.name as string,
@@ -190,8 +182,7 @@ async function formAddFounderHandler(ctx: CommandContext): Promise<void> {
     }
     console.log(chalk.yellow(`\n  Next: add more founders or run: corp form finalize @last:entity`));
   } catch (err) {
-    printError(`Failed to add founder: ${err}`);
-    process.exit(1);
+    throw new Error(`Failed to add founder: ${err}`);
   }
 }
 
@@ -290,7 +281,7 @@ async function formFinalizeHandler(ctx: CommandContext): Promise<void> {
       hints.push('--incorporator-name "Incorporator Name"');
     }
     if (hints.length > 0) {
-      printError(
+      throw new Error(
         `Finalization failed: ${msg}\n\n` +
         "  To fix, re-run finalize with the missing fields:\n" +
         hints.map((h) => `    ${h}`).join("\n") + "\n\n" +
@@ -298,9 +289,8 @@ async function formFinalizeHandler(ctx: CommandContext): Promise<void> {
         `    corp form finalize @last ${hints.filter((h) => h.startsWith("--")).join(" ")}`,
       );
     } else {
-      printError(`Failed to finalize formation: ${err}`);
+      throw new Error(`Failed to finalize formation: ${err}`);
     }
-    process.exit(1);
   }
 }
 
@@ -358,8 +348,7 @@ async function formActivateHandler(ctx: CommandContext): Promise<void> {
       console.log(chalk.yellow("    corp next                   See all recommended actions"));
     }
   } catch (err) {
-    printError(`Failed to activate formation: ${err}`);
-    process.exit(1);
+    throw new Error(`Failed to activate formation: ${err}`);
   }
 }
 
@@ -588,7 +577,7 @@ export const formationCommands: CommandDef[] = [
   },
   {
     name: "formations pending",
-    description: "List entities with pending formations",
+    description: "Create a pending formation",
     route: { method: "POST", path: "/v1/formations/pending" },
     options: [
       { flags: "--company-address <company-address>", description: "Company mailing address" },
@@ -604,7 +593,7 @@ export const formationCommands: CommandDef[] = [
       { flags: "--transfer-restrictions <transfer-restrictions>", description: "Transfer Restrictions" },
     ],
     examples: ["corp formations pending --entity-type c_corp --legal-name 'legal-name'", "corp formations pending --json"],
-    successTemplate: "Pending created",
+    successTemplate: "Pending formation created",
   },
   {
     name: "formations with-cap-table",

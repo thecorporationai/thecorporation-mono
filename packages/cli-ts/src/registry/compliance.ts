@@ -64,7 +64,7 @@ export const complianceCommands: CommandDef[] = [
   // --- tax filings ---
   {
     name: "tax filings",
-    description: "Create a tax filing record",
+    description: "List tax filing records",
     route: { method: "GET", path: "/v1/entities/{eid}/tax-filings" },
     entity: true,
     display: {
@@ -122,7 +122,7 @@ export const complianceCommands: CommandDef[] = [
     },
     produces: { kind: "tax_filing" },
     successTemplate: "Tax filing created",
-    examples: ["corp tax file --year 'year'"],
+    examples: ["corp tax file --type 1120 --year 'year'"],
   },
 
   // --- tax deadlines ---
@@ -191,7 +191,7 @@ export const complianceCommands: CommandDef[] = [
     description: "Scan for compliance issues and create escalations",
     route: { method: "POST", path: "/v1/compliance/escalations/scan" },
     examples: ["corp compliance escalations-scan"],
-    successTemplate: "Escalations Scan created",
+    successTemplate: "Escalation scan complete",
   },
   {
     name: "compliance escalations-resolve-with-evidence",
@@ -257,7 +257,7 @@ export const complianceCommands: CommandDef[] = [
       { flags: "--document-type <document-type>", description: "Type of document required", required: true },
       { flags: "--tax-year <tax-year>", description: "Tax Year", required: true, type: "int" },
     ],
-    examples: ["corp tax filings --document-type 'document-type' --tax-year 'tax-year'"],
+    examples: ["corp tax create-filing --document-type 'document-type' --tax-year 'tax-year'"],
     successTemplate: "Filings created",
   },
 

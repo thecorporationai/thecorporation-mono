@@ -8,7 +8,7 @@ export const treasuryCommands: CommandDef[] = [
     entity: true,
     args: [{ name: "bank-account-id", required: true, description: "Bank account ID", posKind: "bank_account" }],
     examples: ["corp bank-accounts close <bank-account-id>"],
-    successTemplate: "Close created",
+    successTemplate: "Account closed",
   },
   {
     name: "distributions",
@@ -70,7 +70,7 @@ export const treasuryCommands: CommandDef[] = [
   },
   {
     name: "invoices",
-    description: "Create a new invoice",
+    description: "View an invoice by ID",
     route: { method: "GET", path: "/v1/invoices/{pos}" },
     entity: true,
     args: [{ name: "invoice-id", required: true, description: "Invoice ID", posKind: "invoice" }],
@@ -84,7 +84,7 @@ export const treasuryCommands: CommandDef[] = [
     entity: true,
     args: [{ name: "invoice-id", required: true, description: "Invoice ID", posKind: "invoice" }],
     examples: ["corp invoices mark-paid <invoice-id>"],
-    successTemplate: "Mark Paid created",
+    successTemplate: "Invoice marked as paid",
   },
   {
     name: "invoices pay-instructions",
@@ -102,7 +102,7 @@ export const treasuryCommands: CommandDef[] = [
     entity: true,
     args: [{ name: "invoice-id", required: true, description: "Invoice ID", posKind: "invoice" }],
     examples: ["corp invoices send <invoice-id>"],
-    successTemplate: "Send created",
+    successTemplate: "Invoice sent",
   },
   {
     name: "invoices status",
@@ -120,7 +120,7 @@ export const treasuryCommands: CommandDef[] = [
     entity: true,
     args: [{ name: "entry-id", required: true, description: "Journal entry ID" }],
     examples: ["corp journal-entries post <entry-id>"],
-    successTemplate: "Post created",
+    successTemplate: "Journal entry posted",
   },
   {
     name: "journal-entries void",
@@ -129,7 +129,7 @@ export const treasuryCommands: CommandDef[] = [
     entity: true,
     args: [{ name: "entry-id", required: true, description: "Journal entry ID" }],
     examples: ["corp journal-entries void <entry-id>"],
-    successTemplate: "Void created",
+    successTemplate: "Journal entry voided",
   },
   {
     name: "ledger reconcile",
@@ -170,7 +170,7 @@ export const treasuryCommands: CommandDef[] = [
       { flags: "--recipient <recipient>", description: "Recipient", required: true },
     ],
     examples: ["corp payments execute --amount-cents 'amount-cents' --description bank_transfer --recipient 'recipient'", "corp payments execute --json"],
-    successTemplate: "Execute created",
+    successTemplate: "Payment executed",
   },
   {
     name: "payroll runs",
@@ -182,7 +182,7 @@ export const treasuryCommands: CommandDef[] = [
       { flags: "--pay-period-start <pay-period-start>", description: "Pay Period Start", required: true },
     ],
     examples: ["corp payroll runs --pay-period-end 'pay-period-end' --pay-period-start 'pay-period-start'"],
-    successTemplate: "Runs created",
+    successTemplate: "Payroll run created",
   },
   {
     name: "spending-limits",
@@ -287,7 +287,7 @@ export const treasuryCommands: CommandDef[] = [
     route: { method: "POST", path: "/v1/treasury/seed-chart-of-accounts" },
     entity: true,
     options: [
-      { flags: "--template <template>", description: "Template string with {{secret}} placeholders" },
+      { flags: "--template <template>", description: "Chart of accounts template name to seed from" },
     ],
     examples: ["corp treasury seed-chart-of-accounts", "corp treasury seed-chart-of-accounts --json"],
     successTemplate: "Seed Chart Of Accounts created",
