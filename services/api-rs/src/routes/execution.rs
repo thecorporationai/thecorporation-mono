@@ -270,22 +270,6 @@ fn packet_to_response(packet: &TransactionPacket) -> TransactionPacketResponse {
     }
 }
 
-// ── Helper to open a store ───────────────────────────────────────────
-
-fn open_store<'a>(
-    layout: &'a crate::store::RepoLayout,
-    workspace_id: WorkspaceId,
-    entity_id: EntityId,
-    valkey_client: Option<&redis::Client>,
-) -> Result<EntityStore<'a>, AppError> {
-    EntityStore::open(layout, workspace_id, entity_id, valkey_client).map_err(|e| match e {
-        crate::git::error::GitStorageError::RepoNotFound(_) => {
-            AppError::NotFound(format!("entity {} not found", entity_id))
-        }
-        other => AppError::Internal(other.to_string()),
-    })
-}
-
 fn read_schedule_or_default(store: &EntityStore<'_>, entity_id: EntityId) -> DelegationSchedule {
     store
         .read_json::<DelegationSchedule>("main", CURRENT_SCHEDULE_PATH)
@@ -504,12 +488,13 @@ async fn create_intent(
 ) -> Result<Json<IntentResponse>, AppError> {
     let workspace_id = auth.workspace_id();
     let entity_id = req.entity_id;
+    let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
     let intent = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id, valkey_client.as_ref())?;
+            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
             let canonical_intent_type = canonicalize_intent_type(&req.intent_type);
             let mode = read_mode_or_default(&store, entity_id);
             let schedule = read_schedule_or_default(&store, entity_id);
@@ -574,12 +559,13 @@ async fn list_intents(
     Path(entity_id): Path<EntityId>,
 ) -> Result<Json<Vec<IntentResponse>>, AppError> {
     let workspace_id = auth.workspace_id();
+    let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
     let intents = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id, valkey_client.as_ref())?;
+            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
             let ids = store
                 .list_ids::<Intent>("main")
                 .map_err(|e| AppError::Internal(format!("list intents: {e}")))?;
@@ -621,12 +607,13 @@ async fn evaluate_intent(
 ) -> Result<Json<IntentResponse>, AppError> {
     let workspace_id = auth.workspace_id();
     let entity_id = query.entity_id;
+    let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
     let intent = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id, valkey_client.as_ref())?;
+            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
             let mut intent = store
                 .read::<Intent>("main", intent_id)
                 .map_err(|_| AppError::NotFound(format!("intent {} not found", intent_id)))?;
@@ -699,12 +686,13 @@ async fn authorize_intent(
 ) -> Result<Json<IntentResponse>, AppError> {
     let workspace_id = auth.workspace_id();
     let entity_id = query.entity_id;
+    let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
     let intent = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id, valkey_client.as_ref())?;
+            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
             let mut intent = store
                 .read::<Intent>("main", intent_id)
                 .map_err(|_| AppError::NotFound(format!("intent {} not found", intent_id)))?;
@@ -787,12 +775,13 @@ async fn execute_intent(
 ) -> Result<Json<IntentResponse>, AppError> {
     let workspace_id = auth.workspace_id();
     let entity_id = query.entity_id;
+    let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
     let intent = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id, valkey_client.as_ref())?;
+            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
             let mut intent = store
                 .read::<Intent>("main", intent_id)
                 .map_err(|_| AppError::NotFound(format!("intent {} not found", intent_id)))?;
@@ -874,12 +863,13 @@ async fn cancel_intent(
 ) -> Result<Json<IntentResponse>, AppError> {
     let workspace_id = auth.workspace_id();
     let entity_id = query.entity_id;
+    let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
     let intent = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id, valkey_client.as_ref())?;
+            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
             let mut intent = store
                 .read::<Intent>("main", intent_id)
                 .map_err(|_| AppError::NotFound(format!("intent {} not found", intent_id)))?;
@@ -922,12 +912,13 @@ async fn create_approval_artifact(
 ) -> Result<Json<ApprovalArtifactResponse>, AppError> {
     let workspace_id = auth.workspace_id();
     let entity_id = req.entity_id;
+    let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
     let artifact = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id, valkey_client.as_ref())?;
+            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
             let canonical_intent_type = canonicalize_intent_type(&req.intent_type);
             let artifact = ApprovalArtifact::new(
                 ApprovalArtifactId::new(),
@@ -981,11 +972,12 @@ async fn list_approval_artifacts(
     Path(entity_id): Path<EntityId>,
 ) -> Result<Json<Vec<ApprovalArtifactResponse>>, AppError> {
     let workspace_id = auth.workspace_id();
+    let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let artifacts = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id, valkey_client.as_ref())?;
+            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
             let ids = store
                 .list_ids::<ApprovalArtifact>("main")
                 .map_err(|e| AppError::Internal(format!("list approval artifacts: {e}")))?;
@@ -1024,12 +1016,13 @@ async fn bind_approval_artifact_to_intent(
 ) -> Result<Json<IntentResponse>, AppError> {
     let workspace_id = auth.workspace_id();
     let entity_id = req.entity_id;
+    let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
     let intent = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id, valkey_client.as_ref())?;
+            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
             // Ensure the approval artifact exists before binding.
             store
                 .read::<ApprovalArtifact>("main", req.approval_artifact_id)
@@ -1085,12 +1078,13 @@ async fn bind_document_request_to_intent(
 ) -> Result<Json<IntentResponse>, AppError> {
     let workspace_id = auth.workspace_id();
     let entity_id = req.entity_id;
+    let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
     let intent = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id, valkey_client.as_ref())?;
+            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
             let request = store
                 .read::<DocumentRequest>("main", req.request_id)
                 .map_err(|_| {
@@ -1149,13 +1143,14 @@ async fn create_obligation(
 ) -> Result<Json<ObligationResponse>, AppError> {
     let workspace_id = auth.workspace_id();
     let entity_id = req.entity_id;
+    let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     state.enforce_creation_rate_limit("execution.obligation.create", workspace_id, 120, 60)?;
 
     let obligation = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id, valkey_client.as_ref())?;
+            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
 
             let obligation_id = ObligationId::new();
             let obligation = Obligation::new(
@@ -1204,12 +1199,13 @@ async fn list_obligations(
     Path(entity_id): Path<EntityId>,
 ) -> Result<Json<Vec<ObligationResponse>>, AppError> {
     let workspace_id = auth.workspace_id();
+    let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
     let obligations = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id, valkey_client.as_ref())?;
+            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
             let ids = store
                 .list_ids::<Obligation>("main")
                 .map_err(|e| AppError::Internal(format!("list obligations: {e}")))?;
@@ -1251,12 +1247,13 @@ async fn fulfill_obligation(
 ) -> Result<Json<ObligationResponse>, AppError> {
     let workspace_id = auth.workspace_id();
     let entity_id = query.entity_id;
+    let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
     let obligation = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id, valkey_client.as_ref())?;
+            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
             let mut obligation = store
                 .read::<Obligation>("main", obligation_id)
                 .map_err(|_| {
@@ -1305,12 +1302,13 @@ async fn waive_obligation(
 ) -> Result<Json<ObligationResponse>, AppError> {
     let workspace_id = auth.workspace_id();
     let entity_id = query.entity_id;
+    let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
     let obligation = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id, valkey_client.as_ref())?;
+            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
             let mut obligation = store
                 .read::<Obligation>("main", obligation_id)
                 .map_err(|_| {
@@ -1359,12 +1357,13 @@ async fn expire_obligation(
 ) -> Result<Json<ObligationResponse>, AppError> {
     let workspace_id = auth.workspace_id();
     let entity_id = query.entity_id;
+    let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
     let obligation = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id, valkey_client.as_ref())?;
+            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
             let mut obligation = store
                 .read::<Obligation>("main", obligation_id)
                 .map_err(|_| {
@@ -1440,12 +1439,13 @@ async fn get_receipt(
 ) -> Result<Json<ReceiptResponse>, AppError> {
     let workspace_id = auth.workspace_id();
     let entity_id = query.entity_id;
+    let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
     let receipt = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id, valkey_client.as_ref())?;
+            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
             store
                 .read::<Receipt>("main", receipt_id)
                 .map_err(|_| AppError::NotFound(format!("receipt {} not found", receipt_id)))
@@ -1478,12 +1478,13 @@ async fn list_receipts_by_intent(
 ) -> Result<Json<Vec<ReceiptResponse>>, AppError> {
     let workspace_id = auth.workspace_id();
     let entity_id = query.entity_id;
+    let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
     let receipts = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id, valkey_client.as_ref())?;
+            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
             let ids = store
                 .list_ids::<Receipt>("main")
                 .map_err(|e| AppError::Internal(format!("list receipts: {e}")))?;
@@ -1529,12 +1530,13 @@ async fn get_packet(
 ) -> Result<Json<TransactionPacketResponse>, AppError> {
     let workspace_id = auth.workspace_id();
     let entity_id = query.entity_id;
+    let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
     let packet = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id, valkey_client.as_ref())?;
+            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
             let packet = store
                 .read::<TransactionPacket>("main", packet_id)
                 .map_err(|_| AppError::NotFound(format!("packet {} not found", packet_id)))?;
@@ -1568,12 +1570,13 @@ async fn list_entity_packets(
     Path(entity_id): Path<EntityId>,
 ) -> Result<Json<Vec<TransactionPacketResponse>>, AppError> {
     let workspace_id = auth.workspace_id();
+    let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
     let packets = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id, valkey_client.as_ref())?;
+            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
             let ids = store
                 .list_ids::<TransactionPacket>("main")
                 .map_err(|e| AppError::Internal(format!("list packets: {e}")))?;
@@ -1622,12 +1625,13 @@ async fn assign_obligation(
 ) -> Result<Json<ObligationResponse>, AppError> {
     let workspace_id = auth.workspace_id();
     let entity_id = req.entity_id;
+    let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
     let obligation = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id, valkey_client.as_ref())?;
+            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
             let mut obligation = store
                 .read::<Obligation>("main", obligation_id)
                 .map_err(|_| {
@@ -1680,12 +1684,13 @@ async fn obligations_summary(
     Path(entity_id): Path<EntityId>,
 ) -> Result<Json<ObligationsSummaryResponse>, AppError> {
     let workspace_id = auth.workspace_id();
+    let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
     let summary = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id, valkey_client.as_ref())?;
+            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
             let ids = store
                 .list_ids::<Obligation>("main")
                 .map_err(|e| AppError::Internal(format!("list obligations: {e}")))?;
@@ -1739,12 +1744,13 @@ async fn list_human_obligations(
     Path(entity_id): Path<EntityId>,
 ) -> Result<Json<Vec<ObligationResponse>>, AppError> {
     let workspace_id = auth.workspace_id();
+    let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
     let obligations = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id, valkey_client.as_ref())?;
+            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
             let ids = store
                 .list_ids::<Obligation>("main")
                 .map_err(|e| AppError::Internal(format!("list obligations: {e}")))?;
@@ -1929,13 +1935,14 @@ async fn create_document_request(
 ) -> Result<Json<DocumentRequestResponse>, AppError> {
     let workspace_id = auth.workspace_id();
     let entity_id = req.entity_id;
+    let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let request_id = DocumentRequestId::new();
 
     let request = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id, valkey_client.as_ref())?;
+            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
 
             // Verify obligation exists
             store
@@ -1991,12 +1998,13 @@ async fn list_document_requests(
 ) -> Result<Json<Vec<DocumentRequestResponse>>, AppError> {
     let workspace_id = auth.workspace_id();
     let entity_id = query.entity_id;
+    let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
     let requests = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id, valkey_client.as_ref())?;
+            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
 
             let ids = store
                 .list_ids::<DocumentRequest>("main")
@@ -2038,12 +2046,14 @@ async fn fulfill_document_request(
     Path(request_id): Path<DocumentRequestId>,
     Query(query): Query<super::EntityIdQuery>,
 ) -> Result<Json<DocumentRequestResponse>, AppError> {
+    let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     update_document_request_status(
         state,
         request_id,
         auth.workspace_id(),
         query.entity_id,
         DocumentRequestStatus::Provided,
+        entity_scope,
     )
     .await
 }
@@ -2067,12 +2077,14 @@ async fn mark_document_request_na(
     Path(request_id): Path<DocumentRequestId>,
     Query(query): Query<super::EntityIdQuery>,
 ) -> Result<Json<DocumentRequestResponse>, AppError> {
+    let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     update_document_request_status(
         state,
         request_id,
         auth.workspace_id(),
         query.entity_id,
         DocumentRequestStatus::NotApplicable,
+        entity_scope,
     )
     .await
 }
@@ -2083,12 +2095,13 @@ async fn update_document_request_status(
     workspace_id: WorkspaceId,
     entity_id: EntityId,
     new_status: DocumentRequestStatus,
+    entity_scope: Option<Vec<EntityId>>,
 ) -> Result<Json<DocumentRequestResponse>, AppError> {
     let result = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id, valkey_client.as_ref())?;
+            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
             let path = format!("execution/document-requests/{}.json", request_id);
             let mut request: DocumentRequest = store.read_json("main", &path).map_err(|_| {
                 AppError::NotFound(format!("document request {} not found", request_id))

@@ -25,20 +25,6 @@ use crate::store::workspace_store::WorkspaceStore;
 
 // ── Helpers ─────────────────────────────────────────────────────────
 
-fn open_store<'a>(
-    layout: &'a crate::store::RepoLayout,
-    workspace_id: WorkspaceId,
-    entity_id: EntityId,
-    valkey_client: Option<&redis::Client>,
-) -> Result<EntityStore<'a>, AppError> {
-    EntityStore::open(layout, workspace_id, entity_id, valkey_client).map_err(|e| match e {
-        crate::git::error::GitStorageError::RepoNotFound(_) => {
-            AppError::NotFound(format!("entity {} not found", entity_id))
-        }
-        other => AppError::Internal(other.to_string()),
-    })
-}
-
 fn validate_category(category: &str) -> Result<String, AppError> {
     let trimmed = category.trim();
     if trimmed.is_empty() {
@@ -511,13 +497,14 @@ async fn create_work_item(
     }
     let category = validate_category(&req.category)?;
 
+    let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let work_item = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         let valkey_client = state.valkey_client.clone();
         let category = category.clone();
         let title = title.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id, valkey_client.as_ref())?;
+            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
             let created_by = resolve_actor_input(
                 &layout,
                 &store,
@@ -655,11 +642,12 @@ async fn get_work_item(
         return Err(AppError::Forbidden("entity access denied".to_owned()));
     }
 
+    let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let work_item = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id, valkey_client.as_ref())?;
+            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
             store
                 .read::<WorkItem>("main", work_item_id)
                 .map_err(|_| AppError::NotFound(format!("work item {} not found", work_item_id)))
@@ -697,11 +685,12 @@ async fn claim_work_item(
         return Err(AppError::Forbidden("entity access denied".to_owned()));
     }
 
+    let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let work_item = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id, valkey_client.as_ref())?;
+            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
             let claimed_by = resolve_actor_input(
                 &layout,
                 &store,
@@ -768,11 +757,12 @@ async fn complete_work_item(
         return Err(AppError::Forbidden("entity access denied".to_owned()));
     }
 
+    let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let work_item = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id, valkey_client.as_ref())?;
+            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
             let completed_by = resolve_actor_input(
                 &layout,
                 &store,
@@ -844,11 +834,12 @@ async fn release_work_item(
         return Err(AppError::Forbidden("entity access denied".to_owned()));
     }
 
+    let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let work_item = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id, valkey_client.as_ref())?;
+            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
             let mut w = store
                 .read::<WorkItem>("main", work_item_id)
                 .map_err(|_| AppError::NotFound(format!("work item {} not found", work_item_id)))?;
@@ -898,11 +889,12 @@ async fn cancel_work_item(
         return Err(AppError::Forbidden("entity access denied".to_owned()));
     }
 
+    let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let work_item = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_id, valkey_client.as_ref())?;
+            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
             let mut w = store
                 .read::<WorkItem>("main", work_item_id)
                 .map_err(|_| AppError::NotFound(format!("work item {} not found", work_item_id)))?;

@@ -21,7 +21,7 @@ use crate::auth::{RequireTreasuryRead, RequireTreasuryWrite};
 use crate::domain::formation::types::FormationStatus;
 use crate::domain::ids::{
     AccountId, BankAccountId, DistributionId, EntityId, InvoiceId, JournalEntryId, LedgerLineId,
-    PaymentId, PayrollRunId, ReconciliationId, SpendingLimitId, WorkspaceId,
+    PaymentId, PayrollRunId, ReconciliationId, SpendingLimitId,
 };
 use crate::domain::treasury::{
     account::Account,
@@ -232,30 +232,6 @@ fn reconciliation_to_response(recon: &Reconciliation) -> ReconciliationResponse 
     }
 }
 
-// ── Helper to open a store ───────────────────────────────────────────
-
-fn open_store<'a>(
-    layout: &'a crate::store::RepoLayout,
-    workspace_id: WorkspaceId,
-    allowed_entity_ids: Option<&[EntityId]>,
-    entity_id: EntityId,
-    valkey_client: Option<&redis::Client>,
-) -> Result<EntityStore<'a>, AppError> {
-    if let Some(ids) = allowed_entity_ids
-        && !ids.contains(&entity_id)
-    {
-        return Err(AppError::Forbidden(format!(
-            "principal is not authorized for entity {}",
-            entity_id
-        )));
-    }
-    EntityStore::open(layout, workspace_id, entity_id, valkey_client).map_err(|e| match e {
-        crate::git::error::GitStorageError::RepoNotFound(_) => {
-            AppError::NotFound(format!("entity {} not found", entity_id))
-        }
-        other => AppError::Internal(other.to_string()),
-    })
-}
 
 const MAX_FINANCIAL_AMOUNT_CENTS: i64 = 1_000_000_000_000; // $10B
 
@@ -342,7 +318,7 @@ async fn create_account(
         let layout = state.layout.clone();
         let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id, valkey_client.as_ref())?;
+            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
             ensure_entity_ready_for_treasury(&store, "account creation")?;
 
             let account_id = AccountId::new();
@@ -388,7 +364,7 @@ async fn list_accounts(
         let layout = state.layout.clone();
         let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id, valkey_client.as_ref())?;
+            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
             let ids = store
                 .list_ids::<Account>("main")
                 .map_err(|e| AppError::Internal(format!("list accounts: {e}")))?;
@@ -443,7 +419,7 @@ async fn create_journal_entry(
         let layout = state.layout.clone();
         let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id, valkey_client.as_ref())?;
+            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
             ensure_entity_ready_for_treasury(&store, "journal entry creation")?;
 
             let entry_id = JournalEntryId::new();
@@ -509,7 +485,7 @@ async fn list_journal_entries(
         let layout = state.layout.clone();
         let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id, valkey_client.as_ref())?;
+            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
             let ids = store
                 .list_ids::<JournalEntry>("main")
                 .map_err(|e| AppError::Internal(format!("list journal entries: {e}")))?;
@@ -556,7 +532,7 @@ async fn post_journal_entry(
         let layout = state.layout.clone();
         let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id, valkey_client.as_ref())?;
+            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
             let mut entry = store
                 .read::<JournalEntry>("main", entry_id)
                 .map_err(|_| AppError::NotFound(format!("journal entry {} not found", entry_id)))?;
@@ -608,7 +584,7 @@ async fn void_journal_entry(
         let layout = state.layout.clone();
         let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id, valkey_client.as_ref())?;
+            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
             let mut entry = store
                 .read::<JournalEntry>("main", entry_id)
                 .map_err(|_| AppError::NotFound(format!("journal entry {} not found", entry_id)))?;
@@ -669,7 +645,7 @@ async fn create_invoice(
         let valkey_client = state.valkey_client.clone();
         let customer_name = customer_name.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id, valkey_client.as_ref())?;
+            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
             ensure_entity_ready_for_treasury(&store, "invoice creation")?;
 
             let invoice_id = InvoiceId::new();
@@ -722,7 +698,7 @@ async fn list_invoices(
         let layout = state.layout.clone();
         let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id, valkey_client.as_ref())?;
+            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
             let ids = store
                 .list_ids::<Invoice>("main")
                 .map_err(|e| AppError::Internal(format!("list invoices: {e}")))?;
@@ -769,7 +745,7 @@ async fn send_invoice(
         let layout = state.layout.clone();
         let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id, valkey_client.as_ref())?;
+            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
             let mut invoice = store
                 .read::<Invoice>("main", invoice_id)
                 .map_err(|_| AppError::NotFound(format!("invoice {} not found", invoice_id)))?;
@@ -821,7 +797,7 @@ async fn mark_invoice_paid(
         let layout = state.layout.clone();
         let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id, valkey_client.as_ref())?;
+            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
             let mut invoice = store
                 .read::<Invoice>("main", invoice_id)
                 .map_err(|_| AppError::NotFound(format!("invoice {} not found", invoice_id)))?;
@@ -873,7 +849,7 @@ async fn get_invoice_status(
         let layout = state.layout.clone();
         let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id, valkey_client.as_ref())?;
+            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
             store
                 .read::<Invoice>("main", invoice_id)
                 .map_err(|_| AppError::NotFound(format!("invoice {} not found", invoice_id)))
@@ -920,7 +896,7 @@ async fn get_pay_instructions(
         let layout = state.layout.clone();
         let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id, valkey_client.as_ref())?;
+            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
             store
                 .read::<Invoice>("main", invoice_id)
                 .map_err(|_| AppError::NotFound(format!("invoice {} not found", invoice_id)))
@@ -970,7 +946,7 @@ async fn create_bank_account(
         let valkey_client = state.valkey_client.clone();
         let bank_name = bank_name.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id, valkey_client.as_ref())?;
+            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
             ensure_entity_ready_for_treasury(&store, "bank account creation")?;
             let existing_ids = store
                 .list_ids::<BankAccount>("main")
@@ -1041,7 +1017,7 @@ async fn list_bank_accounts(
         let layout = state.layout.clone();
         let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id, valkey_client.as_ref())?;
+            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
             let ids = store
                 .list_ids::<BankAccount>("main")
                 .map_err(|e| AppError::Internal(format!("list bank accounts: {e}")))?;
@@ -1083,7 +1059,7 @@ async fn list_payments(
         let layout = state.layout.clone();
         let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id, valkey_client.as_ref())?;
+            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
             let ids = store
                 .list_ids::<Payment>("main")
                 .map_err(|e| AppError::Internal(format!("list payments: {e}")))?;
@@ -1125,7 +1101,7 @@ async fn list_payroll_runs(
         let layout = state.layout.clone();
         let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id, valkey_client.as_ref())?;
+            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
             let ids = store
                 .list_ids::<PayrollRun>("main")
                 .map_err(|e| AppError::Internal(format!("list payroll runs: {e}")))?;
@@ -1167,7 +1143,7 @@ async fn list_distributions(
         let layout = state.layout.clone();
         let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id, valkey_client.as_ref())?;
+            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
             let ids = store
                 .list_ids::<Distribution>("main")
                 .map_err(|e| AppError::Internal(format!("list distributions: {e}")))?;
@@ -1209,7 +1185,7 @@ async fn list_reconciliations(
         let layout = state.layout.clone();
         let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id, valkey_client.as_ref())?;
+            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
             let ids = store
                 .list_ids::<Reconciliation>("main")
                 .map_err(|e| AppError::Internal(format!("list reconciliations: {e}")))?;
@@ -1256,7 +1232,7 @@ async fn activate_bank_account(
         let layout = state.layout.clone();
         let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id, valkey_client.as_ref())?;
+            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
             let mut ba = store
                 .read::<BankAccount>("main", bank_account_id)
                 .map_err(|_| {
@@ -1310,7 +1286,7 @@ async fn close_bank_account(
         let layout = state.layout.clone();
         let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id, valkey_client.as_ref())?;
+            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
             let mut ba = store
                 .read::<BankAccount>("main", bank_account_id)
                 .map_err(|_| {
@@ -1461,7 +1437,7 @@ async fn submit_payment(
         let layout = state.layout.clone();
         let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id, valkey_client.as_ref())?;
+            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
             ensure_entity_ready_for_treasury(&store, "payment submission")?;
             if payment_method_requires_active_bank_account(req.payment_method) {
                 ensure_active_bank_account_available(&store)?;
@@ -1532,7 +1508,7 @@ async fn execute_payment(
         let layout = state.layout.clone();
         let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id, valkey_client.as_ref())?;
+            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
             ensure_entity_ready_for_treasury(&store, "payment execution")?;
             if payment_method_requires_active_bank_account(req.payment_method) {
                 ensure_active_bank_account_available(&store)?;
@@ -1615,7 +1591,7 @@ async fn create_payroll_run(
         let layout = state.layout.clone();
         let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id, valkey_client.as_ref())?;
+            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
             ensure_entity_ready_for_treasury(&store, "payroll creation")?;
             let existing_ids = store
                 .list_ids::<PayrollRun>("main")
@@ -1689,7 +1665,7 @@ async fn create_distribution(
         let layout = state.layout.clone();
         let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id, valkey_client.as_ref())?;
+            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
             let entity = store
                 .read_entity("main")
                 .map_err(|e| AppError::Internal(format!("read entity: {e}")))?;
@@ -1789,7 +1765,7 @@ async fn reconcile_ledger(
         let layout = state.layout.clone();
         let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id, valkey_client.as_ref())?;
+            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
             ensure_entity_ready_for_treasury(&store, "ledger reconciliation")?;
 
             // Sum up all journal entries to compute totals
@@ -1925,7 +1901,7 @@ async fn get_stripe_account(
         let layout = state.layout.clone();
         let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id, valkey_client.as_ref())?;
+            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
 
             // Try to read existing connection
             match store.read_json::<StripeConnection>("main", "treasury/stripe-connection.json") {
@@ -2013,7 +1989,7 @@ async fn create_spending_limit(
         let layout = state.layout.clone();
         let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id, valkey_client.as_ref())?;
+            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
             let sl_id = SpendingLimitId::new();
             let sl =
                 SpendingLimit::new(sl_id, entity_id, req.amount_cents, req.period, req.category);
@@ -2056,7 +2032,7 @@ async fn list_spending_limits(
         let layout = state.layout.clone();
         let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id, valkey_client.as_ref())?;
+            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
             let ids: Vec<SpendingLimitId> = store
                 .list_ids_in_dir("main", "treasury/spending-limits")
                 .unwrap_or_default();
@@ -2124,7 +2100,7 @@ async fn get_financial_statements(
         let layout = state.layout.clone();
         let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id, valkey_client.as_ref())?;
+            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
 
             // Read all accounts and compute totals by type
             let account_ids = store.list_ids::<Account>("main").unwrap_or_default();
@@ -2222,7 +2198,7 @@ async fn seed_chart_of_accounts(
         let layout = state.layout.clone();
         let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id, valkey_client.as_ref())?;
+            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
 
             let codes = vec![
                 GlAccountCode::Cash,
@@ -2285,7 +2261,7 @@ async fn get_invoice(
         let layout = state.layout.clone();
         let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id, valkey_client.as_ref())?;
+            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
             store
                 .read::<Invoice>("main", invoice_id)
                 .map_err(|_| AppError::NotFound(format!("invoice {} not found", invoice_id)))
@@ -2346,7 +2322,7 @@ async fn from_agent_request(
         let layout = state.layout.clone();
         let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id, valkey_client.as_ref())?;
+            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
             ensure_entity_ready_for_treasury(&store, "invoice creation")?;
 
             let invoice_id = InvoiceId::new();
@@ -2416,7 +2392,7 @@ async fn create_stripe_account(
         let layout = state.layout.clone();
         let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id, valkey_client.as_ref())?;
+            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
 
             // Check if a Stripe connection already exists — reject duplicates.
             match store.read_json::<StripeConnection>("main", "treasury/stripe-connection.json") {
@@ -2485,7 +2461,7 @@ async fn get_chart_of_accounts(
         let layout = state.layout.clone();
         let valkey_client = state.valkey_client.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id, valkey_client.as_ref())?;
+            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
             let ids = store
                 .list_ids::<Account>("main")
                 .map_err(|e| AppError::Internal(format!("list accounts: {e}")))?;
@@ -2564,7 +2540,7 @@ async fn create_payout(
         let destination = req.destination.clone();
         let description = req.description.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id, valkey_client.as_ref())?;
+            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
             store
                 .write_json(
                     "main",
@@ -2655,7 +2631,7 @@ async fn create_payment_intent(
         let client_secret = client_secret.clone();
         let description = req.description.clone();
         move || {
-            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id, valkey_client.as_ref())?;
+            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
             ensure_entity_ready_for_treasury(&store, "payment intent creation")?;
             store
                 .write_json(

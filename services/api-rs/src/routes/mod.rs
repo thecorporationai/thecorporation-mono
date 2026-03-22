@@ -16,6 +16,7 @@ pub mod next_steps;
 pub mod references;
 pub mod secret_proxies;
 pub mod secrets_proxy;
+pub mod shared;
 pub mod services;
 pub mod treasury;
 pub mod validation;
