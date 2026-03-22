@@ -333,7 +333,7 @@ export const entityCommands: CommandDef[] = [
     name: "contacts notification-prefs",
     description: "View notification preferences for a contact",
     route: { method: "GET", path: "/v1/contacts/{pos}/notification-prefs" },
-    args: [{ name: "contact-id", required: true, description: "Contact ID" }],
+    args: [{ name: "contact-id", required: true, description: "Contact ID", posKind: "contact" }],
     display: { title: "Contacts Notification Prefs", cols: ["#contact_id>ID", "email_enabled>Email Enabled", "sms_enabled>Sms Enabled", "@updated_at>Updated At", "webhook_enabled>Webhook Enabled"] },
     examples: ["corp contacts notification-prefs"],
   },
@@ -341,7 +341,7 @@ export const entityCommands: CommandDef[] = [
     name: "contacts update-notification-prefs",
     description: "View notification preferences for a contact",
     route: { method: "PATCH", path: "/v1/contacts/{pos}/notification-prefs" },
-    args: [{ name: "contact-id", required: true, description: "Contact ID" }],
+    args: [{ name: "contact-id", required: true, description: "Contact ID", posKind: "contact" }],
     options: [
       { flags: "--email-enabled <email-enabled>", description: "Email Enabled" },
       { flags: "--sms-enabled <sms-enabled>", description: "Sms Enabled" },

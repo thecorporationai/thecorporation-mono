@@ -45,6 +45,15 @@ export interface ArgDef {
   description?: string;
   variadic?: boolean;
   choices?: string[];
+
+  /**
+   * Resource kind for reference resolution in the generic executor.
+   * When set, the generic executor resolves this positional argument through
+   * `ctx.resolver.resolve(posKind, rawValue)` before URL-encoding, enabling
+   * support for @last references, short IDs, and handles.
+   * When not set, the raw value is passed through as-is (backwards compatible).
+   */
+  posKind?: ResourceKind;
 }
 
 export interface OptionDef {

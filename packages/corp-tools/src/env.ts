@@ -32,9 +32,16 @@ INTERNAL_WORKER_TOKEN={{INTERNAL_WORKER_TOKEN}}
 # MAX_QUEUE_DEPTH=1000
 `;
 
+/**
+ * Generate a Fernet-compatible encryption key.
+ *
+ * Fernet requires a 32-byte key encoded as **standard** base64 (RFC 4648 sec. 4),
+ * which produces exactly 44 characters (including `=` padding).
+ * We use `toString("base64")` (not `base64url`) so the padding is correct
+ * and the key is accepted by Fernet implementations without modification.
+ */
 export function generateFernetKey(): string {
-  // Fernet key = url-safe base64 of 32 random bytes
-  return randomBytes(32).toString("base64url") + "=";
+  return randomBytes(32).toString("base64");
 }
 
 export function generateSecret(length = 32): string {

@@ -101,6 +101,15 @@ export class ReferenceResolver {
     this.tracker = new ReferenceTracker(new NodeReferenceStorage(cfg));
   }
 
+  /**
+   * Public generic resolver for any resource kind.
+   * Used by the generic executor when a positional arg declares `posKind`.
+   * Entity-scoped kinds require an entityId in the scope.
+   */
+  async resolveByKind(kind: ResourceKind, ref: string, entityId?: string): Promise<string> {
+    return this.resolve(kind, ref, { entityId });
+  }
+
   async resolveEntity(ref?: string): Promise<string> {
     if (ref !== undefined && ref !== null && !ref.trim()) {
       // An explicit but empty/whitespace-only ref is likely a bug in a script

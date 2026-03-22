@@ -3,6 +3,8 @@ import type OpenAI from "openai";
 import type { ChatCompletionCreateParamsNonStreaming } from "openai/resources/chat/completions.js";
 
 const PROVIDER_BASE_URLS: Record<string, string> = {
+  anthropic: "https://api.anthropic.com/v1",
+  openai: "https://api.openai.com/v1",
   openrouter: "https://openrouter.ai/api/v1",
 };
 
@@ -14,7 +16,13 @@ export async function chat(
   model = "",
   baseUrl?: string,
 ): Promise<LLMResponse> {
-  const effectiveUrl = baseUrl ?? PROVIDER_BASE_URLS[provider] ?? PROVIDER_BASE_URLS.openrouter;
+  const effectiveUrl = baseUrl ?? PROVIDER_BASE_URLS[provider];
+  if (!effectiveUrl) {
+    throw new Error(
+      `Unknown LLM provider "${provider}". Supported providers: ${Object.keys(PROVIDER_BASE_URLS).join(", ")}. ` +
+      "Set llm.base_url in your config to use a custom provider.",
+    );
+  }
   const { default: OpenAIClient } = await import("openai");
   const client = new OpenAIClient({ apiKey, baseURL: effectiveUrl });
 

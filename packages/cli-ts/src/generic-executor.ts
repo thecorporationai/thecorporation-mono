@@ -1,4 +1,5 @@
 import type { CommandDef, CommandContext } from "./registry/types.js";
+import type { ResourceKind } from "./references.js";
 import { withSpinner } from "./spinner.js";
 
 // ── Formatting helpers (local versions matching output.ts private helpers) ──
@@ -125,6 +126,41 @@ function displayPanel(data: Record<string, unknown>, title: string, ctx: Command
   ctx.writer.panel(title, "blue", lines);
 }
 
+// ── Positional arg resolution ──
+
+/**
+ * Look up the posKind for the positional arg at the given index.
+ * Returns undefined when no posKind is declared (backwards-compatible passthrough).
+ */
+function getPosKind(def: CommandDef, posIndex: number): ResourceKind | undefined {
+  if (!def.args) return undefined;
+  // posIndex counts only positional args that have been consumed so far.
+  // def.args is ordered, and positional args correspond in order.
+  let argIdx = 0;
+  for (const arg of def.args) {
+    if (argIdx === posIndex) {
+      return arg.posKind as ResourceKind | undefined;
+    }
+    argIdx++;
+  }
+  return undefined;
+}
+
+/**
+ * Resolve a positional arg through the reference resolver if posKind is set.
+ * Otherwise returns the raw value unchanged.
+ */
+async function resolvePositional(
+  def: CommandDef,
+  posIndex: number,
+  rawValue: string,
+  ctx: CommandContext,
+): Promise<string> {
+  const kind = getPosKind(def, posIndex);
+  if (!kind) return rawValue;
+  return ctx.resolver.resolveByKind(kind, rawValue, ctx.entityId);
+}
+
 // ── Main executor ──
 
 export async function executeGenericRead(def: CommandDef, ctx: CommandContext): Promise<void> {
@@ -159,13 +195,15 @@ export async function executeGenericRead(def: CommandDef, ctx: CommandContext): 
     }
   }
 
-  // Resolve {pos}
+  // Resolve {pos} — use reference resolver when posKind is declared
   if (path.includes("{pos}")) {
     if (!ctx.positional[posIdx]) {
       ctx.writer.error("Missing required argument (ID or reference).");
       return;
     }
-    path = path.replace("{pos}", encodeURIComponent(ctx.positional[posIdx++]));
+    const resolved = await resolvePositional(def, posIdx, ctx.positional[posIdx], ctx);
+    posIdx++;
+    path = path.replace("{pos}", encodeURIComponent(resolved));
   }
 
   // Resolve workspace ID placeholders
@@ -253,20 +291,24 @@ export async function executeGenericWrite(def: CommandDef, ctx: CommandContext):
     }
   }
 
-  // Resolve {pos} and {pos2}
+  // Resolve {pos} and {pos2} — use reference resolver when posKind is declared
   if (path.includes("{pos}")) {
     if (!ctx.positional[posIdx]) {
       ctx.writer.error("Missing required argument (ID or reference).");
       return;
     }
-    path = path.replace("{pos}", encodeURIComponent(ctx.positional[posIdx++]));
+    const resolved = await resolvePositional(def, posIdx, ctx.positional[posIdx], ctx);
+    posIdx++;
+    path = path.replace("{pos}", encodeURIComponent(resolved));
   }
   if (path.includes("{pos2}")) {
     if (!ctx.positional[posIdx]) {
       ctx.writer.error("Missing required second argument (ID or reference).");
       return;
     }
-    path = path.replace("{pos2}", encodeURIComponent(ctx.positional[posIdx++]));
+    const resolved = await resolvePositional(def, posIdx, ctx.positional[posIdx], ctx);
+    posIdx++;
+    path = path.replace("{pos2}", encodeURIComponent(resolved));
   }
 
   // Resolve workspace placeholders

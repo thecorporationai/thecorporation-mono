@@ -22,9 +22,6 @@ const CONFIG_STALE_LOCK_MS = 60_000;
 const MAX_LAST_REFERENCES = 4096;
 const TRUSTED_API_HOST_SUFFIXES = ["thecorporation.ai"];
 
-const CONFIG_WAIT_BUFFER = new SharedArrayBuffer(4);
-const CONFIG_WAIT_SIGNAL = new Int32Array(CONFIG_WAIT_BUFFER);
-
 const ALLOWED_CONFIG_KEYS = new Set([
   "api_url",
   "api_key",
@@ -72,8 +69,18 @@ const DEFAULTS: CorpConfig = {
   data_dir: "",
 };
 
-function sleepSync(ms: number): void {
-  Atomics.wait(CONFIG_WAIT_SIGNAL, 0, 0, ms);
+/**
+ * Synchronous busy-wait for `ms` milliseconds using Date.now().
+ *
+ * Intentional: the mkdirSync-based lock resolves in microseconds, so a tight
+ * spin for the 25 ms retry interval is fine for a CLI tool.  We avoid
+ * Atomics.wait() because it throws TypeError on the Node.js main thread.
+ */
+function spinWaitMs(ms: number): void {
+  const end = Date.now() + ms;
+  while (Date.now() < end) {
+    // busy-wait
+  }
 }
 
 function withConfigLock<T>(fn: () => T): T {
@@ -99,7 +106,7 @@ function withConfigLock<T>(fn: () => T): T {
       if (Date.now() - startedAt >= CONFIG_LOCK_TIMEOUT_MS) {
         throw new Error("timed out waiting for the corp config lock");
       }
-      sleepSync(CONFIG_LOCK_RETRY_MS);
+      spinWaitMs(CONFIG_LOCK_RETRY_MS);
     }
   }
 
