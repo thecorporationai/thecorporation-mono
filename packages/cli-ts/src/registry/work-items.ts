@@ -116,7 +116,7 @@ export const workItemCommands: CommandDef[] = [
     entity: true,
     options: [
       { flags: "--title <title>", description: "Work item title", required: true },
-      { flags: "--category <category>", description: "Work item category" },
+      { flags: "--category <category>", description: "Work item category", required: true },
       { flags: "--description <desc>", description: "Description text" },
       { flags: "--deadline <date>", description: "Deadline (YYYY-MM-DD)" },
       { flags: "--asap", description: "Mark as ASAP priority" },

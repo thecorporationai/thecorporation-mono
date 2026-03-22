@@ -1960,8 +1960,8 @@ async fn create_governance_body(
                     && existing.name().trim().to_ascii_lowercase() == normalized_name
                 {
                     return Err(AppError::Conflict(format!(
-                        "active governance body already exists for {}",
-                        req.name
+                        "active governance body already exists for {} (body_id: {}). Use: corp governance seats {}",
+                        req.name, existing_id, existing_id
                     )));
                 }
             }

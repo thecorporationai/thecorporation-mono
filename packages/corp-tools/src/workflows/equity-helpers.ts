@@ -150,11 +150,13 @@ export async function ensureIssuancePreflight(
   instrument?: CapTableInstrument,
   meetingId?: string,
   resolutionId?: string,
+  operationLabel?: string,
 ): Promise<void> {
   if (!meetingId || !resolutionId) {
     if (await entityHasActiveBoard(client, entityId)) {
+      const label = operationLabel ?? "this issuance";
       throw new Error(
-        "Board approval is required before issuing this round. Pass --meeting-id and --resolution-id from a passed board vote.",
+        `Board approval is required for ${label}. Pass --meeting-id and --resolution-id from a passed board vote.`,
       );
     }
   }

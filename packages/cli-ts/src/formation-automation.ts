@@ -173,6 +173,9 @@ export async function activateFormationEntity(
   for (let i = 0; i < 10; i += 1) {
     const status = String(formation.formation_status ?? "");
     if (status === "active") {
+      if (initialStatus === "active") {
+        steps.push("entity is already active — no action needed");
+      }
       return {
         entity_id: entityId,
         initial_status: initialStatus,
@@ -185,7 +188,10 @@ export async function activateFormationEntity(
     }
 
     if (status === "pending") {
-      throw new Error("Formation is still pending. Finalize it before activation.");
+      throw new Error(
+        "Formation is still pending — finalize before activation.\n" +
+        "  Run: corp form finalize " + entityId,
+      );
     }
 
     if (status === "documents_generated") {

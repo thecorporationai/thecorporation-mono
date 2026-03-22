@@ -496,7 +496,12 @@ export const capTableCommands: CommandDef[] = [
       if (ctx.opts.amountCents != null && ctx.opts.amount != null) {
         throw new Error("--amount-cents and --amount are mutually exclusive. Use one or the other.");
       }
-      const amountCents = (ctx.opts.amountCents ?? ctx.opts.amount) as number;
+      const amountCents = ctx.opts.amountCents != null
+        ? (ctx.opts.amountCents as number)
+        : ctx.opts.amount != null ? (ctx.opts.amount as number) * 100 : undefined;
+      if (amountCents == null) {
+        throw new Error("required option '--amount-cents <n>' or '--amount <n>' not specified");
+      }
       const safeType = (ctx.opts.safeType ?? "post_money") as string;
       const valuationCapCents = (ctx.opts.valuationCapCents ?? ctx.opts.valuationCap) as number;
       const email = ctx.opts.email as string | undefined;
@@ -672,7 +677,14 @@ export const capTableCommands: CommandDef[] = [
       if (ctx.opts.amountCents != null && ctx.opts.amount != null) {
         throw new Error("--amount-cents and --amount are mutually exclusive. Use one or the other.");
       }
-      const amountCents = (ctx.opts.amountCents ?? ctx.opts.amount) as number;
+      const amountCents = ctx.opts.amountCents != null
+        ? (ctx.opts.amountCents as number)
+        : ctx.opts.amount != null
+          ? (ctx.opts.amount as number) * 100
+          : undefined;
+      if (amountCents == null) {
+        throw new Error("required option '--amount-cents <n>' or '--amount <n>' not specified");
+      }
       const distributionType = (ctx.opts.type ?? "dividend") as string;
       const description = ctx.opts.description as string;
       const payload = {
@@ -1061,6 +1073,7 @@ export const capTableCommands: CommandDef[] = [
     name: "equity control-links",
     description: "Create a control link between legal entities",
     route: { method: "POST", path: "/v1/equity/control-links" },
+    entity: true,
     options: [
       { flags: "--child-legal-entity-id <child-legal-entity-id>", description: "Child entity in the control relationship", required: true },
       { flags: "--control-type <control-type>", description: "Type of control relationship.", required: true, choices: ["voting", "board", "economic", "contractual"] },
@@ -1095,6 +1108,7 @@ export const capTableCommands: CommandDef[] = [
     name: "equity conversions-preview",
     description: "Preview a SAFE/note conversion without executing",
     route: { method: "POST", path: "/v1/equity/conversions/preview" },
+    entity: true,
     options: [
       { flags: "--round-id <round-id>", description: "Equity round ID", required: true },
       { flags: "--source-reference <source-reference>", description: "Source reference for the conversion" },
@@ -1114,6 +1128,7 @@ export const capTableCommands: CommandDef[] = [
     name: "equity entities",
     description: "Register a legal entity in the equity system",
     route: { method: "POST", path: "/v1/equity/entities" },
+    entity: true,
     options: [
       { flags: "--linked-entity-id <linked-entity-id>", description: "ID of the entity to link" },
       { flags: "--name <name>", description: "Display name", required: true },
@@ -1291,6 +1306,7 @@ export const capTableCommands: CommandDef[] = [
     name: "equity holders",
     description: "Register a new equity holder",
     route: { method: "POST", path: "/v1/equity/holders" },
+    entity: true,
     options: [
       { flags: "--contact-id <contact-id>", description: "Contact ID", required: true },
       { flags: "--external-reference <external-reference>", description: "External Reference" },
@@ -1305,6 +1321,7 @@ export const capTableCommands: CommandDef[] = [
     name: "equity instruments",
     description: "Create a new equity instrument",
     route: { method: "POST", path: "/v1/equity/instruments" },
+    entity: true,
     options: [
       { flags: "--authorized-units <authorized-units>", description: "Authorized Units" },
       { flags: "--issue-price-cents <issue-price-cents>", description: "Issue Price Cents" },
@@ -1320,6 +1337,7 @@ export const capTableCommands: CommandDef[] = [
     name: "equity positions-adjust",
     description: "Adjust an equity position (split, correction)",
     route: { method: "POST", path: "/v1/equity/positions/adjust" },
+    entity: true,
     options: [
       { flags: "--holder-id <holder-id>", description: "Equity holder ID", required: true },
       { flags: "--instrument-id <instrument-id>", description: "Instrument Id", required: true },

@@ -1,5 +1,6 @@
 import chalk from "chalk";
 import type { CommandDef, CommandContext } from "./types.js";
+import type { ApiRecord } from "../types.js";
 import {
   printGovernanceTable,
   printSeatsTable,
@@ -386,9 +387,18 @@ export const governanceCommands: CommandDef[] = [
       const eid = await ctx.resolver.resolveEntity(ctx.opts.entityId as string | undefined);
       const resolvedMeetingId = await ctx.resolver.resolveMeeting(eid, meetingRef);
       const presentSeats = ctx.opts.presentSeat as string[];
-      const resolvedSeats = await Promise.all(
-        presentSeats.map((seatRef) => ctx.resolver.resolveSeat(eid, seatRef)),
-      );
+      let resolvedSeats: string[];
+      try {
+        resolvedSeats = await Promise.all(
+          presentSeats.map((seatRef) => ctx.resolver.resolveSeat(eid, seatRef)),
+        );
+      } catch (err) {
+        throw new Error(
+          `Failed to resolve seat reference: ${err}\n` +
+          "  --present-seat expects seat IDs, not contact IDs.\n" +
+          "  Find seat IDs with: corp governance seats <body-ref>",
+        );
+      }
       const payload = { present_seat_ids: resolvedSeats };
       if (ctx.dryRun) {
         ctx.writer.dryRun("governance.open_meeting", { entity_id: eid, meeting_id: resolvedMeetingId, ...payload });
@@ -680,6 +690,89 @@ export const governanceCommands: CommandDef[] = [
     produces: { kind: "meeting" },
     successTemplate: "Written consent created: {title}",
     examples: ["corp governance written-consent --body 'ref' --title 'title' --description 'desc'"],
+  },
+
+  // --- governance quick-approve ---
+  {
+    name: "governance quick-approve",
+    description: "One-step board approval: create written consent, auto-vote, return meeting + resolution IDs",
+    entity: true,
+    dryRun: true,
+    options: [
+      { flags: "--body <ref>", description: "Governance body reference (auto-detected if only one exists)" },
+      { flags: "--text <resolution_text>", description: "Resolution text (e.g. 'RESOLVED: authorize SAFE issuance')", required: true },
+    ],
+    handler: async (ctx) => {
+      const eid = await ctx.resolver.resolveEntity(ctx.opts.entityId as string | undefined);
+
+      // Auto-detect body if not specified
+      let resolvedBodyId: string;
+      if (ctx.opts.body) {
+        resolvedBodyId = await ctx.resolver.resolveBody(eid, ctx.opts.body as string);
+      } else {
+        const bodies = await ctx.client.listGovernanceBodies(eid);
+        const active = bodies.filter((b: ApiRecord) => b.status === "active");
+        if (active.length === 1) {
+          resolvedBodyId = String(active[0].body_id);
+        } else if (active.length === 0) {
+          throw new Error("No active governance bodies found. Create one first: corp governance create-body");
+        } else {
+          throw new Error(`Multiple governance bodies found (${active.length}). Specify --body <ref>.`);
+        }
+      }
+
+      const resolutionText = ctx.opts.text as string;
+      const title = `Board Approval: ${resolutionText.slice(0, 60)}`;
+
+      if (ctx.dryRun) {
+        ctx.writer.dryRun("governance.quick_approve", {
+          entity_id: eid, body_id: resolvedBodyId, title, resolution_text: resolutionText,
+        });
+        return;
+      }
+
+      // Step 1: Create written consent
+      const consentResult = await writtenConsentWorkflow(ctx.client, {
+        entityId: eid,
+        bodyId: resolvedBodyId,
+        title,
+        description: resolutionText,
+      });
+      if (!consentResult.success) {
+        throw new Error(`Written consent failed: ${consentResult.error}`);
+      }
+      const meetingId = String(consentResult.data?.meeting_id);
+      ctx.resolver.remember("meeting", meetingId, eid);
+
+      // Step 2: Get agenda items and compute resolution
+      const agendaItems = await ctx.client.listAgendaItems(meetingId, eid);
+      if (agendaItems.length === 0) {
+        throw new Error("Written consent created but no agenda items found.");
+      }
+      const itemId = String((agendaItems[0] as ApiRecord).agenda_item_id);
+      const resolution = await ctx.client.computeResolution(meetingId, itemId, eid, {
+        resolution_text: resolutionText,
+      });
+      const resolutionId = String(resolution.resolution_id);
+      ctx.resolver.remember("resolution", resolutionId, eid);
+
+      if (ctx.opts.json) {
+        ctx.writer.json({ meeting_id: meetingId, resolution_id: resolutionId, status: "approved" });
+        return;
+      }
+      ctx.writer.success("Board approval completed");
+      console.log(`  Meeting:    ${meetingId}`);
+      console.log(`  Resolution: ${resolutionId}`);
+      console.log(chalk.dim("\n  Use with:"));
+      console.log(chalk.dim(`    --meeting-id ${meetingId} --resolution-id ${resolutionId}`));
+      console.log(chalk.dim(`    or: --meeting-id @last:meeting --resolution-id @last:resolution`));
+    },
+    produces: { kind: "resolution" },
+    successTemplate: "Board approval completed",
+    examples: [
+      'corp governance quick-approve --text "RESOLVED: authorize SAFE issuance to Seed Fund"',
+      'corp governance quick-approve --body @last:body --text "RESOLVED: issue Series A equity round"',
+    ],
   },
 
   // --- governance resign <seat-ref> ---

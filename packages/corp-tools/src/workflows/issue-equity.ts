@@ -93,6 +93,7 @@ export async function issueEquity(
       instrument,
       args.meetingId,
       args.resolutionId,
+      "equity issuance",
     );
     steps.push({ name: "preflight", status: "ok" });
 

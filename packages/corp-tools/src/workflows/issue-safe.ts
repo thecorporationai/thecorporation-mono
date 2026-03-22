@@ -46,6 +46,7 @@ export async function issueSafe(
       undefined,
       args.meetingId,
       args.resolutionId,
+      "SAFE issuance",
     );
     steps.push({ name: "preflight", status: "ok" });
 

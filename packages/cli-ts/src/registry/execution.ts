@@ -71,6 +71,7 @@ export const executionCommands: CommandDef[] = [
     name: "execution approval-artifacts",
     description: "Create an approval artifact (e.g. board vote record)",
     route: { method: "POST", path: "/v1/execution/approval-artifacts" },
+    entity: true,
     options: [
       { flags: "--approved-at <approved-at>", description: "Timestamp of approval (ISO 8601)" },
       { flags: "--approver-identity <approver-identity>", description: "Identity of the approver", required: true },
@@ -102,6 +103,7 @@ export const executionCommands: CommandDef[] = [
     name: "execution obligations",
     description: "Create an obligation (task assigned to a party)",
     route: { method: "POST", path: "/v1/execution/obligations" },
+    entity: true,
     options: [
       { flags: "--assignee-id <assignee-id>", description: "ID of the party to assign to" },
       { flags: "--assignee-type <assignee-type>", description: "Who is responsible for fulfilling an obligation.", required: true, choices: ["internal", "third_party", "human"] },
