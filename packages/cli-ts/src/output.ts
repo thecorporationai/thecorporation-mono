@@ -440,8 +440,8 @@ export function printSafesTable(safes: ApiRecord[]): void {
     table.push([
       formatReferenceCell("safe_note", s_),
       s(s_.investor_name ?? s_.investor),
-      money(s_.principal_amount_cents ?? s_.investment_amount ?? s_.amount, false),
-      money(s_.valuation_cap_cents ?? s_.valuation_cap ?? s_.cap, false),
+      money(s_.principal_amount_cents ?? s_.investment_amount ?? s_.amount),
+      money(s_.valuation_cap_cents ?? s_.valuation_cap ?? s_.cap),
       s(s_.discount_rate ?? s_.discount),
       s(s_.issued_at ?? s_.date ?? s_.created_at),
     ]);

@@ -454,7 +454,11 @@ export const capTableCommands: CommandDef[] = [
       });
 
       if (!result.success) {
-        ctx.writer.error(result.error!);
+        let errMsg = result.error!;
+        if (errMsg.includes("already bound") && !errMsg.includes("quick-approve")) {
+          errMsg += '\n  Each issuance needs its own board approval.\n  Run: corp governance quick-approve --text "RESOLVED: authorize equity issuance"';
+        }
+        ctx.writer.error(errMsg);
         return;
       }
 
@@ -560,7 +564,11 @@ export const capTableCommands: CommandDef[] = [
       });
 
       if (!result.success) {
-        ctx.writer.error(result.error!);
+        let errMsg = result.error!;
+        if (errMsg.includes("already bound") && !errMsg.includes("quick-approve")) {
+          errMsg += '\n  Each issuance needs its own board approval.\n  Run: corp governance quick-approve --text "RESOLVED: authorize SAFE issuance"';
+        }
+        ctx.writer.error(errMsg);
         return;
       }
 
