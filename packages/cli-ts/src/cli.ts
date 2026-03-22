@@ -59,7 +59,32 @@ export function buildCLI(commands: CommandDef[], version: string): Command {
     let parentCmd = parentCmds.get(parentName);
     if (!parentCmd) {
       // Parent not explicitly defined — create a stub so children have a home.
-      parentCmd = program.command(parentName).description("");
+      const parentDescriptions: Record<string, string> = {
+        workspaces: "Workspace management",
+        equity: "Equity system (low-level grants, holders, instruments)",
+        execution: "Execution intents, obligations, and approval artifacts",
+        meetings: "Meeting management (convene, adjourn, notice)",
+        compliance: "Compliance escalations and monitoring",
+        contractors: "Contractor classification",
+        admin: "Admin tools (audit, billing, SSH keys, secrets)",
+        auth: "Authentication and API key management",
+        references: "Reference tracking and sync",
+        secrets: "Secret management and proxy configuration",
+        "document-requests": "Document request fulfillment",
+        intents: "Execution intent management",
+        "bank-accounts": "Bank account management",
+        "journal-entries": "Ledger journal entries",
+        ledger: "Ledger operations",
+        payroll: "Payroll runs",
+        treasury: "Treasury, invoices, payments, and payouts",
+        "governance-seats": "Governance seat management",
+        "human-obligations": "Human obligation fulfillment",
+        "ssh-keys": "SSH key management",
+        "secret-proxies": "Secret proxy configuration",
+        formations: "Formation workflows (low-level API)",
+        valuations: "Valuation management",
+      };
+      parentCmd = program.command(parentName).description(parentDescriptions[parentName] ?? "");
       parentCmds.set(parentName, parentCmd);
     }
     for (const def of childDefs) {
@@ -257,9 +282,9 @@ function wireCommand(parent: Command, def: CommandDef): Command {
         process.exit(1);
       }
 
-      // After any write command with produces metadata, print a @last hint
-      // unless in quiet/json mode (the handler may already have printed it)
-      if (def.produces?.kind && !quiet && !mergedOpts.json) {
+      // After generic write commands with produces metadata, print a @last hint.
+      // Skip for commands with custom handlers — they manage their own output.
+      if (def.produces?.kind && !def.handler && !quiet && !mergedOpts.json) {
         const kind = def.produces.kind as string;
         const lastId = resolver.getLastId(kind as Parameters<typeof resolver.getLastId>[0]);
         if (lastId) {

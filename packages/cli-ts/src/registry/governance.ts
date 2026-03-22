@@ -751,11 +751,17 @@ export const governanceCommands: CommandDef[] = [
       }
       const itemId = String((agendaItems[0] as ApiRecord).agenda_item_id);
 
-      // Step 3: Auto-vote — all seated members vote "for"
+      // Step 3: Convene (open) the meeting with all seats present, then auto-vote
       const seats = await ctx.client.getGovernanceSeats(resolvedBodyId, eid);
       const filledSeats = seats.filter((s: ApiRecord) => s.status === "filled" || s.status === "active");
-      for (const seat of filledSeats) {
-        const seatId = String(seat.seat_id);
+      const seatIds = filledSeats.map((s: ApiRecord) => String(s.seat_id));
+      if (seatIds.length === 0) {
+        throw new Error("No filled seats found on this governance body. Add seats first: corp governance add-seat <body-ref>");
+      }
+      await ctx.client.conveneMeeting(meetingId, eid, { present_seat_ids: seatIds });
+
+      // Step 4: Cast votes — all seated members vote "for"
+      for (const seatId of seatIds) {
         try {
           await ctx.client.castVote(eid, meetingId, itemId, {
             seat_id: seatId,
@@ -766,7 +772,7 @@ export const governanceCommands: CommandDef[] = [
         }
       }
 
-      // Step 4: Compute resolution (tallies votes and determines outcome)
+      // Step 5: Compute resolution (tallies votes and determines outcome)
       const resolution = await ctx.client.computeResolution(meetingId, itemId, eid, {
         resolution_text: resolutionText,
       });

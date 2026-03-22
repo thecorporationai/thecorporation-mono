@@ -330,12 +330,12 @@ export const workspaceCommands: CommandDef[] = [
             const response = { top, backlog, summary };
             if (opts.json) { ctx.writer.json(response); } else { printNextSteps(response); }
           } else {
-            ctx.writer.error(
-              "Entity not found. The entity may not have been finalized yet.\n" +
-              "  Try: corp form finalize <entity-id>\n" +
-              "  Or:  corp next --workspace",
-            );
-            process.exit(1);
+            console.log("No entities found yet. Get started:\n");
+            console.log('  corp form --type c_corp --name "My Company" --member "Name,email,director,100,street|city|state|zip,ceo,true"');
+            console.log("\n  Or use the staged flow:");
+            console.log('  corp form create --type llc --name "My LLC"');
+            console.log('  corp form add-founder @last --name "Alice" --email "a@co.com" --role member --ownership-pct 100');
+            console.log("  corp form finalize @last");
           }
         } else {
           ctx.writer.error(`Failed to fetch next steps: ${err}`);

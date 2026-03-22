@@ -844,7 +844,7 @@ export const capTableCommands: CommandDef[] = [
       }
       if ((!meetingId || !resolutionId) && await entityHasActiveBoard(ctx.client, eid)) {
         throw new Error(
-          "Board approval is required before issuing this round. Pass --meeting-id and --resolution-id from a passed board vote.",
+          "Board approval is required before issuing this round. Pass --meeting-id and --resolution-id from a passed board vote.\n  Tip: Use 'corp governance quick-approve --text \"RESOLVED: ...\"' for one-step approval.",
         );
       }
       const body: Record<string, unknown> = { entity_id: eid };

@@ -334,6 +334,8 @@ pub struct GovernanceSeatResponse {
     pub seat_id: GovernanceSeatId,
     pub body_id: GovernanceBodyId,
     pub holder_id: ContactId,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub holder_name: Option<String>,
     pub role: SeatRole,
     pub appointed_date: Option<NaiveDate>,
     pub term_expiration: Option<NaiveDate>,
@@ -459,6 +461,7 @@ fn seat_to_response(s: &GovernanceSeat) -> GovernanceSeatResponse {
         seat_id: s.seat_id(),
         body_id: s.body_id(),
         holder_id: s.holder_id(),
+        holder_name: None,
         role: s.role(),
         appointed_date: s.appointed_date(),
         term_expiration: s.term_expiration(),
@@ -2778,13 +2781,24 @@ async fn list_seats(
                 .list_ids::<GovernanceSeat>("main")
                 .map_err(|e| AppError::Internal(format!("list governance seats: {e}")))?;
 
+            // Build contact name lookup for holder_name
+            let contact_ids = store.list_ids::<Contact>("main").unwrap_or_default();
+            let contact_names: std::collections::HashMap<ContactId, String> = contact_ids
+                .into_iter()
+                .filter_map(|cid| {
+                    store.read::<Contact>("main", cid).ok().map(|c| (c.contact_id(), c.name().to_owned()))
+                })
+                .collect();
+
             let mut results = Vec::new();
             for id in ids {
                 let s = store
                     .read::<GovernanceSeat>("main", id)
                     .map_err(|e| AppError::Internal(format!("read governance seat {id}: {e}")))?;
                 if s.body_id() == body_id {
-                    results.push(seat_to_response(&s));
+                    let mut resp = seat_to_response(&s);
+                    resp.holder_name = contact_names.get(&s.holder_id()).cloned();
+                    results.push(resp);
                 }
             }
             Ok::<_, AppError>(results)

@@ -325,6 +325,11 @@ async function formActivateHandler(ctx: CommandContext): Promise<void> {
     }
     console.log(`  Signatures added: ${result.signatures_added}`);
     console.log(`  Documents updated: ${result.documents_signed}`);
+    if (result.final_status === "active") {
+      console.log(chalk.yellow("\n  Next steps:"));
+      console.log(chalk.yellow("    corp cap-table              View your cap table"));
+      console.log(chalk.yellow("    corp next                   See all recommended actions"));
+    }
   } catch (err) {
     printError(`Failed to activate formation: ${err}`);
     process.exit(1);

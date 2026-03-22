@@ -664,7 +664,20 @@ export async function formCommand(opts: FormOptions): Promise<void> {
     }
 
     if (result.next_action) {
-      console.log(chalk.yellow(`\n  Next: ${result.next_action}`));
+      const entityRef = result.entity_id ? `${result.entity_id}` : "@last:entity";
+      const actionHint: Record<string, string> = {
+        sign_documents: `corp form activate ${entityRef}`,
+        submit_state_filing: `corp form activate ${entityRef}`,
+        confirm_state_filing: `corp form activate ${entityRef} --filing-id "..."`,
+        apply_for_ein: `corp form activate ${entityRef}`,
+        confirm_ein: `corp form activate ${entityRef} --ein "..."`,
+      };
+      const hint = actionHint[result.next_action as string];
+      if (hint) {
+        console.log(chalk.yellow(`\n  Next step: ${hint}`));
+      } else {
+        console.log(chalk.yellow(`\n  Next: ${result.next_action}`));
+      }
     }
   } catch (err) {
     if (err instanceof Error && err.message.includes("exit")) throw err;
