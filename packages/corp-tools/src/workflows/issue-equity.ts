@@ -11,6 +11,7 @@ import type { WorkflowResult } from "./types.js";
 import {
   type CapTableInstrument,
   ensureIssuancePreflight,
+  expectedInstrumentKinds,
   resolveInstrumentForGrant,
 } from "./equity-helpers.js";
 
@@ -67,12 +68,37 @@ export async function issueEquity(
       };
     }
 
-    // ── Resolve instrument ───────────────────────────────────────
-    const instrument = resolveInstrumentForGrant(
-      instruments,
-      args.grantType,
-      args.instrumentId,
-    );
+    // ── Resolve instrument (auto-create option_grant for ISO/NSO if missing) ──
+    let instrument: CapTableInstrument;
+    try {
+      instrument = resolveInstrumentForGrant(
+        instruments,
+        args.grantType,
+        args.instrumentId,
+      );
+    } catch (resolveErr) {
+      // Auto-create option_grant instrument for ISO/NSO grants
+      const kinds = expectedInstrumentKinds(args.grantType);
+      if (kinds.includes("option_grant") && !args.instrumentId) {
+        const issuerLegalEntityId = capTable.issuer_legal_entity_id as string | undefined;
+        if (!issuerLegalEntityId) throw resolveErr;
+        const created = await client.createInstrument({
+          entity_id: args.entityId,
+          issuer_legal_entity_id: issuerLegalEntityId,
+          kind: "option_grant",
+          symbol: "OPTION-PLAN",
+          authorized_units: 10_000_000,
+        });
+        instrument = created as unknown as CapTableInstrument;
+        steps.push({
+          name: "auto_create_instrument",
+          status: "ok",
+          detail: `Auto-created option_grant instrument OPTION-PLAN`,
+        });
+      } else {
+        throw resolveErr;
+      }
+    }
     const instrumentId = instrument.instrument_id;
     steps.push({
       name: "resolve_instrument",

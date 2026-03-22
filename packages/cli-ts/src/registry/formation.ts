@@ -110,7 +110,10 @@ async function formCreateHandler(ctx: CommandContext): Promise<void> {
     ctx.resolver.rememberFromRecord("entity", result);
 
     if (result.entity_id) {
-      setActiveEntityId(cfg, String(result.entity_id));
+      const newEntityId = String(result.entity_id);
+      setActiveEntityId(cfg, newEntityId);
+      // Ensure @last:entity points to the just-created entity
+      ctx.resolver.remember("entity", newEntityId);
       saveConfig(cfg);
     }
 
@@ -358,6 +361,7 @@ export const formationCommands: CommandDef[] = [
       { flags: "--s-corp", description: "Elect S-Corp status" },
       { flags: "--transfer-restrictions", description: "Enable transfer restrictions" },
       { flags: "--rofr", description: "Enable right of first refusal" },
+      { flags: "--principal-name <name>", description: "Managing member name for LLCs (auto-set from first member if omitted)" },
     ],
     handler: formHandler,
     produces: { kind: "entity", trackEntity: true },
@@ -397,7 +401,7 @@ export const formationCommands: CommandDef[] = [
     successTemplate: "Pending entity created: {legal_name}",
     examples: [
       'corp form create --type c_corp --name "Acme Inc" --jurisdiction US-DE --address "123 Main,City,ST,12345"',
-      'corp form create --type llc --name "My LLC" --jurisdiction US-WY',
+      'corp form create --type llc --name "My LLC" --jurisdiction US-WY --principal-name "Carlos"',
     ],
   },
   {

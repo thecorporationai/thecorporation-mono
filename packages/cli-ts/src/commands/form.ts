@@ -38,6 +38,7 @@ interface FormOptions {
   transferRestrictions?: boolean;
   rofr?: boolean;
   address?: string;
+  principalName?: string;
   json?: boolean;
   dryRun?: boolean;
   quiet?: boolean;
@@ -606,6 +607,11 @@ export async function formCommand(opts: FormOptions): Promise<void> {
       right_of_first_refusal: rofr,
     };
     if (companyAddress) payload.company_address = companyAddress;
+    // LLC: auto-set principal_name from first member if not explicitly provided
+    if (entityType === "llc") {
+      const principalName = opts.principalName ?? founders[0]?.name;
+      if (principalName) payload.principal_name = principalName;
+    }
 
     if (opts.dryRun) {
       printDryRun("formation.create_with_cap_table", payload);
