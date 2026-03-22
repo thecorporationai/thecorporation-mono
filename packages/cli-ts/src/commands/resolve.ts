@@ -11,8 +11,7 @@ export async function resolveCommand(
 ): Promise<void> {
   const normalizedKind = kind.trim().toLowerCase() as ResourceKind;
   if (!KINDS.has(normalizedKind)) {
-    printError(`Unsupported resolve kind: ${kind}`);
-    process.exit(1);
+    throw new Error(`Unsupported resolve kind: ${kind}. Supported: ${[...KINDS].join(", ")}`);
   }
 
   const cfg = requireConfig("api_url", "api_key", "workspace_id");
@@ -123,8 +122,7 @@ export async function resolveCommand(
       ...(meetingId ? { meeting_id: meetingId } : {}),
     });
   } catch (err) {
-    printError(`Failed to resolve reference: ${err}`);
-    process.exit(1);
+    throw new Error(`Failed to resolve reference: ${err}`);
   }
 }
 

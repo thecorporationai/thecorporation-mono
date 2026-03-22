@@ -13,8 +13,7 @@ export async function findCommand(
 ): Promise<void> {
   const normalizedKind = kind.trim().toLowerCase() as ResourceKind;
   if (!KINDS.has(normalizedKind)) {
-    printError(`Unsupported find kind: ${kind}`);
-    process.exit(1);
+    throw new Error(`Unsupported find kind: ${kind}. Supported: ${[...KINDS].join(", ")}`);
   }
 
   const cfg = requireConfig("api_url", "api_key", "workspace_id");
@@ -72,7 +71,6 @@ export async function findCommand(
     }
     console.log(table.toString());
   } catch (err) {
-    printError(`Failed to find references: ${err}`);
-    process.exit(1);
+    throw new Error(`Failed to find references: ${err}`);
   }
 }

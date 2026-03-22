@@ -26,6 +26,7 @@ export const KINDS = new Set<ResourceKind>([
   "instrument",
   "share_class",
   "round",
+  "service_request",
 ]);
 
 export const ENTITY_SCOPED_KINDS = new Set<ResourceKind>([
@@ -52,4 +53,5 @@ export const ENTITY_SCOPED_KINDS = new Set<ResourceKind>([
   "instrument",
   "share_class",
   "round",
+  "service_request",
 ]);
