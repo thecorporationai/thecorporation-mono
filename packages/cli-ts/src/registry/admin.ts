@@ -43,7 +43,7 @@ export const adminCommands: CommandDef[] = [
         { force: ctx.opts.force as boolean | undefined },
       );
     },
-    examples: ["corp config set"],
+    examples: ["corp config set api_url https://api.thecorporation.com", "corp config set workspace_id ws_abc123"],
   },
   {
     name: "config get",
@@ -56,7 +56,7 @@ export const adminCommands: CommandDef[] = [
       const { configGetCommand } = await import("../commands/config.js");
       configGetCommand(ctx.positional[0]);
     },
-    examples: ["corp config get"],
+    examples: ["corp config get api_url", "corp config get workspace_id"],
   },
   {
     name: "config list",
@@ -90,6 +90,9 @@ export const adminCommands: CommandDef[] = [
       let pkg: { version: string };
       try { pkg = require("../../package.json"); } catch { pkg = require("../package.json"); }
       const schema = generateSchema(registry, "corp", pkg.version);
+      // `corp schema` is a pure JSON-dump command by design — its only purpose is
+      // to emit the command catalog as machine-readable JSON.  No human-readable
+      // alternative makes sense, so --json gating is intentionally omitted.
       if (ctx.opts.compact) {
         console.log(JSON.stringify(schema));
       } else {
@@ -125,7 +128,7 @@ export const adminCommands: CommandDef[] = [
     local: true,
     options: [
       { flags: "--name <name>", description: "Corporation name", required: true },
-      { flags: "--scenario <scenario>", description: "Scenario to create (startup, llc, restaurant)", default: "startup" },
+      { flags: "--scenario <scenario>", description: "Demo scenario to create", default: "startup", choices: ["startup", "llc", "restaurant"] },
       { flags: "--minimal", description: "Use the minimal server-side demo seed instead of the full CLI workflow" },
       { flags: "--json", description: "Output as JSON" },
     ],
@@ -138,7 +141,7 @@ export const adminCommands: CommandDef[] = [
         json: ctx.opts.json as boolean | undefined,
       });
     },
-    examples: ["corp demo"],
+    examples: ["corp demo --name 'Acme Corp'", "corp demo --name 'Taco LLC' --scenario restaurant"],
   },
 
   // ── chat (local, interactive) ───────────────────────────────────────
@@ -187,7 +190,7 @@ export const adminCommands: CommandDef[] = [
     },
     produces: { kind: "api_key" },
     successTemplate: "API key created",
-    examples: ["corp api-keys create --name 'name'", "corp api-keys create --json"],
+    examples: ["corp api-keys create --name 'CI Deploy Key'", "corp api-keys create --name 'Webhook Key' --scopes read:entities --json"],
   },
   {
     name: "api-keys revoke",
@@ -207,7 +210,7 @@ export const adminCommands: CommandDef[] = [
         json: ctx.opts.json as boolean | undefined,
       });
     },
-    examples: ["corp api-keys revoke <key-id>", "corp api-keys revoke --json"],
+    examples: ["corp api-keys revoke key_abc123", "corp api-keys revoke key_abc123 --yes"],
   },
   {
     name: "api-keys rotate",
@@ -227,7 +230,7 @@ export const adminCommands: CommandDef[] = [
     },
     produces: { kind: "api_key" },
     successTemplate: "API key rotated",
-    examples: ["corp api-keys rotate <key-id>", "corp api-keys rotate --json"],
+    examples: ["corp api-keys rotate key_abc123", "corp api-keys rotate key_abc123 --json"],
   },
 
   // ── link (API, write) ───────────────────────────────────────────────
@@ -246,7 +249,7 @@ export const adminCommands: CommandDef[] = [
         provider: ctx.opts.provider as string,
       });
     },
-    examples: ["corp link --external-id 'id' --provider 'provider'"],
+    examples: ["corp link --external-id cus_abc123 --provider stripe", "corp link --external-id org_xyz --provider github"],
   },
 
   // ── claim (API, write) ──────────────────────────────────────────────
@@ -262,7 +265,7 @@ export const adminCommands: CommandDef[] = [
       await claimCommand(ctx.positional[0]);
     },
     produces: { kind: "entity", trackEntity: true },
-    examples: ["corp claim <code>"],
+    examples: ["corp claim CLAIM-ABC123", "corp claim ws_invite_xyz789"],
   },
 
   // ── feedback (API, write) ───────────────────────────────────────────
@@ -274,7 +277,7 @@ export const adminCommands: CommandDef[] = [
       { name: "message", required: true, description: "Feedback message" },
     ],
     options: [
-      { flags: "--category <category>", description: "Category (e.g. bug, feature, general)", default: "general" },
+      { flags: "--category <category>", description: "Feedback category", default: "general", choices: ["bug", "feature", "general"] },
       { flags: "--email <email>", description: "Your email address (to receive a copy)" },
     ],
     handler: async (ctx) => {
@@ -285,7 +288,10 @@ export const adminCommands: CommandDef[] = [
         json: ctx.opts.json as boolean | undefined,
       });
     },
-    examples: ["corp feedback <message>", "corp feedback --json"],
+    examples: [
+      "corp feedback 'The cap table export is missing share classes'",
+      "corp feedback 'PDF generation fails on long names' --category bug --email me@example.com",
+    ],
   },
 
   // ── resolve (API, read) ─────────────────────────────────────────────
@@ -309,7 +315,7 @@ export const adminCommands: CommandDef[] = [
         meetingId: ctx.opts.meetingId as string | undefined,
       });
     },
-    examples: ["corp resolve"],
+    examples: ["corp resolve entity acme", "corp resolve contact alice --entity-id ent_abc123"],
   },
 
   // ── find (API, read) ────────────────────────────────────────────────
@@ -335,7 +341,7 @@ export const adminCommands: CommandDef[] = [
         json: ctx.opts.json as boolean | undefined,
       });
     },
-    examples: ["corp find"],
+    examples: ["corp find entity acme", "corp find contact alice --entity-id ent_abc123 --json"],
   },
 
   // ── approvals (informational) ───────────────────────────────────────
@@ -410,26 +416,26 @@ export const adminCommands: CommandDef[] = [
     description: "Seed a demo workspace with sample data",
     route: { method: "POST", path: "/v1/demo/seed" },
     options: [
-      { flags: "--name <name>", description: "Display name" },
-      { flags: "--scenario <scenario>", description: "Demo scenario to use" },
+      { flags: "--name <name>", description: "Corporation display name" },
+      { flags: "--scenario <scenario>", description: "Demo scenario to seed", choices: ["startup", "llc", "restaurant"] },
     ],
-    examples: ["corp demo seed", "corp demo seed --json"],
-    successTemplate: "Seed created",
+    examples: ["corp demo seed --name 'Acme Corp'", "corp demo seed --name 'Taco LLC' --scenario restaurant --json"],
+    successTemplate: "Demo workspace seeded",
   },
   {
     name: "digests trigger",
-    description: "Trigger digest generation now",
+    description: "Trigger digest generation immediately",
     route: { method: "POST", path: "/v1/digests/trigger" },
     examples: ["corp digests trigger"],
-    successTemplate: "Trigger created",
+    successTemplate: "Digest triggered",
   },
   {
     name: "digests",
     description: "View a specific digest by key",
     route: { method: "GET", path: "/v1/digests/{pos}" },
-    args: [{ name: "digest-key", required: true, description: "Digest key" }],
+    args: [{ name: "digest-key", required: true, description: "Digest key (e.g. daily_2026-03-22)" }],
     display: { title: "Digest" },
-    examples: ["corp digests"],
+    examples: ["corp digests daily_2026-03-22", "corp digests weekly_2026-03-22 --json"],
   },
   {
     name: "service-token",
@@ -459,14 +465,14 @@ export const adminCommands: CommandDef[] = [
     options: [
       { flags: "--claim-token <claim-token>", description: "Workspace claim token", required: true },
     ],
-    examples: ["corp workspaces claim --claim-token 'claim-token'"],
-    successTemplate: "Claim created",
+    examples: ["corp workspaces claim --claim-token tok_abc123xyz"],
+    successTemplate: "Workspace claimed",
   },
   {
     name: "workspaces contacts",
     description: "List contacts across the workspace",
     route: { method: "GET", path: "/v1/workspaces/{workspace_id}/contacts" },
-    display: { title: "Workspaces Contacts", cols: ["#contact_id>ID", "#entity_id>ID"] },
+    display: { title: "Workspaces Contacts", cols: ["#contact_id>Contact ID", "#entity_id>Entity ID"] },
     examples: ["corp workspaces contacts"],
   },
   {
@@ -487,7 +493,7 @@ export const adminCommands: CommandDef[] = [
       { flags: "--api-key <api-key>", description: "API key (starts with sk_)", required: true },
       { flags: "--ttl-seconds <ttl-seconds>", description: "Token TTL in seconds (60-86400)", type: "int" },
     ],
-    examples: ["corp auth token-exchange --api-key 'api-key'", "corp auth token-exchange --json"],
+    examples: ["corp auth token-exchange --api-key sk_live_abc123", "corp auth token-exchange --api-key sk_live_abc123 --ttl-seconds 3600 --json"],
     successTemplate: "Token exchanged",
   },
   {
@@ -516,7 +522,7 @@ export const adminCommands: CommandDef[] = [
     description: "Revoke an SSH public key",
     route: { method: "DELETE", path: "/v1/ssh-keys/{pos}" },
     args: [{ name: "key-id", required: true, description: "SSH key ID to revoke" }],
-    examples: ["corp ssh-keys revoke <key-id>"],
+    examples: ["corp ssh-keys revoke key_abc123"],
     successTemplate: "SSH key revoked",
   },
   {
@@ -527,8 +533,8 @@ export const adminCommands: CommandDef[] = [
       { flags: "--name <name>", description: "Display name", required: true },
       { flags: "--owner-email <owner-email>", description: "Workspace owner email address" },
     ],
-    examples: ["corp workspaces provision --name 'name'", "corp workspaces provision --json"],
-    successTemplate: "Provision created",
+    examples: ["corp workspaces provision --name 'Acme Corp'", "corp workspaces provision --name 'Taco LLC' --owner-email founder@taco.com --json"],
+    successTemplate: "Workspace provisioned",
   },
 
 
@@ -541,7 +547,10 @@ export const adminCommands: CommandDef[] = [
       { flags: "--items <items>", description: "Items to sync (JSON array)", required: true, type: "array" },
       { flags: "--kind <kind>", description: "Resource kind", required: true, choices: ["entity", "contact", "share_transfer", "invoice", "bank_account", "payment", "payroll_run", "distribution", "reconciliation", "tax_filing", "deadline", "classification", "body", "meeting", "seat", "agenda_item", "resolution", "document", "work_item", "agent", "valuation", "safe_note", "instrument", "share_class", "round"] },
     ],
-    examples: ["corp references sync --items 'items' --kind 'kind'"],
+    examples: [
+      "corp references sync --kind entity --items '[{\"id\":\"ent_abc123\",\"name\":\"Acme\"}]'",
+      "corp references sync --kind contact --items '[{\"id\":\"con_xyz\",\"name\":\"Alice\"}]' --json",
+    ],
     successTemplate: "References synced",
   },
 
@@ -555,26 +564,29 @@ export const adminCommands: CommandDef[] = [
       { flags: "--execution-id <execution-id>", description: "Agent execution ID", required: true },
       { flags: "--template <template>", description: "Template string with {{secret}} placeholders", required: true },
     ],
-    examples: ["corp secrets interpolate --execution-id 'execution-id' --template 'template'"],
-    successTemplate: "Interpolate created",
+    examples: [
+      "corp secrets interpolate --execution-id exec_abc123 --template 'Bearer {{MY_API_KEY}}'",
+      "corp secrets interpolate --execution-id exec_abc123 --template '{{DB_HOST}}:5432' --json",
+    ],
+    successTemplate: "Template interpolated",
   },
   {
     name: "secrets resolve",
-    description: "Resolve a secrets token to its values",
+    description: "Resolve a secrets access token to its plaintext values",
     route: { method: "POST", path: "/v1/secrets/resolve" },
     options: [
       { flags: "--token <token>", description: "Secrets access token", required: true },
     ],
-    examples: ["corp secrets resolve --token 'token'"],
-    successTemplate: "Resolve created",
+    examples: ["corp secrets resolve --token stok_abc123xyz", "corp secrets resolve --token stok_abc123xyz --json"],
+    successTemplate: "Secrets resolved",
   },
 
   {
     name: "documents validate-preview",
-    description: "Validate a document preview without generating PDF",
+    description: "Validate the document preview AST without generating a PDF",
     route: { method: "GET", path: "/v1/documents/preview/pdf/validate" },
     entity: true,
     display: { title: "Document Preview Validation" },
-    examples: ["corp documents validate-preview", "corp documents validate-preview --json"],
+    examples: ["corp documents validate-preview --entity-id ent_abc123", "corp documents validate-preview --entity-id ent_abc123 --json"],
   },
 ];

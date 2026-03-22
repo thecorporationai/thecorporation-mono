@@ -27,9 +27,8 @@ enum Backend {
     Git {
         repo: CorpRepo,
     },
-    Valkey {
-        con: Rc<RefCell<redis::Connection>>,
-        ws: String,
+    Kv {
+        store: Rc<RefCell<corp_store::CorpStore<redis::Connection>>>,
     },
 }
 
@@ -66,26 +65,23 @@ impl<'a> WorkspaceStore<'a> {
                 Backend::Git { repo }
             }
             Some(client) => {
-                let mut con = client
+                let con = client
                     .get_connection()
                     .map_err(|e| GitStorageError::Git(e.to_string()))?;
                 let ws = workspace_id.to_string();
+                let mut cs = corp_store::CorpStore::new(con, &ws, VALKEY_WORKSPACE_ENTITY);
                 let vfiles =
                     vec![corp_store::entry::FileWrite::json("workspace.json", &record)
                         .map_err(|e| GitStorageError::SerializationError(e.to_string()))?];
-                corp_store::store::commit_files(
-                    &mut con,
-                    &ws,
-                    VALKEY_WORKSPACE_ENTITY,
+                cs.commit_files(
                     "main",
                     "Initialize workspace",
                     &vfiles,
                     None,
                     chrono::Utc::now(),
                 )?;
-                Backend::Valkey {
-                    con: Rc::new(RefCell::new(con)),
-                    ws,
+                Backend::Kv {
+                    store: Rc::new(RefCell::new(cs)),
                 }
             }
         };
@@ -110,16 +106,12 @@ impl<'a> WorkspaceStore<'a> {
                 Backend::Git { repo }
             }
             Some(client) => {
-                let mut con = client
+                let con = client
                     .get_connection()
                     .map_err(|e| GitStorageError::Git(e.to_string()))?;
                 let ws = workspace_id.to_string();
-                match corp_store::store::resolve_ref(
-                    &mut con,
-                    &ws,
-                    VALKEY_WORKSPACE_ENTITY,
-                    "main",
-                ) {
+                let mut cs = corp_store::CorpStore::new(con, &ws, VALKEY_WORKSPACE_ENTITY);
+                match cs.resolve_ref("main") {
                     Ok(_) => {}
                     Err(corp_store::StoreError::RefNotFound(_)) => {
                         return Err(GitStorageError::RepoNotFound(format!(
@@ -128,9 +120,8 @@ impl<'a> WorkspaceStore<'a> {
                     }
                     Err(e) => return Err(GitStorageError::from(e)),
                 }
-                Backend::Valkey {
-                    con: Rc::new(RefCell::new(con)),
-                    ws,
+                Backend::Kv {
+                    store: Rc::new(RefCell::new(cs)),
                 }
             }
         };
@@ -142,24 +133,28 @@ impl<'a> WorkspaceStore<'a> {
         })
     }
 
-    /// Open an existing workspace store, reusing a shared Valkey connection.
+    /// Open an existing workspace store, reusing a shared KV connection.
+    ///
+    /// When `shared_store` is `Some`, the underlying connection is reused from the shared
+    /// store instead of creating a new TCP connection. The store's `ws`/`ent` fields are
+    /// not used — all operations go through the raw connection via free functions.
     pub fn open_shared(
         layout: &'a RepoLayout,
         workspace_id: WorkspaceId,
-        shared_con: Option<Rc<RefCell<redis::Connection>>>,
+        shared_store: Option<Rc<RefCell<corp_store::CorpStore<redis::Connection>>>>,
     ) -> Result<Self, GitStorageError> {
-        let backend = match shared_con {
+        let backend = match shared_store {
             None => {
                 let path = layout.workspace_repo_path(workspace_id);
                 let repo = CorpRepo::open(&path)?;
                 Backend::Git { repo }
             }
-            Some(con) => {
+            Some(store) => {
                 let ws = workspace_id.to_string();
                 {
-                    let mut c = con.borrow_mut();
+                    let mut s = store.borrow_mut();
                     match corp_store::store::resolve_ref(
-                        &mut *c,
+                        s.con(),
                         &ws,
                         VALKEY_WORKSPACE_ENTITY,
                         "main",
@@ -173,7 +168,7 @@ impl<'a> WorkspaceStore<'a> {
                         Err(e) => return Err(GitStorageError::from(e)),
                     }
                 }
-                Backend::Valkey { con, ws }
+                Backend::Kv { store }
             }
         };
 
@@ -184,24 +179,28 @@ impl<'a> WorkspaceStore<'a> {
         })
     }
 
-    /// List workspace IDs and return a shared connection for subsequent `open_shared` calls.
+    /// List workspace IDs and return a shared KV store for subsequent `open_shared` calls.
+    ///
+    /// In git mode, lists workspaces from the filesystem and returns `None` for the store.
+    /// In Valkey mode, creates a single connection, lists workspaces, and returns the store
+    /// wrapped in `Rc<RefCell<_>>` for reuse across multiple `open_shared` calls.
     pub fn list_and_prepare(
         layout: &RepoLayout,
         valkey_client: Option<&redis::Client>,
-    ) -> Result<(Vec<WorkspaceId>, Option<Rc<RefCell<redis::Connection>>>), GitStorageError> {
+    ) -> Result<(Vec<WorkspaceId>, Option<Rc<RefCell<corp_store::CorpStore<redis::Connection>>>>), GitStorageError> {
         match valkey_client {
             None => Ok((layout.list_workspace_ids(), None)),
             Some(client) => {
                 let con = client
                     .get_connection()
                     .map_err(|e| GitStorageError::Git(e.to_string()))?;
-                let con = Rc::new(RefCell::new(con));
-                let ids = corp_store::store::list_workspaces(&mut *con.borrow_mut())
+                let mut cs = corp_store::CorpStore::new(con, "", "");
+                let ids = corp_store::store::list_workspaces(cs.con())
                     .map_err(GitStorageError::from)?
                     .into_iter()
                     .filter_map(|s| s.parse().ok())
                     .collect();
-                Ok((ids, Some(con)))
+                Ok((ids, Some(Rc::new(RefCell::new(cs)))))
             }
         }
     }
@@ -300,11 +299,12 @@ impl<'a> WorkspaceStore<'a> {
     pub fn path_exists(&self, path: &str) -> Result<bool, GitStorageError> {
         match &self.backend {
             Backend::Git { repo } => repo.path_exists("main", path),
-            Backend::Valkey { con, ws } => {
-                let mut con = con.borrow_mut();
+            Backend::Kv { store } => {
+                let ws = self.workspace_id.to_string();
+                let mut s = store.borrow_mut();
                 Ok(corp_store::store::path_exists(
-                    &mut *con,
-                    ws,
+                    s.con(),
+                    &ws,
                     VALKEY_WORKSPACE_ENTITY,
                     "main",
                     path,
@@ -325,11 +325,12 @@ impl<'a> WorkspaceStore<'a> {
     ) -> Result<Vec<(String, String, String)>, GitStorageError> {
         match &self.backend {
             Backend::Git { repo } => repo.recent_commits("main", limit),
-            Backend::Valkey { con, ws } => {
-                let mut con = con.borrow_mut();
+            Backend::Kv { store } => {
+                let ws = self.workspace_id.to_string();
+                let mut s = store.borrow_mut();
                 let entries = corp_store::store::recent_commits(
-                    &mut *con,
-                    ws,
+                    s.con(),
+                    &ws,
                     VALKEY_WORKSPACE_ENTITY,
                     limit,
                 )?;
@@ -373,11 +374,12 @@ impl<'a> WorkspaceStore<'a> {
     ) -> Result<T, GitStorageError> {
         match &self.backend {
             Backend::Git { repo } => repo.read_json("main", path),
-            Backend::Valkey { con, ws } => {
-                let mut con = con.borrow_mut();
+            Backend::Kv { store } => {
+                let ws = self.workspace_id.to_string();
+                let mut s = store.borrow_mut();
                 Ok(corp_store::store::read_json(
-                    &mut *con,
-                    ws,
+                    s.con(),
+                    &ws,
                     VALKEY_WORKSPACE_ENTITY,
                     "main",
                     path,
@@ -396,15 +398,16 @@ impl<'a> WorkspaceStore<'a> {
                 commit_files(repo, "main", message, files, None)?;
                 Ok(())
             }
-            Backend::Valkey { con, ws } => {
-                let mut con = con.borrow_mut();
+            Backend::Kv { store } => {
+                let ws = self.workspace_id.to_string();
                 let vfiles: Vec<corp_store::entry::FileWrite> = files
                     .iter()
                     .map(|f| corp_store::entry::FileWrite::new(&f.path, f.content.clone()))
                     .collect();
+                let mut s = store.borrow_mut();
                 corp_store::store::commit_files(
-                    &mut *con,
-                    ws,
+                    s.con(),
+                    &ws,
                     VALKEY_WORKSPACE_ENTITY,
                     "main",
                     message,
@@ -423,11 +426,12 @@ impl<'a> WorkspaceStore<'a> {
     ) -> Result<Vec<(String, bool)>, GitStorageError> {
         match &self.backend {
             Backend::Git { repo } => repo.list_dir("main", dir_path),
-            Backend::Valkey { con, ws } => {
-                let mut con = con.borrow_mut();
+            Backend::Kv { store } => {
+                let ws = self.workspace_id.to_string();
+                let mut s = store.borrow_mut();
                 Ok(corp_store::store::list_dir(
-                    &mut *con,
-                    ws,
+                    s.con(),
+                    &ws,
                     VALKEY_WORKSPACE_ENTITY,
                     "main",
                     dir_path,

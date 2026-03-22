@@ -114,7 +114,7 @@ export const capTableCommands: CommandDef[] = [
   // --- cap-table transfers ---
   {
     name: "cap-table transfers",
-    description: "Share transfers",
+    description: "List share transfers for this entity",
     route: { method: "GET", path: "/v1/entities/{eid}/share-transfers" },
     entity: true,
     display: {
@@ -135,7 +135,7 @@ export const capTableCommands: CommandDef[] = [
   // --- cap-table instruments ---
   {
     name: "cap-table instruments",
-    description: "Cap table instruments",
+    description: "List equity instruments (share classes, option pools, SAFEs) on the cap table",
     route: { method: "GET", path: "/v1/entities/{eid}/cap-table" },
     entity: true,
     display: {
@@ -181,7 +181,7 @@ export const capTableCommands: CommandDef[] = [
   // --- cap-table rounds ---
   {
     name: "cap-table rounds",
-    description: "Staged equity rounds",
+    description: "List equity rounds (staged and closed) for this entity",
     route: { method: "GET", path: "/v1/entities/{eid}/equity-rounds" },
     entity: true,
     display: {
@@ -202,7 +202,7 @@ export const capTableCommands: CommandDef[] = [
   // --- cap-table valuations ---
   {
     name: "cap-table valuations",
-    description: "Valuations history",
+    description: "List valuation history (409A, FMV, and other valuations)",
     route: { method: "GET", path: "/v1/entities/{eid}/valuations" },
     entity: true,
     display: {
@@ -308,6 +308,9 @@ export const capTableCommands: CommandDef[] = [
         }
       }
       if (ctx.opts.json) { ctx.writer.json(result); return; }
+      // The control-map response is a deeply nested ownership tree; there is no
+      // concise tabular representation, so we always fall back to pretty JSON for
+      // human-readable output as well.
       ctx.writer.json(result);
     },
     examples: ["corp cap-table control-map", "corp cap-table control-map --json"],
@@ -332,9 +335,15 @@ export const capTableCommands: CommandDef[] = [
         console.log(chalk.yellow("Note: This round is already closed. Dilution preview reflects the finalized state, not a scenario model."));
         console.log(chalk.dim("  For scenario modeling, create a new round with: corp cap-table start-round --name '...' --issuer-legal-entity-id '...'"));
       }
+      // The dilution-preview response is a complex nested projection (per-holder
+      // diluted ownership, waterfall shares, etc.).  There is no concise tabular
+      // representation, so we emit pretty JSON as the human-readable output too.
       ctx.writer.json(result);
     },
-    examples: ["corp cap-table dilution", "corp cap-table dilution --json"],
+    examples: [
+      "corp cap-table dilution --round-id @last:round",
+      "corp cap-table dilution --round-id a1b2c3d4 --json",
+    ],
   },
 
   // --- cap-table create-instrument ---
@@ -345,7 +354,7 @@ export const capTableCommands: CommandDef[] = [
     entity: true,
     dryRun: true,
     options: [
-      { flags: "--kind <kind>", description: "Instrument kind (common_equity, preferred_equity, membership_unit, option_grant, safe)", required: true },
+      { flags: "--kind <kind>", description: "Instrument kind", required: true, choices: ["common_equity", "preferred_equity", "membership_unit", "option_grant", "safe", "convertible_note", "warrant"] },
       { flags: "--symbol <symbol>", description: "Instrument symbol", required: true },
       { flags: "--issuer-legal-entity-id <ref>", description: "Issuer legal entity reference (ID, short ID, @last, or unique name)" },
       { flags: "--authorized-units <n>", description: "Authorized units", type: "int" },
@@ -389,7 +398,10 @@ export const capTableCommands: CommandDef[] = [
     },
     produces: { kind: "instrument" },
     successTemplate: "Instrument created: {symbol}",
-    examples: ["corp cap-table create-instrument --kind 'kind' --symbol 'symbol'", "corp cap-table create-instrument --json"],
+    examples: [
+      "corp cap-table create-instrument --kind common_equity --symbol COMMON",
+      "corp cap-table create-instrument --kind option_grant --symbol OPTIONS --authorized-units 10000000",
+    ],
   },
 
   // --- cap-table issue-equity ---
@@ -481,10 +493,11 @@ export const capTableCommands: CommandDef[] = [
       }
     },
     produces: { kind: "round" },
-    successTemplate: "Equity issued: {round_name}",
+    successTemplate: "Equity issued to {recipient_name}",
     examples: [
-      'corp cap-table issue-equity --grant-type common --shares 50000 --recipient "Alice Smith"',
-      'corp cap-table issue-equity --grant-type iso --shares 10000 --recipient "Bob" --email "bob@co.com"',
+      'corp cap-table issue-equity --grant-type common --shares 1000000 --recipient "Alice Smith"',
+      'corp cap-table issue-equity --grant-type iso --shares 50000 --recipient "Bob Jones" --email "bob@acme.com"',
+      'corp cap-table issue-equity --grant-type preferred --shares 500000 --recipient "Acme Ventures" --meeting-id @last:meeting --resolution-id @last:resolution',
     ],
   },
 
@@ -578,10 +591,11 @@ export const capTableCommands: CommandDef[] = [
       printReferenceSummary("safe_note", result.data!, { showReuseHint: true });
     },
     produces: { kind: "safe_note" },
-    successTemplate: "SAFE created: {investor_name}",
+    successTemplate: "SAFE issued to {investor_name}",
     examples: [
-      'corp cap-table issue-safe --investor "Seed Fund" --amount-dollars 500000 --valuation-cap-dollars 10000000',
-      "corp cap-table issue-safe --investor \"Angel\" --amount-cents 50000000 --valuation-cap-cents 1000000000",
+      'corp cap-table issue-safe --investor "Sequoia Capital" --amount-dollars 500000 --valuation-cap-dollars 10000000',
+      'corp cap-table issue-safe --investor "Angel Investor" --amount-dollars 250000 --valuation-cap-dollars 8000000 --safe-type pre_money',
+      'corp cap-table issue-safe --investor "YC" --amount-cents 12500000 --valuation-cap-cents 1500000000 --meeting-id @last:meeting --resolution-id @last:resolution',
     ],
   },
 
@@ -597,10 +611,10 @@ export const capTableCommands: CommandDef[] = [
       { flags: "--to <ref>", description: "Destination contact reference (to_contact_id)", required: true },
       { flags: "--shares <n>", description: "Number of shares to transfer", required: true, type: "int" },
       { flags: "--share-class-id <ref>", description: "Share class reference (auto-resolved if only one exists)" },
-      { flags: "--governing-doc-type <type>", description: "Governing doc type (bylaws, operating_agreement, shareholder_agreement, other)", default: "bylaws" },
-      { flags: "--transferee-rights <rights>", description: "Transferee rights (full_member, economic_only, limited)", default: "full_member" },
+      { flags: "--governing-doc-type <type>", description: "Governing document that authorizes this transfer", default: "bylaws", choices: ["bylaws", "operating_agreement", "shareholder_agreement", "other"] },
+      { flags: "--transferee-rights <rights>", description: "Rights granted to the transferee", default: "full_member", choices: ["full_member", "economic_only", "limited"] },
       { flags: "--prepare-intent-id <id>", description: "Prepare intent ID (auto-created if omitted)" },
-      { flags: "--type <type>", description: "Transfer type (gift, trust_transfer, secondary_sale, estate, other)", default: "secondary_sale" },
+      { flags: "--type <type>", description: "Type of transfer", default: "secondary_sale", choices: ["gift", "trust_transfer", "secondary_sale", "estate", "other"] },
       { flags: "--price-per-share-cents <n>", description: "Price per share in cents", type: "int" },
       { flags: "--relationship <rel>", description: "Relationship to holder" },
     ],
@@ -685,8 +699,11 @@ export const capTableCommands: CommandDef[] = [
       printReferenceSummary("share_transfer", result, { label: "Transfer Ref:", showReuseHint: true });
     },
     produces: { kind: "share_transfer" },
-    successTemplate: "Transfer created",
-    examples: ["corp cap-table transfer --from 'ref' --to 'ref' --shares 'n' --share-class-id 'ref' --governing-doc-type 'type' --transferee-rights 'rights'", "corp cap-table transfer --json"],
+    successTemplate: "Share transfer created: {transfer_workflow_id}",
+    examples: [
+      'corp cap-table transfer --from alice-johnson --to bob-smith --shares 50000 --type secondary_sale',
+      'corp cap-table transfer --from a1b2c3d4 --to e5f6a7b8 --shares 10000 --share-class-id COMMON --type gift --transferee-rights full_member',
+    ],
   },
 
   // --- cap-table distribute ---
@@ -699,7 +716,7 @@ export const capTableCommands: CommandDef[] = [
     options: [
       { flags: "--amount-cents <n>", description: "Total distribution amount in cents (e.g. 100000 = $1,000.00)", required: true, type: "int" },
       { flags: "--amount-dollars <n>", description: "Total distribution amount in dollars (e.g. 1000 = $1,000.00)", type: "int" },
-      { flags: "--type <type>", description: "Distribution type (dividend, return, liquidation)", default: "dividend" },
+      { flags: "--type <type>", description: "Distribution type", default: "dividend", choices: ["dividend", "return", "liquidation"] },
       { flags: "--description <desc>", description: "Distribution description", required: true },
     ],
     handler: async (ctx) => {
@@ -734,7 +751,10 @@ export const capTableCommands: CommandDef[] = [
       ctx.writer.success(`Distribution calculated: ${result.distribution_id ?? "OK"}`);
       printReferenceSummary("distribution", result, { showReuseHint: true });
     },
-    examples: ["corp cap-table distribute --amount-cents 'n' --description 'desc'", "corp cap-table distribute --json"],
+    examples: [
+      'corp cap-table distribute --amount-dollars 250000 --description "Q1 2026 dividend distribution"',
+      'corp cap-table distribute --amount-cents 50000000 --type liquidation --description "Liquidation proceeds distribution"',
+    ],
   },
 
   // --- cap-table start-round ---
@@ -776,8 +796,11 @@ export const capTableCommands: CommandDef[] = [
       printReferenceSummary("round", result, { showReuseHint: true });
     },
     produces: { kind: "round" },
-    successTemplate: "Round started: {round_name}",
-    examples: ["corp cap-table start-round --name 'name' --issuer-legal-entity-id 'ref'"],
+    successTemplate: "Round started: {name}",
+    examples: [
+      'corp cap-table start-round --name "Series A"',
+      'corp cap-table start-round --name "Seed Round" --issuer-legal-entity-id a1b2c3d4e5f6',
+    ],
   },
 
   // --- cap-table add-security ---
@@ -795,7 +818,7 @@ export const capTableCommands: CommandDef[] = [
       { flags: "--holder-id <ref>", description: "Existing holder reference" },
       { flags: "--email <email>", description: "Recipient email (to find or create holder)" },
       { flags: "--principal-cents <n>", description: "Principal amount in cents", type: "int" },
-      { flags: "--grant-type <type>", description: "Grant type" },
+      { flags: "--grant-type <type>", description: "Grant type (common, preferred, iso, nso, rsa, membership_unit)", choices: ["common", "common_stock", "preferred", "preferred_stock", "membership_unit", "stock_option", "iso", "nso", "rsa", "svu"] },
     ],
     handler: async (ctx) => {
       const eid = await ctx.resolver.resolveEntity(ctx.opts.entityId as string | undefined);
@@ -819,7 +842,10 @@ export const capTableCommands: CommandDef[] = [
       if (ctx.opts.json) { ctx.writer.json(result); return; }
       ctx.writer.success(`Security added for ${ctx.opts.recipientName}`);
     },
-    examples: ["corp cap-table add-security --round-id 'ref' --instrument-id 'ref' --quantity 'n' --recipient-name 'name'", "corp cap-table add-security --json"],
+    examples: [
+      'corp cap-table add-security --round-id @last:round --instrument-id @last:instrument --quantity 500000 --recipient-name "Alice Smith"',
+      'corp cap-table add-security --round-id a1b2c3d4 --instrument-id COMMON --quantity 1000000 --recipient-name "Acme Ventures" --email "invest@acme.com" --grant-type preferred',
+    ],
   },
 
   // --- cap-table issue-round ---
@@ -870,7 +896,10 @@ export const capTableCommands: CommandDef[] = [
         printReferenceSummary("round", roundMatch.raw, { showReuseHint: true });
       }
     },
-    examples: ["corp cap-table issue-round --round-id 'ref'", "corp cap-table issue-round --json"],
+    examples: [
+      "corp cap-table issue-round --round-id @last:round",
+      "corp cap-table issue-round --round-id a1b2c3d4 --meeting-id @last:meeting --resolution-id @last:resolution",
+    ],
   },
 
   // --- cap-table create-valuation ---
@@ -881,7 +910,7 @@ export const capTableCommands: CommandDef[] = [
     entity: true,
     dryRun: true,
     options: [
-      { flags: "--type <type>", description: "Valuation type (four_oh_nine_a, fair_market_value, etc.)", required: true },
+      { flags: "--type <type>", description: "Valuation type", required: true, choices: ["four_oh_nine_a", "llc_profits_interest", "fair_market_value", "gift", "estate", "other"] },
       { flags: "--date <date>", description: "Effective date (ISO 8601)", required: true },
       { flags: "--methodology <method>", description: "Methodology", required: true, choices: ["income", "market", "asset", "backsolve", "hybrid", "other"] },
       { flags: "--fmv <cents>", description: "FMV per share in cents", type: "int" },
@@ -930,8 +959,11 @@ export const capTableCommands: CommandDef[] = [
       printReferenceSummary("valuation", result, { showReuseHint: true });
     },
     produces: { kind: "valuation" },
-    successTemplate: "Valuation created",
-    examples: ["corp cap-table create-valuation --type 'type' --date 'date' --methodology 'method'", "corp cap-table create-valuation --json"],
+    successTemplate: "Valuation created: {valuation_id}",
+    examples: [
+      "corp cap-table create-valuation --type four_oh_nine_a --date 2026-01-01 --methodology backsolve",
+      "corp cap-table create-valuation --type four_oh_nine_a --date 2026-01-01 --methodology market --fmv 125 --enterprise-value 50000000 --auto-approve",
+    ],
   },
 
   // --- cap-table submit-valuation <valuation-ref> ---
@@ -989,7 +1021,10 @@ export const capTableCommands: CommandDef[] = [
         }
       }
     },
-    examples: ["corp cap-table submit-valuation <valuation-ref>"],
+    examples: [
+      "corp cap-table submit-valuation @last:valuation",
+      "corp cap-table submit-valuation a1b2c3d4 --json",
+    ],
   },
 
   // --- cap-table approve-valuation <valuation-ref> ---
@@ -1033,7 +1068,11 @@ export const capTableCommands: CommandDef[] = [
         }
       }
     },
-    examples: ["corp cap-table approve-valuation <valuation-ref>", "corp cap-table approve-valuation --json"],
+    successTemplate: "Valuation approved: {valuation_id}",
+    examples: [
+      "corp cap-table approve-valuation @last:valuation",
+      "corp cap-table approve-valuation a1b2c3d4 --resolution-id @last:resolution",
+    ],
   },
 
   // --- cap-table preview-conversion ---
@@ -1061,7 +1100,10 @@ export const capTableCommands: CommandDef[] = [
       if (result.ownership_pct) console.log(`  Post-conversion ownership: ${result.ownership_pct}%`);
       ctx.writer.json(result);
     },
-    examples: ["corp cap-table preview-conversion", "corp cap-table preview-conversion --json"],
+    examples: [
+      "corp cap-table preview-conversion --safe-id @last:safe_note --price-per-share-cents 125",
+      "corp cap-table preview-conversion --safe-id a1b2c3d4 --price-per-share-cents 200 --json",
+    ],
   },
 
   // --- cap-table convert ---
@@ -1093,7 +1135,10 @@ export const capTableCommands: CommandDef[] = [
       if (ctx.opts.json) { ctx.writer.json(result); return; }
       ctx.writer.success(`Conversion executed for SAFE ${safeId}`);
     },
-    examples: ["corp cap-table convert --safe-id 'ref' --price-per-share-cents 'n'"],
+    examples: [
+      "corp cap-table convert --safe-id @last:safe_note --price-per-share-cents 125",
+      "corp cap-table convert --safe-id a1b2c3d4 --price-per-share-cents 200 --dry-run",
+    ],
   },
 
   // ── Auto-generated from OpenAPI ──────────────────────────────
@@ -1109,8 +1154,11 @@ export const capTableCommands: CommandDef[] = [
       { flags: "--parent-legal-entity-id <parent-legal-entity-id>", description: "Parent entity in the control relationship", required: true },
       { flags: "--voting-power-bps <voting-power-bps>", description: "Voting power in basis points (0-10000)" },
     ],
-    examples: ["corp equity control-links --child-legal-entity-id voting --control-type voting --parent-legal-entity-id 'parent-legal-entity-id'", "corp equity control-links --json"],
-    successTemplate: "Control Links created",
+    examples: [
+      "corp equity control-links --child-legal-entity-id a1b2c3d4 --control-type voting --parent-legal-entity-id e5f6a7b8",
+      "corp equity control-links --child-legal-entity-id a1b2c3d4 --control-type board --parent-legal-entity-id e5f6a7b8 --voting-power-bps 5100",
+    ],
+    successTemplate: "Control link created",
   },
   {
     name: "equity control-map",
@@ -1129,8 +1177,11 @@ export const capTableCommands: CommandDef[] = [
       { flags: "--round-id <round-id>", description: "Equity round ID", required: true },
       { flags: "--source-reference <source-reference>", description: "Source reference for the conversion" },
     ],
-    examples: ["corp equity conversions-execute --intent-id 'intent-id' --round-id 'round-id'", "corp equity conversions-execute --json"],
-    successTemplate: "Conversions Execute created",
+    examples: [
+      "corp equity conversions-execute --intent-id a1b2c3d4 --round-id e5f6a7b8",
+      "corp equity conversions-execute --intent-id a1b2c3d4 --round-id e5f6a7b8 --source-reference safe-note:f9g0h1i2",
+    ],
+    successTemplate: "Conversion executed",
   },
   {
     name: "equity conversions-preview",
@@ -1141,8 +1192,11 @@ export const capTableCommands: CommandDef[] = [
       { flags: "--round-id <round-id>", description: "Equity round ID", required: true },
       { flags: "--source-reference <source-reference>", description: "Source reference for the conversion" },
     ],
-    examples: ["corp equity conversions-preview --round-id 'round-id'", "corp equity conversions-preview --json"],
-    successTemplate: "Conversions Preview created",
+    examples: [
+      "corp equity conversions-preview --round-id a1b2c3d4",
+      "corp equity conversions-preview --round-id a1b2c3d4 --source-reference safe-note:b2c3d4e5 --json",
+    ],
+    successTemplate: "Conversion preview calculated",
   },
   {
     name: "equity dilution-preview",
@@ -1162,8 +1216,11 @@ export const capTableCommands: CommandDef[] = [
       { flags: "--name <name>", description: "Display name", required: true },
       { flags: "--role <role>", description: "Role this legal entity plays in the ownership/control graph.", required: true, choices: ["operating", "control", "investment", "nonprofit", "spv", "other"] },
     ],
-    examples: ["corp equity entities --name 'name' --role operating", "corp equity entities --json"],
-    successTemplate: "Entities created",
+    examples: [
+      'corp equity entities --name "Acme Corp" --role operating',
+      'corp equity entities --name "Acme Holdings LLC" --role control --linked-entity-id a1b2c3d4',
+    ],
+    successTemplate: "Legal entity registered",
   },
   {
     name: "equity create-fundraising-workflow",
@@ -1179,8 +1236,11 @@ export const capTableCommands: CommandDef[] = [
       { flags: "--round-price-cents <round-price-cents>", description: "Round share price in cents" },
       { flags: "--target-raise-cents <target-raise-cents>", description: "Target fundraising amount in cents" },
     ],
-    examples: ["corp equity fundraising-workflows --issuer-legal-entity-id 'issuer-legal-entity-id' --name 'name' --prepare-intent-id 'prepare-intent-id'", "corp equity fundraising-workflows --json"],
-    successTemplate: "Fundraising Workflows created",
+    examples: [
+      'corp equity create-fundraising-workflow --name "Series A" --issuer-legal-entity-id a1b2c3d4 --prepare-intent-id e5f6a7b8',
+      'corp equity create-fundraising-workflow --name "Seed Round" --issuer-legal-entity-id a1b2c3d4 --prepare-intent-id e5f6a7b8 --target-raise-cents 200000000',
+    ],
+    successTemplate: "Fundraising workflow created",
   },
   {
     name: "equity fundraising-workflows",
@@ -1189,7 +1249,7 @@ export const capTableCommands: CommandDef[] = [
     entity: true,
     args: [{ name: "workflow-id", required: true, description: "Workflow ID" }],
     display: { title: "Equity Fundraising Workflows", cols: ["board_packet_documents>Board Packet Documents", "closing_packet_documents>Closing Packet Documents", "@created_at>Created At", "#accept_intent_id>ID"] },
-    examples: ["corp equity fundraising-workflows", "corp equity fundraising-workflows --json"],
+    examples: ["corp equity fundraising-workflows a1b2c3d4", "corp equity fundraising-workflows a1b2c3d4 --json"],
   },
   {
     name: "equity fundraising-workflows-apply-terms",
@@ -1201,8 +1261,11 @@ export const capTableCommands: CommandDef[] = [
       { flags: "--conversion-precedence <conversion-precedence>", description: "Conversion priority ordering", type: "array" },
       { flags: "--protective-provisions <protective-provisions>", description: "Protective provision terms" },
     ],
-    examples: ["corp equity fundraising-workflows-apply-terms <workflow-id> --anti-dilution-method none", "corp equity fundraising-workflows-apply-terms --json"],
-    successTemplate: "Fundraising Workflows Apply Terms created",
+    examples: [
+      "corp equity fundraising-workflows-apply-terms a1b2c3d4 --anti-dilution-method broad_based_weighted_average",
+      "corp equity fundraising-workflows-apply-terms a1b2c3d4 --anti-dilution-method none --protective-provisions 'standard Series A provisions'",
+    ],
+    successTemplate: "Term sheet applied to fundraising workflow",
   },
   {
     name: "equity fundraising-workflows-compile-packet",
@@ -1213,8 +1276,11 @@ export const capTableCommands: CommandDef[] = [
       { flags: "--phase <phase>", description: "Workflow phase" },
       { flags: "--required-signers <required-signers>", description: "List of required signers", type: "array" },
     ],
-    examples: ["corp equity fundraising-workflows-compile-packet <workflow-id>", "corp equity fundraising-workflows-compile-packet --json"],
-    successTemplate: "Fundraising Workflows Compile Packet created",
+    examples: [
+      "corp equity fundraising-workflows-compile-packet a1b2c3d4",
+      "corp equity fundraising-workflows-compile-packet a1b2c3d4 --phase closing",
+    ],
+    successTemplate: "Document packet compiled",
   },
   {
     name: "equity fundraising-workflows-finalize",
@@ -1224,8 +1290,11 @@ export const capTableCommands: CommandDef[] = [
     options: [
       { flags: "--phase <phase>", description: "Workflow phase" },
     ],
-    examples: ["corp equity fundraising-workflows-finalize <workflow-id>", "corp equity fundraising-workflows-finalize --json"],
-    successTemplate: "Fundraising Workflows Finalize created",
+    examples: [
+      "corp equity fundraising-workflows-finalize a1b2c3d4",
+      "corp equity fundraising-workflows-finalize a1b2c3d4 --json",
+    ],
+    successTemplate: "Fundraising workflow finalized",
   },
   {
     name: "equity fundraising-workflows-generate-board-packet",
@@ -1235,8 +1304,11 @@ export const capTableCommands: CommandDef[] = [
     options: [
       { flags: "--documents <documents>", description: "Document references or content", type: "array" },
     ],
-    examples: ["corp equity fundraising-workflows-generate-board-packet <workflow-id>", "corp equity fundraising-workflows-generate-board-packet --json"],
-    successTemplate: "Fundraising Workflows Generate Board Packet created",
+    examples: [
+      "corp equity fundraising-workflows-generate-board-packet a1b2c3d4",
+      "corp equity fundraising-workflows-generate-board-packet a1b2c3d4 --json",
+    ],
+    successTemplate: "Board approval packet generated",
   },
   {
     name: "equity fundraising-workflows-generate-closing-packet",
@@ -1246,8 +1318,11 @@ export const capTableCommands: CommandDef[] = [
     options: [
       { flags: "--documents <documents>", description: "Document references or content", type: "array" },
     ],
-    examples: ["corp equity fundraising-workflows-generate-closing-packet <workflow-id>", "corp equity fundraising-workflows-generate-closing-packet --json"],
-    successTemplate: "Fundraising Workflows Generate Closing Packet created",
+    examples: [
+      "corp equity fundraising-workflows-generate-closing-packet a1b2c3d4",
+      "corp equity fundraising-workflows-generate-closing-packet a1b2c3d4 --json",
+    ],
+    successTemplate: "Closing packet generated",
   },
   {
     name: "equity fundraising-workflows-prepare-execution",
@@ -1260,8 +1335,11 @@ export const capTableCommands: CommandDef[] = [
       { flags: "--intent-id <intent-id>", description: "Execution intent ID", required: true },
       { flags: "--phase <phase>", description: "Workflow phase" },
     ],
-    examples: ["corp equity fundraising-workflows-prepare-execution <workflow-id> --approval-artifact-id 'approval-artifact-id' --intent-id 'intent-id'", "corp equity fundraising-workflows-prepare-execution --json"],
-    successTemplate: "Fundraising Workflows Prepare Execution created",
+    examples: [
+      "corp equity fundraising-workflows-prepare-execution a1b2c3d4 --approval-artifact-id b2c3d4e5 --intent-id f6g7h8i9",
+      "corp equity fundraising-workflows-prepare-execution a1b2c3d4 --approval-artifact-id b2c3d4e5 --intent-id f6g7h8i9 --json",
+    ],
+    successTemplate: "Fundraising workflow prepared for execution",
   },
   {
     name: "equity fundraising-workflows-record-board-approval",
@@ -1272,8 +1350,11 @@ export const capTableCommands: CommandDef[] = [
       { flags: "--meeting-id <meeting-id>", description: "Meeting ID", required: true },
       { flags: "--resolution-id <resolution-id>", description: "Resolution ID", required: true },
     ],
-    examples: ["corp equity fundraising-workflows-record-board-approval <workflow-id> --meeting-id 'meeting-id' --resolution-id 'resolution-id'"],
-    successTemplate: "Fundraising Workflows Record Board Approval created",
+    examples: [
+      "corp equity fundraising-workflows-record-board-approval a1b2c3d4 --meeting-id @last:meeting --resolution-id @last:resolution",
+      "corp equity fundraising-workflows-record-board-approval a1b2c3d4 --meeting-id b2c3d4e5 --resolution-id f6g7h8i9",
+    ],
+    successTemplate: "Board approval recorded",
   },
   {
     name: "equity fundraising-workflows-record-close",
@@ -1283,8 +1364,10 @@ export const capTableCommands: CommandDef[] = [
     options: [
       { flags: "--intent-id <intent-id>", description: "Execution intent ID", required: true },
     ],
-    examples: ["corp equity fundraising-workflows-record-close <workflow-id> --intent-id 'intent-id'"],
-    successTemplate: "Fundraising Workflows Record Close created",
+    examples: [
+      "corp equity fundraising-workflows-record-close a1b2c3d4 --intent-id b2c3d4e5",
+    ],
+    successTemplate: "Fundraising round closed",
   },
   {
     name: "equity fundraising-workflows-record-investor-acceptance",
@@ -1295,8 +1378,11 @@ export const capTableCommands: CommandDef[] = [
       { flags: "--accepted-by-contact-id <accepted-by-contact-id>", description: "Contact ID of the accepting party" },
       { flags: "--intent-id <intent-id>", description: "Execution intent ID", required: true },
     ],
-    examples: ["corp equity fundraising-workflows-record-investor-acceptance <workflow-id> --intent-id 'intent-id'", "corp equity fundraising-workflows-record-investor-acceptance --json"],
-    successTemplate: "Fundraising Workflows Record Investor Acceptance created",
+    examples: [
+      "corp equity fundraising-workflows-record-investor-acceptance a1b2c3d4 --intent-id b2c3d4e5",
+      "corp equity fundraising-workflows-record-investor-acceptance a1b2c3d4 --intent-id b2c3d4e5 --accepted-by-contact-id c3d4e5f6",
+    ],
+    successTemplate: "Investor acceptance recorded",
   },
   {
     name: "equity fundraising-workflows-record-signature",
@@ -1307,16 +1393,21 @@ export const capTableCommands: CommandDef[] = [
       { flags: "--channel <channel>", description: "Approval channel (board_vote, written_consent, etc.)" },
       { flags: "--signer-identity <signer-identity>", description: "Identity of the signer", required: true },
     ],
-    examples: ["corp equity fundraising-workflows-record-signature <workflow-id> --signer-identity 'signer-identity'", "corp equity fundraising-workflows-record-signature --json"],
-    successTemplate: "Fundraising Workflows Record Signature created",
+    examples: [
+      'corp equity fundraising-workflows-record-signature a1b2c3d4 --signer-identity "alice@acme.com"',
+      'corp equity fundraising-workflows-record-signature a1b2c3d4 --signer-identity "alice@acme.com" --channel written_consent',
+    ],
+    successTemplate: "Signature recorded",
   },
   {
     name: "equity fundraising-workflows-start-signatures",
     description: "Start the signature collection process",
     route: { method: "POST", path: "/v1/equity/fundraising-workflows/{pos}/start-signatures" },
     args: [{ name: "workflow-id", required: true, description: "Workflow ID" }],
-    examples: ["corp equity fundraising-workflows-start-signatures <workflow-id>"],
-    successTemplate: "Fundraising Workflows Start Signatures created",
+    examples: [
+      "corp equity fundraising-workflows-start-signatures a1b2c3d4",
+    ],
+    successTemplate: "Signature collection started",
   },
   {
     name: "equity grants",
@@ -1328,8 +1419,11 @@ export const capTableCommands: CommandDef[] = [
       { flags: "--recipient-name <recipient-name>", description: "Payment recipient name", required: true },
       { flags: "--shares <shares>", description: "Shares", required: true, type: "int" },
     ],
-    examples: ["corp equity grants --grant-type common_stock --recipient-name 'recipient-name' --shares 'shares'"],
-    successTemplate: "Grants created",
+    examples: [
+      'corp equity grants --grant-type common_stock --recipient-name "Alice Smith" --shares 500000',
+      'corp equity grants --grant-type iso --recipient-name "Bob Jones" --shares 25000',
+    ],
+    successTemplate: "Equity grant issued",
   },
   {
     name: "equity holders",
@@ -1343,8 +1437,11 @@ export const capTableCommands: CommandDef[] = [
       { flags: "--linked-entity-id <linked-entity-id>", description: "ID of the entity to link" },
       { flags: "--name <name>", description: "Display name", required: true },
     ],
-    examples: ["corp equity holders --contact-id 'contact-id' --holder-type individual --name 'name'", "corp equity holders --json"],
-    successTemplate: "Holders created",
+    examples: [
+      'corp equity holders --contact-id a1b2c3d4 --holder-type individual --name "Alice Smith"',
+      'corp equity holders --contact-id e5f6a7b8 --holder-type fund --name "Acme Ventures Fund I"',
+    ],
+    successTemplate: "Equity holder registered",
   },
   {
     name: "equity instruments",
@@ -1359,8 +1456,11 @@ export const capTableCommands: CommandDef[] = [
       { flags: "--symbol <symbol>", description: "Symbol", required: true },
       { flags: "--terms <terms>", description: "Terms" },
     ],
-    examples: ["corp equity instruments --issuer-legal-entity-id 'issuer-legal-entity-id' --kind common_equity --symbol 'symbol'", "corp equity instruments --json"],
-    successTemplate: "Instruments created",
+    examples: [
+      "corp equity instruments --issuer-legal-entity-id a1b2c3d4 --kind common_equity --symbol COMMON",
+      "corp equity instruments --issuer-legal-entity-id a1b2c3d4 --kind option_grant --symbol OPTIONS --authorized-units 10000000",
+    ],
+    successTemplate: "Instrument created",
   },
   {
     name: "equity positions-adjust",
@@ -1375,8 +1475,11 @@ export const capTableCommands: CommandDef[] = [
       { flags: "--quantity-delta <quantity-delta>", description: "Quantity Delta", required: true, type: "int" },
       { flags: "--source-reference <source-reference>", description: "Source reference for the conversion" },
     ],
-    examples: ["corp equity positions-adjust --holder-id 'holder-id' --instrument-id 'instrument-id' --issuer-legal-entity-id 'issuer-legal-entity-id' --quantity-delta 'quantity-delta'", "corp equity positions-adjust --json"],
-    successTemplate: "Positions Adjust created",
+    examples: [
+      "corp equity positions-adjust --holder-id a1b2c3d4 --instrument-id b2c3d4e5 --issuer-legal-entity-id c3d4e5f6 --quantity-delta 10000",
+      "corp equity positions-adjust --holder-id a1b2c3d4 --instrument-id b2c3d4e5 --issuer-legal-entity-id c3d4e5f6 --quantity-delta -5000 --source-reference correction:2026-01",
+    ],
+    successTemplate: "Equity position adjusted",
   },
   {
     name: "equity rounds",
@@ -1392,8 +1495,11 @@ export const capTableCommands: CommandDef[] = [
       { flags: "--round-price-cents <round-price-cents>", description: "Round share price in cents" },
       { flags: "--target-raise-cents <target-raise-cents>", description: "Target fundraising amount in cents" },
     ],
-    examples: ["corp equity rounds --issuer-legal-entity-id 'issuer-legal-entity-id' --name 'name'", "corp equity rounds --json"],
-    successTemplate: "Rounds created",
+    examples: [
+      'corp equity rounds --issuer-legal-entity-id a1b2c3d4 --name "Series A"',
+      'corp equity rounds --issuer-legal-entity-id a1b2c3d4 --name "Seed Round" --target-raise-cents 150000000 --pre-money-cents 800000000',
+    ],
+    successTemplate: "Equity round created",
   },
   {
     name: "equity rounds-staged",
@@ -1408,8 +1514,11 @@ export const capTableCommands: CommandDef[] = [
       { flags: "--round-price-cents <round-price-cents>", description: "Round share price in cents" },
       { flags: "--target-raise-cents <target-raise-cents>", description: "Target fundraising amount in cents" },
     ],
-    examples: ["corp equity rounds-staged --issuer-legal-entity-id 'issuer-legal-entity-id' --name 'name'", "corp equity rounds-staged --json"],
-    successTemplate: "Rounds Staged created",
+    examples: [
+      'corp equity rounds-staged --issuer-legal-entity-id a1b2c3d4 --name "Series A"',
+      'corp equity rounds-staged --issuer-legal-entity-id a1b2c3d4 --name "Seed Round" --target-raise-cents 150000000',
+    ],
+    successTemplate: "Staged equity round created",
   },
   {
     name: "equity rounds-accept",
@@ -1421,8 +1530,11 @@ export const capTableCommands: CommandDef[] = [
       { flags: "--accepted-by-contact-id <accepted-by-contact-id>", description: "Contact ID of the accepting party" },
       { flags: "--intent-id <intent-id>", description: "Execution intent ID", required: true },
     ],
-    examples: ["corp equity rounds-accept <round-id> --intent-id 'intent-id'", "corp equity rounds-accept --json"],
-    successTemplate: "Rounds Accept created",
+    examples: [
+      "corp equity rounds-accept a1b2c3d4 --intent-id b2c3d4e5",
+      "corp equity rounds-accept a1b2c3d4 --intent-id b2c3d4e5 --accepted-by-contact-id c3d4e5f6",
+    ],
+    successTemplate: "Round terms accepted",
   },
   {
     name: "equity rounds-apply-terms",
@@ -1435,8 +1547,11 @@ export const capTableCommands: CommandDef[] = [
       { flags: "--conversion-precedence <conversion-precedence>", description: "Conversion priority ordering", type: "array" },
       { flags: "--protective-provisions <protective-provisions>", description: "Protective provision terms" },
     ],
-    examples: ["corp equity rounds-apply-terms <round-id> --anti-dilution-method none", "corp equity rounds-apply-terms --json"],
-    successTemplate: "Rounds Apply Terms created",
+    examples: [
+      "corp equity rounds-apply-terms a1b2c3d4 --anti-dilution-method broad_based_weighted_average",
+      "corp equity rounds-apply-terms a1b2c3d4 --anti-dilution-method none --protective-provisions 'standard Series A'",
+    ],
+    successTemplate: "Term sheet applied to round",
   },
   {
     name: "equity rounds-board-approve",
@@ -1448,8 +1563,11 @@ export const capTableCommands: CommandDef[] = [
       { flags: "--meeting-id <meeting-id>", description: "Meeting ID", required: true },
       { flags: "--resolution-id <resolution-id>", description: "Resolution ID", required: true },
     ],
-    examples: ["corp equity rounds-board-approve <round-id> --meeting-id 'meeting-id' --resolution-id 'resolution-id'"],
-    successTemplate: "Rounds Board Approve created",
+    examples: [
+      "corp equity rounds-board-approve a1b2c3d4 --meeting-id @last:meeting --resolution-id @last:resolution",
+      "corp equity rounds-board-approve a1b2c3d4 --meeting-id b2c3d4e5 --resolution-id f6g7h8i9",
+    ],
+    successTemplate: "Board approval recorded for round",
   },
   {
     name: "equity rounds-issue",
@@ -1461,8 +1579,11 @@ export const capTableCommands: CommandDef[] = [
       { flags: "--meeting-id <meeting-id>", description: "Meeting ID" },
       { flags: "--resolution-id <resolution-id>", description: "Resolution ID" },
     ],
-    examples: ["corp equity rounds-issue <round-id>", "corp equity rounds-issue --json"],
-    successTemplate: "Rounds Issue created",
+    examples: [
+      "corp equity rounds-issue a1b2c3d4",
+      "corp equity rounds-issue a1b2c3d4 --meeting-id @last:meeting --resolution-id @last:resolution",
+    ],
+    successTemplate: "Round issued",
   },
   {
     name: "equity rounds-securities",
@@ -1479,8 +1600,11 @@ export const capTableCommands: CommandDef[] = [
       { flags: "--quantity <quantity>", description: "Quantity", required: true, type: "int" },
       { flags: "--recipient-name <recipient-name>", description: "Payment recipient name", required: true },
     ],
-    examples: ["corp equity rounds-securities <round-id> --instrument-id 'instrument-id' --quantity 'quantity' --recipient-name 'recipient-name'", "corp equity rounds-securities --json"],
-    successTemplate: "Rounds Securities created",
+    examples: [
+      'corp equity rounds-securities a1b2c3d4 --instrument-id COMMON --quantity 500000 --recipient-name "Alice Smith"',
+      'corp equity rounds-securities a1b2c3d4 --instrument-id SERIES-A --quantity 1000000 --recipient-name "Acme Ventures" --email "invest@acme.com"',
+    ],
+    successTemplate: "Security added to round",
   },
   {
     name: "equity create-transfer-workflow",
@@ -1498,8 +1622,11 @@ export const capTableCommands: CommandDef[] = [
       { flags: "--transfer-type <transfer-type>", description: "Type of share transfer.", required: true, choices: ["gift", "trust_transfer", "secondary_sale", "estate", "other"] },
       { flags: "--transferee-rights <transferee-rights>", description: "Rights granted to the transferee.", required: true, choices: ["full_member", "economic_only", "limited"] },
     ],
-    examples: ["corp equity transfer-workflows --from-contact-id 'from-contact-id' --governing-doc-type bylaws --prepare-intent-id 'prepare-intent-id' --share-class-id 'share-class-id' --share-count 'share-count' --to-contact-id gift --transfer-type gift --transferee-rights full_member", "corp equity transfer-workflows --json"],
-    successTemplate: "Transfer Workflows created",
+    examples: [
+      "corp equity create-transfer-workflow --from-contact-id a1b2c3d4 --to-contact-id e5f6a7b8 --share-class-id COMMON --share-count 10000 --transfer-type secondary_sale --governing-doc-type bylaws --transferee-rights full_member --prepare-intent-id f9g0h1i2",
+      "corp equity create-transfer-workflow --from-contact-id a1b2c3d4 --to-contact-id e5f6a7b8 --share-class-id COMMON --share-count 5000 --transfer-type gift --governing-doc-type bylaws --transferee-rights full_member --prepare-intent-id f9g0h1i2",
+    ],
+    successTemplate: "Transfer workflow created",
   },
   {
     name: "equity transfer-workflows",
@@ -1508,7 +1635,7 @@ export const capTableCommands: CommandDef[] = [
     entity: true,
     args: [{ name: "workflow-id", required: true, description: "Workflow ID" }],
     display: { title: "Equity Transfer Workflows", cols: ["execution_status>Execution Status", "generated_documents>Generated Documents", "last_packet_hash>Last Packet Hash", "@created_at>Created At", "#active_packet_id>ID"] },
-    examples: ["corp equity transfer-workflows", "corp equity transfer-workflows --json"],
+    examples: ["corp equity transfer-workflows a1b2c3d4", "corp equity transfer-workflows a1b2c3d4 --json"],
   },
   {
     name: "equity transfer-workflows-compile-packet",
@@ -1519,8 +1646,11 @@ export const capTableCommands: CommandDef[] = [
       { flags: "--phase <phase>", description: "Workflow phase" },
       { flags: "--required-signers <required-signers>", description: "List of required signers", type: "array" },
     ],
-    examples: ["corp equity transfer-workflows-compile-packet <workflow-id>", "corp equity transfer-workflows-compile-packet --json"],
-    successTemplate: "Transfer Workflows Compile Packet created",
+    examples: [
+      "corp equity transfer-workflows-compile-packet a1b2c3d4",
+      "corp equity transfer-workflows-compile-packet a1b2c3d4 --phase execution",
+    ],
+    successTemplate: "Transfer document packet compiled",
   },
   {
     name: "equity transfer-workflows-finalize",
@@ -1530,8 +1660,11 @@ export const capTableCommands: CommandDef[] = [
     options: [
       { flags: "--phase <phase>", description: "Workflow phase" },
     ],
-    examples: ["corp equity transfer-workflows-finalize <workflow-id>", "corp equity transfer-workflows-finalize --json"],
-    successTemplate: "Transfer Workflows Finalize created",
+    examples: [
+      "corp equity transfer-workflows-finalize a1b2c3d4",
+      "corp equity transfer-workflows-finalize a1b2c3d4 --json",
+    ],
+    successTemplate: "Transfer workflow finalized",
   },
   {
     name: "equity transfer-workflows-generate-docs",
@@ -1541,8 +1674,11 @@ export const capTableCommands: CommandDef[] = [
     options: [
       { flags: "--documents <documents>", description: "Document references or content", type: "array" },
     ],
-    examples: ["corp equity transfer-workflows-generate-docs <workflow-id>", "corp equity transfer-workflows-generate-docs --json"],
-    successTemplate: "Transfer Workflows Generate Docs created",
+    examples: [
+      "corp equity transfer-workflows-generate-docs a1b2c3d4",
+      "corp equity transfer-workflows-generate-docs a1b2c3d4 --json",
+    ],
+    successTemplate: "Transfer documents generated",
   },
   {
     name: "equity transfer-workflows-prepare-execution",
@@ -1555,8 +1691,11 @@ export const capTableCommands: CommandDef[] = [
       { flags: "--intent-id <intent-id>", description: "Execution intent ID", required: true },
       { flags: "--phase <phase>", description: "Workflow phase" },
     ],
-    examples: ["corp equity transfer-workflows-prepare-execution <workflow-id> --approval-artifact-id 'approval-artifact-id' --intent-id 'intent-id'", "corp equity transfer-workflows-prepare-execution --json"],
-    successTemplate: "Transfer Workflows Prepare Execution created",
+    examples: [
+      "corp equity transfer-workflows-prepare-execution a1b2c3d4 --approval-artifact-id b2c3d4e5 --intent-id f6g7h8i9",
+      "corp equity transfer-workflows-prepare-execution a1b2c3d4 --approval-artifact-id b2c3d4e5 --intent-id f6g7h8i9 --json",
+    ],
+    successTemplate: "Transfer workflow prepared for execution",
   },
   {
     name: "equity transfer-workflows-record-board-approval",
@@ -1567,8 +1706,11 @@ export const capTableCommands: CommandDef[] = [
       { flags: "--meeting-id <meeting-id>", description: "Meeting ID", required: true },
       { flags: "--resolution-id <resolution-id>", description: "Resolution ID", required: true },
     ],
-    examples: ["corp equity transfer-workflows-record-board-approval <workflow-id> --meeting-id 'meeting-id' --resolution-id 'resolution-id'"],
-    successTemplate: "Transfer Workflows Record Board Approval created",
+    examples: [
+      "corp equity transfer-workflows-record-board-approval a1b2c3d4 --meeting-id @last:meeting --resolution-id @last:resolution",
+      "corp equity transfer-workflows-record-board-approval a1b2c3d4 --meeting-id b2c3d4e5 --resolution-id f6g7h8i9",
+    ],
+    successTemplate: "Board approval recorded for transfer",
   },
   {
     name: "equity transfer-workflows-record-execution",
@@ -1578,8 +1720,10 @@ export const capTableCommands: CommandDef[] = [
     options: [
       { flags: "--intent-id <intent-id>", description: "Execution intent ID", required: true },
     ],
-    examples: ["corp equity transfer-workflows-record-execution <workflow-id> --intent-id 'intent-id'"],
-    successTemplate: "Transfer Workflows Record Execution created",
+    examples: [
+      "corp equity transfer-workflows-record-execution a1b2c3d4 --intent-id b2c3d4e5",
+    ],
+    successTemplate: "Transfer execution recorded",
   },
   {
     name: "equity transfer-workflows-record-review",
@@ -1591,8 +1735,11 @@ export const capTableCommands: CommandDef[] = [
       { flags: "--notes <notes>", description: "Additional notes", required: true },
       { flags: "--reviewer <reviewer>", description: "Reviewer", required: true },
     ],
-    examples: ["corp equity transfer-workflows-record-review <workflow-id> --approved --notes 'notes' --reviewer 'reviewer'"],
-    successTemplate: "Transfer Workflows Record Review created",
+    examples: [
+      'corp equity transfer-workflows-record-review a1b2c3d4 --approved --notes "Transfer complies with ROFR provisions" --reviewer alice-johnson',
+      "corp equity transfer-workflows-record-review a1b2c3d4 --notes \"Missing consent form\" --reviewer alice-johnson",
+    ],
+    successTemplate: "Transfer review recorded",
   },
   {
     name: "equity transfer-workflows-record-rofr",
@@ -1603,8 +1750,11 @@ export const capTableCommands: CommandDef[] = [
       { flags: "--offered", description: "Offered", required: true },
       { flags: "--waived", description: "Waived", required: true },
     ],
-    examples: ["corp equity transfer-workflows-record-rofr <workflow-id> --offered --waived"],
-    successTemplate: "Transfer Workflows Record Rofr created",
+    examples: [
+      "corp equity transfer-workflows-record-rofr a1b2c3d4 --offered --waived",
+      "corp equity transfer-workflows-record-rofr a1b2c3d4 --offered",
+    ],
+    successTemplate: "ROFR recorded",
   },
   {
     name: "equity transfer-workflows-record-signature",
@@ -1615,24 +1765,31 @@ export const capTableCommands: CommandDef[] = [
       { flags: "--channel <channel>", description: "Approval channel (board_vote, written_consent, etc.)" },
       { flags: "--signer-identity <signer-identity>", description: "Identity of the signer", required: true },
     ],
-    examples: ["corp equity transfer-workflows-record-signature <workflow-id> --signer-identity 'signer-identity'", "corp equity transfer-workflows-record-signature --json"],
-    successTemplate: "Transfer Workflows Record Signature created",
+    examples: [
+      'corp equity transfer-workflows-record-signature a1b2c3d4 --signer-identity "alice@acme.com"',
+      'corp equity transfer-workflows-record-signature a1b2c3d4 --signer-identity "bob@acme.com" --channel written_consent',
+    ],
+    successTemplate: "Signature recorded on transfer",
   },
   {
     name: "equity transfer-workflows-start-signatures",
     description: "Start signature collection for transfer",
     route: { method: "POST", path: "/v1/equity/transfer-workflows/{pos}/start-signatures" },
     args: [{ name: "workflow-id", required: true, description: "Workflow ID" }],
-    examples: ["corp equity transfer-workflows-start-signatures <workflow-id>"],
-    successTemplate: "Transfer Workflows Start Signatures created",
+    examples: [
+      "corp equity transfer-workflows-start-signatures a1b2c3d4",
+    ],
+    successTemplate: "Transfer signature collection started",
   },
   {
     name: "equity transfer-workflows-submit-review",
     description: "Submit a share transfer for review",
     route: { method: "POST", path: "/v1/equity/transfer-workflows/{pos}/submit-review" },
     args: [{ name: "workflow-id", required: true, description: "Workflow ID" }],
-    examples: ["corp equity transfer-workflows-submit-review <workflow-id>"],
-    successTemplate: "Transfer Workflows Submit Review created",
+    examples: [
+      "corp equity transfer-workflows-submit-review a1b2c3d4",
+    ],
+    successTemplate: "Transfer submitted for review",
   },
   {
     name: "equity workflows-status",
@@ -1641,7 +1798,10 @@ export const capTableCommands: CommandDef[] = [
     entity: true,
     args: [{ name: "workflow-type", required: true, description: "Workflow Type" }, { name: "workflow-id", required: true, description: "Workflow ID" }],
     display: { title: "Equity Workflows Status", cols: ["execution_status>Execution Status", "fundraising_workflow>Fundraising Workflow", "packet>Packet", "transfer_workflow>Transfer Workflow", "#active_packet_id>ID"] },
-    examples: ["corp equity workflows-status", "corp equity workflows-status --json"],
+    examples: [
+      "corp equity workflows-status transfer a1b2c3d4",
+      "corp equity workflows-status fundraising a1b2c3d4 --json",
+    ],
   },
   {
     name: "safe-notes",
@@ -1661,8 +1821,11 @@ export const capTableCommands: CommandDef[] = [
       { flags: "--safe-type <safe-type>", description: "Safe Type", choices: ["post_money", "pre_money", "mfn"] },
       { flags: "--valuation-cap-cents <valuation-cap-cents>", description: "Valuation Cap Cents" },
     ],
-    examples: ["corp safe-notes --investor-name 'investor-name' --principal-amount-cents 'principal-amount-cents'", "corp safe-notes --json"],
-    successTemplate: "Safe Notes created",
+    examples: [
+      'corp safe-notes --investor-name "Sequoia Capital" --principal-amount-cents 50000000 --valuation-cap-cents 1000000000',
+      'corp safe-notes --investor-name "Angel Investor" --principal-amount-cents 25000000 --safe-type pre_money --discount-rate 20',
+    ],
+    successTemplate: "SAFE note issued",
   },
   {
     name: "share-transfers",
@@ -1677,8 +1840,11 @@ export const capTableCommands: CommandDef[] = [
       { flags: "--transfer-type <transfer-type>", description: "Type of share transfer.", required: true, choices: ["gift", "trust_transfer", "secondary_sale", "estate", "other"] },
       { flags: "--transferee-rights <transferee-rights>", description: "Transferee Rights", choices: ["full_member", "economic_only", "limited"] },
     ],
-    examples: ["corp share-transfers --from-holder bylaws --share-class-id 'share-class-id' --shares 'shares' --to-holder gift --transfer-type gift", "corp share-transfers --json"],
-    successTemplate: "Share Transfers created",
+    examples: [
+      "corp share-transfers --from-holder a1b2c3d4 --to-holder e5f6a7b8 --share-class-id COMMON --shares 10000 --transfer-type secondary_sale",
+      "corp share-transfers --from-holder a1b2c3d4 --to-holder e5f6a7b8 --share-class-id COMMON --shares 5000 --transfer-type gift --governing-doc-type bylaws --transferee-rights full_member",
+    ],
+    successTemplate: "Share transfer recorded",
   },
   {
     name: "valuations",
@@ -1696,16 +1862,21 @@ export const capTableCommands: CommandDef[] = [
       { flags: "--report-document-id <report-document-id>", description: "Report Document Id" },
       { flags: "--valuation-type <valuation-type>", description: "Type of 409A or equivalent valuation.", required: true, choices: ["four_oh_nine_a", "llc_profits_interest", "fair_market_value", "gift", "estate", "other"] },
     ],
-    examples: ["corp valuations --effective-date 'effective-date' --methodology income --valuation-type four_oh_nine_a", "corp valuations --json"],
-    successTemplate: "Valuations created",
+    examples: [
+      "corp valuations --effective-date 2026-01-01 --methodology backsolve --valuation-type four_oh_nine_a",
+      "corp valuations --effective-date 2026-01-01 --methodology market --valuation-type fair_market_value --fmv-per-share-cents 125 --enterprise-value-cents 50000000",
+    ],
+    successTemplate: "Valuation created",
   },
   {
     name: "valuations submit-for-approval",
     description: "Submit a valuation for board approval",
     route: { method: "POST", path: "/v1/valuations/{pos}/submit-for-approval" },
     args: [{ name: "valuation-id", required: true, description: "Valuation ID" }],
-    examples: ["corp valuations submit-for-approval <valuation-id>"],
-    successTemplate: "Submit For Approval created",
+    examples: [
+      "corp valuations submit-for-approval a1b2c3d4",
+    ],
+    successTemplate: "Valuation submitted for approval",
   },
 
 ];

@@ -370,31 +370,6 @@ pub struct ResolveEscalationWithEvidenceResponse {
     pub incident_resolved: bool,
 }
 
-// ── Helper ───────────────────────────────────────────────────────────
-
-fn open_store<'a>(
-    layout: &'a crate::store::RepoLayout,
-    workspace_id: WorkspaceId,
-    allowed_entity_ids: Option<&[EntityId]>,
-    entity_id: EntityId,
-    valkey_client: Option<&redis::Client>,
-) -> Result<EntityStore<'a>, AppError> {
-    if let Some(ids) = allowed_entity_ids
-        && !ids.contains(&entity_id)
-    {
-        return Err(AppError::Forbidden(format!(
-            "principal is not authorized for entity {}",
-            entity_id
-        )));
-    }
-    EntityStore::open(layout, workspace_id, entity_id, valkey_client).map_err(|e| match e {
-        crate::git::error::GitStorageError::RepoNotFound(_) => {
-            AppError::NotFound(format!("entity {} not found", entity_id))
-        }
-        other => AppError::Internal(other.to_string()),
-    })
-}
-
 fn deadline_to_response(deadline: &Deadline) -> DeadlineResponse {
     DeadlineResponse {
         deadline_id: deadline.deadline_id(),
@@ -492,6 +467,7 @@ fn milestone_specs() -> [(&'static str, i64, &'static str, &'static str); 6] {
     post,
     path = "/v1/tax/filings",
     tag = "compliance",
+    description = "Record a new tax document filing for an entity.",
     request_body = FileTaxDocumentRequest,
     responses(
         (status = 200, description = "Tax document filed", body = TaxFilingResponse),
@@ -510,60 +486,55 @@ async fn file_tax_document(
     validate_tax_document_type(&req.document_type)?;
     validate_reasonable_year("tax_year", req.tax_year, 1900, 2)?;
 
-    let filing = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id, valkey_client.as_ref())?;
-            ensure_entity_ready_for_compliance(&store, "tax filing")?;
-            let document_type = canonical_tax_document_type(&req.document_type).to_owned();
-            let existing_ids = store
-                .list_ids::<TaxFiling>("main")
-                .map_err(|e| AppError::Internal(format!("list tax filings: {e}")))?;
-            for existing_id in existing_ids {
-                let existing = store.read::<TaxFiling>("main", existing_id).map_err(|e| {
-                    AppError::Internal(format!("read tax filing {existing_id}: {e}"))
-                })?;
-                if canonical_tax_document_type(existing.document_type()) == document_type
-                    && existing.tax_year() == req.tax_year
-                    && existing.filer_contact_id() == req.filer_contact_id
-                {
-                    let scope = match req.filer_contact_id {
-                        Some(cid) => format!(" for filer {cid}"),
-                        None => String::new(),
-                    };
-                    return Err(AppError::Conflict(format!(
-                        "tax filing already exists for {} tax year {}{}",
-                        document_type, req.tax_year, scope
-                    )));
-                }
+    let filing = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+        ensure_entity_ready_for_compliance(&store, "tax filing")?;
+        let document_type = canonical_tax_document_type(&req.document_type).to_owned();
+        let existing_ids = store
+            .list_ids::<TaxFiling>("main")
+            .map_err(|e| AppError::Internal(format!("list tax filings: {e}")))?;
+        for existing_id in existing_ids {
+            let existing = store.read::<TaxFiling>("main", existing_id).map_err(|e| {
+                AppError::Internal(format!("read tax filing {existing_id}: {e}"))
+            })?;
+            if canonical_tax_document_type(existing.document_type()) == document_type
+                && existing.tax_year() == req.tax_year
+                && existing.filer_contact_id() == req.filer_contact_id
+            {
+                let scope = match req.filer_contact_id {
+                    Some(cid) => format!(" for filer {cid}"),
+                    None => String::new(),
+                };
+                return Err(AppError::Conflict(format!(
+                    "tax filing already exists for {} tax year {}{}",
+                    document_type, req.tax_year, scope
+                )));
             }
-
-            let filing_id = TaxFilingId::new();
-            let document_id = DocumentId::new();
-            let filing = TaxFiling::new(
-                filing_id,
-                entity_id,
-                document_type,
-                req.tax_year,
-                document_id,
-            ).with_filer_contact(req.filer_contact_id);
-
-            let path = format!("tax/filings/{}.json", filing_id);
-            store
-                .write_json(
-                    "main",
-                    &path,
-                    &filing,
-                    &format!("File tax document {filing_id}"),
-                )
-                .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
-
-            Ok::<_, AppError>(filing)
         }
+
+        let filing_id = TaxFilingId::new();
+        let document_id = DocumentId::new();
+        let filing = TaxFiling::new(
+            filing_id,
+            entity_id,
+            document_type,
+            req.tax_year,
+            document_id,
+        ).with_filer_contact(req.filer_contact_id);
+
+        let path = format!("tax/filings/{}.json", filing_id);
+        store
+            .write_json(
+                "main",
+                &path,
+                &filing,
+                &format!("File tax document {filing_id}"),
+            )
+            .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
+
+        Ok::<_, AppError>(filing)
     })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+    .await?;
 
     Ok(Json(TaxFilingResponse {
         filing_id: filing.filing_id(),
@@ -580,6 +551,7 @@ async fn file_tax_document(
     post,
     path = "/v1/deadlines",
     tag = "compliance",
+    description = "Create a compliance deadline for an entity.",
     request_body = CreateDeadlineRequest,
     responses(
         (status = 200, description = "Deadline created", body = DeadlineResponse),
@@ -599,39 +571,33 @@ async fn create_deadline(
     require_non_empty_trimmed_max(&req.description, "description", 2000)?;
     validate_deadline_recurrence(&deadline_type, req.recurrence)?;
 
-    let deadline = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        let deadline_type = deadline_type.clone();
-        move || {
-            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id, valkey_client.as_ref())?;
+    let deadline = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
 
-            let deadline_id = DeadlineId::new();
-            let deadline = Deadline::new(
-                deadline_id,
-                entity_id,
-                deadline_type,
-                req.due_date,
-                req.description,
-                req.recurrence,
-                req.severity,
-            );
+        let deadline_id = DeadlineId::new();
+        let deadline = Deadline::new(
+            deadline_id,
+            entity_id,
+            deadline_type,
+            req.due_date,
+            req.description,
+            req.recurrence,
+            req.severity,
+        );
 
-            let path = format!("deadlines/{}.json", deadline_id);
-            store
-                .write_json(
-                    "main",
-                    &path,
-                    &deadline,
-                    &format!("COMPLIANCE: create deadline {deadline_id}"),
-                )
-                .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
+        let path = format!("deadlines/{}.json", deadline_id);
+        store
+            .write_json(
+                "main",
+                &path,
+                &deadline,
+                &format!("COMPLIANCE: create deadline {deadline_id}"),
+            )
+            .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
 
-            Ok::<_, AppError>(deadline)
-        }
+        Ok::<_, AppError>(deadline)
     })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+    .await?;
 
     Ok(Json(deadline_to_response(&deadline)))
 }
@@ -640,6 +606,7 @@ async fn create_deadline(
     get,
     path = "/v1/entities/{entity_id}/tax-filings",
     tag = "compliance",
+    description = "List all tax filings recorded for an entity.",
     params(("entity_id" = EntityId, Path, description = "Entity ID")),
     responses(
         (status = 200, description = "List of tax filings", body = Vec<TaxFilingResponse>),
@@ -653,27 +620,22 @@ async fn list_tax_filings(
     let workspace_id = auth.workspace_id();
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let filings = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id, valkey_client.as_ref())?;
-            let ids = store
-                .list_ids::<TaxFiling>("main")
-                .map_err(|e| AppError::Internal(format!("list tax filings: {e}")))?;
+    let filings = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+        let ids = store
+            .list_ids::<TaxFiling>("main")
+            .map_err(|e| AppError::Internal(format!("list tax filings: {e}")))?;
 
-            let mut results = Vec::new();
-            for id in ids {
-                let filing = store
-                    .read::<TaxFiling>("main", id)
-                    .map_err(|e| AppError::Internal(format!("read tax filing {id}: {e}")))?;
-                results.push(tax_filing_to_response(&filing));
-            }
-            Ok::<_, AppError>(results)
+        let mut results = Vec::new();
+        for id in ids {
+            let filing = store
+                .read::<TaxFiling>("main", id)
+                .map_err(|e| AppError::Internal(format!("read tax filing {id}: {e}")))?;
+            results.push(tax_filing_to_response(&filing));
         }
+        Ok::<_, AppError>(results)
     })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+    .await?;
 
     Ok(Json(filings))
 }
@@ -682,6 +644,7 @@ async fn list_tax_filings(
     get,
     path = "/v1/entities/{entity_id}/deadlines",
     tag = "compliance",
+    description = "List all compliance deadlines for an entity.",
     params(("entity_id" = EntityId, Path, description = "Entity ID")),
     responses(
         (status = 200, description = "List of deadlines", body = Vec<DeadlineResponse>),
@@ -695,27 +658,22 @@ async fn list_deadlines(
     let workspace_id = auth.workspace_id();
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let deadlines = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id, valkey_client.as_ref())?;
-            let ids = store
-                .list_ids::<Deadline>("main")
-                .map_err(|e| AppError::Internal(format!("list deadlines: {e}")))?;
+    let deadlines = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+        let ids = store
+            .list_ids::<Deadline>("main")
+            .map_err(|e| AppError::Internal(format!("list deadlines: {e}")))?;
 
-            let mut results = Vec::new();
-            for id in ids {
-                let deadline = store
-                    .read::<Deadline>("main", id)
-                    .map_err(|e| AppError::Internal(format!("read deadline {id}: {e}")))?;
-                results.push(deadline_to_response(&deadline));
-            }
-            Ok::<_, AppError>(results)
+        let mut results = Vec::new();
+        for id in ids {
+            let deadline = store
+                .read::<Deadline>("main", id)
+                .map_err(|e| AppError::Internal(format!("read deadline {id}: {e}")))?;
+            results.push(deadline_to_response(&deadline));
         }
+        Ok::<_, AppError>(results)
     })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+    .await?;
 
     Ok(Json(deadlines))
 }
@@ -724,6 +682,7 @@ async fn list_deadlines(
     get,
     path = "/v1/entities/{entity_id}/contractor-classifications",
     tag = "compliance",
+    description = "List all contractor classification assessments for an entity.",
     params(("entity_id" = EntityId, Path, description = "Entity ID")),
     responses(
         (status = 200, description = "List of contractor classifications", body = Vec<ClassificationResponse>),
@@ -737,30 +696,25 @@ async fn list_contractor_classifications(
     let workspace_id = auth.workspace_id();
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let classifications = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id, valkey_client.as_ref())?;
-            let ids = store
-                .list_ids::<ContractorClassification>("main")
-                .map_err(|e| AppError::Internal(format!("list contractor classifications: {e}")))?;
+    let classifications = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+        let ids = store
+            .list_ids::<ContractorClassification>("main")
+            .map_err(|e| AppError::Internal(format!("list contractor classifications: {e}")))?;
 
-            let mut results = Vec::new();
-            for id in ids {
-                let classification =
-                    store
-                        .read::<ContractorClassification>("main", id)
-                        .map_err(|e| {
-                            AppError::Internal(format!("read contractor classification {id}: {e}"))
-                        })?;
-                results.push(classification_to_response(&classification));
-            }
-            Ok::<_, AppError>(results)
+        let mut results = Vec::new();
+        for id in ids {
+            let classification =
+                store
+                    .read::<ContractorClassification>("main", id)
+                    .map_err(|e| {
+                        AppError::Internal(format!("read contractor classification {id}: {e}"))
+                    })?;
+            results.push(classification_to_response(&classification));
         }
+        Ok::<_, AppError>(results)
     })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+    .await?;
 
     Ok(Json(classifications))
 }
@@ -769,6 +723,7 @@ async fn list_contractor_classifications(
     post,
     path = "/v1/contractors/classify",
     tag = "compliance",
+    description = "Assess misclassification risk for a contractor based on behavioral and engagement factors.",
     request_body = ClassifyContractorRequest,
     responses(
         (status = 200, description = "Contractor classified", body = ClassificationResponse),
@@ -808,39 +763,34 @@ async fn classify_contractor(
             factors: req.factors.clone(),
         });
 
-    let classification = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        let contractor_name = req.contractor_name.trim().to_owned();
-        move || {
-            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id, valkey_client.as_ref())?;
+    let contractor_name = req.contractor_name.trim().to_owned();
+    let classification = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
 
-            let classification_id = ClassificationId::new();
-            let classification = ContractorClassification::new(
-                classification_id,
-                entity_id,
-                contractor_name,
-                normalized_state,
-                risk_level,
-                flags,
-                classification_result,
-            );
+        let classification_id = ClassificationId::new();
+        let classification = ContractorClassification::new(
+            classification_id,
+            entity_id,
+            contractor_name,
+            normalized_state,
+            risk_level,
+            flags,
+            classification_result,
+        );
 
-            let path = format!("contractors/{}.json", classification_id);
-            store
-                .write_json(
-                    "main",
-                    &path,
-                    &classification,
-                    &format!("Classify contractor {classification_id}"),
-                )
-                .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
+        let path = format!("contractors/{}.json", classification_id);
+        store
+            .write_json(
+                "main",
+                &path,
+                &classification,
+                &format!("Classify contractor {classification_id}"),
+            )
+            .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
 
-            Ok::<_, AppError>(classification)
-        }
+        Ok::<_, AppError>(classification)
     })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+    .await?;
 
     Ok(Json(ClassificationResponse {
         classification_id: classification.classification_id(),
@@ -858,6 +808,7 @@ async fn classify_contractor(
     post,
     path = "/v1/compliance/escalations/scan",
     tag = "compliance",
+    description = "Scan all open deadlines for an entity and create escalations and incidents where milestones have been crossed.",
     request_body = ScanComplianceRequest,
     responses(
         (status = 200, description = "Compliance scan completed", body = ComplianceScanResponse),
@@ -873,12 +824,9 @@ async fn scan_compliance_escalations(
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = req.entity_id;
 
-    let response = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id, valkey_client.as_ref())?;
-            let deadline_ids = store
+    let response = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+        let deadline_ids = store
                 .list_ids::<Deadline>("main")
                 .map_err(|e| AppError::Internal(format!("list deadlines: {e}")))?;
             let escalation_ids = store
@@ -1013,15 +961,13 @@ async fn scan_compliance_escalations(
                 }
             }
 
-            Ok::<_, AppError>(ComplianceScanResponse {
-                scanned_deadlines,
-                escalations_created,
-                incidents_created,
-            })
-        }
+        Ok::<_, AppError>(ComplianceScanResponse {
+            scanned_deadlines,
+            escalations_created,
+            incidents_created,
+        })
     })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+    .await?;
 
     Ok(Json(response))
 }
@@ -1030,6 +976,7 @@ async fn scan_compliance_escalations(
     get,
     path = "/v1/entities/{entity_id}/compliance/escalations",
     tag = "compliance",
+    description = "List all compliance escalations for an entity, sorted by most recent first.",
     params(
         ("entity_id" = EntityId, Path, description = "Entity ID"),
     ),
@@ -1046,26 +993,21 @@ async fn list_entity_escalations(
     let workspace_id = auth.workspace_id();
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let escalations = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id, valkey_client.as_ref())?;
-            let ids = store
-                .list_ids::<ComplianceEscalation>("main")
-                .map_err(|e| AppError::Internal(format!("list escalations: {e}")))?;
-            let mut out = Vec::new();
-            for id in ids {
-                if let Ok(escalation) = store.read::<ComplianceEscalation>("main", id) {
-                    out.push(escalation_to_response(&escalation));
-                }
+    let escalations = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+        let ids = store
+            .list_ids::<ComplianceEscalation>("main")
+            .map_err(|e| AppError::Internal(format!("list escalations: {e}")))?;
+        let mut out = Vec::new();
+        for id in ids {
+            if let Ok(escalation) = store.read::<ComplianceEscalation>("main", id) {
+                out.push(escalation_to_response(&escalation));
             }
-            out.sort_by(|a, b| b.created_at.cmp(&a.created_at));
-            Ok::<_, AppError>(out)
         }
+        out.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+        Ok::<_, AppError>(out)
     })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+    .await?;
 
     Ok(Json(escalations))
 }
@@ -1074,6 +1016,7 @@ async fn list_entity_escalations(
     post,
     path = "/v1/compliance/escalations/{escalation_id}/resolve-with-evidence",
     tag = "compliance",
+    description = "Resolve a compliance escalation by attaching evidence and optionally fulfilling the linked obligation and incident.",
     params(
         ("escalation_id" = ComplianceEscalationId, Path, description = "Escalation ID"),
     ),
@@ -1093,12 +1036,9 @@ async fn resolve_escalation_with_evidence(
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = req.entity_id;
 
-    let response = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id, valkey_client.as_ref())?;
-            let mut escalation = store
+    let response = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+        let mut escalation = store
                 .read::<ComplianceEscalation>("main", escalation_id)
                 .map_err(|_| {
                     AppError::NotFound(format!("escalation {} not found", escalation_id))
@@ -1225,10 +1165,8 @@ async fn resolve_escalation_with_evidence(
                 obligation_resolved,
                 incident_resolved,
             })
-        }
     })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+    .await?;
 
     Ok(Json(response))
 }

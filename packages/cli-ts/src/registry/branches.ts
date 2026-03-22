@@ -22,7 +22,7 @@ export const branchCommands: CommandDef[] = [
       { flags: "--from <branch>", description: "Base branch (default: main)", default: "main" },
     ],
     successTemplate: "Branch {branch} created at {base_commit}",
-    examples: ["corp branches create --name 'name'", "corp branches create --json"],
+    examples: ["corp branches create --name feature/my-change", "corp branches create --name hotfix/fix-ein --from main --json"],
   },
   {
     name: "branches merge",
@@ -35,7 +35,7 @@ export const branchCommands: CommandDef[] = [
       { flags: "--squash", description: "Squash merge (default: true)" },
     ],
     successTemplate: "Merge {strategy}: {commit}",
-    examples: ["corp branches merge <branch>", "corp branches merge --json"],
+    examples: ["corp branches merge feature/my-change", "corp branches merge feature/my-change --into main --squash --json"],
   },
   {
     name: "branches delete",
@@ -44,7 +44,7 @@ export const branchCommands: CommandDef[] = [
     entity: "query",
     args: [{ name: "branch", required: true, description: "Branch to delete" }],
     successTemplate: "Branch deleted",
-    examples: ["corp branches delete <branch>"],
+    examples: ["corp branches delete feature/my-change"],
   },
   {
     name: "branches prune",
@@ -53,6 +53,6 @@ export const branchCommands: CommandDef[] = [
     entity: "query",
     args: [{ name: "branch", required: true, description: "Branch to prune" }],
     successTemplate: "Branch pruned",
-    examples: ["corp branches prune <branch>"],
+    examples: ["corp branches prune feature/my-change"],
   },
 ];

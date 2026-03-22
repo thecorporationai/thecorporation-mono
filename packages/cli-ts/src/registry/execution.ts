@@ -7,8 +7,8 @@ export const executionCommands: CommandDef[] = [
     route: { method: "PATCH", path: "/v1/document-requests/{pos}/fulfill" },
     entity: true,
     args: [{ name: "request-id", required: true, description: "Document request ID" }],
-    examples: ["corp document-requests fulfill <request-id>"],
-    successTemplate: "Fulfill updated",
+    examples: ["corp document-requests fulfill req_01hx9k3n2p4q7r8s9t0uvwxyz"],
+    successTemplate: "Document request fulfilled",
   },
   {
     name: "document-requests not-applicable",
@@ -16,8 +16,8 @@ export const executionCommands: CommandDef[] = [
     route: { method: "PATCH", path: "/v1/document-requests/{pos}/not-applicable" },
     entity: true,
     args: [{ name: "request-id", required: true, description: "Document request ID" }],
-    examples: ["corp document-requests not-applicable <request-id>"],
-    successTemplate: "Not Applicable updated",
+    examples: ["corp document-requests not-applicable req_01hx9k3n2p4q7r8s9t0uvwxyz"],
+    successTemplate: "Document request marked not applicable",
   },
   {
     name: "entities approval-artifacts",
@@ -86,7 +86,7 @@ export const executionCommands: CommandDef[] = [
       'corp execution approval-artifacts --approver-identity "alice@acme.com" --channel board_vote --intent-type equity_grant --scope entity',
       'corp execution approval-artifacts --approver-identity "alice@acme.com" --channel written_consent --intent-type equity_grant --scope entity --approved-at 2026-03-01T00:00:00Z',
     ],
-    successTemplate: "Approval Artifacts created",
+    successTemplate: "Approval artifact recorded",
   },
   {
     name: "execution intents",
@@ -103,7 +103,7 @@ export const executionCommands: CommandDef[] = [
       'corp execution intents --description "Issue 10,000 options to Alice" --intent-type equity_grant --authority-tier tier_2',
       'corp execution intents --description "Wire $50,000 to vendor" --intent-type payment --authority-tier tier_1',
     ],
-    successTemplate: "Intents created",
+    successTemplate: "Execution intent created",
   },
   {
     name: "execution obligations",
@@ -122,7 +122,7 @@ export const executionCommands: CommandDef[] = [
       'corp execution obligations --assignee-type human --description "Sign equity grant agreement" --obligation-type signature',
       'corp execution obligations --assignee-type internal --description "File 83(b) election" --obligation-type document --due-date 2026-04-15',
     ],
-    successTemplate: "Obligations created",
+    successTemplate: "Obligation created",
   },
   {
     name: "execution packets",
@@ -142,7 +142,10 @@ export const executionCommands: CommandDef[] = [
     route: { method: "POST", path: "/v1/intents/{pos}/authorize" },
     entity: true,
     args: [{ name: "intent-id", required: true, description: "Execution intent ID" }],
-    examples: ["corp intents authorize <intent-id>"],
+    examples: [
+      "corp intents authorize int_01hx9k3n2p4q7r8s9t0uvwxyz",
+      "corp intents authorize @last:intent",
+    ],
     successTemplate: "Intent authorized",
   },
   {
@@ -156,7 +159,7 @@ export const executionCommands: CommandDef[] = [
     examples: [
       "corp intents bind-approval-artifact @last:intent --approval-artifact-id art_01hx9k3n2p4q7r8s9t0uvwxyz",
     ],
-    successTemplate: "Bind Approval Artifact created",
+    successTemplate: "Approval artifact bound to intent",
   },
   {
     name: "intents bind-document-request",
@@ -169,7 +172,7 @@ export const executionCommands: CommandDef[] = [
     examples: [
       "corp intents bind-document-request @last:intent --request-id req_01hx9k3n2p4q7r8s9t0uvwxyz",
     ],
-    successTemplate: "Bind Document Request created",
+    successTemplate: "Document request bound to intent",
   },
   {
     name: "intents cancel",
@@ -177,7 +180,10 @@ export const executionCommands: CommandDef[] = [
     route: { method: "POST", path: "/v1/intents/{pos}/cancel" },
     entity: true,
     args: [{ name: "intent-id", required: true, description: "Execution intent ID" }],
-    examples: ["corp intents cancel <intent-id>"],
+    examples: [
+      "corp intents cancel int_01hx9k3n2p4q7r8s9t0uvwxyz",
+      "corp intents cancel @last:intent",
+    ],
     successTemplate: "Intent cancelled",
   },
   {
@@ -186,7 +192,10 @@ export const executionCommands: CommandDef[] = [
     route: { method: "POST", path: "/v1/intents/{pos}/evaluate" },
     entity: true,
     args: [{ name: "intent-id", required: true, description: "Execution intent ID" }],
-    examples: ["corp intents evaluate <intent-id>"],
+    examples: [
+      "corp intents evaluate int_01hx9k3n2p4q7r8s9t0uvwxyz",
+      "corp intents evaluate @last:intent",
+    ],
     successTemplate: "Intent evaluated",
   },
   {
@@ -195,7 +204,10 @@ export const executionCommands: CommandDef[] = [
     route: { method: "POST", path: "/v1/intents/{pos}/execute" },
     entity: true,
     args: [{ name: "intent-id", required: true, description: "Execution intent ID" }],
-    examples: ["corp intents execute <intent-id>"],
+    examples: [
+      "corp intents execute int_01hx9k3n2p4q7r8s9t0uvwxyz",
+      "corp intents execute @last:intent",
+    ],
     successTemplate: "Intent executed",
   },
   {
@@ -222,7 +234,7 @@ export const executionCommands: CommandDef[] = [
     examples: [
       "corp obligations assign obl_01hx9k3n2p4q7r8s9t0uvwxyz --assignee-id usr_01hx9k3n2p4q7r8s9t0uvwxyz",
     ],
-    successTemplate: "Assign created",
+    successTemplate: "Obligation assigned",
   },
   {
     name: "obligations document-requests",
@@ -249,7 +261,7 @@ export const executionCommands: CommandDef[] = [
     examples: [
       'corp obligations create-document-request obl_01hx9k3n2p4q7r8s9t0uvwxyz --description "Signed equity grant agreement" --document-type equity_grant',
     ],
-    successTemplate: "Document Requests created",
+    successTemplate: "Document request created",
   },
   {
     name: "obligations expire",
@@ -257,7 +269,10 @@ export const executionCommands: CommandDef[] = [
     route: { method: "POST", path: "/v1/obligations/{pos}/expire" },
     entity: true,
     args: [{ name: "obligation-id", required: true, description: "Obligation ID" }],
-    examples: ["corp obligations expire <obligation-id>"],
+    examples: [
+      "corp obligations expire obl_01hx9k3n2p4q7r8s9t0uvwxyz",
+      "corp obligations expire @last:obligation",
+    ],
     successTemplate: "Obligation expired",
   },
   {
@@ -266,7 +281,10 @@ export const executionCommands: CommandDef[] = [
     route: { method: "POST", path: "/v1/obligations/{pos}/fulfill" },
     entity: true,
     args: [{ name: "obligation-id", required: true, description: "Obligation ID" }],
-    examples: ["corp obligations fulfill <obligation-id>"],
+    examples: [
+      "corp obligations fulfill obl_01hx9k3n2p4q7r8s9t0uvwxyz",
+      "corp obligations fulfill @last:obligation",
+    ],
     successTemplate: "Obligation fulfilled",
   },
   {
@@ -275,7 +293,10 @@ export const executionCommands: CommandDef[] = [
     route: { method: "POST", path: "/v1/obligations/{pos}/waive" },
     entity: true,
     args: [{ name: "obligation-id", required: true, description: "Obligation ID" }],
-    examples: ["corp obligations waive <obligation-id>"],
+    examples: [
+      "corp obligations waive obl_01hx9k3n2p4q7r8s9t0uvwxyz",
+      "corp obligations waive @last:obligation",
+    ],
     successTemplate: "Obligation waived",
   },
   {
@@ -308,7 +329,10 @@ export const executionCommands: CommandDef[] = [
     route: { method: "POST", path: "/v1/human-obligations/{pos}/fulfill" },
     args: [{ name: "obligation-id", required: true, description: "Obligation ID" }],
     successTemplate: "Obligation fulfilled",
-    examples: ["corp human-obligations fulfill <obligation-id>"],
+    examples: [
+      "corp human-obligations fulfill obl_01hx9k3n2p4q7r8s9t0uvwxyz",
+      "corp human-obligations fulfill @last:obligation",
+    ],
   },
   {
     name: "human-obligations signer-token",
@@ -316,6 +340,9 @@ export const executionCommands: CommandDef[] = [
     route: { method: "POST", path: "/v1/human-obligations/{pos}/signer-token" },
     args: [{ name: "obligation-id", required: true, description: "Obligation ID" }],
     successTemplate: "Signer token issued",
-    examples: ["corp human-obligations signer-token <obligation-id>"],
+    examples: [
+      "corp human-obligations signer-token obl_01hx9k3n2p4q7r8s9t0uvwxyz",
+      "corp human-obligations signer-token @last:obligation",
+    ],
   },
 ];

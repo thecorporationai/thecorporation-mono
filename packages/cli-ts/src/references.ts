@@ -65,40 +65,210 @@ class NodeReferenceStorage implements ReferenceStorage {
 
 type Scope = { entityId?: string; bodyId?: string; meetingId?: string };
 
+// Sentinel cache key used for global (non-entity-scoped) resource kinds.
+const GLOBAL_KEY = "__global__";
+
 export class ReferenceResolver {
   private readonly client: CorpAPIClient;
   private readonly cfg: CorpConfig;
   private readonly tracker: ReferenceTracker;
-  private entityCache?: ApiRecord[];
-  private readonly contactsCache = new Map<string, ApiRecord[]>();
-  private readonly shareTransfersCache = new Map<string, ApiRecord[]>();
-  private readonly invoicesCache = new Map<string, ApiRecord[]>();
-  private readonly bankAccountsCache = new Map<string, ApiRecord[]>();
-  private readonly paymentsCache = new Map<string, ApiRecord[]>();
-  private readonly payrollRunsCache = new Map<string, ApiRecord[]>();
-  private readonly distributionsCache = new Map<string, ApiRecord[]>();
-  private readonly reconciliationsCache = new Map<string, ApiRecord[]>();
-  private readonly taxFilingsCache = new Map<string, ApiRecord[]>();
-  private readonly deadlinesCache = new Map<string, ApiRecord[]>();
-  private readonly classificationsCache = new Map<string, ApiRecord[]>();
-  private readonly bodiesCache = new Map<string, ApiRecord[]>();
-  private readonly meetingsCache = new Map<string, ApiRecord[]>();
-  private readonly seatsCache = new Map<string, ApiRecord[]>();
-  private readonly agendaCache = new Map<string, ApiRecord[]>();
-  private readonly resolutionsCache = new Map<string, ApiRecord[]>();
-  private readonly documentsCache = new Map<string, ApiRecord[]>();
-  private readonly workItemsCache = new Map<string, ApiRecord[]>();
-  private readonly valuationsCache = new Map<string, ApiRecord[]>();
-  private readonly safeNotesCache = new Map<string, ApiRecord[]>();
-  private readonly roundsCache = new Map<string, ApiRecord[]>();
-  private readonly serviceRequestsCache = new Map<string, ApiRecord[]>();
+
+  // Single unified cache: ResourceKind → (cacheKey → records)
+  private readonly recordsCache = new Map<ResourceKind, Map<string, ApiRecord[]>>();
+
+  // Cap table is fetched as a single object; instruments/share_classes are
+  // derived from it, so we keep its own dedicated cache.
   private readonly capTableCache = new Map<string, ApiRecord>();
-  private agentsCache?: ApiRecord[];
+
+  // Dispatch table: ResourceKind → fetcher that receives the scope and
+  // returns the raw (uncached) records for that kind.
+  private readonly fetchers: Map<ResourceKind, (scope: Scope) => Promise<{ key: string; records: ApiRecord[] }>>;
 
   constructor(client: CorpAPIClient, cfg: CorpConfig) {
     this.client = client;
     this.cfg = cfg;
     this.tracker = new ReferenceTracker(new NodeReferenceStorage(cfg));
+
+    this.fetchers = new Map([
+      ["entity", async (_scope) => ({
+        key: GLOBAL_KEY,
+        records: await this.client.listEntities(),
+      })],
+
+      ["agent", async (_scope) => ({
+        key: GLOBAL_KEY,
+        records: (await this.client.listAgents()) as ApiRecord[],
+      })],
+
+      ["contact", async ({ entityId }) => {
+        if (!entityId) throw new Error("An entity context is required to resolve contacts.");
+        return { key: entityId, records: await this.client.listContacts(entityId) };
+      }],
+
+      ["share_transfer", async ({ entityId }) => {
+        if (!entityId) throw new Error("An entity context is required to resolve share transfers.");
+        return { key: entityId, records: await this.client.listShareTransfers(entityId) };
+      }],
+
+      ["invoice", async ({ entityId }) => {
+        if (!entityId) throw new Error("An entity context is required to resolve invoices.");
+        return { key: entityId, records: await this.client.listInvoices(entityId) };
+      }],
+
+      ["bank_account", async ({ entityId }) => {
+        if (!entityId) throw new Error("An entity context is required to resolve bank accounts.");
+        return { key: entityId, records: await this.client.listBankAccounts(entityId) };
+      }],
+
+      ["payment", async ({ entityId }) => {
+        if (!entityId) throw new Error("An entity context is required to resolve payments.");
+        return { key: entityId, records: await this.client.listPayments(entityId) };
+      }],
+
+      ["payroll_run", async ({ entityId }) => {
+        if (!entityId) throw new Error("An entity context is required to resolve payroll runs.");
+        return { key: entityId, records: await this.client.listPayrollRuns(entityId) };
+      }],
+
+      ["distribution", async ({ entityId }) => {
+        if (!entityId) throw new Error("An entity context is required to resolve distributions.");
+        return { key: entityId, records: await this.client.listDistributions(entityId) };
+      }],
+
+      ["reconciliation", async ({ entityId }) => {
+        if (!entityId) throw new Error("An entity context is required to resolve reconciliations.");
+        return { key: entityId, records: await this.client.listReconciliations(entityId) };
+      }],
+
+      ["tax_filing", async ({ entityId }) => {
+        if (!entityId) throw new Error("An entity context is required to resolve tax filings.");
+        return { key: entityId, records: await this.client.listTaxFilings(entityId) };
+      }],
+
+      ["deadline", async ({ entityId }) => {
+        if (!entityId) throw new Error("An entity context is required to resolve deadlines.");
+        return { key: entityId, records: await this.client.listDeadlines(entityId) };
+      }],
+
+      ["classification", async ({ entityId }) => {
+        if (!entityId) throw new Error("An entity context is required to resolve contractor classifications.");
+        return { key: entityId, records: await this.client.listContractorClassifications(entityId) };
+      }],
+
+      ["body", async ({ entityId }) => {
+        if (!entityId) throw new Error("An entity context is required to resolve governance bodies.");
+        return { key: entityId, records: (await this.client.listGovernanceBodies(entityId)) as ApiRecord[] };
+      }],
+
+      ["meeting", async ({ entityId, bodyId }) => {
+        if (!entityId) throw new Error("An entity context is required to resolve meetings.");
+        const cacheKey = `${entityId}:${bodyId ?? "*"}`;
+        const meetings: ApiRecord[] = [];
+        if (bodyId) {
+          meetings.push(...((await this.client.listMeetings(bodyId, entityId)) as ApiRecord[]));
+        } else {
+          const bodies = await this.getCachedRecords("body", { entityId });
+          for (const body of bodies) {
+            const resolvedBodyId = extractId(body, ["body_id", "id"]);
+            if (!resolvedBodyId) continue;
+            meetings.push(...((await this.client.listMeetings(resolvedBodyId, entityId)) as ApiRecord[]));
+          }
+        }
+        return { key: cacheKey, records: meetings };
+      }],
+
+      ["seat", async ({ entityId, bodyId }) => {
+        if (!entityId) throw new Error("An entity context is required to resolve seats.");
+        const cacheKey = `${entityId}:${bodyId ?? "*"}`;
+        const seats: ApiRecord[] = [];
+        if (bodyId) {
+          seats.push(...((await this.client.getGovernanceSeats(bodyId, entityId)) as ApiRecord[]));
+        } else {
+          const bodies = await this.getCachedRecords("body", { entityId });
+          for (const body of bodies) {
+            const resolvedBodyId = extractId(body, ["body_id", "id"]);
+            if (!resolvedBodyId) continue;
+            seats.push(...((await this.client.getGovernanceSeats(resolvedBodyId, entityId)) as ApiRecord[]));
+          }
+        }
+        return { key: cacheKey, records: seats };
+      }],
+
+      ["agenda_item", async ({ entityId, meetingId }) => {
+        if (!entityId || !meetingId) {
+          throw new Error("Entity and meeting context are required to resolve agenda items.");
+        }
+        return {
+          key: `${entityId}:${meetingId}`,
+          records: (await this.client.listAgendaItems(meetingId, entityId)) as ApiRecord[],
+        };
+      }],
+
+      ["resolution", async ({ entityId, meetingId }) => {
+        if (!entityId) throw new Error("An entity context is required to resolve resolutions.");
+        const cacheKey = `${entityId}:${meetingId ?? "*"}`;
+        const resolutions: ApiRecord[] = [];
+        if (meetingId) {
+          resolutions.push(...((await this.client.getMeetingResolutions(meetingId, entityId)) as ApiRecord[]));
+        } else {
+          const meetings = await this.getCachedRecords("meeting", { entityId });
+          for (const meeting of meetings) {
+            const resolvedMeetingId = extractId(meeting, ["meeting_id", "id"]);
+            if (!resolvedMeetingId) continue;
+            resolutions.push(...((await this.client.getMeetingResolutions(resolvedMeetingId, entityId)) as ApiRecord[]));
+          }
+        }
+        return { key: cacheKey, records: resolutions };
+      }],
+
+      ["document", async ({ entityId }) => {
+        if (!entityId) throw new Error("An entity context is required to resolve documents.");
+        return { key: entityId, records: (await this.client.getEntityDocuments(entityId)) as ApiRecord[] };
+      }],
+
+      ["work_item", async ({ entityId }) => {
+        if (!entityId) throw new Error("An entity context is required to resolve work items.");
+        return { key: entityId, records: (await this.client.listWorkItems(entityId)) as ApiRecord[] };
+      }],
+
+      ["valuation", async ({ entityId }) => {
+        if (!entityId) throw new Error("An entity context is required to resolve valuations.");
+        return { key: entityId, records: (await this.client.getValuations(entityId)) as ApiRecord[] };
+      }],
+
+      ["safe_note", async ({ entityId }) => {
+        if (!entityId) throw new Error("An entity context is required to resolve SAFE notes.");
+        return { key: entityId, records: (await this.client.getSafeNotes(entityId)) as ApiRecord[] };
+      }],
+
+      ["instrument", async ({ entityId }) => {
+        if (!entityId) throw new Error("An entity context is required to resolve cap table resources.");
+        const capTable = await this.getCapTable(entityId);
+        return {
+          key: entityId,
+          records: Array.isArray(capTable.instruments) ? (capTable.instruments as ApiRecord[]) : [],
+        };
+      }],
+
+      ["share_class", async ({ entityId }) => {
+        if (!entityId) throw new Error("An entity context is required to resolve cap table resources.");
+        const capTable = await this.getCapTable(entityId);
+        return {
+          key: entityId,
+          records: Array.isArray(capTable.share_classes) ? (capTable.share_classes as ApiRecord[]) : [],
+        };
+      }],
+
+      ["round", async ({ entityId }) => {
+        if (!entityId) throw new Error("An entity context is required to resolve rounds.");
+        return { key: entityId, records: (await this.client.listEquityRounds(entityId)) as ApiRecord[] };
+      }],
+
+      ["service_request", async ({ entityId }) => {
+        if (!entityId) throw new Error("An entity context is required to resolve service requests.");
+        return { key: entityId, records: (await this.client.listServiceRequests(entityId)) as ApiRecord[] };
+      }],
+    ]);
   }
 
   /**
@@ -389,63 +559,87 @@ export class ReferenceResolver {
   }
 
   private async listRecords(kind: ResourceKind, scope: Scope): Promise<ApiRecord[]> {
-    const records = await (async () => {
-      switch (kind) {
-      case "entity":
-        return this.listEntities();
-      case "contact":
-        return this.listContacts(scope.entityId);
-      case "share_transfer":
-        return this.listShareTransfers(scope.entityId);
-      case "invoice":
-        return this.listInvoices(scope.entityId);
-      case "bank_account":
-        return this.listBankAccounts(scope.entityId);
-      case "payment":
-        return this.listPayments(scope.entityId);
-      case "payroll_run":
-        return this.listPayrollRuns(scope.entityId);
-      case "distribution":
-        return this.listDistributions(scope.entityId);
-      case "reconciliation":
-        return this.listReconciliations(scope.entityId);
-      case "tax_filing":
-        return this.listTaxFilings(scope.entityId);
-      case "deadline":
-        return this.listDeadlines(scope.entityId);
-      case "classification":
-        return this.listClassifications(scope.entityId);
-      case "body":
-        return this.listBodies(scope.entityId);
-      case "meeting":
-        return this.listMeetings(scope.entityId, scope.bodyId);
-      case "seat":
-        return this.listSeats(scope.entityId, scope.bodyId);
-      case "agenda_item":
-        return this.listAgendaItems(scope.entityId, scope.meetingId);
-      case "resolution":
-        return this.listResolutions(scope.entityId, scope.meetingId);
-      case "document":
-        return this.listDocuments(scope.entityId);
-      case "work_item":
-        return this.listWorkItems(scope.entityId);
-      case "agent":
-        return this.listAgents();
-      case "valuation":
-        return this.listValuations(scope.entityId);
-      case "safe_note":
-        return this.listSafeNotes(scope.entityId);
-      case "instrument":
-        return this.listInstruments(scope.entityId);
-      case "share_class":
-        return this.listShareClasses(scope.entityId);
-      case "round":
-        return this.listRounds(scope.entityId);
-      case "service_request":
-        return this.listServiceRequestRecords(scope.entityId);
-      }
-    })();
+    const records = await this.getCachedRecords(kind, scope);
     return this.attachStableHandles(kind, records, scope.entityId);
+  }
+
+  /**
+   * Returns the cached records for a given kind and scope, invoking the
+   * fetcher on a cache miss. Does NOT attach stable handles — use
+   * `listRecords` for that.
+   */
+  private async getCachedRecords(kind: ResourceKind, scope: Scope): Promise<ApiRecord[]> {
+    const fetcher = this.fetchers.get(kind);
+    if (!fetcher) {
+      throw new Error(`No fetcher registered for resource kind "${kind}".`);
+    }
+
+    let kindCache = this.recordsCache.get(kind);
+    if (!kindCache) {
+      kindCache = new Map<string, ApiRecord[]>();
+      this.recordsCache.set(kind, kindCache);
+    }
+
+    // We must compute the cache key before checking — let the fetcher derive
+    // it by calling it once if no entry exists. To avoid redundant API calls
+    // we check with a probe: if the fetcher has a deterministic key we can
+    // pre-check. Instead, we just call the fetcher to get both key+records,
+    // but only invoke it on a miss.
+    //
+    // For kinds whose key depends solely on the scope (all current kinds),
+    // we can determine the key cheaply. We do this by invoking the fetcher
+    // only when necessary.
+    //
+    // Strategy: call fetcher to get (key, records); store; return records.
+    // On subsequent calls the kindCache will already have the key.
+    //
+    // Since we don't know the key ahead of time for composite-key kinds
+    // (meeting, seat, agenda_item, resolution), we call the fetcher and
+    // check after. For simple-key kinds this is equivalent to the old
+    // per-field pattern.
+
+    // Fast path: derive the expected cache key without calling the fetcher.
+    const probeKey = this.probeKey(kind, scope);
+    if (probeKey !== undefined) {
+      const hit = kindCache.get(probeKey);
+      if (hit) return hit;
+      const { key, records } = await fetcher(scope);
+      kindCache.set(key, records);
+      return records;
+    }
+
+    // Fallback (should not be reached with current kinds, but defensive):
+    const { key, records } = await fetcher(scope);
+    const hit = kindCache.get(key);
+    if (hit) return hit;
+    kindCache.set(key, records);
+    return records;
+  }
+
+  /**
+   * Returns the expected cache key for a given kind and scope without
+   * invoking the fetcher. Returns `undefined` if the key cannot be
+   * determined without fetching (e.g., composite-key kinds that need to
+   * enumerate sub-resources first).
+   */
+  private probeKey(kind: ResourceKind, scope: Scope): string | undefined {
+    switch (kind) {
+      case "entity":
+      case "agent":
+        return GLOBAL_KEY;
+      case "meeting":
+      case "seat":
+        if (!scope.entityId) return GLOBAL_KEY; // will throw in fetcher
+        return `${scope.entityId}:${scope.bodyId ?? "*"}`;
+      case "agenda_item":
+        if (!scope.entityId || !scope.meetingId) return GLOBAL_KEY; // will throw in fetcher
+        return `${scope.entityId}:${scope.meetingId}`;
+      case "resolution":
+        if (!scope.entityId) return GLOBAL_KEY; // will throw in fetcher
+        return `${scope.entityId}:${scope.meetingId ?? "*"}`;
+      default:
+        return scope.entityId ?? GLOBAL_KEY;
+    }
   }
 
   private async attachStableHandles(
@@ -495,247 +689,6 @@ export class ReferenceResolver {
     return records;
   }
 
-  private async listEntities(): Promise<ApiRecord[]> {
-    if (!this.entityCache) {
-      this.entityCache = await this.client.listEntities();
-    }
-    return this.entityCache;
-  }
-
-  private async listContacts(entityId?: string): Promise<ApiRecord[]> {
-    if (!entityId) throw new Error("An entity context is required to resolve contacts.");
-    const cached = this.contactsCache.get(entityId);
-    if (cached) return cached;
-    const contacts = await this.client.listContacts(entityId);
-    this.contactsCache.set(entityId, contacts);
-    return contacts;
-  }
-
-  private async listShareTransfers(entityId?: string): Promise<ApiRecord[]> {
-    if (!entityId) throw new Error("An entity context is required to resolve share transfers.");
-    const cached = this.shareTransfersCache.get(entityId);
-    if (cached) return cached;
-    const transfers = await this.client.listShareTransfers(entityId);
-    this.shareTransfersCache.set(entityId, transfers);
-    return transfers;
-  }
-
-  private async listInvoices(entityId?: string): Promise<ApiRecord[]> {
-    if (!entityId) throw new Error("An entity context is required to resolve invoices.");
-    const cached = this.invoicesCache.get(entityId);
-    if (cached) return cached;
-    const invoices = await this.client.listInvoices(entityId);
-    this.invoicesCache.set(entityId, invoices);
-    return invoices;
-  }
-
-  private async listBankAccounts(entityId?: string): Promise<ApiRecord[]> {
-    if (!entityId) throw new Error("An entity context is required to resolve bank accounts.");
-    const cached = this.bankAccountsCache.get(entityId);
-    if (cached) return cached;
-    const bankAccounts = await this.client.listBankAccounts(entityId);
-    this.bankAccountsCache.set(entityId, bankAccounts);
-    return bankAccounts;
-  }
-
-  private async listPayments(entityId?: string): Promise<ApiRecord[]> {
-    if (!entityId) throw new Error("An entity context is required to resolve payments.");
-    const cached = this.paymentsCache.get(entityId);
-    if (cached) return cached;
-    const payments = await this.client.listPayments(entityId);
-    this.paymentsCache.set(entityId, payments);
-    return payments;
-  }
-
-  private async listPayrollRuns(entityId?: string): Promise<ApiRecord[]> {
-    if (!entityId) throw new Error("An entity context is required to resolve payroll runs.");
-    const cached = this.payrollRunsCache.get(entityId);
-    if (cached) return cached;
-    const payrollRuns = await this.client.listPayrollRuns(entityId);
-    this.payrollRunsCache.set(entityId, payrollRuns);
-    return payrollRuns;
-  }
-
-  private async listDistributions(entityId?: string): Promise<ApiRecord[]> {
-    if (!entityId) throw new Error("An entity context is required to resolve distributions.");
-    const cached = this.distributionsCache.get(entityId);
-    if (cached) return cached;
-    const distributions = await this.client.listDistributions(entityId);
-    this.distributionsCache.set(entityId, distributions);
-    return distributions;
-  }
-
-  private async listReconciliations(entityId?: string): Promise<ApiRecord[]> {
-    if (!entityId) throw new Error("An entity context is required to resolve reconciliations.");
-    const cached = this.reconciliationsCache.get(entityId);
-    if (cached) return cached;
-    const reconciliations = await this.client.listReconciliations(entityId);
-    this.reconciliationsCache.set(entityId, reconciliations);
-    return reconciliations;
-  }
-
-  private async listTaxFilings(entityId?: string): Promise<ApiRecord[]> {
-    if (!entityId) throw new Error("An entity context is required to resolve tax filings.");
-    const cached = this.taxFilingsCache.get(entityId);
-    if (cached) return cached;
-    const filings = await this.client.listTaxFilings(entityId);
-    this.taxFilingsCache.set(entityId, filings);
-    return filings;
-  }
-
-  private async listDeadlines(entityId?: string): Promise<ApiRecord[]> {
-    if (!entityId) throw new Error("An entity context is required to resolve deadlines.");
-    const cached = this.deadlinesCache.get(entityId);
-    if (cached) return cached;
-    const deadlines = await this.client.listDeadlines(entityId);
-    this.deadlinesCache.set(entityId, deadlines);
-    return deadlines;
-  }
-
-  private async listClassifications(entityId?: string): Promise<ApiRecord[]> {
-    if (!entityId) throw new Error("An entity context is required to resolve contractor classifications.");
-    const cached = this.classificationsCache.get(entityId);
-    if (cached) return cached;
-    const classifications = await this.client.listContractorClassifications(entityId);
-    this.classificationsCache.set(entityId, classifications);
-    return classifications;
-  }
-
-  private async listBodies(entityId?: string): Promise<ApiRecord[]> {
-    if (!entityId) throw new Error("An entity context is required to resolve governance bodies.");
-    const cached = this.bodiesCache.get(entityId);
-    if (cached) return cached;
-    const bodies = await this.client.listGovernanceBodies(entityId);
-    this.bodiesCache.set(entityId, bodies as ApiRecord[]);
-    return bodies as ApiRecord[];
-  }
-
-  private async listMeetings(entityId?: string, bodyId?: string): Promise<ApiRecord[]> {
-    if (!entityId) throw new Error("An entity context is required to resolve meetings.");
-    const cacheKey = `${entityId}:${bodyId ?? "*"}`;
-    const cached = this.meetingsCache.get(cacheKey);
-    if (cached) return cached;
-
-    const meetings: ApiRecord[] = [];
-    if (bodyId) {
-      meetings.push(...((await this.client.listMeetings(bodyId, entityId)) as ApiRecord[]));
-    } else {
-      const bodies = await this.listBodies(entityId);
-      for (const body of bodies) {
-        const resolvedBodyId = extractId(body, ["body_id", "id"]);
-        if (!resolvedBodyId) continue;
-        meetings.push(...((await this.client.listMeetings(resolvedBodyId, entityId)) as ApiRecord[]));
-      }
-    }
-    this.meetingsCache.set(cacheKey, meetings);
-    return meetings;
-  }
-
-  private async listSeats(entityId?: string, bodyId?: string): Promise<ApiRecord[]> {
-    if (!entityId) throw new Error("An entity context is required to resolve seats.");
-    const cacheKey = `${entityId}:${bodyId ?? "*"}`;
-    const cached = this.seatsCache.get(cacheKey);
-    if (cached) return cached;
-
-    const seats: ApiRecord[] = [];
-    if (bodyId) {
-      seats.push(...((await this.client.getGovernanceSeats(bodyId, entityId)) as ApiRecord[]));
-    } else {
-      const bodies = await this.listBodies(entityId);
-      for (const body of bodies) {
-        const resolvedBodyId = extractId(body, ["body_id", "id"]);
-        if (!resolvedBodyId) continue;
-        seats.push(...((await this.client.getGovernanceSeats(resolvedBodyId, entityId)) as ApiRecord[]));
-      }
-    }
-    this.seatsCache.set(cacheKey, seats);
-    return seats;
-  }
-
-  private async listAgendaItems(entityId?: string, meetingId?: string): Promise<ApiRecord[]> {
-    if (!entityId || !meetingId) {
-      throw new Error("Entity and meeting context are required to resolve agenda items.");
-    }
-    const cached = this.agendaCache.get(`${entityId}:${meetingId}`);
-    if (cached) return cached;
-    const items = (await this.client.listAgendaItems(meetingId, entityId)) as ApiRecord[];
-    this.agendaCache.set(`${entityId}:${meetingId}`, items);
-    return items;
-  }
-
-  private async listResolutions(entityId?: string, meetingId?: string): Promise<ApiRecord[]> {
-    if (!entityId) throw new Error("An entity context is required to resolve resolutions.");
-    const cacheKey = `${entityId}:${meetingId ?? "*"}`;
-    const cached = this.resolutionsCache.get(cacheKey);
-    if (cached) return cached;
-
-    const resolutions: ApiRecord[] = [];
-    if (meetingId) {
-      resolutions.push(...((await this.client.getMeetingResolutions(meetingId, entityId)) as ApiRecord[]));
-    } else {
-      const meetings = await this.listMeetings(entityId);
-      for (const meeting of meetings) {
-        const resolvedMeetingId = extractId(meeting, ["meeting_id", "id"]);
-        if (!resolvedMeetingId) continue;
-        resolutions.push(...((await this.client.getMeetingResolutions(resolvedMeetingId, entityId)) as ApiRecord[]));
-      }
-    }
-    this.resolutionsCache.set(cacheKey, resolutions);
-    return resolutions;
-  }
-
-  private async listDocuments(entityId?: string): Promise<ApiRecord[]> {
-    if (!entityId) throw new Error("An entity context is required to resolve documents.");
-    const cached = this.documentsCache.get(entityId);
-    if (cached) return cached;
-    const docs = (await this.client.getEntityDocuments(entityId)) as ApiRecord[];
-    this.documentsCache.set(entityId, docs);
-    return docs;
-  }
-
-  private async listWorkItems(entityId?: string): Promise<ApiRecord[]> {
-    if (!entityId) throw new Error("An entity context is required to resolve work items.");
-    const cached = this.workItemsCache.get(entityId);
-    if (cached) return cached;
-    const items = (await this.client.listWorkItems(entityId)) as ApiRecord[];
-    this.workItemsCache.set(entityId, items);
-    return items;
-  }
-
-  private async listAgents(): Promise<ApiRecord[]> {
-    if (!this.agentsCache) {
-      this.agentsCache = (await this.client.listAgents()) as ApiRecord[];
-    }
-    return this.agentsCache;
-  }
-
-  private async listValuations(entityId?: string): Promise<ApiRecord[]> {
-    if (!entityId) throw new Error("An entity context is required to resolve valuations.");
-    const cached = this.valuationsCache.get(entityId);
-    if (cached) return cached;
-    const valuations = (await this.client.getValuations(entityId)) as ApiRecord[];
-    this.valuationsCache.set(entityId, valuations);
-    return valuations;
-  }
-
-  private async listSafeNotes(entityId?: string): Promise<ApiRecord[]> {
-    if (!entityId) throw new Error("An entity context is required to resolve SAFE notes.");
-    const cached = this.safeNotesCache.get(entityId);
-    if (cached) return cached;
-    const safeNotes = (await this.client.getSafeNotes(entityId)) as ApiRecord[];
-    this.safeNotesCache.set(entityId, safeNotes);
-    return safeNotes;
-  }
-
-  private async listRounds(entityId?: string): Promise<ApiRecord[]> {
-    if (!entityId) throw new Error("An entity context is required to resolve rounds.");
-    const cached = this.roundsCache.get(entityId);
-    if (cached) return cached;
-    const rounds = (await this.client.listEquityRounds(entityId)) as ApiRecord[];
-    this.roundsCache.set(entityId, rounds);
-    return rounds;
-  }
-
   private async getCapTable(entityId?: string): Promise<ApiRecord> {
     if (!entityId) throw new Error("An entity context is required to resolve cap table resources.");
     const cached = this.capTableCache.get(entityId);
@@ -743,24 +696,5 @@ export class ReferenceResolver {
     const capTable = (await this.client.getCapTable(entityId)) as ApiRecord;
     this.capTableCache.set(entityId, capTable);
     return capTable;
-  }
-
-  private async listInstruments(entityId?: string): Promise<ApiRecord[]> {
-    const capTable = await this.getCapTable(entityId);
-    return Array.isArray(capTable.instruments) ? (capTable.instruments as ApiRecord[]) : [];
-  }
-
-  private async listShareClasses(entityId?: string): Promise<ApiRecord[]> {
-    const capTable = await this.getCapTable(entityId);
-    return Array.isArray(capTable.share_classes) ? (capTable.share_classes as ApiRecord[]) : [];
-  }
-
-  private async listServiceRequestRecords(entityId?: string): Promise<ApiRecord[]> {
-    if (!entityId) throw new Error("An entity context is required to resolve service requests.");
-    const cached = this.serviceRequestsCache.get(entityId);
-    if (cached) return cached;
-    const requests = (await this.client.listServiceRequests(entityId)) as ApiRecord[];
-    this.serviceRequestsCache.set(entityId, requests);
-    return requests;
   }
 }

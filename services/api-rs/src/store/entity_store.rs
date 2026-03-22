@@ -173,15 +173,11 @@ impl<'a> EntityStore<'a> {
         Ok(Self { backend, layout })
     }
 
-    /// List entity IDs and return a shared connection for subsequent `open_shared` calls.
+    /// List entity IDs and return a shared KV store for subsequent `open_shared` calls.
     ///
-    /// In git mode, lists entities from the filesystem and returns `None` for the connection.
-    /// In Valkey mode, creates a single connection, lists entities, and returns the connection
+    /// In git mode, lists entities from the filesystem and returns `None` for the store.
+    /// In Valkey mode, creates a single connection, lists entities, and returns the store
     /// wrapped in `Rc<RefCell<_>>` for reuse.
-    /// List entity IDs and return a shared connection for subsequent `open_shared` calls.
-    ///
-    /// Returns both a `CorpStore`-wrapped connection (for EntityStore) and a raw
-    /// connection (for WorkspaceStore, which hasn't been migrated yet).
     pub fn list_and_prepare(
         layout: &RepoLayout,
         workspace_id: WorkspaceId,
@@ -189,36 +185,24 @@ impl<'a> EntityStore<'a> {
     ) -> Result<(
         Vec<EntityId>,
         Option<Rc<RefCell<corp_store::CorpStore<redis::Connection>>>>,
-        Option<Rc<RefCell<redis::Connection>>>,
     ), GitStorageError> {
         match valkey_client {
-            None => Ok((layout.list_entity_ids(workspace_id), None, None)),
+            None => Ok((layout.list_entity_ids(workspace_id), None)),
             Some(client) => {
-                // Two connections: one for CorpStore (EntityStore), one raw (WorkspaceStore).
-                let mut con1 = client
+                let mut con = client
                     .get_connection()
                     .map_err(|e| {
-                        tracing::error!(error = %e, "failed to acquire Valkey connection (con1) in EntityStore::list_and_prepare");
-                        GitStorageError::Git(e.to_string())
-                    })?;
-                let con2 = client
-                    .get_connection()
-                    .map_err(|e| {
-                        tracing::error!(error = %e, "failed to acquire Valkey connection (con2) in EntityStore::list_and_prepare");
+                        tracing::error!(error = %e, "failed to acquire Valkey connection in EntityStore::list_and_prepare");
                         GitStorageError::Git(e.to_string())
                     })?;
                 let ws = workspace_id.to_string();
-                let ids = corp_store::store::list_entities(&mut con1, &ws)
+                let ids = corp_store::store::list_entities(&mut con, &ws)
                     .map_err(GitStorageError::from)?
                     .into_iter()
                     .filter_map(|s| s.parse().ok())
                     .collect();
-                let cs = corp_store::CorpStore::new(con1, &ws, "");
-                Ok((
-                    ids,
-                    Some(Rc::new(RefCell::new(cs))),
-                    Some(Rc::new(RefCell::new(con2))),
-                ))
+                let cs = corp_store::CorpStore::new(con, &ws, "");
+                Ok((ids, Some(Rc::new(RefCell::new(cs)))))
             }
         }
     }

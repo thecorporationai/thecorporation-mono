@@ -394,4 +394,115 @@ mod tests {
         assert_eq!(parsed.document_id(), doc.document_id());
         assert_eq!(parsed.signatures().len(), 1);
     }
+
+    // ── Property-based-style signing FSM tests ───────────────────────────
+
+    /// Signing with a wrong role never transitions the document to Signed when
+    /// required roles remain unmet. We test this across multiple wrong-role
+    /// strings (none of which satisfy the two required roles).
+    #[test]
+    fn wrong_role_never_advances_to_signed() {
+        let wrong_roles = [
+            "ceo",
+            "director",
+            "notary",
+            "witness",
+            "attorney",
+            "",
+            "incorporator_extra",
+            "registered agent", // space variant, not underscore
+        ];
+        for role in wrong_roles {
+            let mut doc = make_document();
+            // A wrong-role signature is accepted (no identity enforcement) but
+            // the document must remain Draft since required roles aren't covered.
+            let result = doc.sign(make_sig_request(role));
+            assert!(result.is_ok(), "sign() should accept any role, got Err for {role:?}");
+            assert_eq!(
+                doc.status(),
+                DocumentStatus::Draft,
+                "status should stay Draft after signing with wrong role {role:?}"
+            );
+            assert!(!doc.is_fully_signed(), "should not be fully signed with wrong role {role:?}");
+        }
+    }
+
+    /// After a document reaches Signed, every subsequent sign attempt returns
+    /// `DocumentAlreadySigned` regardless of what role is presented.
+    #[test]
+    fn every_sign_attempt_on_signed_doc_fails() {
+        let extra_signers = [
+            "incorporator",
+            "registered_agent",
+            "ceo",
+            "witness",
+        ];
+        for extra_role in extra_signers {
+            let mut doc = make_document();
+            // Fully sign the document.
+            doc.sign(make_sig_request("incorporator")).unwrap();
+            doc.sign(make_sig_request("registered_agent")).unwrap();
+            assert_eq!(doc.status(), DocumentStatus::Signed);
+
+            let result = doc.sign(make_sig_request(extra_role));
+            assert!(
+                result.is_err(),
+                "expected signing a Signed document to fail for role {extra_role:?}"
+            );
+            // Verify error variant.
+            assert!(
+                matches!(result.unwrap_err(), super::super::error::FormationError::DocumentAlreadySigned(_)),
+                "expected DocumentAlreadySigned error"
+            );
+        }
+    }
+
+    /// Partial signatures accumulate without changing status; only the
+    /// final required role flips the document to Signed.
+    #[test]
+    fn partial_signatures_accumulate_correctly() {
+        // Each iteration adds one more partial signer before the first required role.
+        let extra_counts = [0usize, 1, 2, 5];
+        for extra_count in extra_counts {
+            let mut doc = make_document();
+            // Add `extra_count` wrong-role signatures.
+            for i in 0..extra_count {
+                doc.sign(make_sig_request(&format!("witness_{i}"))).unwrap();
+                assert_eq!(doc.status(), DocumentStatus::Draft);
+            }
+            // Sign first required role — still Draft.
+            doc.sign(make_sig_request("incorporator")).unwrap();
+            assert_eq!(doc.status(), DocumentStatus::Draft);
+            // Sign second required role — now Signed.
+            doc.sign(make_sig_request("registered_agent")).unwrap();
+            assert_eq!(doc.status(), DocumentStatus::Signed);
+            assert_eq!(doc.signatures().len(), extra_count + 2);
+        }
+    }
+
+    /// A document with no `signature_requirements` flips to Signed after any
+    /// single signature (the "no requirements" fast-path).
+    #[test]
+    fn document_without_requirements_signs_on_first_sig() {
+        let roles = ["anyone", "ceo", "founder", "agent"];
+        for role in roles {
+            let mut doc = Document::new(
+                DocumentId::new(),
+                EntityId::new(),
+                WorkspaceId::new(),
+                DocumentType::Resolution,
+                "Simple Resolution".into(),
+                json!({"body": "resolved"}), // no signature_requirements key
+                None,
+                None,
+            );
+            assert_eq!(doc.status(), DocumentStatus::Draft);
+            doc.sign(make_sig_request(role)).unwrap();
+            assert_eq!(
+                doc.status(),
+                DocumentStatus::Signed,
+                "expected Signed after one sig with role {role:?}"
+            );
+        }
+    }
 }

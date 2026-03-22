@@ -474,4 +474,223 @@ mod tests {
         let result: Result<Entity, _> = serde_json::from_value(json);
         assert!(result.is_err());
     }
+
+    // ── Property-based-style FSM tests ───────────────────────────────────
+
+    /// Every valid one-step forward transition in the happy path succeeds.
+    #[test]
+    fn fsm_happy_path_each_step_succeeds() {
+        let happy_path = [
+            FormationStatus::Pending,
+            FormationStatus::DocumentsGenerated,
+            FormationStatus::DocumentsSigned,
+            FormationStatus::FilingSubmitted,
+            FormationStatus::Filed,
+            FormationStatus::EinApplied,
+            FormationStatus::Active,
+        ];
+        let mut e = make_entity();
+        for window in happy_path.windows(2) {
+            let (from, to) = (window[0], window[1]);
+            let result = e.advance_status(to);
+            assert!(
+                result.is_ok(),
+                "expected {from} -> {to} to succeed but got: {result:?}"
+            );
+            assert_eq!(e.formation_status(), to);
+        }
+        // Final state is Active; formation_state must also be Active.
+        assert_eq!(e.formation_state(), FormationState::Active);
+    }
+
+    /// Every non-terminal status rejects a direct jump to `Active`.
+    #[test]
+    fn fsm_cannot_skip_to_active() {
+        let intermediate = [
+            FormationStatus::DocumentsGenerated,
+            FormationStatus::DocumentsSigned,
+            FormationStatus::FilingSubmitted,
+            FormationStatus::Filed,
+        ];
+        for status in intermediate {
+            let mut e = make_entity();
+            // Advance to the intermediate status via the happy path.
+            let path = [
+                FormationStatus::DocumentsGenerated,
+                FormationStatus::DocumentsSigned,
+                FormationStatus::FilingSubmitted,
+                FormationStatus::Filed,
+            ];
+            for &step in path.iter().take_while(|&&s| s != status) {
+                e.advance_status(step).unwrap();
+            }
+            e.advance_status(status).unwrap();
+            // Now try to jump directly to Active.
+            let result = e.advance_status(FormationStatus::Active);
+            assert!(
+                result.is_err(),
+                "expected {status} -> Active to fail but it succeeded"
+            );
+        }
+    }
+
+    /// Every non-terminal, non-Pending status rejects a backward jump to `Pending`.
+    #[test]
+    fn fsm_no_backward_transitions() {
+        let forward_path = [
+            FormationStatus::DocumentsGenerated,
+            FormationStatus::DocumentsSigned,
+            FormationStatus::FilingSubmitted,
+            FormationStatus::Filed,
+            FormationStatus::EinApplied,
+            FormationStatus::Active,
+        ];
+        let mut e = make_entity();
+        for &to in &forward_path {
+            e.advance_status(to).unwrap();
+            let result = e.advance_status(FormationStatus::Pending);
+            assert!(
+                result.is_err(),
+                "expected {to} -> Pending to fail but it succeeded"
+            );
+        }
+    }
+
+    /// Terminal states (Rejected, Dissolved) have no outgoing transitions.
+    #[test]
+    fn fsm_terminal_states_reject_all_transitions() {
+        use FormationStatus::*;
+        let all_statuses = [
+            Pending,
+            DocumentsGenerated,
+            DocumentsSigned,
+            FilingSubmitted,
+            Filed,
+            EinApplied,
+            Active,
+            Rejected,
+            Dissolved,
+        ];
+
+        // Rejected
+        let mut e = make_entity();
+        e.advance_status(Rejected).unwrap();
+        for &target in &all_statuses {
+            assert!(
+                e.advance_status(target).is_err(),
+                "Rejected -> {target} should fail"
+            );
+        }
+
+        // Dissolved (reach via Active)
+        let mut e = make_entity();
+        for &step in &[DocumentsGenerated, DocumentsSigned, FilingSubmitted, Filed, EinApplied, Active] {
+            e.advance_status(step).unwrap();
+        }
+        e.advance_status(Dissolved).unwrap();
+        for &target in &all_statuses {
+            assert!(
+                e.advance_status(target).is_err(),
+                "Dissolved -> {target} should fail"
+            );
+        }
+    }
+
+    /// Every non-terminal status can reach `Rejected` in one step.
+    #[test]
+    fn fsm_every_non_terminal_can_reject() {
+        // Each sub-case builds a fresh entity and drives it to the desired status
+        // before attempting rejection.
+        let stages: &[&[FormationStatus]] = &[
+            &[],
+            &[FormationStatus::DocumentsGenerated],
+            &[FormationStatus::DocumentsGenerated, FormationStatus::DocumentsSigned],
+            &[FormationStatus::DocumentsGenerated, FormationStatus::DocumentsSigned, FormationStatus::FilingSubmitted],
+            &[FormationStatus::DocumentsGenerated, FormationStatus::DocumentsSigned, FormationStatus::FilingSubmitted, FormationStatus::Filed],
+            &[FormationStatus::DocumentsGenerated, FormationStatus::DocumentsSigned, FormationStatus::FilingSubmitted, FormationStatus::Filed, FormationStatus::EinApplied],
+        ];
+        for steps in stages {
+            let mut e = make_entity();
+            for &step in *steps {
+                e.advance_status(step).unwrap();
+            }
+            let from = e.formation_status();
+            assert!(
+                e.advance_status(FormationStatus::Rejected).is_ok(),
+                "expected {from} -> Rejected to succeed"
+            );
+        }
+    }
+
+    /// `set_entity_type` is rejected in every status except Pending and Active.
+    #[test]
+    fn set_entity_type_only_allowed_in_pending_or_active() {
+        let disallowed = [
+            (
+                vec![FormationStatus::DocumentsGenerated],
+                FormationStatus::DocumentsGenerated,
+            ),
+            (
+                vec![FormationStatus::DocumentsGenerated, FormationStatus::DocumentsSigned],
+                FormationStatus::DocumentsSigned,
+            ),
+            (
+                vec![
+                    FormationStatus::DocumentsGenerated,
+                    FormationStatus::DocumentsSigned,
+                    FormationStatus::FilingSubmitted,
+                ],
+                FormationStatus::FilingSubmitted,
+            ),
+            (
+                vec![
+                    FormationStatus::DocumentsGenerated,
+                    FormationStatus::DocumentsSigned,
+                    FormationStatus::FilingSubmitted,
+                    FormationStatus::Filed,
+                ],
+                FormationStatus::Filed,
+            ),
+            (
+                vec![
+                    FormationStatus::DocumentsGenerated,
+                    FormationStatus::DocumentsSigned,
+                    FormationStatus::FilingSubmitted,
+                    FormationStatus::Filed,
+                    FormationStatus::EinApplied,
+                ],
+                FormationStatus::EinApplied,
+            ),
+        ];
+        for (steps, expected_status) in &disallowed {
+            let mut e = make_entity();
+            for &step in steps {
+                e.advance_status(step).unwrap();
+            }
+            assert_eq!(e.formation_status(), *expected_status);
+            let result = e.set_entity_type(EntityType::Llc);
+            assert!(
+                result.is_err(),
+                "set_entity_type should fail in status {expected_status}"
+            );
+        }
+
+        // Allowed in Pending (fresh entity)
+        let mut e = make_entity();
+        assert!(e.set_entity_type(EntityType::Llc).is_ok());
+
+        // Allowed in Active
+        let mut e = make_entity();
+        for &step in &[
+            FormationStatus::DocumentsGenerated,
+            FormationStatus::DocumentsSigned,
+            FormationStatus::FilingSubmitted,
+            FormationStatus::Filed,
+            FormationStatus::EinApplied,
+            FormationStatus::Active,
+        ] {
+            e.advance_status(step).unwrap();
+        }
+        assert!(e.set_entity_type(EntityType::CCorp).is_ok());
+    }
 }

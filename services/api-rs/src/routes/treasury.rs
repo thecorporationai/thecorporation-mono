@@ -304,6 +304,7 @@ fn ensure_entity_ready_for_treasury(
     post,
     path = "/v1/treasury/accounts",
     tag = "treasury",
+    description = "Create a general-ledger account for an entity.",
     request_body = CreateAccountRequest,
     responses(
         (status = 200, description = "Account created", body = AccountResponse),
@@ -319,31 +320,25 @@ async fn create_account(
     let entity_id = req.entity_id;
     state.enforce_creation_rate_limit("treasury.account.create", workspace_id, 120, 60)?;
 
-    let account = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
-            ensure_entity_ready_for_treasury(&store, "account creation")?;
+    let account = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+        ensure_entity_ready_for_treasury(&store, "account creation")?;
 
-            let account_id = AccountId::new();
-            let account = Account::new(account_id, entity_id, req.account_code);
+        let account_id = AccountId::new();
+        let account = Account::new(account_id, entity_id, req.account_code);
 
-            let path = format!("treasury/accounts/{}.json", account_id);
-            store
-                .write_json(
-                    "main",
-                    &path,
-                    &account,
-                    &format!("Create GL account {account_id}"),
-                )
-                .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
+        let path = format!("treasury/accounts/{}.json", account_id);
+        store
+            .write_json(
+                "main",
+                &path,
+                &account,
+                &format!("Create GL account {account_id}"),
+            )
+            .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
 
-            Ok::<_, AppError>(account)
-        }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+        Ok::<_, AppError>(account)
+    }).await?;
 
     Ok(Json(account_to_response(&account)))
 }
@@ -352,6 +347,7 @@ async fn create_account(
     get,
     path = "/v1/entities/{entity_id}/accounts",
     tag = "treasury",
+    description = "List all general-ledger accounts for an entity.",
     params(("entity_id" = EntityId, Path, description = "Entity ID")),
     responses(
         (status = 200, description = "List of accounts", body = Vec<AccountResponse>),
@@ -365,27 +361,21 @@ async fn list_accounts(
     let workspace_id = auth.workspace_id();
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let accounts = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
-            let ids = store
-                .list_ids::<Account>("main")
-                .map_err(|e| AppError::Internal(format!("list accounts: {e}")))?;
+    let accounts = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+        let ids = store
+            .list_ids::<Account>("main")
+            .map_err(|e| AppError::Internal(format!("list accounts: {e}")))?;
 
-            let mut results = Vec::new();
-            for id in ids {
-                let a = store
-                    .read::<Account>("main", id)
-                    .map_err(|e| AppError::Internal(format!("read account {id}: {e}")))?;
-                results.push(account_to_response(&a));
-            }
-            Ok::<_, AppError>(results)
+        let mut results = Vec::new();
+        for id in ids {
+            let a = store
+                .read::<Account>("main", id)
+                .map_err(|e| AppError::Internal(format!("read account {id}: {e}")))?;
+            results.push(account_to_response(&a));
         }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+        Ok::<_, AppError>(results)
+    }).await?;
 
     Ok(Json(accounts))
 }
@@ -396,6 +386,7 @@ async fn list_accounts(
     post,
     path = "/v1/treasury/journal-entries",
     tag = "treasury",
+    description = "Create a double-entry journal entry with balanced debit and credit lines.",
     request_body = CreateJournalEntryRequest,
     responses(
         (status = 200, description = "Journal entry created", body = JournalEntryResponse),
@@ -420,51 +411,45 @@ async fn create_journal_entry(
         validate_reasonable_amount(line.amount_cents, "line.amount_cents")?;
     }
 
-    let entry = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
-            ensure_entity_ready_for_treasury(&store, "journal entry creation")?;
+    let entry = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+        ensure_entity_ready_for_treasury(&store, "journal entry creation")?;
 
-            let entry_id = JournalEntryId::new();
-            let lines: Vec<LedgerLine> = req
-                .lines
-                .into_iter()
-                .map(|l| {
-                    LedgerLine::new(
-                        LedgerLineId::new(),
-                        l.account_id,
-                        l.side,
-                        Cents::new(l.amount_cents),
-                        l.memo,
-                    )
-                })
-                .collect();
-
-            let entry = JournalEntry::new(
-                entry_id,
-                entity_id,
-                req.description,
-                req.effective_date,
-                lines,
-            )?;
-
-            let path = format!("treasury/journal-entries/{}.json", entry_id);
-            store
-                .write_json(
-                    "main",
-                    &path,
-                    &entry,
-                    &format!("Create journal entry {entry_id}"),
+        let entry_id = JournalEntryId::new();
+        let lines: Vec<LedgerLine> = req
+            .lines
+            .into_iter()
+            .map(|l| {
+                LedgerLine::new(
+                    LedgerLineId::new(),
+                    l.account_id,
+                    l.side,
+                    Cents::new(l.amount_cents),
+                    l.memo,
                 )
-                .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
+            })
+            .collect();
 
-            Ok::<_, AppError>(entry)
-        }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+        let entry = JournalEntry::new(
+            entry_id,
+            entity_id,
+            req.description,
+            req.effective_date,
+            lines,
+        )?;
+
+        let path = format!("treasury/journal-entries/{}.json", entry_id);
+        store
+            .write_json(
+                "main",
+                &path,
+                &entry,
+                &format!("Create journal entry {entry_id}"),
+            )
+            .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
+
+        Ok::<_, AppError>(entry)
+    }).await?;
 
     Ok(Json(journal_entry_to_response(&entry)))
 }
@@ -473,6 +458,7 @@ async fn create_journal_entry(
     get,
     path = "/v1/entities/{entity_id}/journal-entries",
     tag = "treasury",
+    description = "List all journal entries for an entity.",
     params(("entity_id" = EntityId, Path, description = "Entity ID")),
     responses(
         (status = 200, description = "List of journal entries", body = Vec<JournalEntryResponse>),
@@ -486,27 +472,21 @@ async fn list_journal_entries(
     let workspace_id = auth.workspace_id();
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let entries = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
-            let ids = store
-                .list_ids::<JournalEntry>("main")
-                .map_err(|e| AppError::Internal(format!("list journal entries: {e}")))?;
+    let entries = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+        let ids = store
+            .list_ids::<JournalEntry>("main")
+            .map_err(|e| AppError::Internal(format!("list journal entries: {e}")))?;
 
-            let mut results = Vec::new();
-            for id in ids {
-                let je = store
-                    .read::<JournalEntry>("main", id)
-                    .map_err(|e| AppError::Internal(format!("read journal entry {id}: {e}")))?;
-                results.push(journal_entry_to_response(&je));
-            }
-            Ok::<_, AppError>(results)
+        let mut results = Vec::new();
+        for id in ids {
+            let je = store
+                .read::<JournalEntry>("main", id)
+                .map_err(|e| AppError::Internal(format!("read journal entry {id}: {e}")))?;
+            results.push(journal_entry_to_response(&je));
         }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+        Ok::<_, AppError>(results)
+    }).await?;
 
     Ok(Json(entries))
 }
@@ -515,6 +495,7 @@ async fn list_journal_entries(
     post,
     path = "/v1/journal-entries/{entry_id}/post",
     tag = "treasury",
+    description = "Post a draft journal entry to make it effective in the ledger.",
     params(
         ("entry_id" = JournalEntryId, Path, description = "Journal entry ID"),
         super::EntityIdQuery,
@@ -533,32 +514,26 @@ async fn post_journal_entry(
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = query.entity_id;
 
-    let entry = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
-            let mut entry = store
-                .read::<JournalEntry>("main", entry_id)
-                .map_err(|_| AppError::NotFound(format!("journal entry {} not found", entry_id)))?;
+    let entry = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+        let mut entry = store
+            .read::<JournalEntry>("main", entry_id)
+            .map_err(|_| AppError::NotFound(format!("journal entry {} not found", entry_id)))?;
 
-            entry.post()?;
+        entry.post()?;
 
-            let path = format!("treasury/journal-entries/{}.json", entry_id);
-            store
-                .write_json(
-                    "main",
-                    &path,
-                    &entry,
-                    &format!("Post journal entry {entry_id}"),
-                )
-                .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
+        let path = format!("treasury/journal-entries/{}.json", entry_id);
+        store
+            .write_json(
+                "main",
+                &path,
+                &entry,
+                &format!("Post journal entry {entry_id}"),
+            )
+            .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
 
-            Ok::<_, AppError>(entry)
-        }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+        Ok::<_, AppError>(entry)
+    }).await?;
 
     Ok(Json(journal_entry_to_response(&entry)))
 }
@@ -567,6 +542,7 @@ async fn post_journal_entry(
     post,
     path = "/v1/journal-entries/{entry_id}/void",
     tag = "treasury",
+    description = "Void a posted journal entry, reversing its effect on the ledger.",
     params(
         ("entry_id" = JournalEntryId, Path, description = "Journal entry ID"),
         super::EntityIdQuery,
@@ -585,32 +561,26 @@ async fn void_journal_entry(
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = query.entity_id;
 
-    let entry = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
-            let mut entry = store
-                .read::<JournalEntry>("main", entry_id)
-                .map_err(|_| AppError::NotFound(format!("journal entry {} not found", entry_id)))?;
+    let entry = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+        let mut entry = store
+            .read::<JournalEntry>("main", entry_id)
+            .map_err(|_| AppError::NotFound(format!("journal entry {} not found", entry_id)))?;
 
-            entry.void()?;
+        entry.void()?;
 
-            let path = format!("treasury/journal-entries/{}.json", entry_id);
-            store
-                .write_json(
-                    "main",
-                    &path,
-                    &entry,
-                    &format!("Void journal entry {entry_id}"),
-                )
-                .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
+        let path = format!("treasury/journal-entries/{}.json", entry_id);
+        store
+            .write_json(
+                "main",
+                &path,
+                &entry,
+                &format!("Void journal entry {entry_id}"),
+            )
+            .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
 
-            Ok::<_, AppError>(entry)
-        }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+        Ok::<_, AppError>(entry)
+    }).await?;
 
     Ok(Json(journal_entry_to_response(&entry)))
 }
@@ -621,6 +591,7 @@ async fn void_journal_entry(
     post,
     path = "/v1/treasury/invoices",
     tag = "treasury",
+    description = "Create a new invoice to be sent to a customer.",
     request_body = CreateInvoiceRequest,
     responses(
         (status = 200, description = "Invoice created", body = InvoiceResponse),
@@ -645,39 +616,32 @@ async fn create_invoice(
     validate_not_too_far_past("due_date", req.due_date, 365)?;
     validate_reasonable_amount(req.amount_cents, "amount_cents")?;
 
-    let invoice = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        let customer_name = customer_name.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
-            ensure_entity_ready_for_treasury(&store, "invoice creation")?;
+    let invoice = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+        ensure_entity_ready_for_treasury(&store, "invoice creation")?;
 
-            let invoice_id = InvoiceId::new();
-            let invoice = Invoice::new(
-                invoice_id,
-                entity_id,
-                customer_name,
-                Cents::new(req.amount_cents),
-                req.description,
-                req.due_date,
-            );
+        let invoice_id = InvoiceId::new();
+        let invoice = Invoice::new(
+            invoice_id,
+            entity_id,
+            customer_name,
+            Cents::new(req.amount_cents),
+            req.description,
+            req.due_date,
+        );
 
-            let path = format!("treasury/invoices/{}.json", invoice_id);
-            store
-                .write_json(
-                    "main",
-                    &path,
-                    &invoice,
-                    &format!("Create invoice {invoice_id}"),
-                )
-                .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
+        let path = format!("treasury/invoices/{}.json", invoice_id);
+        store
+            .write_json(
+                "main",
+                &path,
+                &invoice,
+                &format!("Create invoice {invoice_id}"),
+            )
+            .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
 
-            Ok::<_, AppError>(invoice)
-        }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+        Ok::<_, AppError>(invoice)
+    }).await?;
 
     Ok(Json(invoice_to_response(&invoice)))
 }
@@ -686,6 +650,7 @@ async fn create_invoice(
     get,
     path = "/v1/entities/{entity_id}/invoices",
     tag = "treasury",
+    description = "List all invoices for an entity.",
     params(("entity_id" = EntityId, Path, description = "Entity ID")),
     responses(
         (status = 200, description = "List of invoices", body = Vec<InvoiceResponse>),
@@ -699,27 +664,21 @@ async fn list_invoices(
     let workspace_id = auth.workspace_id();
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let invoices = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
-            let ids = store
-                .list_ids::<Invoice>("main")
-                .map_err(|e| AppError::Internal(format!("list invoices: {e}")))?;
+    let invoices = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+        let ids = store
+            .list_ids::<Invoice>("main")
+            .map_err(|e| AppError::Internal(format!("list invoices: {e}")))?;
 
-            let mut results = Vec::new();
-            for id in ids {
-                let inv = store
-                    .read::<Invoice>("main", id)
-                    .map_err(|e| AppError::Internal(format!("read invoice {id}: {e}")))?;
-                results.push(invoice_to_response(&inv));
-            }
-            Ok::<_, AppError>(results)
+        let mut results = Vec::new();
+        for id in ids {
+            let inv = store
+                .read::<Invoice>("main", id)
+                .map_err(|e| AppError::Internal(format!("read invoice {id}: {e}")))?;
+            results.push(invoice_to_response(&inv));
         }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+        Ok::<_, AppError>(results)
+    }).await?;
 
     Ok(Json(invoices))
 }
@@ -728,6 +687,7 @@ async fn list_invoices(
     post,
     path = "/v1/invoices/{invoice_id}/send",
     tag = "treasury",
+    description = "Transition an invoice to sent status, making it visible to the customer.",
     params(
         ("invoice_id" = InvoiceId, Path, description = "Invoice ID"),
         super::EntityIdQuery,
@@ -746,32 +706,26 @@ async fn send_invoice(
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = query.entity_id;
 
-    let invoice = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
-            let mut invoice = store
-                .read::<Invoice>("main", invoice_id)
-                .map_err(|_| AppError::NotFound(format!("invoice {} not found", invoice_id)))?;
+    let invoice = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+        let mut invoice = store
+            .read::<Invoice>("main", invoice_id)
+            .map_err(|_| AppError::NotFound(format!("invoice {} not found", invoice_id)))?;
 
-            invoice.send()?;
+        invoice.send()?;
 
-            let path = format!("treasury/invoices/{}.json", invoice_id);
-            store
-                .write_json(
-                    "main",
-                    &path,
-                    &invoice,
-                    &format!("Send invoice {invoice_id}"),
-                )
-                .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
+        let path = format!("treasury/invoices/{}.json", invoice_id);
+        store
+            .write_json(
+                "main",
+                &path,
+                &invoice,
+                &format!("Send invoice {invoice_id}"),
+            )
+            .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
 
-            Ok::<_, AppError>(invoice)
-        }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+        Ok::<_, AppError>(invoice)
+    }).await?;
 
     Ok(Json(invoice_to_response(&invoice)))
 }
@@ -780,6 +734,7 @@ async fn send_invoice(
     post,
     path = "/v1/invoices/{invoice_id}/mark-paid",
     tag = "treasury",
+    description = "Mark a sent invoice as paid after receiving payment.",
     params(
         ("invoice_id" = InvoiceId, Path, description = "Invoice ID"),
         super::EntityIdQuery,
@@ -798,32 +753,26 @@ async fn mark_invoice_paid(
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = query.entity_id;
 
-    let invoice = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
-            let mut invoice = store
-                .read::<Invoice>("main", invoice_id)
-                .map_err(|_| AppError::NotFound(format!("invoice {} not found", invoice_id)))?;
+    let invoice = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+        let mut invoice = store
+            .read::<Invoice>("main", invoice_id)
+            .map_err(|_| AppError::NotFound(format!("invoice {} not found", invoice_id)))?;
 
-            invoice.mark_paid()?;
+        invoice.mark_paid()?;
 
-            let path = format!("treasury/invoices/{}.json", invoice_id);
-            store
-                .write_json(
-                    "main",
-                    &path,
-                    &invoice,
-                    &format!("Mark invoice {invoice_id} paid"),
-                )
-                .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
+        let path = format!("treasury/invoices/{}.json", invoice_id);
+        store
+            .write_json(
+                "main",
+                &path,
+                &invoice,
+                &format!("Mark invoice {invoice_id} paid"),
+            )
+            .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
 
-            Ok::<_, AppError>(invoice)
-        }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+        Ok::<_, AppError>(invoice)
+    }).await?;
 
     Ok(Json(invoice_to_response(&invoice)))
 }
@@ -832,6 +781,7 @@ async fn mark_invoice_paid(
     get,
     path = "/v1/invoices/{invoice_id}/status",
     tag = "treasury",
+    description = "Retrieve the current status and details of an invoice.",
     params(
         ("invoice_id" = InvoiceId, Path, description = "Invoice ID"),
         super::EntityIdQuery,
@@ -850,18 +800,12 @@ async fn get_invoice_status(
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = query.entity_id;
 
-    let invoice = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
-            store
-                .read::<Invoice>("main", invoice_id)
-                .map_err(|_| AppError::NotFound(format!("invoice {} not found", invoice_id)))
-        }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+    let invoice = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+        store
+            .read::<Invoice>("main", invoice_id)
+            .map_err(|_| AppError::NotFound(format!("invoice {} not found", invoice_id)))
+    }).await?;
 
     Ok(Json(invoice_to_response(&invoice)))
 }
@@ -879,6 +823,7 @@ pub struct PayInstructionsResponse {
     get,
     path = "/v1/invoices/{invoice_id}/pay-instructions",
     tag = "treasury",
+    description = "Retrieve payment instructions for an invoice, including amount, currency, and method.",
     params(
         ("invoice_id" = InvoiceId, Path, description = "Invoice ID"),
         super::EntityIdQuery,
@@ -897,18 +842,12 @@ async fn get_pay_instructions(
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = query.entity_id;
 
-    let invoice = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
-            store
-                .read::<Invoice>("main", invoice_id)
-                .map_err(|_| AppError::NotFound(format!("invoice {} not found", invoice_id)))
-        }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+    let invoice = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+        store
+            .read::<Invoice>("main", invoice_id)
+            .map_err(|_| AppError::NotFound(format!("invoice {} not found", invoice_id)))
+    }).await?;
 
     Ok(Json(PayInstructionsResponse {
         invoice_id: invoice.invoice_id(),
@@ -930,6 +869,7 @@ async fn get_pay_instructions(
     post,
     path = "/v1/treasury/bank-accounts",
     tag = "treasury",
+    description = "Register a new bank account for an entity.",
     request_body = CreateBankAccountRequest,
     responses(
         (status = 200, description = "Bank account created", body = BankAccountResponse),
@@ -946,57 +886,50 @@ async fn create_bank_account(
     state.enforce_creation_rate_limit("treasury.bank_account.create", workspace_id, 60, 60)?;
     let bank_name = require_non_empty_trimmed(&req.bank_name, "bank_name")?;
 
-    let bank_account = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        let bank_name = bank_name.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
-            ensure_entity_ready_for_treasury(&store, "bank account creation")?;
-            let existing_ids = store
-                .list_ids::<BankAccount>("main")
-                .map_err(|e| AppError::Internal(format!("list bank accounts: {e}")))?;
-            let normalized_bank = bank_name.to_ascii_lowercase();
-            for existing_id in existing_ids {
-                let existing = store
-                    .read::<BankAccount>("main", existing_id)
-                    .map_err(|e| {
-                        AppError::Internal(format!("read bank account {existing_id}: {e}"))
-                    })?;
-                if existing.entity_id() == entity_id
-                    && existing.status() != BankAccountStatus::Closed
-                    && existing.bank_name().trim().to_ascii_lowercase() == normalized_bank
-                {
-                    return Err(AppError::Conflict(format!(
-                        "open bank account already exists for {}",
-                        bank_name
-                    )));
-                }
+    let bank_account = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+        ensure_entity_ready_for_treasury(&store, "bank account creation")?;
+        let existing_ids = store
+            .list_ids::<BankAccount>("main")
+            .map_err(|e| AppError::Internal(format!("list bank accounts: {e}")))?;
+        let normalized_bank = bank_name.to_ascii_lowercase();
+        for existing_id in existing_ids {
+            let existing = store
+                .read::<BankAccount>("main", existing_id)
+                .map_err(|e| {
+                    AppError::Internal(format!("read bank account {existing_id}: {e}"))
+                })?;
+            if existing.entity_id() == entity_id
+                && existing.status() != BankAccountStatus::Closed
+                && existing.bank_name().trim().to_ascii_lowercase() == normalized_bank
+            {
+                return Err(AppError::Conflict(format!(
+                    "open bank account already exists for {}",
+                    bank_name
+                )));
             }
-
-            let bank_account_id = BankAccountId::new();
-            let bank_account = BankAccount::new(
-                bank_account_id,
-                entity_id,
-                bank_name,
-                req.account_type.unwrap_or_default(),
-            );
-
-            let path = format!("treasury/bank-accounts/{}.json", bank_account_id);
-            store
-                .write_json(
-                    "main",
-                    &path,
-                    &bank_account,
-                    &format!("Create bank account {bank_account_id}"),
-                )
-                .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
-
-            Ok::<_, AppError>(bank_account)
         }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+
+        let bank_account_id = BankAccountId::new();
+        let bank_account = BankAccount::new(
+            bank_account_id,
+            entity_id,
+            bank_name,
+            req.account_type.unwrap_or_default(),
+        );
+
+        let path = format!("treasury/bank-accounts/{}.json", bank_account_id);
+        store
+            .write_json(
+                "main",
+                &path,
+                &bank_account,
+                &format!("Create bank account {bank_account_id}"),
+            )
+            .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
+
+        Ok::<_, AppError>(bank_account)
+    }).await?;
 
     Ok(Json(bank_account_to_response(&bank_account)))
 }
@@ -1005,6 +938,7 @@ async fn create_bank_account(
     get,
     path = "/v1/entities/{entity_id}/bank-accounts",
     tag = "treasury",
+    description = "List all bank accounts registered for an entity.",
     params(("entity_id" = EntityId, Path, description = "Entity ID")),
     responses(
         (status = 200, description = "List of bank accounts", body = Vec<BankAccountResponse>),
@@ -1018,27 +952,21 @@ async fn list_bank_accounts(
     let workspace_id = auth.workspace_id();
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let bank_accounts = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
-            let ids = store
-                .list_ids::<BankAccount>("main")
-                .map_err(|e| AppError::Internal(format!("list bank accounts: {e}")))?;
+    let bank_accounts = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+        let ids = store
+            .list_ids::<BankAccount>("main")
+            .map_err(|e| AppError::Internal(format!("list bank accounts: {e}")))?;
 
-            let mut results = Vec::new();
-            for id in ids {
-                let ba = store
-                    .read::<BankAccount>("main", id)
-                    .map_err(|e| AppError::Internal(format!("read bank account {id}: {e}")))?;
-                results.push(bank_account_to_response(&ba));
-            }
-            Ok::<_, AppError>(results)
+        let mut results = Vec::new();
+        for id in ids {
+            let ba = store
+                .read::<BankAccount>("main", id)
+                .map_err(|e| AppError::Internal(format!("read bank account {id}: {e}")))?;
+            results.push(bank_account_to_response(&ba));
         }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+        Ok::<_, AppError>(results)
+    }).await?;
 
     Ok(Json(bank_accounts))
 }
@@ -1047,6 +975,7 @@ async fn list_bank_accounts(
     get,
     path = "/v1/entities/{entity_id}/payments",
     tag = "treasury",
+    description = "List all payments submitted for an entity.",
     params(("entity_id" = EntityId, Path, description = "Entity ID")),
     responses(
         (status = 200, description = "List of payments", body = Vec<PaymentResponse>),
@@ -1060,27 +989,21 @@ async fn list_payments(
     let workspace_id = auth.workspace_id();
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let payments = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
-            let ids = store
-                .list_ids::<Payment>("main")
-                .map_err(|e| AppError::Internal(format!("list payments: {e}")))?;
+    let payments = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+        let ids = store
+            .list_ids::<Payment>("main")
+            .map_err(|e| AppError::Internal(format!("list payments: {e}")))?;
 
-            let mut results = Vec::new();
-            for id in ids {
-                let payment = store
-                    .read::<Payment>("main", id)
-                    .map_err(|e| AppError::Internal(format!("read payment {id}: {e}")))?;
-                results.push(payment_to_response(&payment));
-            }
-            Ok::<_, AppError>(results)
+        let mut results = Vec::new();
+        for id in ids {
+            let payment = store
+                .read::<Payment>("main", id)
+                .map_err(|e| AppError::Internal(format!("read payment {id}: {e}")))?;
+            results.push(payment_to_response(&payment));
         }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+        Ok::<_, AppError>(results)
+    }).await?;
 
     Ok(Json(payments))
 }
@@ -1089,6 +1012,7 @@ async fn list_payments(
     get,
     path = "/v1/entities/{entity_id}/payroll-runs",
     tag = "treasury",
+    description = "List all payroll runs for an entity.",
     params(("entity_id" = EntityId, Path, description = "Entity ID")),
     responses(
         (status = 200, description = "List of payroll runs", body = Vec<PayrollRunResponse>),
@@ -1102,27 +1026,21 @@ async fn list_payroll_runs(
     let workspace_id = auth.workspace_id();
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let payroll_runs = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
-            let ids = store
-                .list_ids::<PayrollRun>("main")
-                .map_err(|e| AppError::Internal(format!("list payroll runs: {e}")))?;
+    let payroll_runs = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+        let ids = store
+            .list_ids::<PayrollRun>("main")
+            .map_err(|e| AppError::Internal(format!("list payroll runs: {e}")))?;
 
-            let mut results = Vec::new();
-            for id in ids {
-                let run = store
-                    .read::<PayrollRun>("main", id)
-                    .map_err(|e| AppError::Internal(format!("read payroll run {id}: {e}")))?;
-                results.push(payroll_run_to_response(&run));
-            }
-            Ok::<_, AppError>(results)
+        let mut results = Vec::new();
+        for id in ids {
+            let run = store
+                .read::<PayrollRun>("main", id)
+                .map_err(|e| AppError::Internal(format!("read payroll run {id}: {e}")))?;
+            results.push(payroll_run_to_response(&run));
         }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+        Ok::<_, AppError>(results)
+    }).await?;
 
     Ok(Json(payroll_runs))
 }
@@ -1131,6 +1049,7 @@ async fn list_payroll_runs(
     get,
     path = "/v1/entities/{entity_id}/distributions",
     tag = "treasury",
+    description = "List all distributions (dividends, returns of capital, or liquidation) for an entity.",
     params(("entity_id" = EntityId, Path, description = "Entity ID")),
     responses(
         (status = 200, description = "List of distributions", body = Vec<DistributionResponse>),
@@ -1144,27 +1063,21 @@ async fn list_distributions(
     let workspace_id = auth.workspace_id();
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let distributions = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
-            let ids = store
-                .list_ids::<Distribution>("main")
-                .map_err(|e| AppError::Internal(format!("list distributions: {e}")))?;
+    let distributions = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+        let ids = store
+            .list_ids::<Distribution>("main")
+            .map_err(|e| AppError::Internal(format!("list distributions: {e}")))?;
 
-            let mut results = Vec::new();
-            for id in ids {
-                let dist = store
-                    .read::<Distribution>("main", id)
-                    .map_err(|e| AppError::Internal(format!("read distribution {id}: {e}")))?;
-                results.push(distribution_to_response(&dist));
-            }
-            Ok::<_, AppError>(results)
+        let mut results = Vec::new();
+        for id in ids {
+            let dist = store
+                .read::<Distribution>("main", id)
+                .map_err(|e| AppError::Internal(format!("read distribution {id}: {e}")))?;
+            results.push(distribution_to_response(&dist));
         }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+        Ok::<_, AppError>(results)
+    }).await?;
 
     Ok(Json(distributions))
 }
@@ -1173,6 +1086,7 @@ async fn list_distributions(
     get,
     path = "/v1/entities/{entity_id}/reconciliations",
     tag = "treasury",
+    description = "List all ledger reconciliation snapshots for an entity.",
     params(("entity_id" = EntityId, Path, description = "Entity ID")),
     responses(
         (status = 200, description = "List of reconciliations", body = Vec<ReconciliationResponse>),
@@ -1186,27 +1100,21 @@ async fn list_reconciliations(
     let workspace_id = auth.workspace_id();
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let reconciliations = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
-            let ids = store
-                .list_ids::<Reconciliation>("main")
-                .map_err(|e| AppError::Internal(format!("list reconciliations: {e}")))?;
+    let reconciliations = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+        let ids = store
+            .list_ids::<Reconciliation>("main")
+            .map_err(|e| AppError::Internal(format!("list reconciliations: {e}")))?;
 
-            let mut results = Vec::new();
-            for id in ids {
-                let recon = store
-                    .read::<Reconciliation>("main", id)
-                    .map_err(|e| AppError::Internal(format!("read reconciliation {id}: {e}")))?;
-                results.push(reconciliation_to_response(&recon));
-            }
-            Ok::<_, AppError>(results)
+        let mut results = Vec::new();
+        for id in ids {
+            let recon = store
+                .read::<Reconciliation>("main", id)
+                .map_err(|e| AppError::Internal(format!("read reconciliation {id}: {e}")))?;
+            results.push(reconciliation_to_response(&recon));
         }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+        Ok::<_, AppError>(results)
+    }).await?;
 
     Ok(Json(reconciliations))
 }
@@ -1215,6 +1123,7 @@ async fn list_reconciliations(
     post,
     path = "/v1/bank-accounts/{bank_account_id}/activate",
     tag = "treasury",
+    description = "Activate a pending bank account, allowing it to be used for payments.",
     params(
         ("bank_account_id" = BankAccountId, Path, description = "Bank account ID"),
         super::EntityIdQuery,
@@ -1233,34 +1142,28 @@ async fn activate_bank_account(
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = query.entity_id;
 
-    let bank_account = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
-            let mut ba = store
-                .read::<BankAccount>("main", bank_account_id)
-                .map_err(|_| {
-                    AppError::NotFound(format!("bank account {} not found", bank_account_id))
-                })?;
+    let bank_account = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+        let mut ba = store
+            .read::<BankAccount>("main", bank_account_id)
+            .map_err(|_| {
+                AppError::NotFound(format!("bank account {} not found", bank_account_id))
+            })?;
 
-            ba.activate()?;
+        ba.activate()?;
 
-            let path = format!("treasury/bank-accounts/{}.json", bank_account_id);
-            store
-                .write_json(
-                    "main",
-                    &path,
-                    &ba,
-                    &format!("Activate bank account {bank_account_id}"),
-                )
-                .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
+        let path = format!("treasury/bank-accounts/{}.json", bank_account_id);
+        store
+            .write_json(
+                "main",
+                &path,
+                &ba,
+                &format!("Activate bank account {bank_account_id}"),
+            )
+            .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
 
-            Ok::<_, AppError>(ba)
-        }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+        Ok::<_, AppError>(ba)
+    }).await?;
 
     Ok(Json(bank_account_to_response(&bank_account)))
 }
@@ -1269,6 +1172,7 @@ async fn activate_bank_account(
     post,
     path = "/v1/bank-accounts/{bank_account_id}/close",
     tag = "treasury",
+    description = "Close a bank account, preventing any further use for payments.",
     params(
         ("bank_account_id" = BankAccountId, Path, description = "Bank account ID"),
         super::EntityIdQuery,
@@ -1287,34 +1191,28 @@ async fn close_bank_account(
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = query.entity_id;
 
-    let bank_account = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
-            let mut ba = store
-                .read::<BankAccount>("main", bank_account_id)
-                .map_err(|_| {
-                    AppError::NotFound(format!("bank account {} not found", bank_account_id))
-                })?;
+    let bank_account = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+        let mut ba = store
+            .read::<BankAccount>("main", bank_account_id)
+            .map_err(|_| {
+                AppError::NotFound(format!("bank account {} not found", bank_account_id))
+            })?;
 
-            ba.close()?;
+        ba.close()?;
 
-            let path = format!("treasury/bank-accounts/{}.json", bank_account_id);
-            store
-                .write_json(
-                    "main",
-                    &path,
-                    &ba,
-                    &format!("Close bank account {bank_account_id}"),
-                )
-                .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
+        let path = format!("treasury/bank-accounts/{}.json", bank_account_id);
+        store
+            .write_json(
+                "main",
+                &path,
+                &ba,
+                &format!("Close bank account {bank_account_id}"),
+            )
+            .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
 
-            Ok::<_, AppError>(ba)
-        }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+        Ok::<_, AppError>(ba)
+    }).await?;
 
     Ok(Json(bank_account_to_response(&bank_account)))
 }
@@ -1419,6 +1317,7 @@ pub struct ReconciliationResponse {
     post,
     path = "/v1/payments",
     tag = "treasury",
+    description = "Submit a new outgoing payment for an entity.",
     request_body = SubmitPaymentRequest,
     responses(
         (status = 200, description = "Payment submitted", body = PaymentResponse),
@@ -1438,41 +1337,35 @@ async fn submit_payment(
         .map_err(|e| AppError::BadRequest(e.to_owned()))?;
     validate_reasonable_amount(req.amount_cents, "amount_cents")?;
 
-    let payment = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
-            ensure_entity_ready_for_treasury(&store, "payment submission")?;
-            if payment_method_requires_active_bank_account(req.payment_method) {
-                ensure_active_bank_account_available(&store)?;
-            }
-
-            let payment_id = PaymentId::new();
-            let payment = Payment::new(
-                payment_id,
-                entity_id,
-                Cents::new(req.amount_cents),
-                req.recipient,
-                req.payment_method,
-                req.description,
-            );
-
-            let path = format!("treasury/payments/{}.json", payment_id);
-            store
-                .write_json(
-                    "main",
-                    &path,
-                    &payment,
-                    &format!("Submit payment {payment_id}"),
-                )
-                .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
-
-            Ok::<_, AppError>(payment)
+    let payment = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+        ensure_entity_ready_for_treasury(&store, "payment submission")?;
+        if payment_method_requires_active_bank_account(req.payment_method) {
+            ensure_active_bank_account_available(&store)?;
         }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+
+        let payment_id = PaymentId::new();
+        let payment = Payment::new(
+            payment_id,
+            entity_id,
+            Cents::new(req.amount_cents),
+            req.recipient,
+            req.payment_method,
+            req.description,
+        );
+
+        let path = format!("treasury/payments/{}.json", payment_id);
+        store
+            .write_json(
+                "main",
+                &path,
+                &payment,
+                &format!("Submit payment {payment_id}"),
+            )
+            .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
+
+        Ok::<_, AppError>(payment)
+    }).await?;
 
     Ok(Json(PaymentResponse {
         payment_id: payment.payment_id(),
@@ -1490,6 +1383,7 @@ async fn submit_payment(
     post,
     path = "/v1/payments/execute",
     tag = "treasury",
+    description = "Submit and immediately execute a payment, marking it as completed in one step.",
     request_body = SubmitPaymentRequest,
     responses(
         (status = 200, description = "Payment executed", body = PaymentResponse),
@@ -1509,42 +1403,36 @@ async fn execute_payment(
         .map_err(|e| AppError::BadRequest(e.to_owned()))?;
     validate_reasonable_amount(req.amount_cents, "amount_cents")?;
 
-    let payment = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
-            ensure_entity_ready_for_treasury(&store, "payment execution")?;
-            if payment_method_requires_active_bank_account(req.payment_method) {
-                ensure_active_bank_account_available(&store)?;
-            }
-
-            let payment_id = PaymentId::new();
-            let mut payment = Payment::new(
-                payment_id,
-                entity_id,
-                Cents::new(req.amount_cents),
-                req.recipient,
-                req.payment_method,
-                req.description,
-            );
-            payment.mark_completed();
-
-            let path = format!("treasury/payments/{}.json", payment_id);
-            store
-                .write_json(
-                    "main",
-                    &path,
-                    &payment,
-                    &format!("Execute payment {payment_id}"),
-                )
-                .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
-
-            Ok::<_, AppError>(payment)
+    let payment = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+        ensure_entity_ready_for_treasury(&store, "payment execution")?;
+        if payment_method_requires_active_bank_account(req.payment_method) {
+            ensure_active_bank_account_available(&store)?;
         }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+
+        let payment_id = PaymentId::new();
+        let mut payment = Payment::new(
+            payment_id,
+            entity_id,
+            Cents::new(req.amount_cents),
+            req.recipient,
+            req.payment_method,
+            req.description,
+        );
+        payment.mark_completed();
+
+        let path = format!("treasury/payments/{}.json", payment_id);
+        store
+            .write_json(
+                "main",
+                &path,
+                &payment,
+                &format!("Execute payment {payment_id}"),
+            )
+            .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
+
+        Ok::<_, AppError>(payment)
+    }).await?;
 
     Ok(Json(PaymentResponse {
         payment_id: payment.payment_id(),
@@ -1564,6 +1452,7 @@ async fn execute_payment(
     post,
     path = "/v1/payroll/runs",
     tag = "treasury",
+    description = "Create a payroll run for a specific pay period.",
     request_body = CreatePayrollRunRequest,
     responses(
         (status = 200, description = "Payroll run created", body = PayrollRunResponse),
@@ -1592,44 +1481,38 @@ async fn create_payroll_run(
     validate_not_too_far_future("pay_period_start", req.pay_period_start, 366)?;
     validate_not_too_far_future("pay_period_end", req.pay_period_end, 366)?;
 
-    let run = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
-            ensure_entity_ready_for_treasury(&store, "payroll creation")?;
-            let existing_ids = store
-                .list_ids::<PayrollRun>("main")
-                .map_err(|e| AppError::Internal(format!("list payroll runs: {e}")))?;
-            for existing_id in existing_ids {
-                let existing = store.read::<PayrollRun>("main", existing_id).map_err(|e| {
-                    AppError::Internal(format!("read payroll run {existing_id}: {e}"))
-                })?;
-                let overlaps = req.pay_period_start <= existing.pay_period_end()
-                    && req.pay_period_end >= existing.pay_period_start();
-                if overlaps {
-                    return Err(AppError::Conflict(format!(
-                        "payroll period overlaps existing run {} ({} to {})",
-                        existing.payroll_run_id(),
-                        existing.pay_period_start(),
-                        existing.pay_period_end()
-                    )));
-                }
+    let run = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+        ensure_entity_ready_for_treasury(&store, "payroll creation")?;
+        let existing_ids = store
+            .list_ids::<PayrollRun>("main")
+            .map_err(|e| AppError::Internal(format!("list payroll runs: {e}")))?;
+        for existing_id in existing_ids {
+            let existing = store.read::<PayrollRun>("main", existing_id).map_err(|e| {
+                AppError::Internal(format!("read payroll run {existing_id}: {e}"))
+            })?;
+            let overlaps = req.pay_period_start <= existing.pay_period_end()
+                && req.pay_period_end >= existing.pay_period_start();
+            if overlaps {
+                return Err(AppError::Conflict(format!(
+                    "payroll period overlaps existing run {} ({} to {})",
+                    existing.payroll_run_id(),
+                    existing.pay_period_start(),
+                    existing.pay_period_end()
+                )));
             }
-
-            let run_id = PayrollRunId::new();
-            let run = PayrollRun::new(run_id, entity_id, req.pay_period_start, req.pay_period_end);
-
-            let path = format!("treasury/payroll/{}.json", run_id);
-            store
-                .write_json("main", &path, &run, &format!("Create payroll run {run_id}"))
-                .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
-
-            Ok::<_, AppError>(run)
         }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+
+        let run_id = PayrollRunId::new();
+        let run = PayrollRun::new(run_id, entity_id, req.pay_period_start, req.pay_period_end);
+
+        let path = format!("treasury/payroll/{}.json", run_id);
+        store
+            .write_json("main", &path, &run, &format!("Create payroll run {run_id}"))
+            .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
+
+        Ok::<_, AppError>(run)
+    }).await?;
 
     Ok(Json(PayrollRunResponse {
         payroll_run_id: run.payroll_run_id(),
@@ -1647,6 +1530,7 @@ async fn create_payroll_run(
     post,
     path = "/v1/distributions",
     tag = "treasury",
+    description = "Create a distribution of funds to equity holders (dividend, return of capital, or liquidation).",
     request_body = CreateDistributionRequest,
     responses(
         (status = 200, description = "Distribution created", body = DistributionResponse),
@@ -1666,64 +1550,58 @@ async fn create_distribution(
         .map_err(|e| AppError::BadRequest(e.to_owned()))?;
     validate_reasonable_amount(req.total_amount_cents, "total_amount_cents")?;
 
-    let dist = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
-            let entity = store
-                .read_entity("main")
-                .map_err(|e| AppError::Internal(format!("read entity: {e}")))?;
-            if req.distribution_type == DistributionType::Dividend
-                && entity.formation_status() != FormationStatus::Active
-            {
-                return Err(AppError::BadRequest(
-                    "dividend distributions require an active entity".to_owned(),
-                ));
-            }
-            if req.distribution_type == DistributionType::Liquidation
-                && entity.formation_status() != FormationStatus::Dissolved
-            {
-                return Err(AppError::BadRequest(
-                    "liquidation distributions require a dissolved entity".to_owned(),
-                ));
-            }
-            if matches!(
-                entity.formation_status(),
-                FormationStatus::Pending
-                    | FormationStatus::DocumentsGenerated
-                    | FormationStatus::FilingSubmitted
-                    | FormationStatus::Filed
-            ) {
-                return Err(AppError::BadRequest(
-                    "distributions require an active or dissolved entity".to_owned(),
-                ));
-            }
-
-            let dist_id = DistributionId::new();
-            let dist = Distribution::new(
-                dist_id,
-                entity_id,
-                req.distribution_type,
-                Cents::new(req.total_amount_cents),
-                req.description,
-            );
-
-            let path = format!("treasury/distributions/{}.json", dist_id);
-            store
-                .write_json(
-                    "main",
-                    &path,
-                    &dist,
-                    &format!("Create distribution {dist_id}"),
-                )
-                .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
-
-            Ok::<_, AppError>(dist)
+    let dist = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+        let entity = store
+            .read_entity("main")
+            .map_err(|e| AppError::Internal(format!("read entity: {e}")))?;
+        if req.distribution_type == DistributionType::Dividend
+            && entity.formation_status() != FormationStatus::Active
+        {
+            return Err(AppError::BadRequest(
+                "dividend distributions require an active entity".to_owned(),
+            ));
         }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+        if req.distribution_type == DistributionType::Liquidation
+            && entity.formation_status() != FormationStatus::Dissolved
+        {
+            return Err(AppError::BadRequest(
+                "liquidation distributions require a dissolved entity".to_owned(),
+            ));
+        }
+        if matches!(
+            entity.formation_status(),
+            FormationStatus::Pending
+                | FormationStatus::DocumentsGenerated
+                | FormationStatus::FilingSubmitted
+                | FormationStatus::Filed
+        ) {
+            return Err(AppError::BadRequest(
+                "distributions require an active or dissolved entity".to_owned(),
+            ));
+        }
+
+        let dist_id = DistributionId::new();
+        let dist = Distribution::new(
+            dist_id,
+            entity_id,
+            req.distribution_type,
+            Cents::new(req.total_amount_cents),
+            req.description,
+        );
+
+        let path = format!("treasury/distributions/{}.json", dist_id);
+        store
+            .write_json(
+                "main",
+                &path,
+                &dist,
+                &format!("Create distribution {dist_id}"),
+            )
+            .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
+
+        Ok::<_, AppError>(dist)
+    }).await?;
 
     Ok(Json(DistributionResponse {
         distribution_id: dist.distribution_id(),
@@ -1742,6 +1620,7 @@ async fn create_distribution(
     post,
     path = "/v1/ledger/reconcile",
     tag = "treasury",
+    description = "Compute a ledger reconciliation snapshot summarizing debits, credits, and the net difference as of a given date.",
     request_body = ReconcileLedgerRequest,
     responses(
         (status = 200, description = "Ledger reconciled", body = ReconciliationResponse),
@@ -1766,98 +1645,92 @@ async fn reconcile_ledger(
         ));
     }
 
-    let recon = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
-            ensure_entity_ready_for_treasury(&store, "ledger reconciliation")?;
+    let recon = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+        ensure_entity_ready_for_treasury(&store, "ledger reconciliation")?;
 
-            // Sum up all journal entries to compute totals
-            let entry_ids = store
-                .list_ids::<JournalEntry>("main")
-                .map_err(|e| AppError::Internal(format!("list entries: {e}")))?;
+        // Sum up all journal entries to compute totals
+        let entry_ids = store
+            .list_ids::<JournalEntry>("main")
+            .map_err(|e| AppError::Internal(format!("list entries: {e}")))?;
 
-            let mut total_debits = Cents::ZERO;
-            let mut total_credits = Cents::ZERO;
+        let mut total_debits = Cents::ZERO;
+        let mut total_credits = Cents::ZERO;
 
-            for id in entry_ids {
-                if let Ok(entry) = store.read::<JournalEntry>("main", id) {
-                    if entry.effective_date() > as_of_date {
-                        continue;
-                    }
-                    if start_date.is_some_and(|start| entry.effective_date() < start) {
-                        continue;
-                    }
-                    total_debits += entry.total_debits();
-                    total_credits += entry.total_credits();
+        for id in entry_ids {
+            if let Ok(entry) = store.read::<JournalEntry>("main", id) {
+                if entry.effective_date() > as_of_date {
+                    continue;
                 }
-            }
-
-            for id in store.list_ids::<Invoice>("main").unwrap_or_default() {
-                if let Ok(invoice) = store.read::<Invoice>("main", id) {
-                    if invoice.status() != InvoiceStatus::Paid {
-                        continue;
-                    }
-                    if invoice.due_date() > as_of_date {
-                        continue;
-                    }
-                    if start_date.is_some_and(|start| invoice.due_date() < start) {
-                        continue;
-                    }
-                    // Paid invoices represent incoming revenue → credit.
-                    total_credits += invoice.amount_cents();
+                if start_date.is_some_and(|start| entry.effective_date() < start) {
+                    continue;
                 }
+                total_debits += entry.total_debits();
+                total_credits += entry.total_credits();
             }
-            for id in store.list_ids::<Payment>("main").unwrap_or_default() {
-                if let Ok(payment) = store.read::<Payment>("main", id) {
-                    if payment.status() != PaymentStatus::Completed {
-                        continue;
-                    }
-                    let payment_date = payment.created_at().date_naive();
-                    if payment_date > as_of_date {
-                        continue;
-                    }
-                    if start_date.is_some_and(|start| payment_date < start) {
-                        continue;
-                    }
-                    // Completed payments represent outgoing funds → debit.
-                    total_debits += payment.amount_cents();
-                }
-            }
-            for id in store.list_ids::<Distribution>("main").unwrap_or_default() {
-                if let Ok(distribution) = store.read::<Distribution>("main", id) {
-                    let distribution_date = distribution.created_at().date_naive();
-                    if distribution_date > as_of_date {
-                        continue;
-                    }
-                    if start_date.is_some_and(|start| distribution_date < start) {
-                        continue;
-                    }
-                    total_debits += distribution.total_amount_cents();
-                    total_credits += distribution.total_amount_cents();
-                }
-            }
-
-            let recon_id = ReconciliationId::new();
-            let recon =
-                Reconciliation::new(recon_id, entity_id, as_of_date, total_debits, total_credits);
-
-            let path = format!("treasury/reconciliations/{}.json", recon_id);
-            store
-                .write_json(
-                    "main",
-                    &path,
-                    &recon,
-                    &format!("Reconcile ledger {recon_id}"),
-                )
-                .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
-
-            Ok::<_, AppError>(recon)
         }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+
+        for id in store.list_ids::<Invoice>("main").unwrap_or_default() {
+            if let Ok(invoice) = store.read::<Invoice>("main", id) {
+                if invoice.status() != InvoiceStatus::Paid {
+                    continue;
+                }
+                if invoice.due_date() > as_of_date {
+                    continue;
+                }
+                if start_date.is_some_and(|start| invoice.due_date() < start) {
+                    continue;
+                }
+                // Paid invoices represent incoming revenue → credit.
+                total_credits += invoice.amount_cents();
+            }
+        }
+        for id in store.list_ids::<Payment>("main").unwrap_or_default() {
+            if let Ok(payment) = store.read::<Payment>("main", id) {
+                if payment.status() != PaymentStatus::Completed {
+                    continue;
+                }
+                let payment_date = payment.created_at().date_naive();
+                if payment_date > as_of_date {
+                    continue;
+                }
+                if start_date.is_some_and(|start| payment_date < start) {
+                    continue;
+                }
+                // Completed payments represent outgoing funds → debit.
+                total_debits += payment.amount_cents();
+            }
+        }
+        for id in store.list_ids::<Distribution>("main").unwrap_or_default() {
+            if let Ok(distribution) = store.read::<Distribution>("main", id) {
+                let distribution_date = distribution.created_at().date_naive();
+                if distribution_date > as_of_date {
+                    continue;
+                }
+                if start_date.is_some_and(|start| distribution_date < start) {
+                    continue;
+                }
+                total_debits += distribution.total_amount_cents();
+                total_credits += distribution.total_amount_cents();
+            }
+        }
+
+        let recon_id = ReconciliationId::new();
+        let recon =
+            Reconciliation::new(recon_id, entity_id, as_of_date, total_debits, total_credits);
+
+        let path = format!("treasury/reconciliations/{}.json", recon_id);
+        store
+            .write_json(
+                "main",
+                &path,
+                &recon,
+                &format!("Reconcile ledger {recon_id}"),
+            )
+            .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
+
+        Ok::<_, AppError>(recon)
+    }).await?;
 
     Ok(Json(ReconciliationResponse {
         reconciliation_id: recon.reconciliation_id(),
@@ -1889,6 +1762,7 @@ pub struct StripeAccountResponse {
     get,
     path = "/v1/entities/{entity_id}/stripe-account",
     tag = "treasury",
+    description = "Retrieve the Stripe account linked to an entity, creating a new connection on first access.",
     params(("entity_id" = EntityId, Path, description = "Entity ID")),
     responses(
         (status = 200, description = "Stripe account details", body = StripeAccountResponse),
@@ -1902,38 +1776,32 @@ async fn get_stripe_account(
     let workspace_id = auth.workspace_id();
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let conn = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
+    let conn = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
 
-            // Try to read existing connection
-            match store.read_json::<StripeConnection>("main", "treasury/stripe-connection.json") {
-                Ok(c) => Ok::<_, AppError>(c),
-                Err(crate::git::error::GitStorageError::NotFound(_)) => {
-                    // Create a new connection only on first access (not found)
-                    let conn = StripeConnection::new(
-                        StripeConnectionId::new(),
-                        entity_id,
-                        format!("acct_{}", uuid::Uuid::new_v4().simple()),
-                    );
-                    store
-                        .write_json(
-                            "main",
-                            "treasury/stripe-connection.json",
-                            &conn,
-                            "Create Stripe connection",
-                        )
-                        .map_err(|e| AppError::Internal(format!("commit: {e}")))?;
-                    Ok(conn)
-                }
-                Err(e) => Err(AppError::Internal(format!("read stripe connection: {e}"))),
+        // Try to read existing connection
+        match store.read_json::<StripeConnection>("main", "treasury/stripe-connection.json") {
+            Ok(c) => Ok::<_, AppError>(c),
+            Err(crate::git::error::GitStorageError::NotFound(_)) => {
+                // Create a new connection only on first access (not found)
+                let conn = StripeConnection::new(
+                    StripeConnectionId::new(),
+                    entity_id,
+                    format!("acct_{}", uuid::Uuid::new_v4().simple()),
+                );
+                store
+                    .write_json(
+                        "main",
+                        "treasury/stripe-connection.json",
+                        &conn,
+                        "Create Stripe connection",
+                    )
+                    .map_err(|e| AppError::Internal(format!("commit: {e}")))?;
+                Ok(conn)
             }
+            Err(e) => Err(AppError::Internal(format!("read stripe connection: {e}"))),
         }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+    }).await?;
 
     Ok(Json(StripeAccountResponse {
         entity_id: conn.entity_id(),
@@ -1976,6 +1844,7 @@ pub struct CreateSpendingLimitRequest {
     post,
     path = "/v1/spending-limits",
     tag = "treasury",
+    description = "Create a spending limit policy for a category of expenditures within a given period.",
     request_body = CreateSpendingLimitRequest,
     responses(
         (status = 200, description = "Spending limit created", body = SpendingLimitResponse),
@@ -1991,28 +1860,22 @@ async fn create_spending_limit(
     let entity_id = req.entity_id;
     validate_reasonable_amount(req.amount_cents, "amount_cents")?;
 
-    let sl = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
-            let sl_id = SpendingLimitId::new();
-            let sl =
-                SpendingLimit::new(sl_id, entity_id, req.amount_cents, req.period, req.category);
-            let path = format!("treasury/spending-limits/{}.json", sl_id);
-            store
-                .write_json(
-                    "main",
-                    &path,
-                    &sl,
-                    &format!("Create spending limit {sl_id}"),
-                )
-                .map_err(|e| AppError::Internal(format!("commit: {e}")))?;
-            Ok::<_, AppError>(sl)
-        }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+    let sl = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+        let sl_id = SpendingLimitId::new();
+        let sl =
+            SpendingLimit::new(sl_id, entity_id, req.amount_cents, req.period, req.category);
+        let path = format!("treasury/spending-limits/{}.json", sl_id);
+        store
+            .write_json(
+                "main",
+                &path,
+                &sl,
+                &format!("Create spending limit {sl_id}"),
+            )
+            .map_err(|e| AppError::Internal(format!("commit: {e}")))?;
+        Ok::<_, AppError>(sl)
+    }).await?;
 
     Ok(Json(spending_limit_to_response(&sl)))
 }
@@ -2021,6 +1884,7 @@ async fn create_spending_limit(
     get,
     path = "/v1/entities/{entity_id}/spending-limits",
     tag = "treasury",
+    description = "List all spending limit policies configured for an entity.",
     params(("entity_id" = EntityId, Path, description = "Entity ID")),
     responses(
         (status = 200, description = "List of spending limits", body = Vec<SpendingLimitResponse>),
@@ -2034,27 +1898,21 @@ async fn list_spending_limits(
     let workspace_id = auth.workspace_id();
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let limits = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
-            let ids: Vec<SpendingLimitId> = store
-                .list_ids_in_dir("main", "treasury/spending-limits")
-                .unwrap_or_default();
+    let limits = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+        let ids: Vec<SpendingLimitId> = store
+            .list_ids_in_dir("main", "treasury/spending-limits")
+            .unwrap_or_default();
 
-            let mut results = Vec::new();
-            for id in ids {
-                let path = format!("treasury/spending-limits/{}.json", id);
-                if let Ok(sl) = store.read_json::<SpendingLimit>("main", &path) {
-                    results.push(spending_limit_to_response(&sl));
-                }
+        let mut results = Vec::new();
+        for id in ids {
+            let path = format!("treasury/spending-limits/{}.json", id);
+            if let Ok(sl) = store.read_json::<SpendingLimit>("main", &path) {
+                results.push(spending_limit_to_response(&sl));
             }
-            Ok::<_, AppError>(results)
         }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+        Ok::<_, AppError>(results)
+    }).await?;
 
     Ok(Json(limits))
 }
@@ -2085,6 +1943,7 @@ fn default_statement_type() -> String {
     get,
     path = "/v1/entities/{entity_id}/financial-statements",
     tag = "treasury",
+    description = "Generate a financial statement (balance sheet or income statement) derived from the entity's journal entries.",
     params(
         ("entity_id" = EntityId, Path, description = "Entity ID"),
         FinancialStatementQuery,
@@ -2102,64 +1961,58 @@ async fn get_financial_statements(
     let workspace_id = auth.workspace_id();
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let statement = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
+    let statement = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
 
-            // Read all accounts and compute totals by type
-            let account_ids = store.list_ids::<Account>("main").unwrap_or_default();
-            let mut total_assets: i64 = 0;
-            let mut total_liabilities: i64 = 0;
-            let mut total_equity: i64 = 0;
-            let mut total_revenue: i64 = 0;
-            let mut total_expenses: i64 = 0;
+        // Read all accounts and compute totals by type
+        let account_ids = store.list_ids::<Account>("main").unwrap_or_default();
+        let mut total_assets: i64 = 0;
+        let mut total_liabilities: i64 = 0;
+        let mut total_equity: i64 = 0;
+        let mut total_revenue: i64 = 0;
+        let mut total_expenses: i64 = 0;
 
-            // Build a map of account_id -> account_type
-            let mut acct_types = std::collections::HashMap::new();
-            for &acct_id in &account_ids {
-                if let Ok(acct) = store.read::<Account>("main", acct_id) {
-                    acct_types.insert(acct.account_id(), acct.account_type());
-                }
+        // Build a map of account_id -> account_type
+        let mut acct_types = std::collections::HashMap::new();
+        for &acct_id in &account_ids {
+            if let Ok(acct) = store.read::<Account>("main", acct_id) {
+                acct_types.insert(acct.account_id(), acct.account_type());
             }
+        }
 
-            // Read journal entries to sum by account type
-            let entry_ids = store.list_ids::<JournalEntry>("main").unwrap_or_default();
-            for entry_id in entry_ids {
-                if let Ok(entry) = store.read::<JournalEntry>("main", entry_id) {
-                    for line in entry.lines() {
-                        if let Some(&acct_type) = acct_types.get(&line.account_id()) {
-                            let signed = match line.side() {
-                                Side::Debit => line.amount().raw(),
-                                Side::Credit => -line.amount().raw(),
-                            };
-                            match acct_type {
-                                AccountType::Asset => total_assets += signed,
-                                AccountType::Liability => total_liabilities -= signed,
-                                AccountType::Equity => total_equity -= signed,
-                                AccountType::Revenue => total_revenue -= signed,
-                                AccountType::Expense => total_expenses += signed,
-                            }
+        // Read journal entries to sum by account type
+        let entry_ids = store.list_ids::<JournalEntry>("main").unwrap_or_default();
+        for entry_id in entry_ids {
+            if let Ok(entry) = store.read::<JournalEntry>("main", entry_id) {
+                for line in entry.lines() {
+                    if let Some(&acct_type) = acct_types.get(&line.account_id()) {
+                        let signed = match line.side() {
+                            Side::Debit => line.amount().raw(),
+                            Side::Credit => -line.amount().raw(),
+                        };
+                        match acct_type {
+                            AccountType::Asset => total_assets += signed,
+                            AccountType::Liability => total_liabilities -= signed,
+                            AccountType::Equity => total_equity -= signed,
+                            AccountType::Revenue => total_revenue -= signed,
+                            AccountType::Expense => total_expenses += signed,
                         }
                     }
                 }
             }
-
-            Ok::<_, AppError>(FinancialStatementResponse {
-                entity_id,
-                statement_type: query.statement_type,
-                period_start: "2026-01-01".to_owned(),
-                period_end: "2026-12-31".to_owned(),
-                total_assets_cents: total_assets,
-                total_liabilities_cents: total_liabilities,
-                total_equity_cents: total_equity,
-                net_income_cents: total_revenue - total_expenses,
-            })
         }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+
+        Ok::<_, AppError>(FinancialStatementResponse {
+            entity_id,
+            statement_type: query.statement_type,
+            period_start: "2026-01-01".to_owned(),
+            period_end: "2026-12-31".to_owned(),
+            total_assets_cents: total_assets,
+            total_liabilities_cents: total_liabilities,
+            total_equity_cents: total_equity,
+            net_income_cents: total_revenue - total_expenses,
+        })
+    }).await?;
 
     Ok(Json(statement))
 }
@@ -2186,6 +2039,7 @@ pub struct SeedChartOfAccountsResponse {
     post,
     path = "/v1/treasury/seed-chart-of-accounts",
     tag = "treasury",
+    description = "Seed a standard chart of accounts for an entity using a predefined template.",
     request_body = SeedChartOfAccountsRequest,
     responses(
         (status = 200, description = "Chart of accounts seeded", body = SeedChartOfAccountsResponse),
@@ -2200,37 +2054,31 @@ async fn seed_chart_of_accounts(
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = req.entity_id;
 
-    let count = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
+    let count = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
 
-            let codes = vec![
-                GlAccountCode::Cash,
-                GlAccountCode::AccountsReceivable,
-                GlAccountCode::AccountsPayable,
-                GlAccountCode::Revenue,
-                GlAccountCode::OperatingExpenses,
-                GlAccountCode::FounderCapital,
-            ];
+        let codes = vec![
+            GlAccountCode::Cash,
+            GlAccountCode::AccountsReceivable,
+            GlAccountCode::AccountsPayable,
+            GlAccountCode::Revenue,
+            GlAccountCode::OperatingExpenses,
+            GlAccountCode::FounderCapital,
+        ];
 
-            let mut created = 0;
-            for code in &codes {
-                let acct_id = AccountId::new();
-                let acct = Account::new(acct_id, entity_id, *code);
-                let path = format!("treasury/accounts/{}.json", acct_id);
-                store
-                    .write_json("main", &path, &acct, &format!("Seed account {:?}", code))
-                    .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
-                created += 1;
-            }
-
-            Ok::<_, AppError>(created)
+        let mut created = 0;
+        for code in &codes {
+            let acct_id = AccountId::new();
+            let acct = Account::new(acct_id, entity_id, *code);
+            let path = format!("treasury/accounts/{}.json", acct_id);
+            store
+                .write_json("main", &path, &acct, &format!("Seed account {:?}", code))
+                .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
+            created += 1;
         }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+
+        Ok::<_, AppError>(created)
+    }).await?;
 
     Ok(Json(SeedChartOfAccountsResponse {
         entity_id,
@@ -2245,6 +2093,7 @@ async fn seed_chart_of_accounts(
     get,
     path = "/v1/invoices/{invoice_id}",
     tag = "treasury",
+    description = "Retrieve a single invoice by ID.",
     params(
         ("invoice_id" = InvoiceId, Path, description = "Invoice ID"),
         super::EntityIdQuery,
@@ -2263,18 +2112,12 @@ async fn get_invoice(
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = query.entity_id;
 
-    let invoice = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
-            store
-                .read::<Invoice>("main", invoice_id)
-                .map_err(|_| AppError::NotFound(format!("invoice {} not found", invoice_id)))
-        }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+    let invoice = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+        store
+            .read::<Invoice>("main", invoice_id)
+            .map_err(|_| AppError::NotFound(format!("invoice {} not found", invoice_id)))
+    }).await?;
 
     Ok(Json(invoice_to_response(&invoice)))
 }
@@ -2303,6 +2146,7 @@ pub struct PaymentOfferResponse {
     post,
     path = "/v1/invoices/from-agent-request",
     tag = "treasury",
+    description = "Create and auto-send an invoice on behalf of an AI agent, returning a payment URL.",
     request_body = AgentInvoiceRequest,
     responses(
         (status = 200, description = "Invoice created from agent request", body = PaymentOfferResponse),
@@ -2324,41 +2168,35 @@ async fn from_agent_request(
     }
     validate_reasonable_amount(req.amount_cents, "amount_cents")?;
 
-    let invoice = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
-            ensure_entity_ready_for_treasury(&store, "invoice creation")?;
+    let invoice = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+        ensure_entity_ready_for_treasury(&store, "invoice creation")?;
 
-            let invoice_id = InvoiceId::new();
-            let mut invoice = Invoice::new(
-                invoice_id,
-                entity_id,
-                req.customer_name,
-                Cents::new(req.amount_cents),
-                req.description,
-                req.due_date,
-            );
+        let invoice_id = InvoiceId::new();
+        let mut invoice = Invoice::new(
+            invoice_id,
+            entity_id,
+            req.customer_name,
+            Cents::new(req.amount_cents),
+            req.description,
+            req.due_date,
+        );
 
-            // Auto-send for agent-initiated invoices
-            let _ = invoice.send();
+        // Auto-send for agent-initiated invoices
+        let _ = invoice.send();
 
-            let path = format!("treasury/invoices/{}.json", invoice_id);
-            store
-                .write_json(
-                    "main",
-                    &path,
-                    &invoice,
-                    &format!("Agent-created invoice {invoice_id}"),
-                )
-                .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
+        let path = format!("treasury/invoices/{}.json", invoice_id);
+        store
+            .write_json(
+                "main",
+                &path,
+                &invoice,
+                &format!("Agent-created invoice {invoice_id}"),
+            )
+            .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
 
-            Ok::<_, AppError>(invoice)
-        }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+        Ok::<_, AppError>(invoice)
+    }).await?;
 
     Ok(Json(PaymentOfferResponse {
         invoice_id: invoice.invoice_id(),
@@ -2380,6 +2218,7 @@ pub struct CreateStripeAccountRequest {
     post,
     path = "/v1/treasury/stripe-accounts",
     tag = "treasury",
+    description = "Create a new Stripe connected account for an entity.",
     request_body = CreateStripeAccountRequest,
     responses(
         (status = 200, description = "Stripe account created", body = StripeAccountResponse),
@@ -2394,43 +2233,37 @@ async fn create_stripe_account(
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = req.entity_id;
 
-    let conn = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
+    let conn = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
 
-            // Check if a Stripe connection already exists — reject duplicates.
-            match store.read_json::<StripeConnection>("main", "treasury/stripe-connection.json") {
-                Ok(_existing) => {
-                    return Err(AppError::Conflict(
-                        "stripe connection already exists for this entity".to_owned(),
-                    ));
-                }
-                Err(crate::git::error::GitStorageError::NotFound(_)) => { /* expected */ }
-                Err(e) => {
-                    return Err(AppError::Internal(format!("read stripe connection: {e}")));
-                }
+        // Check if a Stripe connection already exists — reject duplicates.
+        match store.read_json::<StripeConnection>("main", "treasury/stripe-connection.json") {
+            Ok(_existing) => {
+                return Err(AppError::Conflict(
+                    "stripe connection already exists for this entity".to_owned(),
+                ));
             }
-
-            let conn = StripeConnection::new(
-                StripeConnectionId::new(),
-                entity_id,
-                format!("acct_{}", uuid::Uuid::new_v4().simple()),
-            );
-            store
-                .write_json(
-                    "main",
-                    "treasury/stripe-connection.json",
-                    &conn,
-                    "Create Stripe connection",
-                )
-                .map_err(|e| AppError::Internal(format!("commit: {e}")))?;
-            Ok::<_, AppError>(conn)
+            Err(crate::git::error::GitStorageError::NotFound(_)) => { /* expected */ }
+            Err(e) => {
+                return Err(AppError::Internal(format!("read stripe connection: {e}")));
+            }
         }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+
+        let conn = StripeConnection::new(
+            StripeConnectionId::new(),
+            entity_id,
+            format!("acct_{}", uuid::Uuid::new_v4().simple()),
+        );
+        store
+            .write_json(
+                "main",
+                "treasury/stripe-connection.json",
+                &conn,
+                "Create Stripe connection",
+            )
+            .map_err(|e| AppError::Internal(format!("commit: {e}")))?;
+        Ok::<_, AppError>(conn)
+    }).await?;
 
     Ok(Json(StripeAccountResponse {
         entity_id: conn.entity_id(),
@@ -2450,6 +2283,7 @@ pub struct ChartOfAccountsResponse {
     get,
     path = "/v1/treasury/chart-of-accounts/{entity_id}",
     tag = "treasury",
+    description = "Retrieve the full chart of accounts for an entity.",
     params(("entity_id" = EntityId, Path, description = "Entity ID")),
     responses(
         (status = 200, description = "Chart of accounts", body = ChartOfAccountsResponse),
@@ -2463,27 +2297,21 @@ async fn get_chart_of_accounts(
     let workspace_id = auth.workspace_id();
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let accounts = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
-            let ids = store
-                .list_ids::<Account>("main")
-                .map_err(|e| AppError::Internal(format!("list accounts: {e}")))?;
+    let accounts = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+        let ids = store
+            .list_ids::<Account>("main")
+            .map_err(|e| AppError::Internal(format!("list accounts: {e}")))?;
 
-            let mut results = Vec::new();
-            for id in ids {
-                let a = store
-                    .read::<Account>("main", id)
-                    .map_err(|e| AppError::Internal(format!("read account {id}: {e}")))?;
-                results.push(account_to_response(&a));
-            }
-            Ok::<_, AppError>(results)
+        let mut results = Vec::new();
+        for id in ids {
+            let a = store
+                .read::<Account>("main", id)
+                .map_err(|e| AppError::Internal(format!("read account {id}: {e}")))?;
+            results.push(account_to_response(&a));
         }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+        Ok::<_, AppError>(results)
+    }).await?;
 
     Ok(Json(ChartOfAccountsResponse {
         entity_id,
@@ -2514,6 +2342,7 @@ pub struct PayoutResponse {
     post,
     path = "/v1/treasury/payouts",
     tag = "treasury",
+    description = "Initiate a payout from an entity's Stripe account to a destination bank.",
     request_body = CreatePayoutRequest,
     responses(
         (status = 200, description = "Payout created", body = PayoutResponse),
@@ -2539,35 +2368,29 @@ async fn create_payout(
     let payout_id = uuid::Uuid::new_v4().to_string();
     let now = chrono::Utc::now();
 
-    tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        let payout_id = payout_id.clone();
-        let destination = req.destination.clone();
-        let description = req.description.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
-            store
-                .write_json(
-                    "main",
-                    &format!("treasury/payouts/{}.json", payout_id),
-                    &serde_json::json!({
-                        "payout_id": payout_id,
-                        "entity_id": entity_id,
-                        "amount_cents": req.amount_cents,
-                        "destination": destination,
-                        "description": description,
-                        "status": "pending",
-                        "created_at": now.to_rfc3339(),
-                    }),
-                    &format!("Create payout {payout_id}"),
-                )
-                .map_err(|e| AppError::Internal(format!("commit: {e}")))?;
-            Ok::<_, AppError>(())
-        }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+    let payout_id_inner = payout_id.clone();
+    let destination = req.destination.clone();
+    let description = req.description.clone();
+    super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+        store
+            .write_json(
+                "main",
+                &format!("treasury/payouts/{}.json", payout_id_inner),
+                &serde_json::json!({
+                    "payout_id": payout_id_inner,
+                    "entity_id": entity_id,
+                    "amount_cents": req.amount_cents,
+                    "destination": destination,
+                    "description": description,
+                    "status": "pending",
+                    "created_at": now.to_rfc3339(),
+                }),
+                &format!("Create payout {payout_id_inner}"),
+            )
+            .map_err(|e| AppError::Internal(format!("commit: {e}")))?;
+        Ok::<_, AppError>(())
+    }).await?;
 
     Ok(Json(PayoutResponse {
         payout_id,
@@ -2602,6 +2425,7 @@ pub struct PaymentIntentResponse {
     post,
     path = "/v1/treasury/payment-intents",
     tag = "treasury",
+    description = "Create a Stripe payment intent for an entity, returning a client secret for front-end confirmation.",
     request_body = CreatePaymentIntentRequest,
     responses(
         (status = 200, description = "Payment intent created", body = PaymentIntentResponse),
@@ -2629,38 +2453,32 @@ async fn create_payment_intent(
     let currency = req.currency.unwrap_or_else(|| "usd".to_owned());
     let now = chrono::Utc::now();
 
-    tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        let pi_id = pi_id.clone();
-        let currency = currency.clone();
-        let client_secret = client_secret.clone();
-        let description = req.description.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
-            ensure_entity_ready_for_treasury(&store, "payment intent creation")?;
-            store
-                .write_json(
-                    "main",
-                    &format!("treasury/payment-intents/{}.json", pi_id),
-                    &serde_json::json!({
-                        "payment_intent_id": pi_id,
-                        "entity_id": entity_id,
-                        "amount_cents": req.amount_cents,
-                        "currency": currency,
-                        "description": description,
-                        "status": "requires_confirmation",
-                        "client_secret": client_secret,
-                        "created_at": now.to_rfc3339(),
-                    }),
-                    &format!("Create payment intent {pi_id}"),
-                )
-                .map_err(|e| AppError::Internal(format!("commit: {e}")))?;
-            Ok::<_, AppError>(())
-        }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+    let pi_id_inner = pi_id.clone();
+    let currency_inner = currency.clone();
+    let client_secret_inner = client_secret.clone();
+    let description = req.description.clone();
+    super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+        ensure_entity_ready_for_treasury(&store, "payment intent creation")?;
+        store
+            .write_json(
+                "main",
+                &format!("treasury/payment-intents/{}.json", pi_id_inner),
+                &serde_json::json!({
+                    "payment_intent_id": pi_id_inner,
+                    "entity_id": entity_id,
+                    "amount_cents": req.amount_cents,
+                    "currency": currency_inner,
+                    "description": description,
+                    "status": "requires_confirmation",
+                    "client_secret": client_secret_inner,
+                    "created_at": now.to_rfc3339(),
+                }),
+                &format!("Create payment intent {pi_id_inner}"),
+            )
+            .map_err(|e| AppError::Internal(format!("commit: {e}")))?;
+        Ok::<_, AppError>(())
+    }).await?;
 
     Ok(Json(PaymentIntentResponse {
         payment_intent_id: pi_id,
@@ -2677,6 +2495,7 @@ async fn create_payment_intent(
     post,
     path = "/v1/treasury/webhooks/stripe",
     tag = "treasury",
+    description = "Receive and acknowledge incoming Stripe webhook events for treasury operations.",
     request_body(content = String, content_type = "application/json"),
     responses(
         (status = 200, description = "Webhook received", body = serde_json::Value),

@@ -239,7 +239,7 @@ export const workspaceCommands: CommandDef[] = [
         throw new Error(`Failed to resolve entity: ${err}`);
       }
     },
-    examples: ["corp use", "corp use --json"],
+    examples: ["corp use acme", "corp use ent_abc123"],
   },
 
   // --- next ---
@@ -343,7 +343,7 @@ export const workspaceCommands: CommandDef[] = [
   // --- obligations (pure read) ---
   {
     name: "obligations",
-    description: "List obligations with urgency tiers",
+    description: "List compliance obligations with urgency tiers",
     route: { method: "GET", path: "/v1/obligations/summary" },
     display: {
       title: "Obligations",
@@ -357,14 +357,14 @@ export const workspaceCommands: CommandDef[] = [
       ],
     },
     optQP: ["tier"],
-    options: [{ flags: "--tier <tier>", description: "Filter by urgency tier" }],
-    examples: ["corp obligations"],
+    options: [{ flags: "--tier <tier>", description: "Filter by urgency tier", choices: ["critical", "high", "medium", "low"] }],
+    examples: ["corp obligations", "corp obligations --tier critical --json"],
   },
 
   // --- digest ---
   {
     name: "digest",
-    description: "View or trigger daily digests",
+    description: "View digest history or trigger a new digest",
     route: { method: "GET", path: "/v1/digests" },
     display: { title: "Digests" },
     options: [
@@ -381,15 +381,19 @@ export const workspaceCommands: CommandDef[] = [
             const value = (result as Record<string, unknown>).message;
             return typeof value === "string" && value.trim() ? value : null;
           })();
-          if (!opts.json) {
-            ctx.writer.success(result.digest_count > 0 ? "Digest triggered." : "Digest trigger accepted.");
-          }
-          if (message && !opts.json) {
+          if (opts.json) { ctx.writer.json(result); return; }
+          ctx.writer.success(result.digest_count > 0 ? "Digest triggered." : "Digest trigger accepted.");
+          if (message) {
             ctx.writer.warning(message);
           }
-          ctx.writer.json(result);
+          if (result.digest_count != null) {
+            ctx.writer.writeln(`  Digest count: ${result.digest_count}`);
+          }
         } else if (opts.key) {
           const result = await ctx.client.getDigest(opts.key);
+          if (opts.json) { ctx.writer.json(result); return; }
+          // Digest records are free-form JSON blobs; emit as pretty JSON for human output too.
+          // No concise tabular representation is possible for arbitrary digest payloads.
           ctx.writer.json(result);
         } else {
           const digests = await ctx.client.listDigests();
@@ -400,6 +404,8 @@ export const workspaceCommands: CommandDef[] = [
               ctx.writer.writeln("No digest history found.");
             }
           } else {
+            if (opts.json) { ctx.writer.json(digests); return; }
+            // Digest list items are free-form; emit as pretty JSON for human output too.
             ctx.writer.json(digests);
           }
         }
@@ -407,7 +413,7 @@ export const workspaceCommands: CommandDef[] = [
         throw new Error(`Failed: ${err}`);
       }
     },
-    examples: ["corp digest"],
+    examples: ["corp digest", "corp digest --trigger", "corp digest --key daily_2026-03-22 --json"],
   },
 
   // --- billing ---
@@ -482,7 +488,7 @@ export const workspaceCommands: CommandDef[] = [
         throw new Error(`Failed to create checkout session: ${err}`);
       }
     },
-    examples: ["corp billing upgrade"],
+    examples: ["corp billing upgrade", "corp billing upgrade --plan pro", "corp billing upgrade --plan enterprise --json"],
   },
 
   // ── Auto-generated from OpenAPI ──────────────────────────────

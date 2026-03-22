@@ -498,55 +498,50 @@ async fn create_work_item(
     let category = validate_category(&req.category)?;
 
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
-    let work_item = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        let category = category.clone();
-        let title = title.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
-            let created_by = resolve_actor_input(
-                &layout,
-                &store,
-                workspace_id,
-                entity_id,
-                req.created_by.as_deref(),
-                req.created_by_actor.as_ref(),
-                "created_by",
-                false,
-                valkey_client.as_ref(),
-            )?;
-            let work_item_id = WorkItemId::new();
-            let metadata = req
-                .metadata
-                .unwrap_or_else(|| serde_json::Value::Object(Default::default()));
-            let work_item = WorkItem::new(
-                work_item_id,
-                entity_id,
-                title,
-                req.description.unwrap_or_default(),
-                category,
-                req.deadline,
-                req.asap,
-                metadata,
-                created_by,
-            );
+    let category = category.clone();
+    let title = title.clone();
+    let work_item = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+        let created_by = resolve_actor_input(
+            layout,
+            &store,
+            workspace_id,
+            entity_id,
+            req.created_by.as_deref(),
+            req.created_by_actor.as_ref(),
+            "created_by",
+            false,
+            valkey,
+        )?;
+        let work_item_id = WorkItemId::new();
+        let metadata = req
+            .metadata
+            .unwrap_or_else(|| serde_json::Value::Object(Default::default()));
+        let work_item = WorkItem::new(
+            work_item_id,
+            entity_id,
+            title,
+            req.description.unwrap_or_default(),
+            category,
+            req.deadline,
+            req.asap,
+            metadata,
+            created_by,
+        );
 
-            let path = format!("workitems/{}.json", work_item_id);
-            store
-                .write_json(
-                    "main",
-                    &path,
-                    &work_item,
-                    &format!("Create work item {work_item_id}"),
-                )
-                .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
+        let path = format!("workitems/{}.json", work_item_id);
+        store
+            .write_json(
+                "main",
+                &path,
+                &work_item,
+                &format!("Create work item {work_item_id}"),
+            )
+            .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
 
-            Ok::<_, AppError>(work_item)
-        }
+        Ok::<_, AppError>(work_item)
     })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+    .await?;
 
     Ok(Json(work_item_to_response(&work_item)))
 }
@@ -574,47 +569,42 @@ async fn list_work_items(
         return Err(AppError::Forbidden("entity access denied".to_owned()));
     }
 
-    let items = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = match EntityStore::open(&layout, workspace_id, entity_id, valkey_client.as_ref()) {
-                Ok(s) => s,
-                Err(crate::git::error::GitStorageError::RepoNotFound(_)) => {
-                    return Ok(Vec::new());
-                }
-                Err(e) => return Err(AppError::Internal(e.to_string())),
-            };
-            let ids = store
-                .list_ids::<WorkItem>("main")
-                .map_err(|e| AppError::Internal(format!("list work items: {e}")))?;
-
-            let now = Utc::now();
-            let mut results = Vec::new();
-            for id in ids {
-                let w = store
-                    .read::<WorkItem>("main", id)
-                    .map_err(|e| AppError::Internal(format!("read work item {id}: {e}")))?;
-
-                // Filter by effective status if requested
-                if let Some(ref status_filter) = query.status {
-                    if w.effective_status(now) != *status_filter {
-                        continue;
-                    }
-                }
-                if let Some(ref cat_filter) = query.category {
-                    if w.category() != cat_filter.as_str() {
-                        continue;
-                    }
-                }
-
-                results.push(work_item_to_response(&w));
+    let items = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = match EntityStore::open(layout, workspace_id, entity_id, valkey) {
+            Ok(s) => s,
+            Err(crate::git::error::GitStorageError::RepoNotFound(_)) => {
+                return Ok(Vec::new());
             }
-            Ok::<_, AppError>(results)
+            Err(e) => return Err(AppError::Internal(e.to_string())),
+        };
+        let ids = store
+            .list_ids::<WorkItem>("main")
+            .map_err(|e| AppError::Internal(format!("list work items: {e}")))?;
+
+        let now = Utc::now();
+        let mut results = Vec::new();
+        for id in ids {
+            let w = store
+                .read::<WorkItem>("main", id)
+                .map_err(|e| AppError::Internal(format!("read work item {id}: {e}")))?;
+
+            // Filter by effective status if requested
+            if let Some(ref status_filter) = query.status {
+                if w.effective_status(now) != *status_filter {
+                    continue;
+                }
+            }
+            if let Some(ref cat_filter) = query.category {
+                if w.category() != cat_filter.as_str() {
+                    continue;
+                }
+            }
+
+            results.push(work_item_to_response(&w));
         }
+        Ok::<_, AppError>(results)
     })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+    .await?;
 
     Ok(Json(items))
 }
@@ -643,18 +633,13 @@ async fn get_work_item(
     }
 
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
-    let work_item = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
-            store
-                .read::<WorkItem>("main", work_item_id)
-                .map_err(|_| AppError::NotFound(format!("work item {} not found", work_item_id)))
-        }
+    let work_item = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+        store
+            .read::<WorkItem>("main", work_item_id)
+            .map_err(|_| AppError::NotFound(format!("work item {} not found", work_item_id)))
     })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+    .await?;
 
     Ok(Json(work_item_to_response(&work_item)))
 }
@@ -686,47 +671,42 @@ async fn claim_work_item(
     }
 
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
-    let work_item = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
-            let claimed_by = resolve_actor_input(
-                &layout,
-                &store,
-                workspace_id,
-                entity_id,
-                req.claimed_by.as_deref(),
-                req.claimed_by_actor.as_ref(),
-                "claimed_by",
-                true,
-                valkey_client.as_ref(),
-            )?
-            .expect("required actor should exist");
-            let mut w = store
-                .read::<WorkItem>("main", work_item_id)
-                .map_err(|_| AppError::NotFound(format!("work item {} not found", work_item_id)))?;
+    let work_item = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+        let claimed_by = resolve_actor_input(
+            layout,
+            &store,
+            workspace_id,
+            entity_id,
+            req.claimed_by.as_deref(),
+            req.claimed_by_actor.as_ref(),
+            "claimed_by",
+            true,
+            valkey,
+        )?
+        .expect("required actor should exist");
+        let mut w = store
+            .read::<WorkItem>("main", work_item_id)
+            .map_err(|_| AppError::NotFound(format!("work item {} not found", work_item_id)))?;
 
-            // Auto-release expired claims before attempting to claim
-            w.auto_release_expired_claim(Utc::now());
+        // Auto-release expired claims before attempting to claim
+        w.auto_release_expired_claim(Utc::now());
 
-            w.claim(claimed_by, req.ttl_seconds)?;
+        w.claim(claimed_by, req.ttl_seconds)?;
 
-            let path = format!("workitems/{}.json", work_item_id);
-            store
-                .write_json(
-                    "main",
-                    &path,
-                    &w,
-                    &format!("Claim work item {work_item_id}"),
-                )
-                .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
+        let path = format!("workitems/{}.json", work_item_id);
+        store
+            .write_json(
+                "main",
+                &path,
+                &w,
+                &format!("Claim work item {work_item_id}"),
+            )
+            .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
 
-            Ok::<_, AppError>(w)
-        }
+        Ok::<_, AppError>(w)
     })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+    .await?;
 
     Ok(Json(work_item_to_response(&work_item)))
 }
@@ -758,54 +738,49 @@ async fn complete_work_item(
     }
 
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
-    let work_item = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
-            let completed_by = resolve_actor_input(
-                &layout,
-                &store,
-                workspace_id,
-                entity_id,
-                req.completed_by.as_deref(),
-                req.completed_by_actor.as_ref(),
-                "completed_by",
-                true,
-                valkey_client.as_ref(),
-            )?
-            .expect("required actor should exist");
-            let mut w = store
-                .read::<WorkItem>("main", work_item_id)
-                .map_err(|_| AppError::NotFound(format!("work item {} not found", work_item_id)))?;
-            w.auto_release_expired_claim(Utc::now());
-            if let Some(claimed_by) = w.claimed_by()
-                && !w.is_claimed_by_actor(&completed_by)
-            {
-                return Err(AppError::Conflict(format!(
-                    "work item is claimed by {} and cannot be completed by {}",
-                    claimed_by,
-                    completed_by.label()
-                )));
-            }
-
-            w.complete(completed_by, req.result)?;
-
-            let path = format!("workitems/{}.json", work_item_id);
-            store
-                .write_json(
-                    "main",
-                    &path,
-                    &w,
-                    &format!("Complete work item {work_item_id}"),
-                )
-                .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
-
-            Ok::<_, AppError>(w)
+    let work_item = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+        let completed_by = resolve_actor_input(
+            layout,
+            &store,
+            workspace_id,
+            entity_id,
+            req.completed_by.as_deref(),
+            req.completed_by_actor.as_ref(),
+            "completed_by",
+            true,
+            valkey,
+        )?
+        .expect("required actor should exist");
+        let mut w = store
+            .read::<WorkItem>("main", work_item_id)
+            .map_err(|_| AppError::NotFound(format!("work item {} not found", work_item_id)))?;
+        w.auto_release_expired_claim(Utc::now());
+        if let Some(claimed_by) = w.claimed_by()
+            && !w.is_claimed_by_actor(&completed_by)
+        {
+            return Err(AppError::Conflict(format!(
+                "work item is claimed by {} and cannot be completed by {}",
+                claimed_by,
+                completed_by.label()
+            )));
         }
+
+        w.complete(completed_by, req.result)?;
+
+        let path = format!("workitems/{}.json", work_item_id);
+        store
+            .write_json(
+                "main",
+                &path,
+                &w,
+                &format!("Complete work item {work_item_id}"),
+            )
+            .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
+
+        Ok::<_, AppError>(w)
     })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+    .await?;
 
     Ok(Json(work_item_to_response(&work_item)))
 }
@@ -835,32 +810,27 @@ async fn release_work_item(
     }
 
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
-    let work_item = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
-            let mut w = store
-                .read::<WorkItem>("main", work_item_id)
-                .map_err(|_| AppError::NotFound(format!("work item {} not found", work_item_id)))?;
+    let work_item = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+        let mut w = store
+            .read::<WorkItem>("main", work_item_id)
+            .map_err(|_| AppError::NotFound(format!("work item {} not found", work_item_id)))?;
 
-            w.release_claim()?;
+        w.release_claim()?;
 
-            let path = format!("workitems/{}.json", work_item_id);
-            store
-                .write_json(
-                    "main",
-                    &path,
-                    &w,
-                    &format!("Release claim on work item {work_item_id}"),
-                )
-                .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
+        let path = format!("workitems/{}.json", work_item_id);
+        store
+            .write_json(
+                "main",
+                &path,
+                &w,
+                &format!("Release claim on work item {work_item_id}"),
+            )
+            .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
 
-            Ok::<_, AppError>(w)
-        }
+        Ok::<_, AppError>(w)
     })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+    .await?;
 
     Ok(Json(work_item_to_response(&work_item)))
 }
@@ -890,32 +860,27 @@ async fn cancel_work_item(
     }
 
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
-    let work_item = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
-            let mut w = store
-                .read::<WorkItem>("main", work_item_id)
-                .map_err(|_| AppError::NotFound(format!("work item {} not found", work_item_id)))?;
+    let work_item = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+        let mut w = store
+            .read::<WorkItem>("main", work_item_id)
+            .map_err(|_| AppError::NotFound(format!("work item {} not found", work_item_id)))?;
 
-            w.cancel()?;
+        w.cancel()?;
 
-            let path = format!("workitems/{}.json", work_item_id);
-            store
-                .write_json(
-                    "main",
-                    &path,
-                    &w,
-                    &format!("Cancel work item {work_item_id}"),
-                )
-                .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
+        let path = format!("workitems/{}.json", work_item_id);
+        store
+            .write_json(
+                "main",
+                &path,
+                &w,
+                &format!("Cancel work item {work_item_id}"),
+            )
+            .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
 
-            Ok::<_, AppError>(w)
-        }
+        Ok::<_, AppError>(w)
     })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+    .await?;
 
     Ok(Json(work_item_to_response(&work_item)))
 }

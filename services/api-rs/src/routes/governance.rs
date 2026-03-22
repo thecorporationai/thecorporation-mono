@@ -649,9 +649,10 @@ fn validate_holder_for_body(
     match body.body_type() {
         BodyType::BoardOfDirectors => {
             if holder.contact_type() != ContactType::Individual {
-                return Err(AppError::BadRequest(
-                    "board seats require an individual contact".to_owned(),
-                ));
+                return Err(AppError::BadRequest(format!(
+                    "Board seats require an individual contact, but '{}' is not an individual. Create an individual contact with: corp contacts create --name '...' --type individual",
+                    holder.name()
+                )));
             }
             if !matches!(
                 holder.category(),
@@ -660,10 +661,12 @@ fn validate_holder_for_body(
                     | ContactCategory::Officer
                     | ContactCategory::Investor
             ) {
-                return Err(AppError::BadRequest(
-                    "board seats require a board_member, founder, officer, or investor contact"
-                        .to_owned(),
-                ));
+                return Err(AppError::BadRequest(format!(
+                    "Board seats require a contact with category board_member, founder, officer, or investor, but '{}' has category {:?}. Update the contact category with: corp contacts update {} --category board_member",
+                    holder.name(),
+                    holder.category(),
+                    holder.contact_id()
+                )));
             }
         }
         BodyType::LlcMemberVote => {
@@ -674,9 +677,11 @@ fn validate_holder_for_body(
             if !is_member_contact
                 && !holder_has_active_membership_units(store, holder.contact_id())?
             {
-                return Err(AppError::BadRequest(
-                    "llc member-vote seats require a member contact".to_owned(),
-                ));
+                return Err(AppError::BadRequest(format!(
+                    "LLC member-vote seats require a contact with category 'member' or 'founder', or an active membership unit position, but '{}' meets neither requirement. Update the contact category with: corp contacts update {} --category member",
+                    holder.name(),
+                    holder.contact_id()
+                )));
             }
         }
     }
@@ -836,7 +841,7 @@ fn ensure_entity_ready_for_governance(
         .map_err(|e| AppError::Internal(format!("read entity: {e}")))?;
     if entity.formation_status() != FormationStatus::Active {
         return Err(AppError::BadRequest(format!(
-            "{action} requires an active entity, current status is {}",
+            "{action} requires the entity to be fully active, but its current formation status is '{}'. Complete the formation process first (sign documents, file with the state, confirm EIN) with: corp form status",
             entity.formation_status()
         )));
     }
@@ -973,18 +978,12 @@ async fn get_governance_profile(
     let workspace_id = auth.workspace_id();
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let profile = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
-            let profile = read_profile_or_default(&store, entity_id)?;
-            profile.validate().map_err(AppError::UnprocessableEntity)?;
-            Ok::<_, AppError>(profile)
-        }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+    let profile = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+        let profile = read_profile_or_default(&store, entity_id)?;
+        profile.validate().map_err(AppError::UnprocessableEntity)?;
+        Ok::<_, AppError>(profile)
+    }).await?;
 
     Ok(Json(profile))
 }
@@ -1012,63 +1011,57 @@ async fn update_governance_profile(
     let workspace_id = auth.workspace_id();
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let profile = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
-            let mut profile = read_profile_or_default(&store, entity_id)?;
-            profile.update(
-                req.legal_name,
-                req.jurisdiction,
-                req.effective_date,
-                req.adopted_by,
-                req.last_reviewed,
-                req.next_mandatory_review,
-                req.registered_agent_name,
-                req.registered_agent_address,
-                req.board_size,
-                req.incorporator_name,
-                req.incorporator_address,
-                req.principal_name,
-                req.principal_title,
-                req.incomplete_profile,
-            );
-            if let Some(company_address) = req.company_address {
-                profile.set_company_address(company_address);
-            }
-            if let Some(founders) = req.founders {
-                profile.set_founders(founders);
-            }
-            if let Some(directors) = req.directors {
-                profile.set_directors(directors);
-            }
-            if let Some(officers) = req.officers {
-                profile.set_officers(officers);
-            }
-            if let Some(stock_details) = req.stock_details {
-                profile.set_stock_details(stock_details);
-            }
-            if let Some(fiscal_year_end) = req.fiscal_year_end {
-                profile.set_fiscal_year_end(fiscal_year_end);
-            }
-            if let Some(document_options) = req.document_options {
-                profile.set_document_options(document_options);
-            }
-            profile.validate().map_err(AppError::UnprocessableEntity)?;
-            store
-                .write_json(
-                    "main",
-                    GOVERNANCE_PROFILE_PATH,
-                    &profile,
-                    &format!("GOVERNANCE: update profile v{}", profile.version()),
-                )
-                .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
-            Ok::<_, AppError>(profile)
+    let profile = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+        let mut profile = read_profile_or_default(&store, entity_id)?;
+        profile.update(
+            req.legal_name,
+            req.jurisdiction,
+            req.effective_date,
+            req.adopted_by,
+            req.last_reviewed,
+            req.next_mandatory_review,
+            req.registered_agent_name,
+            req.registered_agent_address,
+            req.board_size,
+            req.incorporator_name,
+            req.incorporator_address,
+            req.principal_name,
+            req.principal_title,
+            req.incomplete_profile,
+        );
+        if let Some(company_address) = req.company_address {
+            profile.set_company_address(company_address);
         }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+        if let Some(founders) = req.founders {
+            profile.set_founders(founders);
+        }
+        if let Some(directors) = req.directors {
+            profile.set_directors(directors);
+        }
+        if let Some(officers) = req.officers {
+            profile.set_officers(officers);
+        }
+        if let Some(stock_details) = req.stock_details {
+            profile.set_stock_details(stock_details);
+        }
+        if let Some(fiscal_year_end) = req.fiscal_year_end {
+            profile.set_fiscal_year_end(fiscal_year_end);
+        }
+        if let Some(document_options) = req.document_options {
+            profile.set_document_options(document_options);
+        }
+        profile.validate().map_err(AppError::UnprocessableEntity)?;
+        store
+            .write_json(
+                "main",
+                GOVERNANCE_PROFILE_PATH,
+                &profile,
+                &format!("GOVERNANCE: update profile v{}", profile.version()),
+            )
+            .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
+        Ok::<_, AppError>(profile)
+    }).await?;
 
     Ok(Json(profile))
 }
@@ -1097,70 +1090,64 @@ async fn generate_governance_doc_bundle(
     state.enforce_creation_rate_limit("governance.doc_bundle.generate", workspace_id, 120, 60)?;
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let response = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
-            let profile = read_profile_or_default(&store, entity_id)?;
-            profile.validate().map_err(AppError::UnprocessableEntity)?;
+    let response = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+        let profile = read_profile_or_default(&store, entity_id)?;
+        profile.validate().map_err(AppError::UnprocessableEntity)?;
 
-            let entity_type = governance_doc_entity_type_for(profile.entity_type());
-            let template_version = req.template_version.unwrap_or_else(|| "v1".to_owned());
-            let rendered =
-                render_bundle_from_profile(entity_type, entity_id, &profile, &template_version)
-                    .map_err(|e| {
-                        AppError::Internal(format!("render governance doc bundle: {e:#}"))
-                    })?;
-            if !rendered.manifest.warnings.is_empty() {
-                return Err(AppError::UnprocessableEntity(format!(
-                    "governance profile is incomplete for production document generation: {}",
-                    rendered.manifest.warnings.join("; ")
-                )));
-            }
-
-            let bundle_id = rendered.manifest.bundle_id;
-            let manifest_path = bundle_manifest_path(bundle_id);
-            let history_path = bundle_history_path(bundle_id);
-            let docs_prefix = bundle_documents_prefix(bundle_id);
-
-            let mut files = Vec::with_capacity(rendered.documents.len() + 3);
-            for doc in &rendered.documents {
-                files.push(FileWrite::raw(
-                    format!("{docs_prefix}/{}", doc.path),
-                    doc.content.clone(),
-                ));
-            }
-            files.push(
-                FileWrite::json(manifest_path, &rendered.manifest)
-                    .map_err(|e| AppError::Internal(format!("serialize manifest: {e}")))?,
-            );
-            files.push(
-                FileWrite::json(GOVERNANCE_DOC_BUNDLES_CURRENT_PATH, &rendered.current)
-                    .map_err(|e| AppError::Internal(format!("serialize current pointer: {e}")))?,
-            );
-            files.push(
-                FileWrite::json(history_path, &rendered.summary)
-                    .map_err(|e| AppError::Internal(format!("serialize summary: {e}")))?,
-            );
-
-            store
-                .commit(
-                    "main",
-                    &format!("GOVERNANCE: generate doc bundle {bundle_id}"),
-                    files,
-                )
-                .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
-
-            Ok::<_, AppError>(GenerateGovernanceDocBundleResponse {
-                manifest: rendered.manifest,
-                current: rendered.current,
-                summary: rendered.summary,
-            })
+        let entity_type = governance_doc_entity_type_for(profile.entity_type());
+        let template_version = req.template_version.unwrap_or_else(|| "v1".to_owned());
+        let rendered =
+            render_bundle_from_profile(entity_type, entity_id, &profile, &template_version)
+                .map_err(|e| {
+                    AppError::Internal(format!("render governance doc bundle: {e:#}"))
+                })?;
+        if !rendered.manifest.warnings.is_empty() {
+            return Err(AppError::UnprocessableEntity(format!(
+                "governance profile is incomplete for production document generation: {}",
+                rendered.manifest.warnings.join("; ")
+            )));
         }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+
+        let bundle_id = rendered.manifest.bundle_id;
+        let manifest_path = bundle_manifest_path(bundle_id);
+        let history_path = bundle_history_path(bundle_id);
+        let docs_prefix = bundle_documents_prefix(bundle_id);
+
+        let mut files = Vec::with_capacity(rendered.documents.len() + 3);
+        for doc in &rendered.documents {
+            files.push(FileWrite::raw(
+                format!("{docs_prefix}/{}", doc.path),
+                doc.content.clone(),
+            ));
+        }
+        files.push(
+            FileWrite::json(manifest_path, &rendered.manifest)
+                .map_err(|e| AppError::Internal(format!("serialize manifest: {e}")))?,
+        );
+        files.push(
+            FileWrite::json(GOVERNANCE_DOC_BUNDLES_CURRENT_PATH, &rendered.current)
+                .map_err(|e| AppError::Internal(format!("serialize current pointer: {e}")))?,
+        );
+        files.push(
+            FileWrite::json(history_path, &rendered.summary)
+                .map_err(|e| AppError::Internal(format!("serialize summary: {e}")))?,
+        );
+
+        store
+            .commit(
+                "main",
+                &format!("GOVERNANCE: generate doc bundle {bundle_id}"),
+                files,
+            )
+            .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
+
+        Ok::<_, AppError>(GenerateGovernanceDocBundleResponse {
+            manifest: rendered.manifest,
+            current: rendered.current,
+            summary: rendered.summary,
+        })
+    }).await?;
 
     Ok(Json(response))
 }
@@ -1186,22 +1173,16 @@ async fn get_current_governance_doc_bundle(
     let workspace_id = auth.workspace_id();
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let current = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
-            let current = read_doc_bundle_current(&store)?;
-            if current.entity_id != entity_id {
-                return Err(AppError::NotFound(format!(
-                    "current governance doc bundle does not belong to entity {entity_id}"
-                )));
-            }
-            Ok::<_, AppError>(current)
+    let current = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+        let current = read_doc_bundle_current(&store)?;
+        if current.entity_id != entity_id {
+            return Err(AppError::NotFound(format!(
+                "current governance doc bundle does not belong to entity {entity_id}"
+            )));
         }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+        Ok::<_, AppError>(current)
+    }).await?;
 
     Ok(Json(current))
 }
@@ -1226,17 +1207,11 @@ async fn list_governance_doc_bundles(
     let workspace_id = auth.workspace_id();
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let summaries = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
-            let summaries = list_doc_bundle_summaries(&store)?;
-            Ok::<_, AppError>(summaries)
-        }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+    let summaries = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+        let summaries = list_doc_bundle_summaries(&store)?;
+        Ok::<_, AppError>(summaries)
+    }).await?;
 
     Ok(Json(summaries))
 }
@@ -1263,30 +1238,24 @@ async fn get_governance_doc_bundle(
     let workspace_id = auth.workspace_id();
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let manifest = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
-            let path = bundle_manifest_path(bundle_id);
-            let manifest = store
-                .read_json::<GovernanceDocBundleManifest>("main", &path)
-                .map_err(|e| match e {
-                    GitStorageError::NotFound(_) => {
-                        AppError::NotFound(format!("governance doc bundle {bundle_id} not found"))
-                    }
-                    other => AppError::Internal(format!("read governance doc bundle: {other}")),
-                })?;
-            if manifest.entity_id != entity_id {
-                return Err(AppError::NotFound(format!(
-                    "governance doc bundle {bundle_id} not found for entity {entity_id}"
-                )));
-            }
-            Ok::<_, AppError>(manifest)
+    let manifest = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+        let path = bundle_manifest_path(bundle_id);
+        let manifest = store
+            .read_json::<GovernanceDocBundleManifest>("main", &path)
+            .map_err(|e| match e {
+                GitStorageError::NotFound(_) => {
+                    AppError::NotFound(format!("governance doc bundle {bundle_id} not found"))
+                }
+                other => AppError::Internal(format!("read governance doc bundle: {other}")),
+            })?;
+        if manifest.entity_id != entity_id {
+            return Err(AppError::NotFound(format!(
+                "governance doc bundle {bundle_id} not found for entity {entity_id}"
+            )));
         }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+        Ok::<_, AppError>(manifest)
+    }).await?;
 
     Ok(Json(manifest))
 }
@@ -1508,38 +1477,32 @@ async fn create_governance_audit_event(
         ));
     }
 
-    let entry = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
-            let entry = build_audit_entry(
-                &store,
-                entity_id,
-                BuildAuditEntryInput {
-                    event_type: req.event_type,
-                    action: req.action,
-                    details: req.details,
-                    evidence_refs: req.evidence_refs,
-                    linked_intent_id: req.linked_intent_id,
-                    linked_incident_id: req.linked_incident_id,
-                    linked_trigger_id: req.linked_trigger_id,
-                    linked_mode_event_id: req.linked_mode_event_id,
-                },
-            )?;
-            store
-                .write_json(
-                    "main",
-                    &audit_entry_path(entry.audit_entry_id()),
-                    &entry,
-                    &format!("GOVERNANCE: append audit entry {}", entry.audit_entry_id()),
-                )
-                .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
-            Ok::<_, AppError>(entry)
-        }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+    let entry = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+        let entry = build_audit_entry(
+            &store,
+            entity_id,
+            BuildAuditEntryInput {
+                event_type: req.event_type,
+                action: req.action,
+                details: req.details,
+                evidence_refs: req.evidence_refs,
+                linked_intent_id: req.linked_intent_id,
+                linked_incident_id: req.linked_incident_id,
+                linked_trigger_id: req.linked_trigger_id,
+                linked_mode_event_id: req.linked_mode_event_id,
+            },
+        )?;
+        store
+            .write_json(
+                "main",
+                &audit_entry_path(entry.audit_entry_id()),
+                &entry,
+                &format!("GOVERNANCE: append audit entry {}", entry.audit_entry_id()),
+            )
+            .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
+        Ok::<_, AppError>(entry)
+    }).await?;
 
     Ok(Json(entry))
 }
@@ -1564,75 +1527,69 @@ async fn write_governance_audit_checkpoint(
     let entity_id = req.entity_id;
     state.enforce_creation_rate_limit("governance.audit_checkpoint.create", workspace_id, 120, 60)?;
 
-    let checkpoint = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
-            let entries = list_audit_entries_sorted(&store, entity_id)?;
-            let latest = entries.last().ok_or_else(|| {
-                AppError::UnprocessableEntity(
-                    "cannot checkpoint governance audit chain without entries".to_owned(),
-                )
-            })?;
-            let total_entries = u64::try_from(entries.len())
-                .map_err(|_| AppError::Internal("audit entry count overflow".to_owned()))?;
-            let checkpoint = GovernanceAuditCheckpoint::new(
-                GovernanceAuditCheckpointId::new(),
-                entity_id,
-                latest.audit_entry_id(),
-                latest.entry_hash().to_owned(),
-                total_entries,
-            );
-            let checkpoint_audit_entry = build_audit_entry(
-                &store,
-                entity_id,
-                BuildAuditEntryInput {
-                    event_type: GovernanceAuditEventType::CheckpointWritten,
-                    action: "governance audit checkpoint written".to_owned(),
-                    details: serde_json::json!({
-                        "checkpoint_id": checkpoint.checkpoint_id(),
-                        "latest_entry_id": checkpoint.latest_entry_id(),
-                        "latest_entry_hash": checkpoint.latest_entry_hash(),
-                        "total_entries": checkpoint.total_entries(),
-                    }),
-                    evidence_refs: Vec::new(),
-                    linked_intent_id: None,
-                    linked_incident_id: None,
-                    linked_trigger_id: None,
-                    linked_mode_event_id: None,
-                },
-            )?;
+    let checkpoint = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+        let entries = list_audit_entries_sorted(&store, entity_id)?;
+        let latest = entries.last().ok_or_else(|| {
+            AppError::UnprocessableEntity(
+                "cannot checkpoint governance audit chain without entries".to_owned(),
+            )
+        })?;
+        let total_entries = u64::try_from(entries.len())
+            .map_err(|_| AppError::Internal("audit entry count overflow".to_owned()))?;
+        let checkpoint = GovernanceAuditCheckpoint::new(
+            GovernanceAuditCheckpointId::new(),
+            entity_id,
+            latest.audit_entry_id(),
+            latest.entry_hash().to_owned(),
+            total_entries,
+        );
+        let checkpoint_audit_entry = build_audit_entry(
+            &store,
+            entity_id,
+            BuildAuditEntryInput {
+                event_type: GovernanceAuditEventType::CheckpointWritten,
+                action: "governance audit checkpoint written".to_owned(),
+                details: serde_json::json!({
+                    "checkpoint_id": checkpoint.checkpoint_id(),
+                    "latest_entry_id": checkpoint.latest_entry_id(),
+                    "latest_entry_hash": checkpoint.latest_entry_hash(),
+                    "total_entries": checkpoint.total_entries(),
+                }),
+                evidence_refs: Vec::new(),
+                linked_intent_id: None,
+                linked_incident_id: None,
+                linked_trigger_id: None,
+                linked_mode_event_id: None,
+            },
+        )?;
 
-            store
-                .commit(
-                    "main",
-                    &format!(
-                        "GOVERNANCE: write audit checkpoint {}",
-                        checkpoint.checkpoint_id()
-                    ),
-                    vec![
-                        FileWrite::json(
-                            audit_checkpoint_path(checkpoint.checkpoint_id()),
-                            &checkpoint,
-                        )
-                        .map_err(|e| AppError::Internal(format!("serialize checkpoint: {e}")))?,
-                        FileWrite::json(
-                            audit_entry_path(checkpoint_audit_entry.audit_entry_id()),
-                            &checkpoint_audit_entry,
-                        )
-                        .map_err(|e| {
-                            AppError::Internal(format!("serialize governance audit entry: {e}"))
-                        })?,
-                    ],
-                )
-                .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
+        store
+            .commit(
+                "main",
+                &format!(
+                    "GOVERNANCE: write audit checkpoint {}",
+                    checkpoint.checkpoint_id()
+                ),
+                vec![
+                    FileWrite::json(
+                        audit_checkpoint_path(checkpoint.checkpoint_id()),
+                        &checkpoint,
+                    )
+                    .map_err(|e| AppError::Internal(format!("serialize checkpoint: {e}")))?,
+                    FileWrite::json(
+                        audit_entry_path(checkpoint_audit_entry.audit_entry_id()),
+                        &checkpoint_audit_entry,
+                    )
+                    .map_err(|e| {
+                        AppError::Internal(format!("serialize governance audit entry: {e}"))
+                    })?,
+                ],
+            )
+            .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
 
-            Ok::<_, AppError>(checkpoint)
-        }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+        Ok::<_, AppError>(checkpoint)
+    }).await?;
 
     Ok(Json(checkpoint))
 }
@@ -1656,33 +1613,27 @@ async fn list_governance_audit_checkpoints(
     let workspace_id = auth.workspace_id();
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let checkpoints = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
-            let ids = store
-                .list_ids::<GovernanceAuditCheckpoint>("main")
+    let checkpoints = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+        let ids = store
+            .list_ids::<GovernanceAuditCheckpoint>("main")
+            .map_err(|e| {
+                AppError::Internal(format!("list governance audit checkpoints: {e}"))
+            })?;
+        let mut checkpoints = Vec::new();
+        for id in ids {
+            let checkpoint = store
+                .read::<GovernanceAuditCheckpoint>("main", id)
                 .map_err(|e| {
-                    AppError::Internal(format!("list governance audit checkpoints: {e}"))
+                    AppError::Internal(format!("read governance audit checkpoint {id}: {e}"))
                 })?;
-            let mut checkpoints = Vec::new();
-            for id in ids {
-                let checkpoint = store
-                    .read::<GovernanceAuditCheckpoint>("main", id)
-                    .map_err(|e| {
-                        AppError::Internal(format!("read governance audit checkpoint {id}: {e}"))
-                    })?;
-                if checkpoint.entity_id() == entity_id {
-                    checkpoints.push(checkpoint);
-                }
+            if checkpoint.entity_id() == entity_id {
+                checkpoints.push(checkpoint);
             }
-            checkpoints.sort_by(|a, b| b.created_at().cmp(&a.created_at()));
-            Ok::<_, AppError>(checkpoints)
         }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+        checkpoints.sort_by(|a, b| b.created_at().cmp(&a.created_at()));
+        Ok::<_, AppError>(checkpoints)
+    }).await?;
 
     Ok(Json(checkpoints))
 }
@@ -1705,138 +1656,132 @@ async fn verify_governance_audit_chain(
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = req.entity_id;
 
-    let report = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
-            let entries = list_audit_entries_sorted(&store, entity_id)?;
-            let total_entries = u64::try_from(entries.len())
-                .map_err(|_| AppError::Internal("audit entry count overflow".to_owned()))?;
-            let latest_entry_hash = entries.last().map(|entry| entry.entry_hash().to_owned());
+    let report = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+        let entries = list_audit_entries_sorted(&store, entity_id)?;
+        let total_entries = u64::try_from(entries.len())
+            .map_err(|_| AppError::Internal("audit entry count overflow".to_owned()))?;
+        let latest_entry_hash = entries.last().map(|entry| entry.entry_hash().to_owned());
 
-            let mut anomalies = Vec::new();
-            let mut expected_previous_hash: Option<String> = None;
-            for (index, entry) in entries.iter().enumerate() {
-                if entry.previous_entry_hash().map(ToOwned::to_owned) != expected_previous_hash {
-                    anomalies.push(format!(
-                        "entry {} previous hash mismatch at index {}",
-                        entry.audit_entry_id(),
-                        index
-                    ));
-                }
-                if !entry.verify_integrity() {
-                    anomalies.push(format!(
-                        "entry {} hash verification failed",
-                        entry.audit_entry_id()
-                    ));
-                }
-                expected_previous_hash = Some(entry.entry_hash().to_owned());
+        let mut anomalies = Vec::new();
+        let mut expected_previous_hash: Option<String> = None;
+        for (index, entry) in entries.iter().enumerate() {
+            if entry.previous_entry_hash().map(ToOwned::to_owned) != expected_previous_hash {
+                anomalies.push(format!(
+                    "entry {} previous hash mismatch at index {}",
+                    entry.audit_entry_id(),
+                    index
+                ));
             }
-
-            let ok = anomalies.is_empty();
-            let mut triggered_lockdown = false;
-            let mut trigger_id = None;
-            let mut incident_id = None;
-
-            if !ok {
-                let idempotency_suffix = latest_entry_hash
-                    .clone()
-                    .unwrap_or_else(|| "none".to_owned());
-                let trigger_result = apply_lockdown_trigger(
-                    &store,
-                    entity_id,
-                    LockdownTriggerInput {
-                        source: GovernanceTriggerSource::ExecutionGate,
-                        trigger_type: GovernanceTriggerType::AuditChainVerificationFailed,
-                        severity: IncidentSeverity::Critical,
-                        title: "Governance audit chain verification failed".to_owned(),
-                        description: format!(
-                            "detected {} anomaly/anomalies in governance audit chain",
-                            anomalies.len()
-                        ),
-                        evidence_refs: vec![format!("governance-audit-chain:{idempotency_suffix}")],
-                        linked_intent_id: None,
-                        linked_escalation_id: None,
-                        idempotency_key: Some(format!(
-                            "audit-chain-verification:{idempotency_suffix}"
-                        )),
-                        existing_incident_id: None,
-                        updated_by: None,
-                    },
-                )?;
-                triggered_lockdown = true;
-                trigger_id = Some(trigger_result.trigger.trigger_id());
-                incident_id = Some(trigger_result.incident.incident_id());
+            if !entry.verify_integrity() {
+                anomalies.push(format!(
+                    "entry {} hash verification failed",
+                    entry.audit_entry_id()
+                ));
             }
+            expected_previous_hash = Some(entry.entry_hash().to_owned());
+        }
 
-            let report = GovernanceAuditVerificationReport::new(
-                GovernanceAuditVerificationId::new(),
-                entity_id,
-                ok,
-                total_entries,
-                anomalies.clone(),
-                latest_entry_hash.clone(),
-                triggered_lockdown,
-                trigger_id,
-                incident_id,
-            );
-            let verification_audit_entry = build_audit_entry(
+        let ok = anomalies.is_empty();
+        let mut triggered_lockdown = false;
+        let mut trigger_id = None;
+        let mut incident_id = None;
+
+        if !ok {
+            let idempotency_suffix = latest_entry_hash
+                .clone()
+                .unwrap_or_else(|| "none".to_owned());
+            let trigger_result = apply_lockdown_trigger(
                 &store,
                 entity_id,
-                BuildAuditEntryInput {
-                    event_type: if ok {
-                        GovernanceAuditEventType::ChainVerified
-                    } else {
-                        GovernanceAuditEventType::ChainVerificationFailed
-                    },
-                    action: if ok {
-                        "governance audit chain verification passed".to_owned()
-                    } else {
-                        "governance audit chain verification failed".to_owned()
-                    },
-                    details: serde_json::json!({
-                        "verification_id": report.verification_id(),
-                        "ok": report.ok(),
-                        "total_entries": report.total_entries(),
-                        "anomaly_count": report.anomalies().len(),
-                    }),
-                    evidence_refs: Vec::new(),
+                LockdownTriggerInput {
+                    source: GovernanceTriggerSource::ExecutionGate,
+                    trigger_type: GovernanceTriggerType::AuditChainVerificationFailed,
+                    severity: IncidentSeverity::Critical,
+                    title: "Governance audit chain verification failed".to_owned(),
+                    description: format!(
+                        "detected {} anomaly/anomalies in governance audit chain",
+                        anomalies.len()
+                    ),
+                    evidence_refs: vec![format!("governance-audit-chain:{idempotency_suffix}")],
                     linked_intent_id: None,
-                    linked_incident_id: report.incident_id(),
-                    linked_trigger_id: report.trigger_id(),
-                    linked_mode_event_id: None,
+                    linked_escalation_id: None,
+                    idempotency_key: Some(format!(
+                        "audit-chain-verification:{idempotency_suffix}"
+                    )),
+                    existing_incident_id: None,
+                    updated_by: None,
                 },
             )?;
-
-            store
-                .commit(
-                    "main",
-                    &format!(
-                        "GOVERNANCE: verify audit chain {}",
-                        report.verification_id()
-                    ),
-                    vec![
-                        FileWrite::json(audit_verification_path(report.verification_id()), &report)
-                            .map_err(|e| {
-                                AppError::Internal(format!("serialize verification: {e}"))
-                            })?,
-                        FileWrite::json(
-                            audit_entry_path(verification_audit_entry.audit_entry_id()),
-                            &verification_audit_entry,
-                        )
-                        .map_err(|e| {
-                            AppError::Internal(format!("serialize governance audit entry: {e}"))
-                        })?,
-                    ],
-                )
-                .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
-
-            Ok::<_, AppError>(report)
+            triggered_lockdown = true;
+            trigger_id = Some(trigger_result.trigger.trigger_id());
+            incident_id = Some(trigger_result.incident.incident_id());
         }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+
+        let report = GovernanceAuditVerificationReport::new(
+            GovernanceAuditVerificationId::new(),
+            entity_id,
+            ok,
+            total_entries,
+            anomalies.clone(),
+            latest_entry_hash.clone(),
+            triggered_lockdown,
+            trigger_id,
+            incident_id,
+        );
+        let verification_audit_entry = build_audit_entry(
+            &store,
+            entity_id,
+            BuildAuditEntryInput {
+                event_type: if ok {
+                    GovernanceAuditEventType::ChainVerified
+                } else {
+                    GovernanceAuditEventType::ChainVerificationFailed
+                },
+                action: if ok {
+                    "governance audit chain verification passed".to_owned()
+                } else {
+                    "governance audit chain verification failed".to_owned()
+                },
+                details: serde_json::json!({
+                    "verification_id": report.verification_id(),
+                    "ok": report.ok(),
+                    "total_entries": report.total_entries(),
+                    "anomaly_count": report.anomalies().len(),
+                }),
+                evidence_refs: Vec::new(),
+                linked_intent_id: None,
+                linked_incident_id: report.incident_id(),
+                linked_trigger_id: report.trigger_id(),
+                linked_mode_event_id: None,
+            },
+        )?;
+
+        store
+            .commit(
+                "main",
+                &format!(
+                    "GOVERNANCE: verify audit chain {}",
+                    report.verification_id()
+                ),
+                vec![
+                    FileWrite::json(audit_verification_path(report.verification_id()), &report)
+                        .map_err(|e| {
+                            AppError::Internal(format!("serialize verification: {e}"))
+                        })?,
+                    FileWrite::json(
+                        audit_entry_path(verification_audit_entry.audit_entry_id()),
+                        &verification_audit_entry,
+                    )
+                    .map_err(|e| {
+                        AppError::Internal(format!("serialize governance audit entry: {e}"))
+                    })?,
+                ],
+            )
+            .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
+
+        Ok::<_, AppError>(report)
+    }).await?;
 
     Ok(Json(report))
 }
@@ -1860,33 +1805,27 @@ async fn list_governance_audit_verifications(
     let workspace_id = auth.workspace_id();
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let reports = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
-            let ids = store
-                .list_ids::<GovernanceAuditVerificationReport>("main")
+    let reports = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+        let ids = store
+            .list_ids::<GovernanceAuditVerificationReport>("main")
+            .map_err(|e| {
+                AppError::Internal(format!("list governance audit verifications: {e}"))
+            })?;
+        let mut reports = Vec::new();
+        for id in ids {
+            let report = store
+                .read::<GovernanceAuditVerificationReport>("main", id)
                 .map_err(|e| {
-                    AppError::Internal(format!("list governance audit verifications: {e}"))
+                    AppError::Internal(format!("read governance audit verification {id}: {e}"))
                 })?;
-            let mut reports = Vec::new();
-            for id in ids {
-                let report = store
-                    .read::<GovernanceAuditVerificationReport>("main", id)
-                    .map_err(|e| {
-                        AppError::Internal(format!("read governance audit verification {id}: {e}"))
-                    })?;
-                if report.entity_id() == entity_id {
-                    reports.push(report);
-                }
+            if report.entity_id() == entity_id {
+                reports.push(report);
             }
-            reports.sort_by(|a, b| b.created_at().cmp(&a.created_at()));
-            Ok::<_, AppError>(reports)
         }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+        reports.sort_by(|a, b| b.created_at().cmp(&a.created_at()));
+        Ok::<_, AppError>(reports)
+    }).await?;
 
     Ok(Json(reports))
 }
@@ -1913,63 +1852,57 @@ async fn create_governance_body(
     let entity_id = req.entity_id;
     state.enforce_creation_rate_limit("governance.body.create", workspace_id, 120, 60)?;
 
-    let body = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
-            ensure_entity_ready_for_governance(&store, "governance body creation")?;
-            let entity = store
-                .read_entity("main")
-                .map_err(|e| AppError::Internal(format!("read entity: {e}")))?;
-            validate_body_type_for_entity(entity.entity_type(), req.body_type)?;
-            let body_ids = store
-                .list_ids::<GovernanceBody>("main")
-                .map_err(|e| AppError::Internal(format!("list governance bodies: {e}")))?;
-            let normalized_name = req.name.trim().to_ascii_lowercase();
-            for existing_id in body_ids {
-                let existing = store
-                    .read::<GovernanceBody>("main", existing_id)
-                    .map_err(|e| {
-                        AppError::Internal(format!("read governance body {existing_id}: {e}"))
-                    })?;
-                if existing.entity_id() == entity_id
-                    && existing.body_type() == req.body_type
-                    && existing.status() == BodyStatus::Active
-                    && existing.name().trim().to_ascii_lowercase() == normalized_name
-                {
-                    return Err(AppError::Conflict(format!(
-                        "active governance body already exists for {} (body_id: {}). Use: corp governance seats {}",
-                        req.name, existing_id, existing_id
-                    )));
-                }
+    let body = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+        ensure_entity_ready_for_governance(&store, "governance body creation")?;
+        let entity = store
+            .read_entity("main")
+            .map_err(|e| AppError::Internal(format!("read entity: {e}")))?;
+        validate_body_type_for_entity(entity.entity_type(), req.body_type)?;
+        let body_ids = store
+            .list_ids::<GovernanceBody>("main")
+            .map_err(|e| AppError::Internal(format!("list governance bodies: {e}")))?;
+        let normalized_name = req.name.trim().to_ascii_lowercase();
+        for existing_id in body_ids {
+            let existing = store
+                .read::<GovernanceBody>("main", existing_id)
+                .map_err(|e| {
+                    AppError::Internal(format!("read governance body {existing_id}: {e}"))
+                })?;
+            if existing.entity_id() == entity_id
+                && existing.body_type() == req.body_type
+                && existing.status() == BodyStatus::Active
+                && existing.name().trim().to_ascii_lowercase() == normalized_name
+            {
+                return Err(AppError::Conflict(format!(
+                    "active governance body already exists for {} (body_id: {}). Use: corp governance seats {}",
+                    req.name, existing_id, existing_id
+                )));
             }
-
-            let body_id = GovernanceBodyId::new();
-            let body = GovernanceBody::new(
-                body_id,
-                entity_id,
-                req.body_type,
-                req.name,
-                req.quorum_rule,
-                req.voting_method,
-            )?;
-
-            let path = format!("governance/bodies/{}.json", body_id);
-            store
-                .write_json(
-                    "main",
-                    &path,
-                    &body,
-                    &format!("Create governance body {body_id}"),
-                )
-                .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
-
-            Ok::<_, AppError>(body)
         }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+
+        let body_id = GovernanceBodyId::new();
+        let body = GovernanceBody::new(
+            body_id,
+            entity_id,
+            req.body_type,
+            req.name,
+            req.quorum_rule,
+            req.voting_method,
+        )?;
+
+        let path = format!("governance/bodies/{}.json", body_id);
+        store
+            .write_json(
+                "main",
+                &path,
+                &body,
+                &format!("Create governance body {body_id}"),
+            )
+            .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
+
+        Ok::<_, AppError>(body)
+    }).await?;
 
     Ok(Json(body_to_response(&body)))
 }
@@ -1993,30 +1926,24 @@ async fn list_governance_bodies(
     let workspace_id = auth.workspace_id();
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let bodies = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
-            let ids = store
-                .list_ids::<GovernanceBody>("main")
-                .map_err(|e| AppError::Internal(format!("list governance bodies: {e}")))?;
+    let bodies = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+        let ids = store
+            .list_ids::<GovernanceBody>("main")
+            .map_err(|e| AppError::Internal(format!("list governance bodies: {e}")))?;
 
-            let mut results = Vec::new();
-            for id in ids {
-                let b = store
-                    .read::<GovernanceBody>("main", id)
-                    .map_err(|e| AppError::Internal(format!("read governance body {id}: {e}")))?;
-                // Filter to bodies belonging to this entity
-                if b.entity_id() == entity_id {
-                    results.push(body_to_response(&b));
-                }
+        let mut results = Vec::new();
+        for id in ids {
+            let b = store
+                .read::<GovernanceBody>("main", id)
+                .map_err(|e| AppError::Internal(format!("read governance body {id}: {e}")))?;
+            // Filter to bodies belonging to this entity
+            if b.entity_id() == entity_id {
+                results.push(body_to_response(&b));
             }
-            Ok::<_, AppError>(results)
         }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+        Ok::<_, AppError>(results)
+    }).await?;
 
     Ok(Json(bodies))
 }
@@ -2041,16 +1968,10 @@ async fn get_governance_mode(
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = query.entity_id;
 
-    let mode = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
-            Ok::<_, AppError>(read_mode_or_default(&store, entity_id))
-        }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+    let mode = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+        Ok::<_, AppError>(read_mode_or_default(&store, entity_id))
+    }).await?;
 
     Ok(Json(mode_to_response(&mode)))
 }
@@ -2075,50 +1996,44 @@ async fn set_governance_mode(
     let entity_id = req.entity_id;
     let updated_by = auth.contact_id();
 
-    let mode = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
-            let current = read_mode_or_default(&store, entity_id);
+    let mode = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+        let current = read_mode_or_default(&store, entity_id);
 
-            if matches!(current.mode(), GovernanceMode::IncidentLockdown)
-                && matches!(req.mode, GovernanceMode::Normal)
-            {
-                let has_reason = req
-                    .reason
-                    .as_deref()
-                    .is_some_and(|reason| !reason.trim().is_empty());
-                if !has_reason {
-                    return Err(AppError::UnprocessableEntity(
-                        "unlocking from incident_lockdown requires a non-empty reason".to_owned(),
-                    ));
-                }
-                if req.incident_ids.is_empty() {
-                    return Err(AppError::UnprocessableEntity(
-                        "unlocking from incident_lockdown requires incident_ids".to_owned(),
-                    ));
-                }
+        if matches!(current.mode(), GovernanceMode::IncidentLockdown)
+            && matches!(req.mode, GovernanceMode::Normal)
+        {
+            let has_reason = req
+                .reason
+                .as_deref()
+                .is_some_and(|reason| !reason.trim().is_empty());
+            if !has_reason {
+                return Err(AppError::UnprocessableEntity(
+                    "unlocking from incident_lockdown requires a non-empty reason".to_owned(),
+                ));
             }
-
-            let result = set_mode_with_history(
-                &store,
-                entity_id,
-                SetModeWithHistoryInput {
-                    target_mode: req.mode,
-                    reason: req.reason,
-                    incident_ids: req.incident_ids,
-                    evidence_refs: req.evidence_refs,
-                    trigger_id: None,
-                    updated_by,
-                    commit_message: format!("GOVERNANCE: set mode {:?}", req.mode),
-                },
-            )?;
-            Ok::<_, AppError>(result.mode)
+            if req.incident_ids.is_empty() {
+                return Err(AppError::UnprocessableEntity(
+                    "unlocking from incident_lockdown requires incident_ids".to_owned(),
+                ));
+            }
         }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+
+        let result = set_mode_with_history(
+            &store,
+            entity_id,
+            SetModeWithHistoryInput {
+                target_mode: req.mode,
+                reason: req.reason,
+                incident_ids: req.incident_ids,
+                evidence_refs: req.evidence_refs,
+                trigger_id: None,
+                updated_by,
+                commit_message: format!("GOVERNANCE: set mode {:?}", req.mode),
+            },
+        )?;
+        Ok::<_, AppError>(result.mode)
+    }).await?;
 
     Ok(Json(mode_to_response(&mode)))
 }
@@ -2144,33 +2059,27 @@ async fn create_incident(
     let title = require_non_empty_trimmed(&req.title, "title")?;
     let description = require_non_empty_trimmed(&req.description, "description")?;
 
-    let incident = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
-            let incident = GovernanceIncident::new(
-                IncidentId::new(),
-                entity_id,
-                req.severity,
-                title,
-                description,
-            );
-            let path = format!("governance/incidents/{}.json", incident.incident_id());
-            store
-                .write_json(
-                    "main",
-                    &path,
-                    &incident,
-                    &format!("GOVERNANCE: create incident {}", incident.incident_id()),
-                )
-                .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
+    let incident = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+        let incident = GovernanceIncident::new(
+            IncidentId::new(),
+            entity_id,
+            req.severity,
+            title,
+            description,
+        );
+        let path = format!("governance/incidents/{}.json", incident.incident_id());
+        store
+            .write_json(
+                "main",
+                &path,
+                &incident,
+                &format!("GOVERNANCE: create incident {}", incident.incident_id()),
+            )
+            .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
 
-            Ok::<_, AppError>(incident)
-        }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+        Ok::<_, AppError>(incident)
+    }).await?;
 
     Ok(Json(incident_to_response(&incident)))
 }
@@ -2194,29 +2103,23 @@ async fn list_incidents(
     let workspace_id = auth.workspace_id();
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let incidents = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
-            let ids = store
-                .list_ids::<GovernanceIncident>("main")
-                .map_err(|e| AppError::Internal(format!("list incidents: {e}")))?;
-            let mut out = Vec::new();
-            for id in ids {
-                let incident = store
-                    .read::<GovernanceIncident>("main", id)
-                    .map_err(|e| AppError::Internal(format!("read incident {id}: {e}")))?;
-                if incident.entity_id() == entity_id {
-                    out.push(incident_to_response(&incident));
-                }
+    let incidents = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+        let ids = store
+            .list_ids::<GovernanceIncident>("main")
+            .map_err(|e| AppError::Internal(format!("list incidents: {e}")))?;
+        let mut out = Vec::new();
+        for id in ids {
+            let incident = store
+                .read::<GovernanceIncident>("main", id)
+                .map_err(|e| AppError::Internal(format!("read incident {id}: {e}")))?;
+            if incident.entity_id() == entity_id {
+                out.push(incident_to_response(&incident));
             }
-            out.sort_by(|a, b| b.created_at.cmp(&a.created_at));
-            Ok::<_, AppError>(out)
         }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+        out.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+        Ok::<_, AppError>(out)
+    }).await?;
 
     Ok(Json(incidents))
 }
@@ -2244,29 +2147,23 @@ async fn resolve_incident(
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = query.entity_id;
 
-    let incident = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
-            let mut incident = store
-                .read::<GovernanceIncident>("main", incident_id)
-                .map_err(|_| AppError::NotFound(format!("incident {incident_id} not found")))?;
-            incident.resolve();
-            let path = format!("governance/incidents/{}.json", incident_id);
-            store
-                .write_json(
-                    "main",
-                    &path,
-                    &incident,
-                    &format!("GOVERNANCE: resolve incident {incident_id}"),
-                )
-                .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
-            Ok::<_, AppError>(incident)
-        }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+    let incident = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+        let mut incident = store
+            .read::<GovernanceIncident>("main", incident_id)
+            .map_err(|_| AppError::NotFound(format!("incident {incident_id} not found")))?;
+        incident.resolve();
+        let path = format!("governance/incidents/{}.json", incident_id);
+        store
+            .write_json(
+                "main",
+                &path,
+                &incident,
+                &format!("GOVERNANCE: resolve incident {incident_id}"),
+            )
+            .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
+        Ok::<_, AppError>(incident)
+    }).await?;
 
     Ok(Json(incident_to_response(&incident)))
 }
@@ -2291,16 +2188,10 @@ async fn get_delegation_schedule(
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = query.entity_id;
 
-    let schedule = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
-            Ok::<_, AppError>(read_schedule_or_default(&store, entity_id))
-        }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+    let schedule = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+        Ok::<_, AppError>(read_schedule_or_default(&store, entity_id))
+    }).await?;
 
     Ok(Json(schedule))
 }
@@ -2325,124 +2216,118 @@ async fn amend_delegation_schedule(
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = req.entity_id;
 
-    let response = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
-            let current = read_schedule_or_default(&store, entity_id);
-            let mut amended = current.clone();
+    let response = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+        let current = read_schedule_or_default(&store, entity_id);
+        let mut amended = current.clone();
 
-            if let Some(amount) = req.tier1_max_amount_cents {
-                amended.set_tier1_max_amount_cents(amount);
-            }
-            if let Some(intents) = req.allowed_tier1_intent_types {
-                amended.set_allowed_tier1_intent_types(normalize_tier1_intents(intents));
-            }
-            if let Some(next_review) = req.next_mandatory_review_at {
-                amended.set_next_mandatory_review_at(next_review);
-            }
-
-            if req.meeting_id.is_some() ^ req.adopted_resolution_id.is_some() {
-                return Err(AppError::BadRequest(
-                    "meeting_id and adopted_resolution_id must be provided together".to_owned(),
-                ));
-            }
-
-            let prev_allows_all = current.allowed_tier1_intent_types().is_empty();
-            let next_allows_all = amended.allowed_tier1_intent_types().is_empty();
-            let cap_expansion =
-                amended.tier1_max_amount_cents() > current.tier1_max_amount_cents();
-            let lane_expansion = if prev_allows_all {
-                false
-            } else if next_allows_all {
-                true
-            } else {
-                !current
-                    .added_tier1_intents(amended.allowed_tier1_intent_types())
-                    .is_empty()
-            };
-            let authority_expansion = cap_expansion || lane_expansion;
-
-            let linked_resolution = match (req.meeting_id, req.adopted_resolution_id) {
-                (Some(meeting_id), Some(resolution_id)) => {
-                    validate_schedule_resolution(&store, meeting_id, resolution_id)?;
-                    Some(resolution_id)
-                }
-                (None, None) => None,
-                _ => unreachable!("handled by xor guard"),
-            };
-            if authority_expansion && linked_resolution.is_none() {
-                return Err(AppError::UnprocessableEntity(
-                    "authority-expanding delegation changes require a passed board/member resolution"
-                        .to_owned(),
-                ));
-            }
-
-            if let Some(resolution_id) = linked_resolution {
-                amended.set_adopted_resolution_id(Some(resolution_id));
-            }
-
-            let added_intents = if prev_allows_all {
-                Vec::new()
-            } else if next_allows_all {
-                Vec::new()
-            } else {
-                current.added_tier1_intents(amended.allowed_tier1_intent_types())
-            };
-            let removed_intents = if prev_allows_all {
-                Vec::new()
-            } else if next_allows_all {
-                current.allowed_tier1_intent_types().to_vec()
-            } else {
-                current.removed_tier1_intents(amended.allowed_tier1_intent_types())
-            };
-
-            amended.bump_version();
-            let amendment = ScheduleAmendment::new(
-                ScheduleAmendmentId::new(),
-                entity_id,
-                current.version(),
-                amended.version(),
-                current.tier1_max_amount_cents(),
-                amended.tier1_max_amount_cents(),
-                added_intents,
-                removed_intents,
-                authority_expansion,
-                linked_resolution,
-                req.rationale,
-            );
-
-            let amendment_path = format!(
-                "governance/delegation-schedule/amendments/{}.json",
-                amendment.schedule_amendment_id()
-            );
-            let files = vec![
-                FileWrite::json(CURRENT_SCHEDULE_PATH, &amended)
-                    .map_err(|e| AppError::Internal(format!("serialize schedule: {e}")))?,
-                FileWrite::json(amendment_path, &amendment)
-                    .map_err(|e| AppError::Internal(format!("serialize amendment: {e}")))?,
-            ];
-            store
-                .commit(
-                    "main",
-                    &format!(
-                        "GOVERNANCE: amend delegation schedule v{}->v{}",
-                        current.version(),
-                        amended.version()
-                    ),
-                    files,
-                )
-                .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
-
-            Ok::<_, AppError>(DelegationScheduleChangeResponse {
-                schedule: amended,
-                amendment,
-            })
+        if let Some(amount) = req.tier1_max_amount_cents {
+            amended.set_tier1_max_amount_cents(amount);
         }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+        if let Some(intents) = req.allowed_tier1_intent_types {
+            amended.set_allowed_tier1_intent_types(normalize_tier1_intents(intents));
+        }
+        if let Some(next_review) = req.next_mandatory_review_at {
+            amended.set_next_mandatory_review_at(next_review);
+        }
+
+        if req.meeting_id.is_some() ^ req.adopted_resolution_id.is_some() {
+            return Err(AppError::BadRequest(
+                "meeting_id and adopted_resolution_id must be provided together".to_owned(),
+            ));
+        }
+
+        let prev_allows_all = current.allowed_tier1_intent_types().is_empty();
+        let next_allows_all = amended.allowed_tier1_intent_types().is_empty();
+        let cap_expansion =
+            amended.tier1_max_amount_cents() > current.tier1_max_amount_cents();
+        let lane_expansion = if prev_allows_all {
+            false
+        } else if next_allows_all {
+            true
+        } else {
+            !current
+                .added_tier1_intents(amended.allowed_tier1_intent_types())
+                .is_empty()
+        };
+        let authority_expansion = cap_expansion || lane_expansion;
+
+        let linked_resolution = match (req.meeting_id, req.adopted_resolution_id) {
+            (Some(meeting_id), Some(resolution_id)) => {
+                validate_schedule_resolution(&store, meeting_id, resolution_id)?;
+                Some(resolution_id)
+            }
+            (None, None) => None,
+            _ => unreachable!("handled by xor guard"),
+        };
+        if authority_expansion && linked_resolution.is_none() {
+            return Err(AppError::UnprocessableEntity(
+                "authority-expanding delegation changes require a passed board/member resolution"
+                    .to_owned(),
+            ));
+        }
+
+        if let Some(resolution_id) = linked_resolution {
+            amended.set_adopted_resolution_id(Some(resolution_id));
+        }
+
+        let added_intents = if prev_allows_all {
+            Vec::new()
+        } else if next_allows_all {
+            Vec::new()
+        } else {
+            current.added_tier1_intents(amended.allowed_tier1_intent_types())
+        };
+        let removed_intents = if prev_allows_all {
+            Vec::new()
+        } else if next_allows_all {
+            current.allowed_tier1_intent_types().to_vec()
+        } else {
+            current.removed_tier1_intents(amended.allowed_tier1_intent_types())
+        };
+
+        amended.bump_version();
+        let amendment = ScheduleAmendment::new(
+            ScheduleAmendmentId::new(),
+            entity_id,
+            current.version(),
+            amended.version(),
+            current.tier1_max_amount_cents(),
+            amended.tier1_max_amount_cents(),
+            added_intents,
+            removed_intents,
+            authority_expansion,
+            linked_resolution,
+            req.rationale,
+        );
+
+        let amendment_path = format!(
+            "governance/delegation-schedule/amendments/{}.json",
+            amendment.schedule_amendment_id()
+        );
+        let files = vec![
+            FileWrite::json(CURRENT_SCHEDULE_PATH, &amended)
+                .map_err(|e| AppError::Internal(format!("serialize schedule: {e}")))?,
+            FileWrite::json(amendment_path, &amendment)
+                .map_err(|e| AppError::Internal(format!("serialize amendment: {e}")))?,
+        ];
+        store
+            .commit(
+                "main",
+                &format!(
+                    "GOVERNANCE: amend delegation schedule v{}->v{}",
+                    current.version(),
+                    amended.version()
+                ),
+                files,
+            )
+            .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
+
+        Ok::<_, AppError>(DelegationScheduleChangeResponse {
+            schedule: amended,
+            amendment,
+        })
+    }).await?;
 
     Ok(Json(response))
 }
@@ -2467,62 +2352,56 @@ async fn reauthorize_delegation_schedule(
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = req.entity_id;
 
-    let response = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
-            validate_schedule_resolution(&store, req.meeting_id, req.adopted_resolution_id)?;
+    let response = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+        validate_schedule_resolution(&store, req.meeting_id, req.adopted_resolution_id)?;
 
-            let current = read_schedule_or_default(&store, entity_id);
-            let mut schedule = current.clone();
-            schedule.bump_version();
-            schedule.reauthorize(req.adopted_resolution_id);
+        let current = read_schedule_or_default(&store, entity_id);
+        let mut schedule = current.clone();
+        schedule.bump_version();
+        schedule.reauthorize(req.adopted_resolution_id);
 
-            let amendment = ScheduleAmendment::new(
-                ScheduleAmendmentId::new(),
-                entity_id,
-                current.version(),
-                schedule.version(),
-                current.tier1_max_amount_cents(),
-                schedule.tier1_max_amount_cents(),
-                Vec::new(),
-                Vec::new(),
-                false,
-                Some(req.adopted_resolution_id),
-                req.rationale,
-            );
+        let amendment = ScheduleAmendment::new(
+            ScheduleAmendmentId::new(),
+            entity_id,
+            current.version(),
+            schedule.version(),
+            current.tier1_max_amount_cents(),
+            schedule.tier1_max_amount_cents(),
+            Vec::new(),
+            Vec::new(),
+            false,
+            Some(req.adopted_resolution_id),
+            req.rationale,
+        );
 
-            let amendment_path = format!(
-                "governance/delegation-schedule/amendments/{}.json",
-                amendment.schedule_amendment_id()
-            );
-            let files = vec![
-                FileWrite::json(CURRENT_SCHEDULE_PATH, &schedule)
-                    .map_err(|e| AppError::Internal(format!("serialize schedule: {e}")))?,
-                FileWrite::json(amendment_path, &amendment)
-                    .map_err(|e| AppError::Internal(format!("serialize amendment: {e}")))?,
-            ];
-            store
-                .commit(
-                    "main",
-                    &format!(
-                        "GOVERNANCE: reauthorize delegation schedule v{}->v{}",
-                        current.version(),
-                        schedule.version()
-                    ),
-                    files,
-                )
-                .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
+        let amendment_path = format!(
+            "governance/delegation-schedule/amendments/{}.json",
+            amendment.schedule_amendment_id()
+        );
+        let files = vec![
+            FileWrite::json(CURRENT_SCHEDULE_PATH, &schedule)
+                .map_err(|e| AppError::Internal(format!("serialize schedule: {e}")))?,
+            FileWrite::json(amendment_path, &amendment)
+                .map_err(|e| AppError::Internal(format!("serialize amendment: {e}")))?,
+        ];
+        store
+            .commit(
+                "main",
+                &format!(
+                    "GOVERNANCE: reauthorize delegation schedule v{}->v{}",
+                    current.version(),
+                    schedule.version()
+                ),
+                files,
+            )
+            .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
 
-            Ok::<_, AppError>(DelegationScheduleChangeResponse {
-                schedule,
-                amendment,
-            })
-        }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+        Ok::<_, AppError>(DelegationScheduleChangeResponse {
+            schedule,
+            amendment,
+        })
+    }).await?;
 
     Ok(Json(response))
 }
@@ -2545,27 +2424,21 @@ async fn list_delegation_schedule_history(
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = query.entity_id;
 
-    let history = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
-            let ids = store
-                .list_ids::<ScheduleAmendment>("main")
-                .map_err(|e| AppError::Internal(format!("list schedule amendments: {e}")))?;
-            let mut amendments = Vec::new();
-            for id in ids {
-                let amendment = store
-                    .read::<ScheduleAmendment>("main", id)
-                    .map_err(|e| AppError::Internal(format!("read amendment {id}: {e}")))?;
-                amendments.push(amendment);
-            }
-            amendments.sort_by(|a, b| b.created_at().cmp(&a.created_at()));
-            Ok::<_, AppError>(amendments)
+    let history = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+        let ids = store
+            .list_ids::<ScheduleAmendment>("main")
+            .map_err(|e| AppError::Internal(format!("list schedule amendments: {e}")))?;
+        let mut amendments = Vec::new();
+        for id in ids {
+            let amendment = store
+                .read::<ScheduleAmendment>("main", id)
+                .map_err(|e| AppError::Internal(format!("read amendment {id}: {e}")))?;
+            amendments.push(amendment);
         }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+        amendments.sort_by(|a, b| b.created_at().cmp(&a.created_at()));
+        Ok::<_, AppError>(amendments)
+    }).await?;
 
     Ok(Json(history))
 }
@@ -2590,32 +2463,26 @@ async fn evaluate_governance(
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = req.entity_id;
 
-    let decision = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
-            let mode = read_mode_or_default(&store, entity_id);
-            let schedule = read_schedule_or_default(&store, entity_id);
-            let entity = store
-                .read_entity("main")
-                .map_err(|e| AppError::Internal(format!("read entity: {e}")))?;
+    let decision = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+        let mode = read_mode_or_default(&store, entity_id);
+        let schedule = read_schedule_or_default(&store, entity_id);
+        let entity = store
+            .read_entity("main")
+            .map_err(|e| AppError::Internal(format!("read entity: {e}")))?;
 
-            let ctx = PolicyEvaluationContext {
-                intent_type: &req.intent_type,
-                metadata: &req.metadata,
-                mode: mode.mode(),
-                schedule: &schedule,
-                now: Utc::now(),
-                entity_is_active: matches!(entity.formation_status(), FormationStatus::Active),
-                service_agreement_executed: entity.service_agreement_executed(),
-            };
+        let ctx = PolicyEvaluationContext {
+            intent_type: &req.intent_type,
+            metadata: &req.metadata,
+            mode: mode.mode(),
+            schedule: &schedule,
+            now: Utc::now(),
+            entity_is_active: matches!(entity.formation_status(), FormationStatus::Active),
+            service_agreement_executed: entity.service_agreement_executed(),
+        };
 
-            Ok::<_, AppError>(evaluate_full(&ctx))
-        }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+        Ok::<_, AppError>(evaluate_full(&ctx))
+    }).await?;
 
     Ok(Json(decision))
 }
@@ -2648,77 +2515,71 @@ async fn create_seat(
     let entity_id = query.entity_id;
     state.enforce_creation_rate_limit("governance.seat.create", workspace_id, 120, 60)?;
 
-    let seat = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
-            ensure_entity_ready_for_governance(&store, "seat appointment")?;
+    let seat = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+        ensure_entity_ready_for_governance(&store, "seat appointment")?;
 
-            let body = store.read::<GovernanceBody>("main", body_id).map_err(|_| {
-                AppError::NotFound(format!("governance body {} not found", body_id))
-            })?;
-            if body.entity_id() != entity_id {
-                return Err(AppError::BadRequest(
-                    "governance body does not belong to entity".to_owned(),
-                ));
-            }
-            if body.status() != BodyStatus::Active {
-                return Err(AppError::BadRequest(
-                    "governance body is inactive".to_owned(),
-                ));
-            }
-            let entity = store
-                .read_entity("main")
-                .map_err(|e| AppError::Internal(format!("read entity: {e}")))?;
-            validate_body_type_for_entity(entity.entity_type(), body.body_type())?;
-            let holder = store
-                .read::<Contact>("main", req.holder_id)
-                .map_err(|_| AppError::NotFound(format!("contact {} not found", req.holder_id)))?;
-            if holder.entity_id() != entity_id {
-                return Err(AppError::BadRequest(
-                    "seat holder must belong to the same entity".to_owned(),
-                ));
-            }
-            validate_holder_for_body(&store, &body, &holder)?;
-            if has_active_seat(&store, body_id, req.holder_id)? {
-                return Err(AppError::Conflict(format!(
-                    "contact {} already has an active seat on body {}",
-                    req.holder_id, body_id
-                )));
-            }
-
-            let seat_id = GovernanceSeatId::new();
-            let voting_power = req
-                .voting_power
-                .map(VotingPower::new)
-                .transpose()
-                .map_err(|e| AppError::BadRequest(format!("invalid voting power: {e}")))?;
-            let seat = GovernanceSeat::new(
-                seat_id,
-                body_id,
-                req.holder_id,
-                req.role,
-                req.appointed_date,
-                req.term_expiration,
-                voting_power,
-            )?;
-
-            let path = format!("governance/seats/{}.json", seat_id);
-            store
-                .write_json(
-                    "main",
-                    &path,
-                    &seat,
-                    &format!("Appoint governance seat {seat_id}"),
-                )
-                .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
-
-            Ok::<_, AppError>(seat)
+        let body = store.read::<GovernanceBody>("main", body_id).map_err(|_| {
+            AppError::NotFound(format!("governance body {} not found", body_id))
+        })?;
+        if body.entity_id() != entity_id {
+            return Err(AppError::BadRequest(format!(
+                "Governance body {body_id} belongs to a different entity. Make sure you are using the correct entity_id query parameter."
+            )));
         }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+        if body.status() != BodyStatus::Active {
+            return Err(AppError::BadRequest(format!(
+                "Governance body {body_id} is inactive and cannot accept new seats. Only active governance bodies can have seats appointed."
+            )));
+        }
+        let entity = store
+            .read_entity("main")
+            .map_err(|e| AppError::Internal(format!("read entity: {e}")))?;
+        validate_body_type_for_entity(entity.entity_type(), body.body_type())?;
+        let holder = store
+            .read::<Contact>("main", req.holder_id)
+            .map_err(|_| AppError::NotFound(format!("contact {} not found", req.holder_id)))?;
+        if holder.entity_id() != entity_id {
+            return Err(AppError::BadRequest(
+                "seat holder must belong to the same entity".to_owned(),
+            ));
+        }
+        validate_holder_for_body(&store, &body, &holder)?;
+        if has_active_seat(&store, body_id, req.holder_id)? {
+            return Err(AppError::Conflict(format!(
+                "contact {} already has an active seat on body {}",
+                req.holder_id, body_id
+            )));
+        }
+
+        let seat_id = GovernanceSeatId::new();
+        let voting_power = req
+            .voting_power
+            .map(VotingPower::new)
+            .transpose()
+            .map_err(|e| AppError::BadRequest(format!("invalid voting power: {e}")))?;
+        let seat = GovernanceSeat::new(
+            seat_id,
+            body_id,
+            req.holder_id,
+            req.role,
+            req.appointed_date,
+            req.term_expiration,
+            voting_power,
+        )?;
+
+        let path = format!("governance/seats/{}.json", seat_id);
+        store
+            .write_json(
+                "main",
+                &path,
+                &seat,
+                &format!("Appoint governance seat {seat_id}"),
+            )
+            .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
+
+        Ok::<_, AppError>(seat)
+    }).await?;
 
     Ok(Json(seat_to_response(&seat)))
 }
@@ -2745,48 +2606,42 @@ async fn list_seats(
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = query.entity_id;
 
-    let seats = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
-            let body = store.read::<GovernanceBody>("main", body_id).map_err(|_| {
-                AppError::NotFound(format!("governance body {} not found", body_id))
-            })?;
-            if body.entity_id() != entity_id {
-                return Err(AppError::BadRequest(
-                    "governance body does not belong to entity".to_owned(),
-                ));
-            }
-            let ids = store
-                .list_ids::<GovernanceSeat>("main")
-                .map_err(|e| AppError::Internal(format!("list governance seats: {e}")))?;
-
-            // Build contact name lookup for holder_name
-            let contact_ids = store.list_ids::<Contact>("main").unwrap_or_default();
-            let contact_names: std::collections::HashMap<ContactId, String> = contact_ids
-                .into_iter()
-                .filter_map(|cid| {
-                    store.read::<Contact>("main", cid).ok().map(|c| (c.contact_id(), c.name().to_owned()))
-                })
-                .collect();
-
-            let mut results = Vec::new();
-            for id in ids {
-                let s = store
-                    .read::<GovernanceSeat>("main", id)
-                    .map_err(|e| AppError::Internal(format!("read governance seat {id}: {e}")))?;
-                if s.body_id() == body_id {
-                    let mut resp = seat_to_response(&s);
-                    resp.holder_name = contact_names.get(&s.holder_id()).cloned();
-                    results.push(resp);
-                }
-            }
-            Ok::<_, AppError>(results)
+    let seats = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+        let body = store.read::<GovernanceBody>("main", body_id).map_err(|_| {
+            AppError::NotFound(format!("governance body {} not found", body_id))
+        })?;
+        if body.entity_id() != entity_id {
+            return Err(AppError::BadRequest(
+                "governance body does not belong to entity".to_owned(),
+            ));
         }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+        let ids = store
+            .list_ids::<GovernanceSeat>("main")
+            .map_err(|e| AppError::Internal(format!("list governance seats: {e}")))?;
+
+        // Build contact name lookup for holder_name
+        let contact_ids = store.list_ids::<Contact>("main").unwrap_or_default();
+        let contact_names: std::collections::HashMap<ContactId, String> = contact_ids
+            .into_iter()
+            .filter_map(|cid| {
+                store.read::<Contact>("main", cid).ok().map(|c| (c.contact_id(), c.name().to_owned()))
+            })
+            .collect();
+
+        let mut results = Vec::new();
+        for id in ids {
+            let s = store
+                .read::<GovernanceSeat>("main", id)
+                .map_err(|e| AppError::Internal(format!("read governance seat {id}: {e}")))?;
+            if s.body_id() == body_id {
+                let mut resp = seat_to_response(&s);
+                resp.holder_name = contact_names.get(&s.holder_id()).cloned();
+                results.push(resp);
+            }
+        }
+        Ok::<_, AppError>(results)
+    }).await?;
 
     Ok(Json(seats))
 }
@@ -2814,32 +2669,26 @@ async fn resign_seat(
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = query.entity_id;
 
-    let seat = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
-            let mut seat = store.read::<GovernanceSeat>("main", seat_id).map_err(|_| {
-                AppError::NotFound(format!("governance seat {} not found", seat_id))
-            })?;
+    let seat = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+        let mut seat = store.read::<GovernanceSeat>("main", seat_id).map_err(|_| {
+            AppError::NotFound(format!("governance seat {} not found", seat_id))
+        })?;
 
-            seat.resign()?;
+        seat.resign()?;
 
-            let path = format!("governance/seats/{}.json", seat_id);
-            store
-                .write_json(
-                    "main",
-                    &path,
-                    &seat,
-                    &format!("Resign governance seat {seat_id}"),
-                )
-                .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
+        let path = format!("governance/seats/{}.json", seat_id);
+        store
+            .write_json(
+                "main",
+                &path,
+                &seat,
+                &format!("Resign governance seat {seat_id}"),
+            )
+            .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
 
-            Ok::<_, AppError>(seat)
-        }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+        Ok::<_, AppError>(seat)
+    }).await?;
 
     Ok(Json(seat_to_response(&seat)))
 }
@@ -2880,73 +2729,66 @@ async fn schedule_meeting(
         validate_not_too_far_future("scheduled_date", scheduled_date, 730)?;
     }
 
-    let (meeting, agenda_item_ids) = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        let title = title.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
-            ensure_entity_ready_for_governance(&store, "meeting scheduling")?;
+    let (meeting, agenda_item_ids) = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+        ensure_entity_ready_for_governance(&store, "meeting scheduling")?;
 
-            // Verify body exists
-            let body = store
-                .read::<GovernanceBody>("main", req.body_id)
-                .map_err(|_| {
-                    AppError::NotFound(format!("governance body {} not found", req.body_id))
-                })?;
-            validate_meeting_type_for_body(body.body_type(), req.meeting_type)?;
+        // Verify body exists
+        let body = store
+            .read::<GovernanceBody>("main", req.body_id)
+            .map_err(|_| {
+                AppError::NotFound(format!("governance body {} not found", req.body_id))
+            })?;
+        validate_meeting_type_for_body(body.body_type(), req.meeting_type)?;
 
-            let meeting_id = MeetingId::new();
-            let meeting = Meeting::new(
+        let meeting_id = MeetingId::new();
+        let meeting = Meeting::new(
+            meeting_id,
+            req.body_id,
+            req.meeting_type,
+            title,
+            req.scheduled_date,
+            req.location.unwrap_or_default(),
+            req.notice_days.unwrap_or(10),
+        );
+
+        // Build all files to commit atomically: meeting + agenda items
+        let mut files = vec![
+            FileWrite::json(
+                format!("governance/meetings/{}/meeting.json", meeting_id),
+                &meeting,
+            )
+            .map_err(|e| AppError::Internal(format!("serialize meeting: {e}")))?,
+        ];
+
+        let mut agenda_item_ids = Vec::new();
+        for (i, title) in req.agenda_item_titles.iter().enumerate() {
+            let item_id = AgendaItemId::new();
+            let item = AgendaItem::new(
+                item_id,
                 meeting_id,
-                req.body_id,
-                req.meeting_type,
-                title,
-                req.scheduled_date,
-                req.location.unwrap_or_default(),
-                req.notice_days.unwrap_or(10),
+                u32::try_from(i + 1)
+                    .map_err(|_| AppError::BadRequest("too many agenda items".to_owned()))?,
+                title.clone(),
+                None,
+                AgendaItemType::Resolution,
             );
-
-            // Build all files to commit atomically: meeting + agenda items
-            let mut files = vec![
+            files.push(
                 FileWrite::json(
-                    format!("governance/meetings/{}/meeting.json", meeting_id),
-                    &meeting,
+                    format!("governance/meetings/{}/agenda/{}.json", meeting_id, item_id),
+                    &item,
                 )
-                .map_err(|e| AppError::Internal(format!("serialize meeting: {e}")))?,
-            ];
-
-            let mut agenda_item_ids = Vec::new();
-            for (i, title) in req.agenda_item_titles.iter().enumerate() {
-                let item_id = AgendaItemId::new();
-                let item = AgendaItem::new(
-                    item_id,
-                    meeting_id,
-                    u32::try_from(i + 1)
-                        .map_err(|_| AppError::BadRequest("too many agenda items".to_owned()))?,
-                    title.clone(),
-                    None,
-                    AgendaItemType::Resolution,
-                );
-                files.push(
-                    FileWrite::json(
-                        format!("governance/meetings/{}/agenda/{}.json", meeting_id, item_id),
-                        &item,
-                    )
-                    .map_err(|e| AppError::Internal(format!("serialize agenda item: {e}")))?,
-                );
-                agenda_item_ids.push(item_id);
-            }
-
-            store
-                .commit("main", &format!("Schedule meeting {meeting_id}"), files)
-                .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
-
-            Ok::<_, AppError>((meeting, agenda_item_ids))
+                .map_err(|e| AppError::Internal(format!("serialize agenda item: {e}")))?,
+            );
+            agenda_item_ids.push(item_id);
         }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+
+        store
+            .commit("main", &format!("Schedule meeting {meeting_id}"), files)
+            .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
+
+        Ok::<_, AppError>((meeting, agenda_item_ids))
+    }).await?;
 
     Ok(Json(MeetingResponse {
         agenda_item_ids,
@@ -2976,37 +2818,31 @@ async fn list_meetings(
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = query.entity_id;
 
-    let meetings = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
-            let body = store.read::<GovernanceBody>("main", body_id).map_err(|_| {
-                AppError::NotFound(format!("governance body {} not found", body_id))
-            })?;
-            if body.entity_id() != entity_id {
-                return Err(AppError::BadRequest(
-                    "governance body does not belong to entity".to_owned(),
-                ));
-            }
-            let ids = store
-                .list_ids::<Meeting>("main")
-                .map_err(|e| AppError::Internal(format!("list meetings: {e}")))?;
-
-            let mut results = Vec::new();
-            for id in ids {
-                let m = store
-                    .read::<Meeting>("main", id)
-                    .map_err(|e| AppError::Internal(format!("read meeting {id}: {e}")))?;
-                if m.body_id() == body_id {
-                    results.push(meeting_to_response(&m));
-                }
-            }
-            Ok::<_, AppError>(results)
+    let meetings = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+        let body = store.read::<GovernanceBody>("main", body_id).map_err(|_| {
+            AppError::NotFound(format!("governance body {} not found", body_id))
+        })?;
+        if body.entity_id() != entity_id {
+            return Err(AppError::BadRequest(
+                "governance body does not belong to entity".to_owned(),
+            ));
         }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+        let ids = store
+            .list_ids::<Meeting>("main")
+            .map_err(|e| AppError::Internal(format!("list meetings: {e}")))?;
+
+        let mut results = Vec::new();
+        for id in ids {
+            let m = store
+                .read::<Meeting>("main", id)
+                .map_err(|e| AppError::Internal(format!("read meeting {id}: {e}")))?;
+            if m.body_id() == body_id {
+                results.push(meeting_to_response(&m));
+            }
+        }
+        Ok::<_, AppError>(results)
+    }).await?;
 
     Ok(Json(meetings))
 }
@@ -3034,32 +2870,26 @@ async fn list_agenda_items(
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = query.entity_id;
 
-    let agenda_items = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
-            // Ensure the meeting exists and belongs to this entity's store.
-            store
-                .read::<Meeting>("main", meeting_id)
-                .map_err(|_| AppError::NotFound(format!("meeting {} not found", meeting_id)))?;
+    let agenda_items = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+        // Ensure the meeting exists and belongs to this entity's store.
+        store
+            .read::<Meeting>("main", meeting_id)
+            .map_err(|_| AppError::NotFound(format!("meeting {} not found", meeting_id)))?;
 
-            let ids = store
-                .list_agenda_item_ids("main", meeting_id)
-                .map_err(|e| AppError::Internal(format!("list agenda items: {e}")))?;
+        let ids = store
+            .list_agenda_item_ids("main", meeting_id)
+            .map_err(|e| AppError::Internal(format!("list agenda items: {e}")))?;
 
-            let mut results = Vec::new();
-            for id in ids {
-                if let Ok(item) = store.read_agenda_item("main", meeting_id, id) {
-                    results.push(agenda_item_to_response(&item));
-                }
+        let mut results = Vec::new();
+        for id in ids {
+            if let Ok(item) = store.read_agenda_item("main", meeting_id, id) {
+                results.push(agenda_item_to_response(&item));
             }
-            results.sort_by_key(|i| i.sequence_number);
-            Ok::<_, AppError>(results)
         }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+        results.sort_by_key(|i| i.sequence_number);
+        Ok::<_, AppError>(results)
+    }).await?;
 
     Ok(Json(agenda_items))
 }
@@ -3087,33 +2917,27 @@ async fn send_notice(
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = query.entity_id;
 
-    let meeting = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
-            ensure_entity_ready_for_governance(&store, "meeting notice")?;
-            let mut meeting = store
-                .read::<Meeting>("main", meeting_id)
-                .map_err(|_| AppError::NotFound(format!("meeting {} not found", meeting_id)))?;
+    let meeting = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+        ensure_entity_ready_for_governance(&store, "meeting notice")?;
+        let mut meeting = store
+            .read::<Meeting>("main", meeting_id)
+            .map_err(|_| AppError::NotFound(format!("meeting {} not found", meeting_id)))?;
 
-            meeting.send_notice()?;
+        meeting.send_notice()?;
 
-            let path = format!("governance/meetings/{}/meeting.json", meeting_id);
-            store
-                .write_json(
-                    "main",
-                    &path,
-                    &meeting,
-                    &format!("Send notice for meeting {meeting_id}"),
-                )
-                .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
+        let path = format!("governance/meetings/{}/meeting.json", meeting_id);
+        store
+            .write_json(
+                "main",
+                &path,
+                &meeting,
+                &format!("Send notice for meeting {meeting_id}"),
+            )
+            .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
 
-            Ok::<_, AppError>(meeting)
-        }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+        Ok::<_, AppError>(meeting)
+    }).await?;
 
     Ok(Json(meeting_to_response(&meeting)))
 }
@@ -3143,54 +2967,48 @@ async fn convene_meeting(
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = query.entity_id;
 
-    let meeting = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
-            ensure_entity_ready_for_governance(&store, "meeting convening")?;
-            let mut meeting = store
-                .read::<Meeting>("main", meeting_id)
-                .map_err(|_| AppError::NotFound(format!("meeting {} not found", meeting_id)))?;
+    let meeting = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+        ensure_entity_ready_for_governance(&store, "meeting convening")?;
+        let mut meeting = store
+            .read::<Meeting>("main", meeting_id)
+            .map_err(|_| AppError::NotFound(format!("meeting {} not found", meeting_id)))?;
 
-            // Read the body to get quorum rule
-            let body = store
-                .read::<GovernanceBody>("main", meeting.body_id())
-                .map_err(|_| {
-                    AppError::NotFound(format!("governance body {} not found", meeting.body_id()))
-                })?;
+        // Read the body to get quorum rule
+        let body = store
+            .read::<GovernanceBody>("main", meeting.body_id())
+            .map_err(|_| {
+                AppError::NotFound(format!("governance body {} not found", meeting.body_id()))
+            })?;
 
-            // Total eligible voting power for the body
-            let total_eligible = eligible_voting_power_for_body(&store, meeting.body_id())?;
+        // Total eligible voting power for the body
+        let total_eligible = eligible_voting_power_for_body(&store, meeting.body_id())?;
 
-            // Sum voting power of present seats
-            let mut present_power: u32 = 0;
-            for seat_id in &req.present_seat_ids {
-                if let Ok(s) = store.read::<GovernanceSeat>("main", *seat_id) {
-                    if s.body_id() == meeting.body_id() && s.can_vote() {
-                        present_power += s.voting_power().raw();
-                    }
+        // Sum voting power of present seats
+        let mut present_power: u32 = 0;
+        for seat_id in &req.present_seat_ids {
+            if let Ok(s) = store.read::<GovernanceSeat>("main", *seat_id) {
+                if s.body_id() == meeting.body_id() && s.can_vote() {
+                    present_power += s.voting_power().raw();
                 }
             }
-            let quorum_met = body.quorum_rule().is_met(present_power, total_eligible);
-
-            meeting.convene(req.present_seat_ids, quorum_met)?;
-
-            let path = format!("governance/meetings/{}/meeting.json", meeting_id);
-            store
-                .write_json(
-                    "main",
-                    &path,
-                    &meeting,
-                    &format!("Convene meeting {meeting_id}"),
-                )
-                .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
-
-            Ok::<_, AppError>(meeting)
         }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+        let quorum_met = body.quorum_rule().is_met(present_power, total_eligible);
+
+        meeting.convene(req.present_seat_ids, quorum_met)?;
+
+        let path = format!("governance/meetings/{}/meeting.json", meeting_id);
+        store
+            .write_json(
+                "main",
+                &path,
+                &meeting,
+                &format!("Convene meeting {meeting_id}"),
+            )
+            .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
+
+        Ok::<_, AppError>(meeting)
+    }).await?;
 
     Ok(Json(meeting_to_response(&meeting)))
 }
@@ -3218,65 +3036,59 @@ async fn adjourn_meeting(
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = query.entity_id;
 
-    let meeting = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
-            ensure_entity_ready_for_governance(&store, "meeting adjournment")?;
-            let mut meeting = store
-                .read::<Meeting>("main", meeting_id)
-                .map_err(|_| AppError::NotFound(format!("meeting {} not found", meeting_id)))?;
+    let meeting = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+        ensure_entity_ready_for_governance(&store, "meeting adjournment")?;
+        let mut meeting = store
+            .read::<Meeting>("main", meeting_id)
+            .map_err(|_| AppError::NotFound(format!("meeting {} not found", meeting_id)))?;
 
-            // Recompute quorum before adjourning.
-            // For written consents (which skip convene), quorum was never set.
-            // For regular meetings, re-derive from current vote counts.
-            let body = store
-                .read::<GovernanceBody>("main", meeting.body_id())
-                .map_err(|_| {
-                    AppError::NotFound(format!("governance body {} not found", meeting.body_id()))
-                })?;
-            let seat_ids = store.list_ids::<GovernanceSeat>("main").unwrap_or_default();
-            let mut total_eligible: u32 = 0;
-            for id in &seat_ids {
-                if let Ok(s) = store.read::<GovernanceSeat>("main", *id) {
-                    if s.body_id() == meeting.body_id() && s.can_vote() {
-                        total_eligible += 1;
-                    }
+        // Recompute quorum before adjourning.
+        // For written consents (which skip convene), quorum was never set.
+        // For regular meetings, re-derive from current vote counts.
+        let body = store
+            .read::<GovernanceBody>("main", meeting.body_id())
+            .map_err(|_| {
+                AppError::NotFound(format!("governance body {} not found", meeting.body_id()))
+            })?;
+        let seat_ids = store.list_ids::<GovernanceSeat>("main").unwrap_or_default();
+        let mut total_eligible: u32 = 0;
+        for id in &seat_ids {
+            if let Ok(s) = store.read::<GovernanceSeat>("main", *id) {
+                if s.body_id() == meeting.body_id() && s.can_vote() {
+                    total_eligible += 1;
                 }
             }
-
-            if total_eligible == 0 {
-                // No eligible voters — quorum cannot be met
-                meeting.set_quorum_status(QuorumStatus::NotMet);
-            } else if meeting.quorum_met() == QuorumStatus::Unknown {
-                // Written consent or unset: compute from present seats
-                let present_count = u32::try_from(meeting.present_seat_ids().len()).unwrap_or(0);
-                let quorum_met = body.quorum_rule().is_met(present_count, total_eligible);
-                meeting.set_quorum_status(if quorum_met {
-                    QuorumStatus::Met
-                } else {
-                    QuorumStatus::NotMet
-                });
-            }
-
-            meeting.adjourn()?;
-
-            let path = format!("governance/meetings/{}/meeting.json", meeting_id);
-            store
-                .write_json(
-                    "main",
-                    &path,
-                    &meeting,
-                    &format!("Adjourn meeting {meeting_id}"),
-                )
-                .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
-
-            Ok::<_, AppError>(meeting)
         }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+
+        if total_eligible == 0 {
+            // No eligible voters — quorum cannot be met
+            meeting.set_quorum_status(QuorumStatus::NotMet);
+        } else if meeting.quorum_met() == QuorumStatus::Unknown {
+            // Written consent or unset: compute from present seats
+            let present_count = u32::try_from(meeting.present_seat_ids().len()).unwrap_or(0);
+            let quorum_met = body.quorum_rule().is_met(present_count, total_eligible);
+            meeting.set_quorum_status(if quorum_met {
+                QuorumStatus::Met
+            } else {
+                QuorumStatus::NotMet
+            });
+        }
+
+        meeting.adjourn()?;
+
+        let path = format!("governance/meetings/{}/meeting.json", meeting_id);
+        store
+            .write_json(
+                "main",
+                &path,
+                &meeting,
+                &format!("Adjourn meeting {meeting_id}"),
+            )
+            .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
+
+        Ok::<_, AppError>(meeting)
+    }).await?;
 
     Ok(Json(meeting_to_response(&meeting)))
 }
@@ -3304,33 +3116,27 @@ async fn reopen_meeting(
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = query.entity_id;
 
-    let meeting = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
-            ensure_entity_ready_for_governance(&store, "meeting reopening")?;
-            let mut meeting = store
-                .read::<Meeting>("main", meeting_id)
-                .map_err(|_| AppError::NotFound(format!("meeting {} not found", meeting_id)))?;
+    let meeting = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+        ensure_entity_ready_for_governance(&store, "meeting reopening")?;
+        let mut meeting = store
+            .read::<Meeting>("main", meeting_id)
+            .map_err(|_| AppError::NotFound(format!("meeting {} not found", meeting_id)))?;
 
-            meeting.reopen()?;
+        meeting.reopen()?;
 
-            let path = format!("governance/meetings/{}/meeting.json", meeting_id);
-            store
-                .write_json(
-                    "main",
-                    &path,
-                    &meeting,
-                    &format!("Re-open meeting {meeting_id}"),
-                )
-                .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
+        let path = format!("governance/meetings/{}/meeting.json", meeting_id);
+        store
+            .write_json(
+                "main",
+                &path,
+                &meeting,
+                &format!("Re-open meeting {meeting_id}"),
+            )
+            .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
 
-            Ok::<_, AppError>(meeting)
-        }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+        Ok::<_, AppError>(meeting)
+    }).await?;
 
     Ok(Json(meeting_to_response(&meeting)))
 }
@@ -3358,34 +3164,28 @@ async fn cancel_meeting(
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = query.entity_id;
 
-    let meeting = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
-            ensure_entity_ready_for_governance(&store, "meeting cancellation")?;
-            let mut meeting = store
-                .read::<Meeting>("main", meeting_id)
-                .map_err(|_| AppError::NotFound(format!("meeting {} not found", meeting_id)))?;
+    let meeting = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+        ensure_entity_ready_for_governance(&store, "meeting cancellation")?;
+        let mut meeting = store
+            .read::<Meeting>("main", meeting_id)
+            .map_err(|_| AppError::NotFound(format!("meeting {} not found", meeting_id)))?;
 
-            ensure_meeting_can_be_cancelled(&store, &meeting)?;
-            meeting.cancel()?;
+        ensure_meeting_can_be_cancelled(&store, &meeting)?;
+        meeting.cancel()?;
 
-            let path = format!("governance/meetings/{}/meeting.json", meeting_id);
-            store
-                .write_json(
-                    "main",
-                    &path,
-                    &meeting,
-                    &format!("Cancel meeting {meeting_id}"),
-                )
-                .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
+        let path = format!("governance/meetings/{}/meeting.json", meeting_id);
+        store
+            .write_json(
+                "main",
+                &path,
+                &meeting,
+                &format!("Cancel meeting {meeting_id}"),
+            )
+            .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
 
-            Ok::<_, AppError>(meeting)
-        }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+        Ok::<_, AppError>(meeting)
+    }).await?;
 
     Ok(Json(meeting_to_response(&meeting)))
 }
@@ -3419,110 +3219,109 @@ async fn cast_vote(
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = query.entity_id;
 
-    let vote = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
-            ensure_entity_ready_for_governance(&store, "vote casting")?;
+    let vote = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+        ensure_entity_ready_for_governance(&store, "vote casting")?;
 
-            // Read the meeting and check it can accept votes
-            let meeting = store
-                .read::<Meeting>("main", meeting_id)
-                .map_err(|_| AppError::NotFound(format!("meeting {} not found", meeting_id)))?;
-            if !meeting.can_vote() {
-                return Err(GovernanceError::VotingSessionNotOpen.into());
-            }
-
-            // Verify agenda item exists
-            let item = store
-                .read_agenda_item("main", meeting_id, item_id)
-                .map_err(|_| AppError::NotFound(format!("agenda item {} not found", item_id)))?;
-            if matches!(
-                item.status(),
-                AgendaItemStatus::Voted | AgendaItemStatus::Tabled | AgendaItemStatus::Withdrawn
-            ) {
-                return Err(AppError::Conflict(format!(
-                    "agenda item {item_id} already finalized"
-                )));
-            }
-            let has_resolution = store
-                .list_resolution_ids("main", meeting_id)
-                .unwrap_or_default()
-                .into_iter()
-                .filter_map(|rid| store.read_resolution("main", meeting_id, rid).ok())
-                .any(|resolution| resolution.agenda_item_id() == item_id);
-            if has_resolution {
-                return Err(AppError::Conflict(format!(
-                    "agenda item {item_id} already has a resolution"
-                )));
-            }
-
-            // Find the seat for the voter in this body
-            let seat_ids = store.list_ids::<GovernanceSeat>("main").unwrap_or_default();
-            let mut voter_seat: Option<GovernanceSeat> = None;
-            for id in &seat_ids {
-                if let Ok(s) = store.read::<GovernanceSeat>("main", *id) {
-                    if s.body_id() == meeting.body_id() && s.holder_id() == req.voter_id {
-                        voter_seat = Some(s);
-                        break;
-                    }
-                }
-            }
-
-            let seat = voter_seat.ok_or_else(|| {
-                GovernanceError::Validation(format!(
-                    "no seat found for voter {} in body {}",
-                    req.voter_id,
-                    meeting.body_id()
-                ))
-            })?;
-
-            // Check seat can vote (active + not observer)
-            if !seat.can_vote() {
-                return Err(GovernanceError::CannotVoteAsObserver.into());
-            }
-
-            // Check for duplicate votes
-            let existing_vote_ids = store.list_vote_ids("main", meeting_id).unwrap_or_default();
-            for vid in &existing_vote_ids {
-                if let Ok(v) = store.read_vote("main", meeting_id, *vid) {
-                    if v.agenda_item_id() == item_id && v.voter_id() == req.voter_id {
-                        return Err(GovernanceError::DuplicateVote {
-                            voter_id: req.voter_id.to_string(),
-                        }
-                        .into());
-                    }
-                }
-            }
-
-            // Create the vote
-            let vote_id = VoteId::new();
-            let vote = Vote::new(
-                vote_id,
-                meeting_id,
-                item_id,
-                seat.seat_id(),
-                req.voter_id,
-                req.vote_value,
-                seat.voting_power(),
-            )?;
-
-            let path = format!("governance/meetings/{}/votes/{}.json", meeting_id, vote_id);
-            store
-                .write_json(
-                    "main",
-                    &path,
-                    &vote,
-                    &format!("Cast vote {vote_id} on agenda item {item_id}"),
-                )
-                .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
-
-            Ok::<_, AppError>(vote)
+        // Read the meeting and check it can accept votes
+        let meeting = store
+            .read::<Meeting>("main", meeting_id)
+            .map_err(|_| AppError::NotFound(format!("meeting {} not found", meeting_id)))?;
+        if !meeting.can_vote() {
+            return Err(AppError::BadRequest(format!(
+                "Meeting {meeting_id} is not open for voting (current status: {:?}). Convene the meeting first with: corp governance convene-meeting --meeting {meeting_id}",
+                meeting.status()
+            )));
         }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+
+        // Verify agenda item exists
+        let item = store
+            .read_agenda_item("main", meeting_id, item_id)
+            .map_err(|_| AppError::NotFound(format!("agenda item {} not found", item_id)))?;
+        if matches!(
+            item.status(),
+            AgendaItemStatus::Voted | AgendaItemStatus::Tabled | AgendaItemStatus::Withdrawn
+        ) {
+            return Err(AppError::Conflict(format!(
+                "agenda item {item_id} already finalized"
+            )));
+        }
+        let has_resolution = store
+            .list_resolution_ids("main", meeting_id)
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|rid| store.read_resolution("main", meeting_id, rid).ok())
+            .any(|resolution| resolution.agenda_item_id() == item_id);
+        if has_resolution {
+            return Err(AppError::Conflict(format!(
+                "agenda item {item_id} already has a resolution"
+            )));
+        }
+
+        // Find the seat for the voter in this body
+        let seat_ids = store.list_ids::<GovernanceSeat>("main").unwrap_or_default();
+        let mut voter_seat: Option<GovernanceSeat> = None;
+        for id in &seat_ids {
+            if let Ok(s) = store.read::<GovernanceSeat>("main", *id) {
+                if s.body_id() == meeting.body_id() && s.holder_id() == req.voter_id {
+                    voter_seat = Some(s);
+                    break;
+                }
+            }
+        }
+
+        let seat = voter_seat.ok_or_else(|| {
+            AppError::BadRequest(format!(
+                "Contact {} does not have a seat on governance body {}. Appoint them first with: corp governance appoint-seat --body {} --contact {}",
+                req.voter_id,
+                meeting.body_id(),
+                meeting.body_id(),
+                req.voter_id
+            ))
+        })?;
+
+        // Check seat can vote (active + not observer)
+        if !seat.can_vote() {
+            return Err(GovernanceError::CannotVoteAsObserver.into());
+        }
+
+        // Check for duplicate votes
+        let existing_vote_ids = store.list_vote_ids("main", meeting_id).unwrap_or_default();
+        for vid in &existing_vote_ids {
+            if let Ok(v) = store.read_vote("main", meeting_id, *vid) {
+                if v.agenda_item_id() == item_id && v.voter_id() == req.voter_id {
+                    return Err(GovernanceError::DuplicateVote {
+                        voter_id: req.voter_id.to_string(),
+                    }
+                    .into());
+                }
+            }
+        }
+
+        // Create the vote
+        let vote_id = VoteId::new();
+        let vote = Vote::new(
+            vote_id,
+            meeting_id,
+            item_id,
+            seat.seat_id(),
+            req.voter_id,
+            req.vote_value,
+            seat.voting_power(),
+        )?;
+
+        let path = format!("governance/meetings/{}/votes/{}.json", meeting_id, vote_id);
+        store
+            .write_json(
+                "main",
+                &path,
+                &vote,
+                &format!("Cast vote {vote_id} on agenda item {item_id}"),
+            )
+            .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
+
+        Ok::<_, AppError>(vote)
+    }).await?;
 
     Ok(Json(vote_to_response(&vote)))
 }
@@ -3550,26 +3349,20 @@ async fn list_votes(
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = query.entity_id;
 
-    let votes = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
-            let ids = store.list_vote_ids("main", meeting_id).unwrap_or_default();
+    let votes = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+        let ids = store.list_vote_ids("main", meeting_id).unwrap_or_default();
 
-            let mut results = Vec::new();
-            for id in ids {
-                if let Ok(v) = store.read_vote("main", meeting_id, id) {
-                    if v.agenda_item_id() == item_id {
-                        results.push(vote_to_response(&v));
-                    }
+        let mut results = Vec::new();
+        for id in ids {
+            if let Ok(v) = store.read_vote("main", meeting_id, id) {
+                if v.agenda_item_id() == item_id {
+                    results.push(vote_to_response(&v));
                 }
             }
-            Ok::<_, AppError>(results)
         }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+        Ok::<_, AppError>(results)
+    }).await?;
 
     Ok(Json(votes))
 }
@@ -3600,68 +3393,62 @@ async fn finalize_agenda_item(
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = req.entity_id;
 
-    let agenda_item = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
-            ensure_entity_ready_for_governance(&store, "agenda finalization")?;
-            store
-                .read::<Meeting>("main", meeting_id)
-                .map_err(|_| AppError::NotFound(format!("meeting {meeting_id} not found")))?;
-            let mut item = store
-                .read_agenda_item("main", meeting_id, item_id)
-                .map_err(|_| AppError::NotFound(format!("agenda item {item_id} not found")))?;
+    let agenda_item = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+        ensure_entity_ready_for_governance(&store, "agenda finalization")?;
+        store
+            .read::<Meeting>("main", meeting_id)
+            .map_err(|_| AppError::NotFound(format!("meeting {meeting_id} not found")))?;
+        let mut item = store
+            .read_agenda_item("main", meeting_id, item_id)
+            .map_err(|_| AppError::NotFound(format!("agenda item {item_id} not found")))?;
 
-            if matches!(
-                item.status(),
-                AgendaItemStatus::Voted | AgendaItemStatus::Tabled | AgendaItemStatus::Withdrawn
-            ) {
-                return Err(AppError::Conflict(format!(
-                    "agenda item {item_id} already finalized"
-                )));
-            }
-
-            match req.status {
-                AgendaItemStatus::Pending => {
-                    return Err(AppError::BadRequest(
-                        "cannot finalize agenda item to pending".to_owned(),
-                    ));
-                }
-                AgendaItemStatus::Discussed => item.mark_discussed(),
-                AgendaItemStatus::Voted => {
-                    let has_resolution = store
-                        .list_resolution_ids("main", meeting_id)
-                        .unwrap_or_default()
-                        .into_iter()
-                        .filter_map(|rid| store.read_resolution("main", meeting_id, rid).ok())
-                        .any(|r| r.agenda_item_id() == item_id);
-                    if !has_resolution {
-                        return Err(AppError::UnprocessableEntity(format!(
-                            "cannot finalize agenda item {item_id} as voted before a resolution exists"
-                        )));
-                    }
-                    item.mark_voted();
-                }
-                AgendaItemStatus::Tabled => item.table(),
-                AgendaItemStatus::Withdrawn => item.withdraw(),
-            }
-
-            let path = format!("governance/meetings/{meeting_id}/agenda/{item_id}.json");
-            store
-                .write_json(
-                    "main",
-                    &path,
-                    &item,
-                    &format!("GOVERNANCE: finalize agenda item {item_id} as {:?}", req.status),
-                )
-                .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
-
-            Ok::<_, AppError>(item)
+        if matches!(
+            item.status(),
+            AgendaItemStatus::Voted | AgendaItemStatus::Tabled | AgendaItemStatus::Withdrawn
+        ) {
+            return Err(AppError::Conflict(format!(
+                "agenda item {item_id} already finalized"
+            )));
         }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+
+        match req.status {
+            AgendaItemStatus::Pending => {
+                return Err(AppError::BadRequest(
+                    "cannot finalize agenda item to pending".to_owned(),
+                ));
+            }
+            AgendaItemStatus::Discussed => item.mark_discussed(),
+            AgendaItemStatus::Voted => {
+                let has_resolution = store
+                    .list_resolution_ids("main", meeting_id)
+                    .unwrap_or_default()
+                    .into_iter()
+                    .filter_map(|rid| store.read_resolution("main", meeting_id, rid).ok())
+                    .any(|r| r.agenda_item_id() == item_id);
+                if !has_resolution {
+                    return Err(AppError::UnprocessableEntity(format!(
+                        "cannot finalize agenda item {item_id} as voted before a resolution exists"
+                    )));
+                }
+                item.mark_voted();
+            }
+            AgendaItemStatus::Tabled => item.table(),
+            AgendaItemStatus::Withdrawn => item.withdraw(),
+        }
+
+        let path = format!("governance/meetings/{meeting_id}/agenda/{item_id}.json");
+        store
+            .write_json(
+                "main",
+                &path,
+                &item,
+                &format!("GOVERNANCE: finalize agenda item {item_id} as {:?}", req.status),
+            )
+            .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
+
+        Ok::<_, AppError>(item)
+    }).await?;
 
     Ok(Json(agenda_item_to_response(&agenda_item)))
 }
@@ -3703,114 +3490,108 @@ async fn compute_resolution(
         validate_not_too_far_future("effective_date", effective_date, 730)?;
     }
 
-    let resolution = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
-            ensure_entity_ready_for_governance(&store, "resolution computation")?;
+    let resolution = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+        ensure_entity_ready_for_governance(&store, "resolution computation")?;
 
-            // Read the meeting
-            let meeting = store
-                .read::<Meeting>("main", meeting_id)
-                .map_err(|_| AppError::NotFound(format!("meeting {} not found", meeting_id)))?;
+        // Read the meeting
+        let meeting = store
+            .read::<Meeting>("main", meeting_id)
+            .map_err(|_| AppError::NotFound(format!("meeting {} not found", meeting_id)))?;
 
-            // Read the body to get quorum rule
-            let body = store
-                .read::<GovernanceBody>("main", meeting.body_id())
-                .map_err(|_| {
-                    AppError::NotFound(format!("governance body {} not found", meeting.body_id()))
-                })?;
+        // Read the body to get quorum rule
+        let body = store
+            .read::<GovernanceBody>("main", meeting.body_id())
+            .map_err(|_| {
+                AppError::NotFound(format!("governance body {} not found", meeting.body_id()))
+            })?;
 
-            // Read all votes for this agenda item
-            let vote_ids = store.list_vote_ids("main", meeting_id).unwrap_or_default();
+        // Read all votes for this agenda item
+        let vote_ids = store.list_vote_ids("main", meeting_id).unwrap_or_default();
 
-            let mut votes_for: u32 = 0;
-            let mut votes_against: u32 = 0;
-            let mut votes_abstain: u32 = 0;
-            let mut recused_count: u32 = 0;
+        let mut votes_for: u32 = 0;
+        let mut votes_against: u32 = 0;
+        let mut votes_abstain: u32 = 0;
+        let mut recused_count: u32 = 0;
 
-            for vid in &vote_ids {
-                if let Ok(v) = store.read_vote("main", meeting_id, *vid) {
-                    if v.agenda_item_id() == item_id {
-                        let weight = v.voting_power_applied().raw();
-                        match v.vote_value() {
-                            VoteValue::For => votes_for += weight,
-                            VoteValue::Against => votes_against += weight,
-                            VoteValue::Abstain => votes_abstain += weight,
-                            VoteValue::Recusal => recused_count += weight,
-                        }
+        for vid in &vote_ids {
+            if let Ok(v) = store.read_vote("main", meeting_id, *vid) {
+                if v.agenda_item_id() == item_id {
+                    let weight = v.voting_power_applied().raw();
+                    match v.vote_value() {
+                        VoteValue::For => votes_for += weight,
+                        VoteValue::Against => votes_against += weight,
+                        VoteValue::Abstain => votes_abstain += weight,
+                        VoteValue::Recusal => recused_count += weight,
                     }
                 }
             }
-
-            // Determine if the resolution passed using all eligible voting power
-            // on the body, less any recorded recusals.
-            let total_eligible = eligible_voting_power_for_body(&store, meeting.body_id())?
-                .saturating_sub(recused_count);
-            if total_eligible == 0 {
-                return Err(AppError::BadRequest(
-                    "cannot compute a resolution with zero eligible voting power".to_owned(),
-                ));
-            }
-            let passed = body.quorum_rule().is_met(votes_for, total_eligible);
-
-            // Determine resolution type from quorum rule
-            let resolution_type = match body.quorum_rule() {
-                QuorumThreshold::Majority => ResolutionType::Ordinary,
-                QuorumThreshold::Supermajority => ResolutionType::Special,
-                QuorumThreshold::Unanimous => ResolutionType::UnanimousWrittenConsent,
-            };
-
-            // Guard against duplicate resolution computation for the same agenda item.
-            let existing_resolution_ids = store
-                .list_resolution_ids("main", meeting_id)
-                .unwrap_or_default();
-            for existing_id in existing_resolution_ids {
-                if let Ok(existing) = store.read_resolution("main", meeting_id, existing_id)
-                    && existing.agenda_item_id() == item_id
-                {
-                    return Err(AppError::Conflict(format!(
-                        "resolution already exists for agenda item {item_id}"
-                    )));
-                }
-            }
-
-            let resolution_id = ResolutionId::new();
-            let resolution = Resolution::new(
-                resolution_id,
-                meeting_id,
-                item_id,
-                resolution_type,
-                req.resolution_text,
-                passed,
-                req.effective_date,
-                votes_for,
-                votes_against,
-                votes_abstain,
-                recused_count,
-            );
-
-            let path = format!(
-                "governance/meetings/{}/resolutions/{}.json",
-                meeting_id, resolution_id
-            );
-            store
-                .write_json(
-                    "main",
-                    &path,
-                    &resolution,
-                    &format!(
-                        "GOVERNANCE: compute resolution {resolution_id} for agenda item {item_id}"
-                    ),
-                )
-                .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
-
-            Ok::<_, AppError>(resolution)
         }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+
+        // Determine if the resolution passed using all eligible voting power
+        // on the body, less any recorded recusals.
+        let total_eligible = eligible_voting_power_for_body(&store, meeting.body_id())?
+            .saturating_sub(recused_count);
+        if total_eligible == 0 {
+            return Err(AppError::BadRequest(
+                "Cannot compute a resolution: there are no eligible voters (all seats may have recused or the governance body has no active voting members). Appoint at least one active, non-observer seat to the governance body with: corp governance appoint-seat --body <body_id> --contact <contact_id>".to_owned(),
+            ));
+        }
+        let passed = body.quorum_rule().is_met(votes_for, total_eligible);
+
+        // Determine resolution type from quorum rule
+        let resolution_type = match body.quorum_rule() {
+            QuorumThreshold::Majority => ResolutionType::Ordinary,
+            QuorumThreshold::Supermajority => ResolutionType::Special,
+            QuorumThreshold::Unanimous => ResolutionType::UnanimousWrittenConsent,
+        };
+
+        // Guard against duplicate resolution computation for the same agenda item.
+        let existing_resolution_ids = store
+            .list_resolution_ids("main", meeting_id)
+            .unwrap_or_default();
+        for existing_id in existing_resolution_ids {
+            if let Ok(existing) = store.read_resolution("main", meeting_id, existing_id)
+                && existing.agenda_item_id() == item_id
+            {
+                return Err(AppError::Conflict(format!(
+                    "resolution already exists for agenda item {item_id}"
+                )));
+            }
+        }
+
+        let resolution_id = ResolutionId::new();
+        let resolution = Resolution::new(
+            resolution_id,
+            meeting_id,
+            item_id,
+            resolution_type,
+            req.resolution_text,
+            passed,
+            req.effective_date,
+            votes_for,
+            votes_against,
+            votes_abstain,
+            recused_count,
+        );
+
+        let path = format!(
+            "governance/meetings/{}/resolutions/{}.json",
+            meeting_id, resolution_id
+        );
+        store
+            .write_json(
+                "main",
+                &path,
+                &resolution,
+                &format!(
+                    "GOVERNANCE: compute resolution {resolution_id} for agenda item {item_id}"
+                ),
+            )
+            .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
+
+        Ok::<_, AppError>(resolution)
+    }).await?;
 
     Ok(Json(resolution_to_response(&resolution)))
 }
@@ -3837,39 +3618,33 @@ async fn list_resolutions(
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = query.entity_id;
 
-    let resolutions = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
-            let meeting = store
-                .read::<Meeting>("main", meeting_id)
-                .map_err(|_| AppError::NotFound(format!("meeting {} not found", meeting_id)))?;
-            let body = store
-                .read::<GovernanceBody>("main", meeting.body_id())
-                .map_err(|_| {
-                    AppError::NotFound(format!("governance body {} not found", meeting.body_id()))
-                })?;
-            if body.entity_id() != entity_id {
-                return Err(AppError::BadRequest(
-                    "meeting does not belong to entity".to_owned(),
-                ));
-            }
-            let ids = store
-                .list_resolution_ids("main", meeting_id)
-                .unwrap_or_default();
-
-            let mut results = Vec::new();
-            for id in ids {
-                if let Ok(r) = store.read_resolution("main", meeting_id, id) {
-                    results.push(resolution_to_response(&r));
-                }
-            }
-            Ok::<_, AppError>(results)
+    let resolutions = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+        let meeting = store
+            .read::<Meeting>("main", meeting_id)
+            .map_err(|_| AppError::NotFound(format!("meeting {} not found", meeting_id)))?;
+        let body = store
+            .read::<GovernanceBody>("main", meeting.body_id())
+            .map_err(|_| {
+                AppError::NotFound(format!("governance body {} not found", meeting.body_id()))
+            })?;
+        if body.entity_id() != entity_id {
+            return Err(AppError::BadRequest(
+                "meeting does not belong to entity".to_owned(),
+            ));
         }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+        let ids = store
+            .list_resolution_ids("main", meeting_id)
+            .unwrap_or_default();
+
+        let mut results = Vec::new();
+        for id in ids {
+            if let Ok(r) = store.read_resolution("main", meeting_id, id) {
+                results.push(resolution_to_response(&r));
+            }
+        }
+        Ok::<_, AppError>(results)
+    }).await?;
 
     Ok(Json(resolutions))
 }
@@ -3899,48 +3674,42 @@ async fn attach_resolution_document(
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = req.entity_id;
 
-    let resolution = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
-            // Validate attached document exists in formation records.
-            store.read_document("main", req.document_id).map_err(|_| {
-                AppError::NotFound(format!("document {} not found", req.document_id))
-            })?;
+    let resolution = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+        // Validate attached document exists in formation records.
+        store.read_document("main", req.document_id).map_err(|_| {
+            AppError::NotFound(format!("document {} not found", req.document_id))
+        })?;
 
-            let mut resolution = store
-                .read_resolution("main", meeting_id, resolution_id)
-                .map_err(|_| AppError::NotFound(format!("resolution {resolution_id} not found")))?;
+        let mut resolution = store
+            .read_resolution("main", meeting_id, resolution_id)
+            .map_err(|_| AppError::NotFound(format!("resolution {resolution_id} not found")))?;
 
-            if let Some(existing) = resolution.document_id() {
-                if existing == req.document_id {
-                    return Ok::<_, AppError>(resolution);
-                }
-                return Err(AppError::Conflict(format!(
-                    "resolution {resolution_id} already has document {existing} attached"
-                )));
+        if let Some(existing) = resolution.document_id() {
+            if existing == req.document_id {
+                return Ok::<_, AppError>(resolution);
             }
-
-            resolution.set_document_id(req.document_id);
-            let path = format!("governance/meetings/{meeting_id}/resolutions/{resolution_id}.json");
-            store
-                .write_json(
-                    "main",
-                    &path,
-                    &resolution,
-                    &format!(
-                        "GOVERNANCE: attach document {} to resolution {resolution_id}",
-                        req.document_id
-                    ),
-                )
-                .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
-
-            Ok::<_, AppError>(resolution)
+            return Err(AppError::Conflict(format!(
+                "resolution {resolution_id} already has document {existing} attached"
+            )));
         }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+
+        resolution.set_document_id(req.document_id);
+        let path = format!("governance/meetings/{meeting_id}/resolutions/{resolution_id}.json");
+        store
+            .write_json(
+                "main",
+                &path,
+                &resolution,
+                &format!(
+                    "GOVERNANCE: attach document {} to resolution {resolution_id}",
+                    req.document_id
+                ),
+            )
+            .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
+
+        Ok::<_, AppError>(resolution)
+    }).await?;
 
     Ok(Json(resolution_to_response(&resolution)))
 }
@@ -3971,51 +3740,45 @@ async fn scan_expired_seats(
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = query.entity_id;
 
-    let result = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
+    let result = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
 
-            let today = chrono::Utc::now().date_naive();
-            let mut scanned = 0usize;
-            let mut expired = 0usize;
+        let today = chrono::Utc::now().date_naive();
+        let mut scanned = 0usize;
+        let mut expired = 0usize;
 
-            let seat_ids = store
-                .list_ids::<GovernanceSeat>("main")
-                .map_err(|e| AppError::Internal(format!("list seats: {e}")))?;
+        let seat_ids = store
+            .list_ids::<GovernanceSeat>("main")
+            .map_err(|e| AppError::Internal(format!("list seats: {e}")))?;
 
-            for seat_id in seat_ids {
-                scanned += 1;
-                if let Ok(seat) = store.read::<GovernanceSeat>("main", seat_id) {
-                    if let Some(term_end) = seat.term_expiration() {
-                        if term_end < today
-                            && seat.status()
-                                == crate::domain::governance::types::SeatStatus::Active
-                        {
-                            // Seat has expired — mark it
-                            let mut seat = seat;
-                            seat.resign()?;
-                            let path = format!("governance/seats/{}.json", seat_id);
-                            store
-                                .write_json(
-                                    "main",
-                                    &path,
-                                    &seat,
-                                    &format!("Expire seat {seat_id}"),
-                                )
-                                .map_err(|e| AppError::Internal(format!("commit: {e}")))?;
-                            expired += 1;
-                        }
+        for seat_id in seat_ids {
+            scanned += 1;
+            if let Ok(seat) = store.read::<GovernanceSeat>("main", seat_id) {
+                if let Some(term_end) = seat.term_expiration() {
+                    if term_end < today
+                        && seat.status()
+                            == crate::domain::governance::types::SeatStatus::Active
+                    {
+                        // Seat has expired — mark it
+                        let mut seat = seat;
+                        seat.resign()?;
+                        let path = format!("governance/seats/{}.json", seat_id);
+                        store
+                            .write_json(
+                                "main",
+                                &path,
+                                &seat,
+                                &format!("Expire seat {seat_id}"),
+                            )
+                            .map_err(|e| AppError::Internal(format!("commit: {e}")))?;
+                        expired += 1;
                     }
                 }
             }
-
-            Ok::<_, AppError>(ScanExpiredResponse { scanned, expired })
         }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+
+        Ok::<_, AppError>(ScanExpiredResponse { scanned, expired })
+    }).await?;
 
     Ok(Json(result))
 }
@@ -4061,66 +3824,59 @@ async fn written_consent(
     state.enforce_creation_rate_limit("governance.written_consent.create", workspace_id, 60, 60)?;
     let title = require_non_empty_trimmed(&req.title, "title")?;
 
-    let meeting = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        let title = title.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
-            ensure_entity_ready_for_governance(&store, "written consent creation")?;
+    let meeting = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+        ensure_entity_ready_for_governance(&store, "written consent creation")?;
 
-            // Verify body exists
-            store
-                .read::<GovernanceBody>("main", req.body_id)
-                .map_err(|_| {
-                    AppError::NotFound(format!("governance body {} not found", req.body_id))
-                })?;
+        // Verify body exists
+        store
+            .read::<GovernanceBody>("main", req.body_id)
+            .map_err(|_| {
+                AppError::NotFound(format!("governance body {} not found", req.body_id))
+            })?;
 
-            let meeting_id = MeetingId::new();
-            let meeting = Meeting::new(
-                meeting_id,
-                req.body_id,
-                MeetingType::WrittenConsent,
-                title,
-                None,          // No scheduled date for written consent
-                String::new(), // No location
-                0,             // No notice days
-            );
+        let meeting_id = MeetingId::new();
+        let meeting = Meeting::new(
+            meeting_id,
+            req.body_id,
+            MeetingType::WrittenConsent,
+            title,
+            None,          // No scheduled date for written consent
+            String::new(), // No location
+            0,             // No notice days
+        );
 
-            // Create an agenda item from the description so there is
-            // something to vote on in the written-consent flow.
-            let item_id = AgendaItemId::new();
-            let item = AgendaItem::new(
-                item_id,
-                meeting_id,
-                1, // first (and only) agenda item
-                req.description.clone(),
-                Some(req.description),
-                AgendaItemType::Resolution,
-            );
+        // Create an agenda item from the description so there is
+        // something to vote on in the written-consent flow.
+        let item_id = AgendaItemId::new();
+        let item = AgendaItem::new(
+            item_id,
+            meeting_id,
+            1, // first (and only) agenda item
+            req.description.clone(),
+            Some(req.description),
+            AgendaItemType::Resolution,
+        );
 
-            let files = vec![
-                FileWrite::json(
-                    format!("governance/meetings/{}/meeting.json", meeting_id),
-                    &meeting,
-                )
-                .map_err(|e| AppError::Internal(format!("serialize meeting: {e}")))?,
-                FileWrite::json(
-                    format!("governance/meetings/{}/agenda/{}.json", meeting_id, item_id),
-                    &item,
-                )
-                .map_err(|e| AppError::Internal(format!("serialize agenda item: {e}")))?,
-            ];
+        let files = vec![
+            FileWrite::json(
+                format!("governance/meetings/{}/meeting.json", meeting_id),
+                &meeting,
+            )
+            .map_err(|e| AppError::Internal(format!("serialize meeting: {e}")))?,
+            FileWrite::json(
+                format!("governance/meetings/{}/agenda/{}.json", meeting_id, item_id),
+                &item,
+            )
+            .map_err(|e| AppError::Internal(format!("serialize agenda item: {e}")))?,
+        ];
 
-            store
-                .commit("main", &format!("Written consent {meeting_id}"), files)
-                .map_err(|e| AppError::Internal(format!("commit: {e}")))?;
+        store
+            .commit("main", &format!("Written consent {meeting_id}"), files)
+            .map_err(|e| AppError::Internal(format!("commit: {e}")))?;
 
-            Ok::<_, AppError>(meeting)
-        }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+        Ok::<_, AppError>(meeting)
+    }).await?;
 
     Ok(Json(WrittenConsentResponse {
         meeting_id: meeting.meeting_id(),
@@ -4152,26 +3908,20 @@ async fn list_all_meetings(
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = query.entity_id;
 
-    let meetings = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
-            let ids = store
-                .list_ids::<Meeting>("main")
-                .map_err(|e| AppError::Internal(format!("list meetings: {e}")))?;
+    let meetings = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+        let ids = store
+            .list_ids::<Meeting>("main")
+            .map_err(|e| AppError::Internal(format!("list meetings: {e}")))?;
 
-            let mut results = Vec::new();
-            for id in ids {
-                if let Ok(m) = store.read::<Meeting>("main", id) {
-                    results.push(meeting_to_response(&m));
-                }
+        let mut results = Vec::new();
+        for id in ids {
+            if let Ok(m) = store.read::<Meeting>("main", id) {
+                results.push(meeting_to_response(&m));
             }
-            Ok::<_, AppError>(results)
         }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+        Ok::<_, AppError>(results)
+    }).await?;
 
     Ok(Json(meetings))
 }
@@ -4196,26 +3946,20 @@ async fn list_all_governance_bodies(
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = query.entity_id;
 
-    let bodies = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
-            let ids = store
-                .list_ids::<GovernanceBody>("main")
-                .map_err(|e| AppError::Internal(format!("list bodies: {e}")))?;
+    let bodies = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+        let ids = store
+            .list_ids::<GovernanceBody>("main")
+            .map_err(|e| AppError::Internal(format!("list bodies: {e}")))?;
 
-            let mut results = Vec::new();
-            for id in ids {
-                if let Ok(b) = store.read::<GovernanceBody>("main", id) {
-                    results.push(body_to_response(&b));
-                }
+        let mut results = Vec::new();
+        for id in ids {
+            if let Ok(b) = store.read::<GovernanceBody>("main", id) {
+                results.push(body_to_response(&b));
             }
-            Ok::<_, AppError>(results)
         }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+        Ok::<_, AppError>(results)
+    }).await?;
 
     Ok(Json(bodies))
 }

@@ -104,7 +104,10 @@ export const workItemCommands: CommandDef[] = [
       console.log(`  ${chalk.bold("Created at:")} ${w.created_at ?? "N/A"}`);
       console.log(chalk.cyan("\u2500".repeat(40)));
     },
-    examples: ["corp work-items show", "corp work-items show --json"],
+    examples: [
+      "corp work-items show wi_01hx9k3n2p4q7r8s9t0uvwxyz",
+      "corp work-items show @last:work_item --json",
+    ],
   },
 
   // --- work-items create ---
@@ -143,7 +146,10 @@ export const workItemCommands: CommandDef[] = [
     },
     produces: { kind: "work_item" },
     successTemplate: "Work item created: {title}",
-    examples: ["corp work-items create --title 'title'", "corp work-items create --json"],
+    examples: [
+      'corp work-items create --title "File Q1 taxes" --category compliance --deadline 2026-04-15',
+      'corp work-items create --title "Renew Delaware registered agent" --category legal --asap',
+    ],
   },
 
   // --- work-items claim <item-ref> ---
@@ -173,7 +179,10 @@ export const workItemCommands: CommandDef[] = [
       const result = await ctx.client.claimWorkItem(eid, resolvedWorkItemId, data);
       ctx.writer.writeResult(result, `Work item ${resolvedWorkItemId} claimed by ${claimedBy}.`, { jsonOnly: ctx.opts.json });
     },
-    examples: ["corp work-items claim <item-ref>", "corp work-items claim --json"],
+    examples: [
+      "corp work-items claim wi_01hx9k3n2p4q7r8s9t0uvwxyz --by bookkeeper-agent",
+      "corp work-items claim @last:work_item --by ops-agent --ttl 3600",
+    ],
   },
 
   // --- work-items complete <item-ref> ---
@@ -205,7 +214,10 @@ export const workItemCommands: CommandDef[] = [
       const result = await ctx.client.completeWorkItem(eid, resolvedWorkItemId, data);
       ctx.writer.writeResult(result, `Work item ${resolvedWorkItemId} completed.`, { jsonOnly: ctx.opts.json });
     },
-    examples: ["corp work-items complete <item-ref>", "corp work-items complete --json"],
+    examples: [
+      'corp work-items complete wi_01hx9k3n2p4q7r8s9t0uvwxyz --by bookkeeper-agent --result "Filed 1120 for Q1 2025"',
+      'corp work-items complete @last:work_item --by ops-agent --result "Completed and verified"',
+    ],
   },
 
   // --- work-items release <item-ref> ---
@@ -222,7 +234,10 @@ export const workItemCommands: CommandDef[] = [
       const result = await ctx.client.releaseWorkItem(eid, resolvedWorkItemId);
       ctx.writer.writeResult(result, `Work item ${resolvedWorkItemId} claim released.`, { jsonOnly: ctx.opts.json });
     },
-    examples: ["corp work-items release <item-ref>"],
+    examples: [
+      "corp work-items release wi_01hx9k3n2p4q7r8s9t0uvwxyz",
+      "corp work-items release @last:work_item",
+    ],
   },
 
   // --- work-items cancel <item-ref> ---
@@ -249,6 +264,9 @@ export const workItemCommands: CommandDef[] = [
       const result = await ctx.client.cancelWorkItem(eid, resolvedWorkItemId);
       ctx.writer.writeResult(result, `Work item ${resolvedWorkItemId} cancelled.`, { jsonOnly: ctx.opts.json });
     },
-    examples: ["corp work-items cancel <item-ref>", "corp work-items cancel --json"],
+    examples: [
+      "corp work-items cancel wi_01hx9k3n2p4q7r8s9t0uvwxyz",
+      "corp work-items cancel @last:work_item --yes",
+    ],
   },
 ];

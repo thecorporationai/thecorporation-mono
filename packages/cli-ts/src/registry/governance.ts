@@ -89,7 +89,10 @@ export const governanceCommands: CommandDef[] = [
       if (seats.length === 0) { ctx.writer.writeln("No seats found."); return; }
       printSeatsTable(seats);
     },
-    examples: ["corp governance seats <body-ref>", "corp governance seats <body-ref> --json"],
+    examples: [
+      "corp governance seats @last:body",
+      "corp governance seats a1b2c3d4 --json",
+    ],
   },
 
   // --- governance meetings <body-ref> ---
@@ -116,7 +119,10 @@ export const governanceCommands: CommandDef[] = [
       if (meetings.length === 0) { ctx.writer.writeln("No meetings found."); return; }
       printMeetingsTable(meetings);
     },
-    examples: ["corp governance meetings <body-ref>", "corp governance meetings <body-ref> --json"],
+    examples: [
+      "corp governance meetings @last:body",
+      "corp governance meetings a1b2c3d4 --json",
+    ],
   },
 
   // --- governance resolutions <meeting-ref> ---
@@ -143,7 +149,10 @@ export const governanceCommands: CommandDef[] = [
       if (resolutions.length === 0) { ctx.writer.writeln("No resolutions found."); return; }
       printResolutionsTable(resolutions);
     },
-    examples: ["corp governance resolutions <meeting-ref>", "corp governance resolutions <meeting-ref> --json"],
+    examples: [
+      "corp governance resolutions @last:meeting",
+      "corp governance resolutions a1b2c3d4 --json",
+    ],
   },
 
   // --- governance agenda-items <meeting-ref> ---
@@ -170,13 +179,16 @@ export const governanceCommands: CommandDef[] = [
       if (items.length === 0) { ctx.writer.writeln("No agenda items found."); return; }
       printAgendaItemsTable(items);
     },
-    examples: ["corp governance agenda-items <meeting-ref>", "corp governance agenda-items <meeting-ref> --json"],
+    examples: [
+      "corp governance agenda-items @last:meeting",
+      "corp governance agenda-items a1b2c3d4 --json",
+    ],
   },
 
   // --- governance incidents ---
   {
     name: "governance incidents",
-    description: "Report a governance incident",
+    description: "List governance incidents for this entity",
     route: { method: "GET", path: "/v1/entities/{eid}/governance/incidents" },
     entity: true,
     display: { title: "Governance Incidents" },
@@ -246,7 +258,11 @@ export const governanceCommands: CommandDef[] = [
         if (result.reason) console.log(`  ${chalk.bold("Reason:")} ${result.reason}`);
       }
     },
-    examples: ["corp governance mode", "corp governance mode --json"],
+    examples: [
+      "corp governance mode",
+      "corp governance mode --set board",
+      "corp governance mode --set founder",
+    ],
   },
 
   // --- governance create-body ---
@@ -288,7 +304,10 @@ export const governanceCommands: CommandDef[] = [
     },
     produces: { kind: "body" },
     successTemplate: "Governance body created: {name}",
-    examples: ["corp governance create-body --name 'name' --body-type 'type'", "corp governance create-body --json"],
+    examples: [
+      'corp governance create-body --name "Board of Directors" --body-type board_of_directors',
+      'corp governance create-body --name "Member Vote" --body-type llc_member_vote --quorum unanimous --voting per_unit',
+    ],
   },
 
   // --- governance add-seat <body-ref> ---
@@ -301,7 +320,7 @@ export const governanceCommands: CommandDef[] = [
     args: [{ name: "body-ref", required: true, description: "Governance body reference" }],
     options: [
       { flags: "--holder <contact-ref>", description: "Contact reference for the seat holder", required: true },
-      { flags: "--role <role>", description: "Seat role (chair, member, officer, observer)", default: "member" },
+      { flags: "--role <role>", description: "Seat role", default: "member", choices: ["chair", "member", "officer", "observer"] },
     ],
     handler: async (ctx) => {
       const bodyRef = ctx.positional[0];
@@ -321,8 +340,11 @@ export const governanceCommands: CommandDef[] = [
       printReferenceSummary("seat", result, { showReuseHint: true });
     },
     produces: { kind: "seat" },
-    successTemplate: "Seat added to {body_id}",
-    examples: ["corp governance add-seat <body-ref> --holder 'contact-ref'", "corp governance add-seat --json"],
+    successTemplate: "Seat added: {seat_id}",
+    examples: [
+      "corp governance add-seat @last:body --holder alice-johnson",
+      "corp governance add-seat @last:body --holder bob-smith --role chair",
+    ],
   },
 
   // --- governance convene ---
@@ -334,7 +356,7 @@ export const governanceCommands: CommandDef[] = [
     dryRun: true,
     options: [
       { flags: "--body <ref>", description: "Governance body reference", required: true },
-      { flags: "--type <type>", description: "Meeting type (board_meeting, shareholder_meeting, member_meeting, written_consent)", required: true },
+      { flags: "--type <type>", description: "Meeting type", required: true, choices: ["board_meeting", "shareholder_meeting", "member_meeting", "written_consent"] },
       { flags: "--title <title>", description: "Meeting title", required: true },
       { flags: "--date <date>", description: "Meeting date (ISO 8601)" },
       { flags: "--agenda <item>", description: "Agenda item (repeatable)", type: "array" },
@@ -368,7 +390,10 @@ export const governanceCommands: CommandDef[] = [
     },
     produces: { kind: "meeting" },
     successTemplate: "Meeting scheduled: {title}",
-    examples: ["corp governance convene --body 'ref' --type 'type' --title 'title'", "corp governance convene --json"],
+    examples: [
+      'corp governance convene --body @last:body --type board_meeting --title "Q1 2026 Board Meeting" --date 2026-03-31',
+      'corp governance convene --body @last:body --type board_meeting --title "Special Meeting" --agenda "Approve option plan" --agenda "Approve SAFE issuance"',
+    ],
   },
 
   // --- governance open <meeting-ref> ---
@@ -408,7 +433,10 @@ export const governanceCommands: CommandDef[] = [
       if (ctx.opts.json) { ctx.writer.json(result); return; }
       ctx.writer.success(`Meeting opened: ${resolvedMeetingId}`);
     },
-    examples: ["corp governance open <meeting-ref> --present-seat 'ref'"],
+    examples: [
+      "corp governance open @last:meeting --present-seat @last:seat",
+      "corp governance open a1b2c3d4 --present-seat seat-alice --present-seat seat-bob",
+    ],
   },
 
   // --- governance vote <meeting-ref> <item-ref> ---
@@ -457,7 +485,11 @@ export const governanceCommands: CommandDef[] = [
         }
       }
     },
-    examples: ["corp governance vote <meeting-ref> <item-ref> --voter <contact-ref> --vote for"],
+    successTemplate: "Vote recorded: {vote_id}",
+    examples: [
+      "corp governance vote @last:meeting @last:agenda_item --voter alice-johnson --vote for",
+      "corp governance vote a1b2c3d4 b2c3d4e5 --voter bob-smith --vote against",
+    ],
   },
 
   // --- governance notice <meeting-ref> ---
@@ -480,7 +512,11 @@ export const governanceCommands: CommandDef[] = [
       if (ctx.opts.json) { ctx.writer.json(result); return; }
       ctx.writer.success(`Notice sent for meeting ${resolvedMeetingId}`);
     },
-    examples: ["corp governance notice <meeting-ref>"],
+    successTemplate: "Meeting notice sent",
+    examples: [
+      "corp governance notice @last:meeting",
+      "corp governance notice a1b2c3d4",
+    ],
   },
 
   // --- governance adjourn <meeting-ref> ---
@@ -503,7 +539,11 @@ export const governanceCommands: CommandDef[] = [
       if (ctx.opts.json) { ctx.writer.json(result); return; }
       ctx.writer.success(`Meeting ${resolvedMeetingId} adjourned`);
     },
-    examples: ["corp governance adjourn <meeting-ref>"],
+    successTemplate: "Meeting adjourned",
+    examples: [
+      "corp governance adjourn @last:meeting",
+      "corp governance adjourn a1b2c3d4",
+    ],
   },
 
   // --- governance reopen <meeting-ref> ---
@@ -526,7 +566,11 @@ export const governanceCommands: CommandDef[] = [
       if (ctx.opts.json) { ctx.writer.json(result); return; }
       ctx.writer.success(`Meeting ${resolvedMeetingId} re-opened`);
     },
-    examples: ["corp governance reopen <meeting-ref>"],
+    successTemplate: "Meeting re-opened",
+    examples: [
+      "corp governance reopen @last:meeting",
+      "corp governance reopen a1b2c3d4",
+    ],
   },
 
   // --- governance cancel <meeting-ref> ---
@@ -562,7 +606,11 @@ export const governanceCommands: CommandDef[] = [
       if (ctx.opts.json) { ctx.writer.json(result); return; }
       ctx.writer.success(`Meeting ${resolvedMeetingId} cancelled`);
     },
-    examples: ["corp governance cancel <meeting-ref>", "corp governance cancel --json"],
+    successTemplate: "Meeting cancelled",
+    examples: [
+      "corp governance cancel @last:meeting",
+      "corp governance cancel a1b2c3d4 --yes",
+    ],
   },
 
   // --- governance finalize-item <meeting-ref> <item-ref> ---
@@ -599,7 +647,11 @@ export const governanceCommands: CommandDef[] = [
       if (ctx.opts.json) { ctx.writer.json(result); return; }
       ctx.writer.success(`Agenda item ${resolvedItemId} finalized as ${ctx.opts.status}`);
     },
-    examples: ["corp governance finalize-item <meeting-ref> <item-ref>"],
+    successTemplate: "Agenda item finalized",
+    examples: [
+      "corp governance finalize-item @last:meeting @last:agenda_item --status voted",
+      "corp governance finalize-item a1b2c3d4 b2c3d4e5 --status tabled",
+    ],
   },
 
   // --- governance resolve <meeting-ref> <item-ref> ---
@@ -637,8 +689,11 @@ export const governanceCommands: CommandDef[] = [
       printReferenceSummary("resolution", result, { showReuseHint: true });
     },
     produces: { kind: "resolution" },
-    successTemplate: "Resolution computed",
-    examples: ["corp governance resolve <meeting-ref> <item-ref> --text 'resolution_text'"],
+    successTemplate: "Resolution computed: {resolution_id}",
+    examples: [
+      'corp governance resolve @last:meeting @last:agenda_item --text "RESOLVED: The board approves the 2026 option plan."',
+      'corp governance resolve a1b2c3d4 b2c3d4e5 --text "RESOLVED: The board authorizes issuance of Series A preferred stock."',
+    ],
   },
 
   // --- governance written-consent ---
@@ -689,7 +744,10 @@ export const governanceCommands: CommandDef[] = [
     },
     produces: { kind: "meeting" },
     successTemplate: "Written consent created: {title}",
-    examples: ["corp governance written-consent --body 'ref' --title 'title' --description 'desc'"],
+    examples: [
+      'corp governance written-consent --body @last:body --title "Approve 2026 Option Plan" --description "The board approves adoption of the 2026 Equity Incentive Plan."',
+      'corp governance written-consent --body @last:body --title "Authorize SAFE Issuance" --description "The board authorizes issuance of a SAFE to Sequoia Capital for $500,000."',
+    ],
   },
 
   // --- governance quick-approve ---
@@ -821,11 +879,19 @@ export const governanceCommands: CommandDef[] = [
       const seatRef = ctx.positional[0];
       const eid = await ctx.resolver.resolveEntity(ctx.opts.entityId as string | undefined);
       const seatId = await ctx.resolver.resolveSeat(eid, seatRef, ctx.opts.bodyId as string | undefined);
+      if (ctx.dryRun) {
+        ctx.writer.dryRun("governance.resign_seat", { entity_id: eid, seat_id: seatId });
+        return;
+      }
       const result = await ctx.client.resignSeat(seatId, eid);
       if (ctx.opts.json) { ctx.writer.json(result); return; }
       ctx.writer.success(`Seat ${seatId} resigned.`);
     },
-    examples: ["corp governance resign <seat-ref>", "corp governance resign --json"],
+    successTemplate: "Seat resigned",
+    examples: [
+      "corp governance resign @last:seat",
+      "corp governance resign a1b2c3d4",
+    ],
   },
 
   // ── Auto-generated from OpenAPI ──────────────────────────────
@@ -877,17 +943,20 @@ export const governanceCommands: CommandDef[] = [
     options: [
       { flags: "--template-version <template-version>", description: "Template Version" },
     ],
-    examples: ["corp entities governance-doc-bundles-generate", "corp entities governance-doc-bundles-generate --json"],
-    successTemplate: "Governance Doc Bundles Generate created",
+    examples: [
+      "corp entities governance-doc-bundles-generate",
+      "corp entities governance-doc-bundles-generate --template-version v2 --json",
+    ],
+    successTemplate: "Governance document bundle generated",
   },
   {
     name: "entities governance-doc-bundle",
-    description: "List governance document bundles",
+    description: "View a specific governance document bundle by ID",
     route: { method: "GET", path: "/v1/entities/{eid}/governance/doc-bundles/{pos}" },
     entity: true,
     args: [{ name: "bundle-id", required: true, description: "Document bundle ID" }],
     display: { title: "Entities Governance Doc Bundles", cols: ["documents>Documents", "entity_type>Entity Type", "generated_at>Generated At", "profile_version>Profile Version", "#bundle_id>ID"] },
-    examples: ["corp entities governance-doc-bundles", "corp entities governance-doc-bundles --json"],
+    examples: ["corp entities governance-doc-bundle a1b2c3d4", "corp entities governance-doc-bundle a1b2c3d4 --json"],
   },
   {
     name: "entities governance-mode-history",
@@ -923,7 +992,10 @@ export const governanceCommands: CommandDef[] = [
       { flags: "--quorum-rule <quorum-rule>", description: "The threshold required for a vote to pass.", required: true, choices: ["majority", "supermajority", "unanimous"] },
       { flags: "--voting-method <voting-method>", description: "How votes are counted.", required: true, choices: ["per_capita", "per_unit"] },
     ],
-    examples: ["corp governance-bodies --body-type board_of_directors --name majority --quorum-rule majority --voting-method per_capita"],
+    examples: [
+      'corp governance-bodies create --name "Board of Directors" --body-type board_of_directors --quorum-rule majority --voting-method per_capita',
+      'corp governance-bodies create --name "LLC Member Vote" --body-type llc_member_vote --quorum-rule unanimous --voting-method per_unit',
+    ],
     successTemplate: "Governance body created",
   },
   {
@@ -931,8 +1003,10 @@ export const governanceCommands: CommandDef[] = [
     description: "Scan for and flag expired governance seats",
     route: { method: "POST", path: "/v1/governance-seats/scan-expired" },
     entity: true,
-    examples: ["corp governance-seats scan-expired"],
-    successTemplate: "Expired seats scanned",
+    examples: [
+      "corp governance-seats scan-expired",
+    ],
+    successTemplate: "Expired seats scanned and flagged",
   },
   {
     name: "governance-seats resign",
@@ -940,7 +1014,9 @@ export const governanceCommands: CommandDef[] = [
     route: { method: "POST", path: "/v1/governance-seats/{pos}/resign" },
     entity: true,
     args: [{ name: "seat-id", required: true, description: "Governance seat ID" }],
-    examples: ["corp governance-seats resign <seat-id>"],
+    examples: [
+      "corp governance-seats resign a1b2c3d4",
+    ],
     successTemplate: "Seat resigned",
   },
   {
@@ -949,7 +1025,7 @@ export const governanceCommands: CommandDef[] = [
     route: { method: "POST", path: "/v1/governance/audit/checkpoints" },
     entity: true,
     examples: ["corp governance audit-checkpoints"],
-    successTemplate: "Audit Checkpoints created",
+    successTemplate: "Audit checkpoint created",
   },
   {
     name: "governance audit-events",
@@ -966,8 +1042,11 @@ export const governanceCommands: CommandDef[] = [
       { flags: "--linked-mode-event-id <linked-mode-event-id>", description: "Linked Mode Event Id" },
       { flags: "--linked-trigger-id <linked-trigger-id>", description: "Linked Trigger Id" },
     ],
-    examples: ["corp governance audit-events --action 'action' --event-type mode_changed", "corp governance audit-events --json"],
-    successTemplate: "Audit Events created",
+    examples: [
+      'corp governance audit-events --action "Mode changed to board" --event-type mode_changed',
+      'corp governance audit-events --action "Manual review completed" --event-type manual_event --details "Reviewed by legal team"',
+    ],
+    successTemplate: "Audit event recorded",
   },
   {
     name: "governance audit-verify",
@@ -975,7 +1054,7 @@ export const governanceCommands: CommandDef[] = [
     route: { method: "POST", path: "/v1/governance/audit/verify" },
     entity: true,
     examples: ["corp governance audit-verify"],
-    successTemplate: "Audit Verify created",
+    successTemplate: "Governance audit verified",
   },
   {
     name: "governance delegation-schedule",
@@ -998,8 +1077,11 @@ export const governanceCommands: CommandDef[] = [
       { flags: "--rationale <rationale>", description: "Rationale" },
       { flags: "--tier1-max-amount-cents <tier1-max-amount-cents>", description: "Tier1 Max Amount Cents" },
     ],
-    examples: ["corp governance delegation-schedule-amend", "corp governance delegation-schedule-amend --json"],
-    successTemplate: "Delegation Schedule Amend created",
+    examples: [
+      "corp governance delegation-schedule-amend --rationale \"Expanding Tier 1 authority for routine operations\"",
+      "corp governance delegation-schedule-amend --meeting-id @last:meeting --adopted-resolution-id @last:resolution --tier1-max-amount-cents 500000",
+    ],
+    successTemplate: "Delegation schedule amended",
   },
   {
     name: "governance delegation-schedule-history",
@@ -1019,8 +1101,11 @@ export const governanceCommands: CommandDef[] = [
       { flags: "--meeting-id <meeting-id>", description: "Meeting ID", required: true },
       { flags: "--rationale <rationale>", description: "Rationale" },
     ],
-    examples: ["corp governance delegation-schedule-reauthorize --adopted-resolution-id 'adopted-resolution-id' --meeting-id 'meeting-id'", "corp governance delegation-schedule-reauthorize --json"],
-    successTemplate: "Delegation Schedule Reauthorize created",
+    examples: [
+      "corp governance delegation-schedule-reauthorize --adopted-resolution-id @last:resolution --meeting-id @last:meeting",
+      "corp governance delegation-schedule-reauthorize --adopted-resolution-id a1b2c3d4 --meeting-id b2c3d4e5 --rationale \"Annual reauthorization of delegation schedule\"",
+    ],
+    successTemplate: "Delegation schedule reauthorized",
   },
   {
     name: "governance evaluate",
@@ -1031,8 +1116,11 @@ export const governanceCommands: CommandDef[] = [
       { flags: "--intent-type <intent-type>", description: "Type of intent", required: true },
       { flags: "--metadata <metadata>", description: "Additional metadata (JSON)" },
     ],
-    examples: ["corp governance evaluate --intent-type 'intent-type'", "corp governance evaluate --json"],
-    successTemplate: "Governance evaluated",
+    examples: [
+      "corp governance evaluate --intent-type equity.issuance.execute",
+      "corp governance evaluate --intent-type equity.transfer.prepare --metadata '{\"amount_cents\": 50000000}'",
+    ],
+    successTemplate: "Governance evaluation complete",
   },
   {
     name: "governance report-incident",
@@ -1044,8 +1132,11 @@ export const governanceCommands: CommandDef[] = [
       { flags: "--severity <severity>", description: "Severity level", required: true, choices: ["low", "medium", "high", "critical"] },
       { flags: "--title <title>", description: "Title", required: true },
     ],
-    examples: ["corp governance incidents --description low --severity low --title 'title'"],
-    successTemplate: "Incidents created",
+    examples: [
+      'corp governance report-incident --title "Unauthorized access attempt" --description "Board portal accessed from unknown IP" --severity medium',
+      'corp governance report-incident --title "Quorum breach" --description "Meeting held without required quorum" --severity high',
+    ],
+    successTemplate: "Incident reported",
   },
   {
     name: "governance incidents-resolve",
@@ -1053,8 +1144,10 @@ export const governanceCommands: CommandDef[] = [
     route: { method: "POST", path: "/v1/governance/incidents/{pos}/resolve" },
     entity: true,
     args: [{ name: "incident-id", required: true, description: "Incident ID" }],
-    examples: ["corp governance incidents-resolve <incident-id>"],
-    successTemplate: "Incidents Resolve created",
+    examples: [
+      "corp governance incidents-resolve a1b2c3d4",
+    ],
+    successTemplate: "Incident resolved",
   },
   {
     name: "meetings written-consent",
@@ -1065,8 +1158,11 @@ export const governanceCommands: CommandDef[] = [
       { flags: "--description <description>", description: "Description text", required: true },
       { flags: "--title <title>", description: "Title", required: true },
     ],
-    examples: ["corp meetings written-consent --body-id 'body-id' --description 'description' --title 'title'"],
-    successTemplate: "Written Consent created",
+    examples: [
+      'corp meetings written-consent --body-id a1b2c3d4 --title "Approve Budget" --description "The board approves the 2026 operating budget."',
+      'corp meetings written-consent --body-id a1b2c3d4 --title "Authorize Officer" --description "The board authorizes Alice Smith as CFO."',
+    ],
+    successTemplate: "Written consent created",
   },
   {
     name: "meetings agenda-items-vote",
@@ -1078,8 +1174,11 @@ export const governanceCommands: CommandDef[] = [
       { flags: "--vote-value <vote-value>", description: "How a participant voted.", required: true, choices: ["for", "against", "abstain", "recusal"] },
       { flags: "--voter-id <voter-id>", description: "Voter Id", required: true },
     ],
-    examples: ["corp meetings agenda-items-vote <meeting-id> <item-id> --vote-value for --voter-id 'voter-id'"],
-    successTemplate: "Agenda Items Vote created",
+    examples: [
+      "corp meetings agenda-items-vote a1b2c3d4 b2c3d4e5 --vote-value for --voter-id c3d4e5f6",
+      "corp meetings agenda-items-vote a1b2c3d4 b2c3d4e5 --vote-value abstain --voter-id c3d4e5f6",
+    ],
+    successTemplate: "Vote recorded",
   },
   {
     name: "meetings convene",
@@ -1090,8 +1189,10 @@ export const governanceCommands: CommandDef[] = [
     options: [
       { flags: "--present-seat-ids <present-seat-ids>", description: "Present Seat Ids", required: true, type: "array" },
     ],
-    examples: ["corp meetings convene <meeting-id> --present-seat-ids 'present-seat-ids'"],
-    successTemplate: "Convene created",
+    examples: [
+      "corp meetings convene a1b2c3d4 --present-seat-ids seat-alice seat-bob",
+    ],
+    successTemplate: "Meeting convened",
   },
   {
     name: "meetings resolutions-attach-document",
@@ -1101,8 +1202,10 @@ export const governanceCommands: CommandDef[] = [
     options: [
       { flags: "--document-id <document-id>", description: "Document ID", required: true },
     ],
-    examples: ["corp meetings resolutions-attach-document <meeting-id> <resolution-id> --document-id 'document-id'"],
-    successTemplate: "Resolutions Attach Document created",
+    examples: [
+      "corp meetings resolutions-attach-document a1b2c3d4 b2c3d4e5 --document-id c3d4e5f6",
+    ],
+    successTemplate: "Document attached to resolution",
   },
 
 ];

@@ -73,7 +73,7 @@ export const serviceCommands: CommandDef[] = [
       printReferenceSummary("service_request", result);
       printJson(result);
     },
-    examples: ["corp services show", "corp services show --json"],
+    examples: ["corp services show req_abc123", "corp services show @last --json"],
   },
 
   // --- services buy <slug> ---
@@ -118,7 +118,7 @@ export const serviceCommands: CommandDef[] = [
     },
     produces: { kind: "service_request" },
     successTemplate: "Service request created",
-    examples: ["corp services buy <slug>"],
+    examples: ["corp services buy registered-agent", "corp services buy annual-report --entity-id ent_abc123"],
   },
 
   // --- services fulfill <ref> ---
@@ -146,7 +146,7 @@ export const serviceCommands: CommandDef[] = [
       printReferenceSummary("service_request", result, { showReuseHint: true });
       printJson(result);
     },
-    examples: ["corp services fulfill <ref>", "corp services fulfill --json"],
+    examples: ["corp services fulfill req_abc123", "corp services fulfill req_abc123 --note 'Filed with state' --json"],
   },
 
   // --- services cancel <ref> ---
@@ -170,56 +170,59 @@ export const serviceCommands: CommandDef[] = [
       printReferenceSummary("service_request", result, { showReuseHint: true });
       printJson(result);
     },
-    examples: ["corp services cancel <ref>"],
+    examples: ["corp services cancel req_abc123", "corp services cancel @last --json"],
   },
 
   // ── Auto-generated from OpenAPI ──────────────────────────────
   {
     name: "services create-request",
-    description: "Submit a new service request",
+    description: "Submit a new service request by slug",
     route: { method: "POST", path: "/v1/services/requests" },
     options: [
-      { flags: "--obligation-id <obligation-id>", description: "Obligation ID" },
-      { flags: "--service-slug <service-slug>", description: "Service Slug", required: true },
+      { flags: "--obligation-id <obligation-id>", description: "Obligation ID to attach this request to" },
+      { flags: "--service-slug <service-slug>", description: "Service catalog slug", required: true },
     ],
-    examples: ["corp services requests --service-slug 'service-slug'", "corp services requests --json"],
-    successTemplate: "Requests created",
+    examples: [
+      "corp services create-request --service-slug registered-agent",
+      "corp services create-request --service-slug annual-report --obligation-id obl_abc123 --json",
+    ],
+    successTemplate: "Service request created",
   },
   {
     name: "services requests",
     description: "View a service request by ID",
     route: { method: "GET", path: "/v1/services/requests/{pos}" },
     entity: true,
-    args: [{ name: "request-id", required: true, description: "Document request ID", posKind: "service_request" }],
-    display: { title: "Services Requests", cols: ["amount_cents>Amount Cents", "checkout_url>Checkout Url", "failed_at>Failed At", "fulfilled_at>Fulfilled At", "@created_at>Created At", "#entity_id>ID"] },
-    examples: ["corp services requests", "corp services requests --json"],
+    args: [{ name: "request-id", required: true, description: "Service request ID", posKind: "service_request" }],
+    display: { title: "Service Request", cols: ["amount_cents>Amount", "checkout_url>Checkout URL", "failed_at>Failed At", "fulfilled_at>Fulfilled At", "@created_at>Created", "#entity_id>Entity ID"] },
+    examples: ["corp services requests req_abc123", "corp services requests req_abc123 --json"],
   },
   {
     name: "services requests-cancel",
-    description: "Cancel a service request",
+    description: "Cancel a pending service request",
     route: { method: "POST", path: "/v1/services/requests/{pos}/cancel" },
-    args: [{ name: "request-id", required: true, description: "Document request ID", posKind: "service_request" }],
-    examples: ["corp services requests-cancel <request-id>"],
-    successTemplate: "Request cancelled",
+    args: [{ name: "request-id", required: true, description: "Service request ID", posKind: "service_request" }],
+    examples: ["corp services requests-cancel req_abc123"],
+    successTemplate: "Service request cancelled",
   },
   {
     name: "services requests-checkout",
-    description: "Start checkout for a service request",
+    description: "Start Stripe checkout for a service request",
     route: { method: "POST", path: "/v1/services/requests/{pos}/checkout" },
-    args: [{ name: "request-id", required: true, description: "Document request ID", posKind: "service_request" }],
-    examples: ["corp services requests-checkout <request-id>"],
-    successTemplate: "Checkout started",
+    args: [{ name: "request-id", required: true, description: "Service request ID", posKind: "service_request" }],
+    examples: ["corp services requests-checkout req_abc123", "corp services requests-checkout req_abc123 --json"],
+    successTemplate: "Checkout session created",
   },
   {
     name: "services requests-fulfill",
-    description: "Fulfill a service request",
+    description: "Mark a service request as fulfilled (operator only)",
     route: { method: "POST", path: "/v1/services/requests/{pos}/fulfill" },
-    args: [{ name: "request-id", required: true, description: "Document request ID", posKind: "service_request" }],
+    args: [{ name: "request-id", required: true, description: "Service request ID", posKind: "service_request" }],
     options: [
-      { flags: "--note <note>", description: "Note" },
+      { flags: "--note <note>", description: "Fulfillment note visible to the customer" },
     ],
-    examples: ["corp services requests-fulfill <request-id>", "corp services requests-fulfill --json"],
-    successTemplate: "Requests Fulfill created",
+    examples: ["corp services requests-fulfill req_abc123", "corp services requests-fulfill req_abc123 --note 'Filed with Delaware' --json"],
+    successTemplate: "Service request fulfilled",
   },
 
 ];

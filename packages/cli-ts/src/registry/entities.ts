@@ -224,10 +224,10 @@ export const entityCommands: CommandDef[] = [
   },
   {
     name: "entities show",
-    description: "Show entity detail",
-    args: [{ name: "entity-ref", required: true }],
+    description: "Show detail for a specific entity",
+    args: [{ name: "entity-ref", required: true, description: "Entity name, short ID, or reference" }],
     handler: entitiesShowHandler,
-    examples: ["corp entities show"],
+    examples: ["corp entities show acme", "corp entities show ent_abc123 --json"],
   },
   {
     name: "entities convert",
@@ -235,11 +235,11 @@ export const entityCommands: CommandDef[] = [
     route: { method: "POST", path: "/v1/entities/{pos}/convert" },
     args: [{ name: "entity-ref", required: true }],
     options: [
-      { flags: "--to <type>", description: "Target entity type (llc, c_corp)", required: true },
-      { flags: "--jurisdiction <jurisdiction>", description: "New jurisdiction" },
+      { flags: "--to <type>", description: "Target entity type", required: true, choices: ["llc", "c_corp"] },
+      { flags: "--jurisdiction <jurisdiction>", description: "New jurisdiction (e.g. DE, CA)" },
     ],
     handler: entitiesConvertHandler,
-    examples: ["corp entities convert <entity-ref> --to 'type'", "corp entities convert --json"],
+    examples: ["corp entities convert acme --to c_corp", "corp entities convert ent_abc123 --to llc --jurisdiction DE --json"],
   },
   {
     name: "entities dissolve",
@@ -252,7 +252,10 @@ export const entityCommands: CommandDef[] = [
       { flags: "--yes -y", description: "Skip confirmation prompt" },
     ],
     handler: entitiesDissolveHandler,
-    examples: ["corp entities dissolve <entity-ref> --reason 'reason'", "corp entities dissolve --json"],
+    examples: [
+      "corp entities dissolve acme --reason 'Business wind-down'",
+      "corp entities dissolve ent_abc123 --reason 'Voluntary dissolution' --effective-date 2026-06-01 --yes",
+    ],
   },
 
   // ── contacts ──
@@ -276,7 +279,7 @@ export const entityCommands: CommandDef[] = [
     display: { title: "Contact Profile" },
     args: [{ name: "contact-ref", required: true }],
     handler: contactsShowHandler,
-    examples: ["corp contacts show", "corp contacts show --json"],
+    examples: ["corp contacts show alice", "corp contacts show con_abc123 --json"],
   },
   {
     name: "contacts add",
@@ -286,9 +289,9 @@ export const entityCommands: CommandDef[] = [
     options: [
       { flags: "--name <name>", description: "Contact name", required: true },
       { flags: "--email <email>", description: "Contact email", required: true },
-      { flags: "--type <type>", description: "Contact type (individual, organization)", default: "individual" },
-      { flags: "--category <category>", description: "Category (employee, contractor, board_member, investor, law_firm, valuation_firm, accounting_firm, officer, founder, member, other)" },
-      { flags: "--cap-table-access <level>", description: "Cap table access (none, summary, detailed)" },
+      { flags: "--type <type>", description: "Contact type", default: "individual", choices: ["individual", "organization"] },
+      { flags: "--category <category>", description: "Contact role category", choices: ["employee", "contractor", "board_member", "investor", "law_firm", "valuation_firm", "accounting_firm", "officer", "founder", "member", "other"] },
+      { flags: "--cap-table-access <level>", description: "Cap table visibility level", choices: ["none", "summary", "detailed"] },
       { flags: "--address <address>", description: "Mailing address" },
       { flags: "--mailing-address <address>", description: "Alias for --address" },
       { flags: "--phone <phone>", description: "Phone number" },
@@ -297,7 +300,10 @@ export const entityCommands: CommandDef[] = [
     handler: contactsAddHandler,
     produces: { kind: "contact" },
     successTemplate: "Contact created: {name}",
-    examples: ["corp contacts add --name 'name' --email 'email'", "corp contacts add --json"],
+    examples: [
+      "corp contacts add --name 'Alice Smith' --email alice@example.com --category founder",
+      "corp contacts add --name 'Bob Jones' --email bob@example.com --category employee --type individual --json",
+    ],
   },
   {
     name: "contacts edit",
@@ -308,15 +314,18 @@ export const entityCommands: CommandDef[] = [
     options: [
       { flags: "--name <name>", description: "Contact name" },
       { flags: "--email <email>", description: "Contact email" },
-      { flags: "--category <category>", description: "Contact category" },
-      { flags: "--cap-table-access <level>", description: "Cap table access (none, summary, detailed)" },
+      { flags: "--category <category>", description: "Contact role category", choices: ["employee", "contractor", "board_member", "investor", "law_firm", "valuation_firm", "accounting_firm", "officer", "founder", "member", "other"] },
+      { flags: "--cap-table-access <level>", description: "Cap table visibility level", choices: ["none", "summary", "detailed"] },
       { flags: "--address <address>", description: "Mailing address" },
       { flags: "--mailing-address <address>", description: "Alias for --address" },
       { flags: "--phone <phone>", description: "Phone number" },
       { flags: "--notes <notes>", description: "Additional notes" },
     ],
     handler: contactsEditHandler,
-    examples: ["corp contacts edit <contact-ref>", "corp contacts edit --json"],
+    examples: [
+      "corp contacts edit alice --email newemail@example.com",
+      "corp contacts edit con_abc123 --category board_member --cap-table-access detailed --json",
+    ],
   },
 
   // ── Auto-generated from OpenAPI ──────────────────────────────
@@ -325,21 +334,24 @@ export const entityCommands: CommandDef[] = [
     description: "View notification preferences for a contact",
     route: { method: "GET", path: "/v1/contacts/{pos}/notification-prefs" },
     args: [{ name: "contact-id", required: true, description: "Contact ID", posKind: "contact" }],
-    display: { title: "Contacts Notification Prefs", cols: ["#contact_id>ID", "email_enabled>Email Enabled", "sms_enabled>Sms Enabled", "@updated_at>Updated At", "webhook_enabled>Webhook Enabled"] },
-    examples: ["corp contacts notification-prefs"],
+    display: { title: "Contact Notification Preferences", cols: ["#contact_id>Contact ID", "email_enabled>Email", "sms_enabled>SMS", "webhook_enabled>Webhook", "@updated_at>Updated"] },
+    examples: ["corp contacts notification-prefs con_abc123", "corp contacts notification-prefs con_abc123 --json"],
   },
   {
     name: "contacts update-notification-prefs",
-    description: "View notification preferences for a contact",
+    description: "Update notification preferences for a contact",
     route: { method: "PATCH", path: "/v1/contacts/{pos}/notification-prefs" },
     args: [{ name: "contact-id", required: true, description: "Contact ID", posKind: "contact" }],
     options: [
-      { flags: "--email-enabled <email-enabled>", description: "Email Enabled" },
-      { flags: "--sms-enabled <sms-enabled>", description: "Sms Enabled" },
-      { flags: "--webhook-enabled <webhook-enabled>", description: "Webhook Enabled" },
+      { flags: "--email-enabled <email-enabled>", description: "Enable email notifications (true/false)" },
+      { flags: "--sms-enabled <sms-enabled>", description: "Enable SMS notifications (true/false)" },
+      { flags: "--webhook-enabled <webhook-enabled>", description: "Enable webhook notifications (true/false)" },
     ],
-    examples: ["corp contacts update-notification-prefs <contact-id>", "corp contacts update-notification-prefs --json"],
-    successTemplate: "Notification Prefs updated",
+    examples: [
+      "corp contacts update-notification-prefs con_abc123 --email-enabled true",
+      "corp contacts update-notification-prefs con_abc123 --sms-enabled false --webhook-enabled true --json",
+    ],
+    successTemplate: "Notification preferences updated",
   },
 
 ];

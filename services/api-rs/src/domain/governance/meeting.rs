@@ -331,4 +331,218 @@ mod tests {
         assert_eq!(parsed.status(), MeetingStatus::Noticed);
         assert_eq!(parsed.title(), m.title());
     }
+
+    // ── Property-based-style FSM tests ───────────────────────────────────
+
+    /// `send_notice` must only succeed from Draft; every other status must
+    /// return an error.
+    #[test]
+    fn send_notice_only_allowed_from_draft() {
+        // (label, setup)
+        type SetupFn = fn(&mut Meeting);
+        let non_draft: &[(&str, SetupFn)] = &[
+            ("Noticed", |m| {
+                m.send_notice().unwrap();
+            }),
+            ("Convened", |m| {
+                m.send_notice().unwrap();
+                m.convene(vec![GovernanceSeatId::new()], true).unwrap();
+            }),
+            ("Adjourned", |m| {
+                m.send_notice().unwrap();
+                m.convene(vec![GovernanceSeatId::new()], true).unwrap();
+                m.adjourn().unwrap();
+            }),
+            ("Cancelled", |m| {
+                m.cancel().unwrap();
+            }),
+        ];
+        for (label, setup) in non_draft {
+            let mut m = make_meeting(MeetingType::BoardMeeting);
+            setup(&mut m);
+            let result = m.send_notice();
+            assert!(
+                result.is_err(),
+                "send_notice() should fail from status '{label}' but succeeded"
+            );
+        }
+
+        // Confirm it works exactly once from Draft.
+        let mut m = make_meeting(MeetingType::BoardMeeting);
+        assert!(m.send_notice().is_ok());
+    }
+
+    /// `convene` must only succeed from Noticed; every other status must
+    /// return an error (including calling it twice).
+    #[test]
+    fn convene_only_allowed_from_noticed() {
+        type SetupFn = fn(&mut Meeting);
+        let non_noticed: &[(&str, SetupFn)] = &[
+            ("Draft",     |_m| {}),
+            ("Convened",  |m| {
+                m.send_notice().unwrap();
+                m.convene(vec![GovernanceSeatId::new()], true).unwrap();
+            }),
+            ("Adjourned", |m| {
+                m.send_notice().unwrap();
+                m.convene(vec![GovernanceSeatId::new()], true).unwrap();
+                m.adjourn().unwrap();
+            }),
+            ("Cancelled", |m| {
+                m.cancel().unwrap();
+            }),
+        ];
+        for (label, setup) in non_noticed {
+            let mut m = make_meeting(MeetingType::BoardMeeting);
+            setup(&mut m);
+            let result = m.convene(vec![GovernanceSeatId::new()], true);
+            assert!(
+                result.is_err(),
+                "convene() should fail from status '{label}' but succeeded"
+            );
+        }
+    }
+
+    /// Convening with an empty seat list records QuorumStatus::NotMet when
+    /// quorum=false is passed — the meeting is still Convened but can_vote()
+    /// returns false for non-WrittenConsent types.
+    #[test]
+    fn convene_with_no_seats_records_not_met() {
+        let meeting_types = [
+            MeetingType::BoardMeeting,
+            MeetingType::ShareholderMeeting,
+            MeetingType::MemberMeeting,
+        ];
+        for meeting_type in meeting_types {
+            let mut m = make_meeting(meeting_type);
+            m.send_notice().unwrap();
+            m.convene(vec![], false).unwrap();
+            assert_eq!(m.status(), MeetingStatus::Convened);
+            assert_eq!(m.quorum_met(), QuorumStatus::NotMet);
+            assert_eq!(m.present_seat_ids().len(), 0);
+            assert!(
+                !m.can_vote(),
+                "can_vote() must be false when quorum is NotMet for {meeting_type:?}"
+            );
+        }
+    }
+
+    /// `adjourn` must only succeed from Convened.
+    #[test]
+    fn adjourn_only_allowed_from_convened() {
+        type SetupFn = fn(&mut Meeting);
+        let non_convened: &[(&str, SetupFn)] = &[
+            ("Draft",     |_m| {}),
+            ("Noticed",   |m| { m.send_notice().unwrap(); }),
+            ("Cancelled", |m| { m.cancel().unwrap(); }),
+        ];
+        for (label, setup) in non_convened {
+            let mut m = make_meeting(MeetingType::BoardMeeting);
+            setup(&mut m);
+            let result = m.adjourn();
+            assert!(
+                result.is_err(),
+                "adjourn() should fail from status '{label}' but succeeded"
+            );
+        }
+
+        // Also fails from Adjourned itself.
+        let mut m = make_meeting(MeetingType::BoardMeeting);
+        m.send_notice().unwrap();
+        m.convene(vec![GovernanceSeatId::new()], true).unwrap();
+        m.adjourn().unwrap();
+        assert!(m.adjourn().is_err(), "adjourn() should fail when already Adjourned");
+    }
+
+    /// `cancel` must fail from Convened and Adjourned.
+    #[test]
+    fn cancel_blocked_once_convened_or_adjourned() {
+        type SetupFn = fn(&mut Meeting);
+        let blocked: &[(&str, SetupFn)] = &[
+            ("Convened", |m| {
+                m.send_notice().unwrap();
+                m.convene(vec![GovernanceSeatId::new()], true).unwrap();
+            }),
+            ("Adjourned", |m| {
+                m.send_notice().unwrap();
+                m.convene(vec![GovernanceSeatId::new()], true).unwrap();
+                m.adjourn().unwrap();
+            }),
+        ];
+        for (label, setup) in blocked {
+            let mut m = make_meeting(MeetingType::BoardMeeting);
+            setup(&mut m);
+            let result = m.cancel();
+            assert!(
+                result.is_err(),
+                "cancel() should fail from status '{label}' but succeeded"
+            );
+        }
+    }
+
+    /// Full Noticed -> Convened -> Adjourned -> Reopen -> Adjourn cycle
+    /// works correctly for all non-WrittenConsent meeting types.
+    #[test]
+    fn full_lifecycle_for_all_meeting_types() {
+        let meeting_types = [
+            MeetingType::BoardMeeting,
+            MeetingType::ShareholderMeeting,
+            MeetingType::MemberMeeting,
+        ];
+        for meeting_type in meeting_types {
+            let mut m = make_meeting(meeting_type);
+            assert_eq!(m.status(), MeetingStatus::Draft);
+
+            m.send_notice().unwrap();
+            assert_eq!(m.status(), MeetingStatus::Noticed);
+
+            let seats: Vec<_> = (0..3).map(|_| GovernanceSeatId::new()).collect();
+            m.convene(seats.clone(), true).unwrap();
+            assert_eq!(m.status(), MeetingStatus::Convened);
+            assert_eq!(m.present_seat_ids().len(), 3);
+            assert!(m.convened_at().is_some());
+
+            m.adjourn().unwrap();
+            assert_eq!(m.status(), MeetingStatus::Adjourned);
+            assert!(m.adjourned_at().is_some());
+
+            // Reopen and adjourn again.
+            m.reopen().unwrap();
+            assert_eq!(m.status(), MeetingStatus::Convened);
+            assert!(m.adjourned_at().is_none());
+
+            m.adjourn().unwrap();
+            assert_eq!(m.status(), MeetingStatus::Adjourned);
+        }
+    }
+
+    /// `can_vote` is true when Convened + quorum met, false in all other
+    /// status/quorum combinations for non-WrittenConsent meetings.
+    #[test]
+    fn can_vote_is_false_outside_of_convened_with_quorum() {
+        // Cases where can_vote must be false.
+        type SetupFn = fn(&mut Meeting);
+        let false_cases: &[(&str, SetupFn)] = &[
+            ("Draft",            |_m| {}),
+            ("Noticed",          |m| { m.send_notice().unwrap(); }),
+            ("Convened-NoQuorum",|m| {
+                m.send_notice().unwrap();
+                m.convene(vec![], false).unwrap();
+            }),
+            ("Adjourned",        |m| {
+                m.send_notice().unwrap();
+                m.convene(vec![GovernanceSeatId::new()], true).unwrap();
+                m.adjourn().unwrap();
+            }),
+            ("Cancelled",        |m| { m.cancel().unwrap(); }),
+        ];
+        for (label, setup) in false_cases {
+            let mut m = make_meeting(MeetingType::BoardMeeting);
+            setup(&mut m);
+            assert!(
+                !m.can_vote(),
+                "can_vote() should be false in case '{label}'"
+            );
+        }
+    }
 }

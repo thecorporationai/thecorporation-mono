@@ -180,27 +180,22 @@ async fn create_branch(
     let workspace_id = auth.workspace_id();
     let entity_id = query.entity_id;
 
-    let info = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let name = req.name.clone();
-        let from = req.from.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = crate::store::entity_store::EntityStore::open(
-                &layout,
-                workspace_id,
-                entity_id,
-                valkey_client.as_ref(),
-            )
-            .map_err(|e| AppError::Internal(e.to_string()))?;
+    let name = req.name.clone();
+    let from = req.from.clone();
+    let info = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = crate::store::entity_store::EntityStore::open(
+            layout,
+            workspace_id,
+            entity_id,
+            valkey,
+        )
+        .map_err(|e| AppError::Internal(e.to_string()))?;
 
-            store
-                .create_branch(name.as_str(), from.as_str())
-                .map_err(AppError::from)
-        }
+        store
+            .create_branch(name.as_str(), from.as_str())
+            .map_err(AppError::from)
     })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+    .await?;
 
     Ok((
         StatusCode::CREATED,
@@ -227,23 +222,18 @@ async fn list_branches(
     let workspace_id = auth.workspace_id();
     let entity_id = query.entity_id;
 
-    let branches = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = crate::store::entity_store::EntityStore::open(
-                &layout,
-                workspace_id,
-                entity_id,
-                valkey_client.as_ref(),
-            )
-            .map_err(|e| AppError::Internal(e.to_string()))?;
+    let branches = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = crate::store::entity_store::EntityStore::open(
+            layout,
+            workspace_id,
+            entity_id,
+            valkey,
+        )
+        .map_err(|e| AppError::Internal(e.to_string()))?;
 
-            store.list_branches().map_err(AppError::from)
-        }
+        store.list_branches().map_err(AppError::from)
     })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+    .await?;
 
     let entries = branches
         .into_iter()
@@ -282,26 +272,21 @@ async fn merge_branch(
     let source = BranchName::new(name).map_err(|e| AppError::BadRequest(e.to_string()))?;
 
     let squash = req.squash;
-    let result = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let target = req.into.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = crate::store::entity_store::EntityStore::open(
-                &layout,
-                workspace_id,
-                entity_id,
-                valkey_client.as_ref(),
-            )
-            .map_err(|e| AppError::Internal(e.to_string()))?;
+    let target = req.into.clone();
+    let result = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = crate::store::entity_store::EntityStore::open(
+            layout,
+            workspace_id,
+            entity_id,
+            valkey,
+        )
+        .map_err(|e| AppError::Internal(e.to_string()))?;
 
-            store
-                .merge_branch(source.as_str(), target.as_str(), squash)
-                .map_err(AppError::from)
-        }
+        store
+            .merge_branch(source.as_str(), target.as_str(), squash)
+            .map_err(AppError::from)
     })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+    .await?;
 
     let response = match result {
         MergeOutcome::FastForward { oid } => MergeBranchResponse {
@@ -351,25 +336,20 @@ async fn delete_branch_handler(
     let entity_id = query.entity_id;
     let branch = BranchName::new(name).map_err(|e| AppError::BadRequest(e.to_string()))?;
 
-    tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = crate::store::entity_store::EntityStore::open(
-                &layout,
-                workspace_id,
-                entity_id,
-                valkey_client.as_ref(),
-            )
-            .map_err(|e| AppError::Internal(e.to_string()))?;
+    super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = crate::store::entity_store::EntityStore::open(
+            layout,
+            workspace_id,
+            entity_id,
+            valkey,
+        )
+        .map_err(|e| AppError::Internal(e.to_string()))?;
 
-            store
-                .delete_branch(branch.as_str())
-                .map_err(AppError::from)
-        }
+        store
+            .delete_branch(branch.as_str())
+            .map_err(AppError::from)
     })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+    .await?;
 
     Ok(StatusCode::NO_CONTENT)
 }

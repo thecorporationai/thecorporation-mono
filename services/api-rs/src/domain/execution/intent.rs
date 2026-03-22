@@ -387,4 +387,150 @@ mod tests {
         assert_eq!(parsed.intent_type(), "incorporate");
         assert_eq!(parsed.description(), intent.description());
     }
+
+    // ── Property-based-style FSM tests ───────────────────────────────────
+
+    /// `mark_executed` must fail from every status except Authorized.
+    #[test]
+    fn execute_only_allowed_from_authorized() {
+        // States from which execute must fail, paired with the setup steps needed
+        // to reach that state.
+        struct Case {
+            label: &'static str,
+            setup: fn(&mut Intent),
+        }
+        let cases = [
+            Case { label: "Pending",   setup: |_| {} },
+            Case { label: "Evaluated", setup: |i| { i.evaluate().unwrap(); } },
+            Case { label: "Failed",    setup: |i| { i.mark_failed("x".into()).unwrap(); } },
+            Case { label: "Cancelled", setup: |i| { i.cancel().unwrap(); } },
+        ];
+        for case in &cases {
+            let mut intent = make_intent();
+            (case.setup)(&mut intent);
+            let result = intent.mark_executed();
+            assert!(
+                result.is_err(),
+                "mark_executed() should fail from status '{}' but succeeded",
+                case.label
+            );
+        }
+
+        // Confirm it succeeds only from Authorized.
+        let mut intent = make_intent();
+        intent.evaluate().unwrap();
+        intent.authorize().unwrap();
+        assert!(intent.mark_executed().is_ok());
+    }
+
+    /// `authorize` must fail from every status except Evaluated.
+    #[test]
+    fn authorize_only_allowed_from_evaluated() {
+        struct Case {
+            label: &'static str,
+            setup: fn(&mut Intent),
+        }
+        let cases = [
+            Case { label: "Pending",   setup: |_| {} },
+            Case { label: "Failed",    setup: |i| { i.mark_failed("x".into()).unwrap(); } },
+            Case { label: "Cancelled", setup: |i| { i.cancel().unwrap(); } },
+        ];
+        for case in &cases {
+            let mut intent = make_intent();
+            (case.setup)(&mut intent);
+            let result = intent.authorize();
+            assert!(
+                result.is_err(),
+                "authorize() should fail from status '{}' but succeeded",
+                case.label
+            );
+        }
+
+        // Executed state also disallows re-authorization.
+        let mut intent = make_intent();
+        intent.evaluate().unwrap();
+        intent.authorize().unwrap();
+        intent.mark_executed().unwrap();
+        assert!(intent.authorize().is_err(), "authorize() should fail from Executed");
+
+        // Succeeds from Evaluated.
+        let mut intent = make_intent();
+        intent.evaluate().unwrap();
+        assert!(intent.authorize().is_ok());
+    }
+
+    /// `cancel` and `mark_failed` must both fail from every terminal state
+    /// (Executed, Failed, Cancelled). We loop over all combinations.
+    #[test]
+    fn terminal_states_block_cancel_and_fail() {
+        // (label, setup-to-terminal-state)
+        type SetupFn = fn(&mut Intent);
+        let terminals: &[(&str, SetupFn)] = &[
+            ("Executed", |i| {
+                i.evaluate().unwrap();
+                i.authorize().unwrap();
+                i.mark_executed().unwrap();
+            }),
+            ("Failed", |i| {
+                i.mark_failed("reason".into()).unwrap();
+            }),
+            ("Cancelled", |i| {
+                i.cancel().unwrap();
+            }),
+        ];
+        for (label, setup) in terminals {
+            let mut intent = make_intent();
+            setup(&mut intent);
+
+            assert!(
+                intent.cancel().is_err(),
+                "cancel() should fail from terminal state {label}"
+            );
+
+            let mut intent2 = make_intent();
+            setup(&mut intent2);
+            assert!(
+                intent2.mark_failed("late".into()).is_err(),
+                "mark_failed() should fail from terminal state {label}"
+            );
+        }
+    }
+
+    /// Timestamps are only set when the corresponding transition fires;
+    /// previous timestamps are never cleared by subsequent transitions.
+    #[test]
+    fn timestamps_are_set_monotonically() {
+        let mut intent = make_intent();
+        assert!(intent.evaluated_at().is_none());
+        assert!(intent.authorized_at().is_none());
+        assert!(intent.executed_at().is_none());
+
+        intent.evaluate().unwrap();
+        assert!(intent.evaluated_at().is_some());
+        assert!(intent.authorized_at().is_none());
+        assert!(intent.executed_at().is_none());
+
+        intent.authorize().unwrap();
+        assert!(intent.evaluated_at().is_some()); // preserved
+        assert!(intent.authorized_at().is_some());
+        assert!(intent.executed_at().is_none());
+
+        intent.mark_executed().unwrap();
+        assert!(intent.evaluated_at().is_some()); // preserved
+        assert!(intent.authorized_at().is_some()); // preserved
+        assert!(intent.executed_at().is_some());
+    }
+
+    /// Running the full happy path multiple times (each on a fresh intent)
+    /// always ends in Executed.
+    #[test]
+    fn happy_path_is_repeatable() {
+        for _ in 0..10 {
+            let mut intent = make_intent();
+            intent.evaluate().unwrap();
+            intent.authorize().unwrap();
+            intent.mark_executed().unwrap();
+            assert_eq!(intent.status(), IntentStatus::Executed);
+        }
+    }
 }

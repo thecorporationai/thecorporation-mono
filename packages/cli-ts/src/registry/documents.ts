@@ -100,7 +100,7 @@ export const documentCommands: CommandDef[] = [
       }
       console.log(shareUrl);
     },
-    examples: ["corp documents signing-link", "corp documents signing-link --json"],
+    examples: ["corp documents signing-link @last", "corp documents signing-link doc-abc123"],
   },
 
   // --- documents sign <doc-ref> ---
@@ -159,7 +159,10 @@ export const documentCommands: CommandDef[] = [
       printReferenceSummary("document", result.document, { showReuseHint: true });
       printJson(result.document);
     },
-    examples: ["corp documents sign <doc-ref>", "corp documents sign --json"],
+    examples: [
+      "corp documents sign @last",
+      "corp documents sign doc-abc123 --signer-name \"Alice Smith\" --signer-role CEO --signer-email alice@acme.com",
+    ],
   },
 
   // --- documents sign-all ---
@@ -185,7 +188,7 @@ export const documentCommands: CommandDef[] = [
         signatures: Array.isArray(document.signatures) ? document.signatures.length : document.signatures,
       })));
     },
-    examples: ["corp documents sign-all"],
+    examples: ["corp documents sign-all", "corp documents sign-all --json"],
   },
 
   // --- documents generate ---
@@ -195,7 +198,7 @@ export const documentCommands: CommandDef[] = [
     route: { method: "POST", path: "/v1/contracts/generate" },
     entity: true,
     options: [
-      { flags: "--template <type>", description: "Template type (consulting_agreement, employment_offer, contractor_agreement, nda, custom)", required: true },
+      { flags: "--template <type>", description: "Contract template type", required: true, choices: ["consulting_agreement", "employment_offer", "contractor_agreement", "nda", "safe_agreement", "custom"] },
       { flags: "--counterparty <name>", description: "Counterparty name", required: true },
       { flags: "--effective-date <date>", description: "Effective date (ISO 8601, defaults to today)" },
       { flags: "--base-salary <amount>", description: "Employment offer base salary (for employment_offer)" },
@@ -270,8 +273,13 @@ export const documentCommands: CommandDef[] = [
       }
     },
     produces: { kind: "document" },
-    successTemplate: "Document generated: {title}",
-    examples: ["corp documents generate --template 'type' --counterparty 'name'", "corp documents generate --json"],
+    successTemplate: "Contract generated: {document_id} — {title}",
+    examples: [
+      "corp documents generate --template consulting_agreement --counterparty \"Acme Consulting LLC\"",
+      "corp documents generate --template employment_offer --counterparty \"Jane Doe\" --base-salary 150000",
+      "corp documents generate --template nda --counterparty \"Partner Corp\" --effective-date 2026-04-01",
+      "corp documents generate --template safe_agreement --counterparty \"Seed Investor\" --param purchase_amount=500000 --param valuation_cap=10000000",
+    ],
   },
 
   // --- documents preview-pdf ---
@@ -295,6 +303,9 @@ export const documentCommands: CommandDef[] = [
       ctx.writer.success(`Preview PDF URL: ${url}`);
       console.log("The document definition was validated successfully. Use your API key to download the PDF.");
     },
-    examples: ["corp documents preview-pdf", "corp documents preview-pdf --json"],
+    examples: [
+      "corp documents preview-pdf --definition-id bylaws",
+      "corp documents preview-pdf --definition-id articles_of_incorporation",
+    ],
   },
 ];

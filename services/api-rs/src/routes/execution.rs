@@ -461,6 +461,7 @@ fn trigger_policy_evidence_lockdown(
     post,
     path = "/v1/execution/intents",
     tag = "execution",
+    description = "Create a new execution intent, evaluating it against governance policy to assign an authority tier.",
     request_body = CreateIntentRequest,
     responses(
         (status = 200, body = IntentResponse),
@@ -477,55 +478,50 @@ async fn create_intent(
     let entity_id = req.entity_id;
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let intent = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
-            let canonical_intent_type = canonicalize_intent_type(&req.intent_type);
-            let mode = read_mode_or_default(&store, entity_id);
-            let schedule = read_schedule_or_default(&store, entity_id);
-            let entity = store
-                .read_entity("main")
-                .map_err(|e| AppError::Internal(format!("read entity: {e}")))?;
-            let ctx = PolicyEvaluationContext {
-                intent_type: &canonical_intent_type,
-                metadata: &req.metadata,
-                mode: mode.mode(),
-                schedule: &schedule,
-                now: Utc::now(),
-                entity_is_active: matches!(entity.formation_status(), FormationStatus::Active),
-                service_agreement_executed: entity.service_agreement_executed(),
-            };
-            let decision = evaluate_full_with_override(&ctx, req.authority_tier);
+    let intent = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+        let canonical_intent_type = canonicalize_intent_type(&req.intent_type);
+        let mode = read_mode_or_default(&store, entity_id);
+        let schedule = read_schedule_or_default(&store, entity_id);
+        let entity = store
+            .read_entity("main")
+            .map_err(|e| AppError::Internal(format!("read entity: {e}")))?;
+        let ctx = PolicyEvaluationContext {
+            intent_type: &canonical_intent_type,
+            metadata: &req.metadata,
+            mode: mode.mode(),
+            schedule: &schedule,
+            now: Utc::now(),
+            entity_is_active: matches!(entity.formation_status(), FormationStatus::Active),
+            service_agreement_executed: entity.service_agreement_executed(),
+        };
+        let decision = evaluate_full_with_override(&ctx, req.authority_tier);
 
-            let intent_id = IntentId::new();
-            let mut intent = Intent::new(
-                intent_id,
-                entity_id,
-                workspace_id,
-                canonical_intent_type,
-                decision.tier(),
-                req.description,
-                req.metadata,
-            );
-            intent.set_policy_decision(decision);
+        let intent_id = IntentId::new();
+        let mut intent = Intent::new(
+            intent_id,
+            entity_id,
+            workspace_id,
+            canonical_intent_type,
+            decision.tier(),
+            req.description,
+            req.metadata,
+        );
+        intent.set_policy_decision(decision);
 
-            let path = format!("execution/intents/{}.json", intent_id);
-            store
-                .write_json(
-                    "main",
-                    &path,
-                    &intent,
-                    &format!("EXECUTION: create intent {intent_id}"),
-                )
-                .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
+        let path = format!("execution/intents/{}.json", intent_id);
+        store
+            .write_json(
+                "main",
+                &path,
+                &intent,
+                &format!("EXECUTION: create intent {intent_id}"),
+            )
+            .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
 
-            Ok::<_, AppError>(intent)
-        }
+        Ok(intent)
     })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+    .await?;
 
     Ok(Json(intent_to_response(&intent)))
 }
@@ -534,6 +530,7 @@ async fn create_intent(
     get,
     path = "/v1/entities/{entity_id}/intents",
     tag = "execution",
+    description = "List all execution intents for an entity.",
     params(("entity_id" = EntityId, Path, description = "Entity ID")),
     responses(
         (status = 200, body = Vec<IntentResponse>),
@@ -548,27 +545,22 @@ async fn list_intents(
     let workspace_id = auth.workspace_id();
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let intents = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
-            let ids = store
-                .list_ids::<Intent>("main")
-                .map_err(|e| AppError::Internal(format!("list intents: {e}")))?;
+    let intents = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+        let ids = store
+            .list_ids::<Intent>("main")
+            .map_err(|e| AppError::Internal(format!("list intents: {e}")))?;
 
-            let mut results = Vec::new();
-            for id in ids {
-                let i = store
-                    .read::<Intent>("main", id)
-                    .map_err(|e| AppError::Internal(format!("read intent {id}: {e}")))?;
-                results.push(intent_to_response(&i));
-            }
-            Ok::<_, AppError>(results)
+        let mut results = Vec::new();
+        for id in ids {
+            let i = store
+                .read::<Intent>("main", id)
+                .map_err(|e| AppError::Internal(format!("read intent {id}: {e}")))?;
+            results.push(intent_to_response(&i));
         }
+        Ok(results)
     })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+    .await?;
 
     Ok(Json(intents))
 }
@@ -577,6 +569,7 @@ async fn list_intents(
     post,
     path = "/v1/intents/{intent_id}/evaluate",
     tag = "execution",
+    description = "Re-evaluate an intent against the current governance policy and update its authority tier and status.",
     params(
         ("intent_id" = IntentId, Path, description = "Intent ID"),
         ("entity_id" = EntityId, Query, description = "Entity ID"),
@@ -596,57 +589,52 @@ async fn evaluate_intent(
     let entity_id = query.entity_id;
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let intent = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
-            let mut intent = store
-                .read::<Intent>("main", intent_id)
-                .map_err(|_| AppError::NotFound(format!("intent {} not found", intent_id)))?;
+    let intent = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+        let mut intent = store
+            .read::<Intent>("main", intent_id)
+            .map_err(|_| AppError::NotFound(format!("intent {} not found", intent_id)))?;
 
-            let canonical_intent_type = canonicalize_intent_type(intent.intent_type());
-            let mode = read_mode_or_default(&store, entity_id);
-            let schedule = read_schedule_or_default(&store, entity_id);
-            let entity = store
-                .read_entity("main")
-                .map_err(|e| AppError::Internal(format!("read entity: {e}")))?;
-            let ctx = PolicyEvaluationContext {
-                intent_type: &canonical_intent_type,
-                metadata: intent.metadata(),
-                mode: mode.mode(),
-                schedule: &schedule,
-                now: Utc::now(),
-                entity_is_active: matches!(entity.formation_status(), FormationStatus::Active),
-                service_agreement_executed: entity.service_agreement_executed(),
-            };
-            let decision = evaluate_full_with_override(&ctx, Some(intent.authority_tier()));
-            let allowed = decision.allowed();
-            let blockers = decision.blockers().to_vec();
-            intent.update_authority_tier(decision.tier());
-            intent.set_policy_decision(decision);
+        let canonical_intent_type = canonicalize_intent_type(intent.intent_type());
+        let mode = read_mode_or_default(&store, entity_id);
+        let schedule = read_schedule_or_default(&store, entity_id);
+        let entity = store
+            .read_entity("main")
+            .map_err(|e| AppError::Internal(format!("read entity: {e}")))?;
+        let ctx = PolicyEvaluationContext {
+            intent_type: &canonical_intent_type,
+            metadata: intent.metadata(),
+            mode: mode.mode(),
+            schedule: &schedule,
+            now: Utc::now(),
+            entity_is_active: matches!(entity.formation_status(), FormationStatus::Active),
+            service_agreement_executed: entity.service_agreement_executed(),
+        };
+        let decision = evaluate_full_with_override(&ctx, Some(intent.authority_tier()));
+        let allowed = decision.allowed();
+        let blockers = decision.blockers().to_vec();
+        intent.update_authority_tier(decision.tier());
+        intent.set_policy_decision(decision);
 
-            if allowed {
-                intent.evaluate()?;
-            } else {
-                intent.mark_failed(format!("policy blocked: {}", blockers.join("; ")))?;
-            }
-
-            let path = format!("execution/intents/{}.json", intent_id);
-            store
-                .write_json(
-                    "main",
-                    &path,
-                    &intent,
-                    &format!("EXECUTION: evaluate intent {intent_id}"),
-                )
-                .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
-
-            Ok::<_, AppError>(intent)
+        if allowed {
+            intent.evaluate()?;
+        } else {
+            intent.mark_failed(format!("policy blocked: {}", blockers.join("; ")))?;
         }
+
+        let path = format!("execution/intents/{}.json", intent_id);
+        store
+            .write_json(
+                "main",
+                &path,
+                &intent,
+                &format!("EXECUTION: evaluate intent {intent_id}"),
+            )
+            .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
+
+        Ok(intent)
     })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+    .await?;
 
     Ok(Json(intent_to_response(&intent)))
 }
@@ -655,6 +643,7 @@ async fn evaluate_intent(
     post,
     path = "/v1/intents/{intent_id}/authorize",
     tag = "execution",
+    description = "Authorize an intent after verifying policy approval and all required artifacts are present.",
     params(
         ("intent_id" = IntentId, Path, description = "Intent ID"),
         ("entity_id" = EntityId, Query, description = "Entity ID"),
@@ -675,67 +664,62 @@ async fn authorize_intent(
     let entity_id = query.entity_id;
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let intent = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
-            let mut intent = store
-                .read::<Intent>("main", intent_id)
-                .map_err(|_| AppError::NotFound(format!("intent {} not found", intent_id)))?;
+    let intent = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+        let mut intent = store
+            .read::<Intent>("main", intent_id)
+            .map_err(|_| AppError::NotFound(format!("intent {} not found", intent_id)))?;
 
-            let canonical_intent_type = canonicalize_intent_type(intent.intent_type());
-            let mode = read_mode_or_default(&store, entity_id);
-            let schedule = read_schedule_or_default(&store, entity_id);
-            let entity = store
-                .read_entity("main")
-                .map_err(|e| AppError::Internal(format!("read entity: {e}")))?;
-            let ctx = PolicyEvaluationContext {
-                intent_type: &canonical_intent_type,
-                metadata: intent.metadata(),
-                mode: mode.mode(),
-                schedule: &schedule,
-                now: Utc::now(),
-                entity_is_active: matches!(entity.formation_status(), FormationStatus::Active),
-                service_agreement_executed: entity.service_agreement_executed(),
-            };
-            let decision = evaluate_full_with_override(&ctx, Some(intent.authority_tier()));
-            if !decision.allowed() {
-                return Err(AppError::UnprocessableEntity(format!(
-                    "intent blocked by policy: {}",
-                    decision.blockers().join("; ")
-                )));
-            }
-            if let Err(violation) = enforce_execution_prerequisites(&store, &intent, &decision) {
-                if violation.should_trigger_lockdown() {
-                    trigger_policy_evidence_lockdown(
-                        &store,
-                        entity_id,
-                        intent.intent_id(),
-                        &violation.reason(),
-                    )?;
-                }
-                return Err(AppError::UnprocessableEntity(violation.reason()));
-            }
-            intent.update_authority_tier(decision.tier());
-            intent.set_policy_decision(decision);
-            intent.authorize()?;
-
-            let path = format!("execution/intents/{}.json", intent_id);
-            store
-                .write_json(
-                    "main",
-                    &path,
-                    &intent,
-                    &format!("EXECUTION: authorize intent {intent_id}"),
-                )
-                .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
-
-            Ok::<_, AppError>(intent)
+        let canonical_intent_type = canonicalize_intent_type(intent.intent_type());
+        let mode = read_mode_or_default(&store, entity_id);
+        let schedule = read_schedule_or_default(&store, entity_id);
+        let entity = store
+            .read_entity("main")
+            .map_err(|e| AppError::Internal(format!("read entity: {e}")))?;
+        let ctx = PolicyEvaluationContext {
+            intent_type: &canonical_intent_type,
+            metadata: intent.metadata(),
+            mode: mode.mode(),
+            schedule: &schedule,
+            now: Utc::now(),
+            entity_is_active: matches!(entity.formation_status(), FormationStatus::Active),
+            service_agreement_executed: entity.service_agreement_executed(),
+        };
+        let decision = evaluate_full_with_override(&ctx, Some(intent.authority_tier()));
+        if !decision.allowed() {
+            return Err(AppError::UnprocessableEntity(format!(
+                "intent blocked by policy: {}",
+                decision.blockers().join("; ")
+            )));
         }
+        if let Err(violation) = enforce_execution_prerequisites(&store, &intent, &decision) {
+            if violation.should_trigger_lockdown() {
+                trigger_policy_evidence_lockdown(
+                    &store,
+                    entity_id,
+                    intent.intent_id(),
+                    &violation.reason(),
+                )?;
+            }
+            return Err(AppError::UnprocessableEntity(violation.reason()));
+        }
+        intent.update_authority_tier(decision.tier());
+        intent.set_policy_decision(decision);
+        intent.authorize()?;
+
+        let path = format!("execution/intents/{}.json", intent_id);
+        store
+            .write_json(
+                "main",
+                &path,
+                &intent,
+                &format!("EXECUTION: authorize intent {intent_id}"),
+            )
+            .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
+
+        Ok(intent)
     })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+    .await?;
 
     Ok(Json(intent_to_response(&intent)))
 }
@@ -744,6 +728,7 @@ async fn authorize_intent(
     post,
     path = "/v1/intents/{intent_id}/execute",
     tag = "execution",
+    description = "Mark an authorized intent as executed, completing the execution lifecycle.",
     params(
         ("intent_id" = IntentId, Path, description = "Intent ID"),
         ("entity_id" = EntityId, Query, description = "Entity ID"),
@@ -764,67 +749,62 @@ async fn execute_intent(
     let entity_id = query.entity_id;
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let intent = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
-            let mut intent = store
-                .read::<Intent>("main", intent_id)
-                .map_err(|_| AppError::NotFound(format!("intent {} not found", intent_id)))?;
+    let intent = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+        let mut intent = store
+            .read::<Intent>("main", intent_id)
+            .map_err(|_| AppError::NotFound(format!("intent {} not found", intent_id)))?;
 
-            let canonical_intent_type = canonicalize_intent_type(intent.intent_type());
-            let mode = read_mode_or_default(&store, entity_id);
-            let schedule = read_schedule_or_default(&store, entity_id);
-            let entity = store
-                .read_entity("main")
-                .map_err(|e| AppError::Internal(format!("read entity: {e}")))?;
-            let ctx = PolicyEvaluationContext {
-                intent_type: &canonical_intent_type,
-                metadata: intent.metadata(),
-                mode: mode.mode(),
-                schedule: &schedule,
-                now: Utc::now(),
-                entity_is_active: matches!(entity.formation_status(), FormationStatus::Active),
-                service_agreement_executed: entity.service_agreement_executed(),
-            };
-            let decision = evaluate_full_with_override(&ctx, Some(intent.authority_tier()));
-            if !decision.allowed() {
-                return Err(AppError::UnprocessableEntity(format!(
-                    "intent blocked by policy: {}",
-                    decision.blockers().join("; ")
-                )));
-            }
-            if let Err(violation) = enforce_execution_prerequisites(&store, &intent, &decision) {
-                if violation.should_trigger_lockdown() {
-                    trigger_policy_evidence_lockdown(
-                        &store,
-                        entity_id,
-                        intent.intent_id(),
-                        &violation.reason(),
-                    )?;
-                }
-                return Err(AppError::UnprocessableEntity(violation.reason()));
-            }
-            intent.update_authority_tier(decision.tier());
-            intent.set_policy_decision(decision);
-            intent.mark_executed()?;
-
-            let path = format!("execution/intents/{}.json", intent_id);
-            store
-                .write_json(
-                    "main",
-                    &path,
-                    &intent,
-                    &format!("EXECUTION: execute intent {intent_id}"),
-                )
-                .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
-
-            Ok::<_, AppError>(intent)
+        let canonical_intent_type = canonicalize_intent_type(intent.intent_type());
+        let mode = read_mode_or_default(&store, entity_id);
+        let schedule = read_schedule_or_default(&store, entity_id);
+        let entity = store
+            .read_entity("main")
+            .map_err(|e| AppError::Internal(format!("read entity: {e}")))?;
+        let ctx = PolicyEvaluationContext {
+            intent_type: &canonical_intent_type,
+            metadata: intent.metadata(),
+            mode: mode.mode(),
+            schedule: &schedule,
+            now: Utc::now(),
+            entity_is_active: matches!(entity.formation_status(), FormationStatus::Active),
+            service_agreement_executed: entity.service_agreement_executed(),
+        };
+        let decision = evaluate_full_with_override(&ctx, Some(intent.authority_tier()));
+        if !decision.allowed() {
+            return Err(AppError::UnprocessableEntity(format!(
+                "intent blocked by policy: {}",
+                decision.blockers().join("; ")
+            )));
         }
+        if let Err(violation) = enforce_execution_prerequisites(&store, &intent, &decision) {
+            if violation.should_trigger_lockdown() {
+                trigger_policy_evidence_lockdown(
+                    &store,
+                    entity_id,
+                    intent.intent_id(),
+                    &violation.reason(),
+                )?;
+            }
+            return Err(AppError::UnprocessableEntity(violation.reason()));
+        }
+        intent.update_authority_tier(decision.tier());
+        intent.set_policy_decision(decision);
+        intent.mark_executed()?;
+
+        let path = format!("execution/intents/{}.json", intent_id);
+        store
+            .write_json(
+                "main",
+                &path,
+                &intent,
+                &format!("EXECUTION: execute intent {intent_id}"),
+            )
+            .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
+
+        Ok(intent)
     })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+    .await?;
 
     Ok(Json(intent_to_response(&intent)))
 }
@@ -833,6 +813,7 @@ async fn execute_intent(
     post,
     path = "/v1/intents/{intent_id}/cancel",
     tag = "execution",
+    description = "Cancel a pending or evaluated intent, preventing further processing.",
     params(
         ("intent_id" = IntentId, Path, description = "Intent ID"),
         ("entity_id" = EntityId, Query, description = "Entity ID"),
@@ -852,32 +833,27 @@ async fn cancel_intent(
     let entity_id = query.entity_id;
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let intent = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
-            let mut intent = store
-                .read::<Intent>("main", intent_id)
-                .map_err(|_| AppError::NotFound(format!("intent {} not found", intent_id)))?;
+    let intent = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+        let mut intent = store
+            .read::<Intent>("main", intent_id)
+            .map_err(|_| AppError::NotFound(format!("intent {} not found", intent_id)))?;
 
-            intent.cancel()?;
+        intent.cancel()?;
 
-            let path = format!("execution/intents/{}.json", intent_id);
-            store
-                .write_json(
-                    "main",
-                    &path,
-                    &intent,
-                    &format!("EXECUTION: cancel intent {intent_id}"),
-                )
-                .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
+        let path = format!("execution/intents/{}.json", intent_id);
+        store
+            .write_json(
+                "main",
+                &path,
+                &intent,
+                &format!("EXECUTION: cancel intent {intent_id}"),
+            )
+            .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
 
-            Ok::<_, AppError>(intent)
-        }
+        Ok(intent)
     })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+    .await?;
 
     Ok(Json(intent_to_response(&intent)))
 }
@@ -886,6 +862,7 @@ async fn cancel_intent(
     post,
     path = "/v1/execution/approval-artifacts",
     tag = "execution",
+    description = "Record an approval artifact that grants authority to execute a class of intents.",
     request_body = CreateApprovalArtifactRequest,
     responses(
         (status = 200, body = ApprovalArtifactResponse),
@@ -901,44 +878,39 @@ async fn create_approval_artifact(
     let entity_id = req.entity_id;
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let artifact = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
-            let canonical_intent_type = canonicalize_intent_type(&req.intent_type);
-            let artifact = ApprovalArtifact::new(
-                ApprovalArtifactId::new(),
-                entity_id,
-                canonical_intent_type,
-                req.scope,
-                req.approver_identity,
-                req.explicit,
-                req.approved_at.unwrap_or_else(Utc::now),
-                req.expires_at,
-                req.channel,
-                req.max_amount_cents,
-            );
-            let path = format!(
-                "execution/approval-artifacts/{}.json",
-                artifact.approval_artifact_id()
-            );
-            store
-                .write_json(
-                    "main",
-                    &path,
-                    &artifact,
-                    &format!(
-                        "EXECUTION: create approval artifact {}",
-                        artifact.approval_artifact_id()
-                    ),
-                )
-                .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
-            Ok::<_, AppError>(artifact)
-        }
+    let artifact = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+        let canonical_intent_type = canonicalize_intent_type(&req.intent_type);
+        let artifact = ApprovalArtifact::new(
+            ApprovalArtifactId::new(),
+            entity_id,
+            canonical_intent_type,
+            req.scope,
+            req.approver_identity,
+            req.explicit,
+            req.approved_at.unwrap_or_else(Utc::now),
+            req.expires_at,
+            req.channel,
+            req.max_amount_cents,
+        );
+        let path = format!(
+            "execution/approval-artifacts/{}.json",
+            artifact.approval_artifact_id()
+        );
+        store
+            .write_json(
+                "main",
+                &path,
+                &artifact,
+                &format!(
+                    "EXECUTION: create approval artifact {}",
+                    artifact.approval_artifact_id()
+                ),
+            )
+            .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
+        Ok(artifact)
     })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+    .await?;
 
     Ok(Json(approval_to_response(&artifact)))
 }
@@ -947,6 +919,7 @@ async fn create_approval_artifact(
     get,
     path = "/v1/entities/{entity_id}/approval-artifacts",
     tag = "execution",
+    description = "List all approval artifacts for an entity, sorted by most recent first.",
     params(("entity_id" = EntityId, Path, description = "Entity ID")),
     responses(
         (status = 200, body = Vec<ApprovalArtifactResponse>),
@@ -960,27 +933,22 @@ async fn list_approval_artifacts(
 ) -> Result<Json<Vec<ApprovalArtifactResponse>>, AppError> {
     let workspace_id = auth.workspace_id();
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
-    let artifacts = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
-            let ids = store
-                .list_ids::<ApprovalArtifact>("main")
-                .map_err(|e| AppError::Internal(format!("list approval artifacts: {e}")))?;
-            let mut out = Vec::new();
-            for id in ids {
-                let artifact = store
-                    .read::<ApprovalArtifact>("main", id)
-                    .map_err(|e| AppError::Internal(format!("read approval artifact {id}: {e}")))?;
-                out.push(approval_to_response(&artifact));
-            }
-            out.sort_by(|a, b| b.created_at.cmp(&a.created_at));
-            Ok::<_, AppError>(out)
+    let artifacts = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+        let ids = store
+            .list_ids::<ApprovalArtifact>("main")
+            .map_err(|e| AppError::Internal(format!("list approval artifacts: {e}")))?;
+        let mut out = Vec::new();
+        for id in ids {
+            let artifact = store
+                .read::<ApprovalArtifact>("main", id)
+                .map_err(|e| AppError::Internal(format!("read approval artifact {id}: {e}")))?;
+            out.push(approval_to_response(&artifact));
         }
+        out.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+        Ok(out)
     })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+    .await?;
     Ok(Json(artifacts))
 }
 
@@ -988,6 +956,7 @@ async fn list_approval_artifacts(
     post,
     path = "/v1/intents/{intent_id}/bind-approval-artifact",
     tag = "execution",
+    description = "Bind an approval artifact to an intent to satisfy its authorization prerequisite.",
     params(("intent_id" = IntentId, Path, description = "Intent ID")),
     request_body = BindApprovalArtifactRequest,
     responses(
@@ -1005,42 +974,37 @@ async fn bind_approval_artifact_to_intent(
     let entity_id = req.entity_id;
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let intent = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
-            // Ensure the approval artifact exists before binding.
-            store
-                .read::<ApprovalArtifact>("main", req.approval_artifact_id)
-                .map_err(|_| {
-                    AppError::NotFound(format!(
-                        "approval artifact {} not found",
-                        req.approval_artifact_id
-                    ))
-                })?;
+    let intent = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+        // Ensure the approval artifact exists before binding.
+        store
+            .read::<ApprovalArtifact>("main", req.approval_artifact_id)
+            .map_err(|_| {
+                AppError::NotFound(format!(
+                    "approval artifact {} not found",
+                    req.approval_artifact_id
+                ))
+            })?;
 
-            let mut intent = store
-                .read::<Intent>("main", intent_id)
-                .map_err(|_| AppError::NotFound(format!("intent {} not found", intent_id)))?;
-            intent.bind_approval_artifact(req.approval_artifact_id);
-            let path = format!("execution/intents/{}.json", intent_id);
-            store
-                .write_json(
-                    "main",
-                    &path,
-                    &intent,
-                    &format!(
-                        "EXECUTION: bind approval artifact {} to intent {}",
-                        req.approval_artifact_id, intent_id
-                    ),
-                )
-                .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
-            Ok::<_, AppError>(intent)
-        }
+        let mut intent = store
+            .read::<Intent>("main", intent_id)
+            .map_err(|_| AppError::NotFound(format!("intent {} not found", intent_id)))?;
+        intent.bind_approval_artifact(req.approval_artifact_id);
+        let path = format!("execution/intents/{}.json", intent_id);
+        store
+            .write_json(
+                "main",
+                &path,
+                &intent,
+                &format!(
+                    "EXECUTION: bind approval artifact {} to intent {}",
+                    req.approval_artifact_id, intent_id
+                ),
+            )
+            .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
+        Ok(intent)
     })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+    .await?;
 
     Ok(Json(intent_to_response(&intent)))
 }
@@ -1049,6 +1013,7 @@ async fn bind_approval_artifact_to_intent(
     post,
     path = "/v1/intents/{intent_id}/bind-document-request",
     tag = "execution",
+    description = "Bind a document request to an intent to satisfy a supporting-document prerequisite.",
     params(("intent_id" = IntentId, Path, description = "Intent ID")),
     request_body = BindDocumentRequestRequest,
     responses(
@@ -1067,46 +1032,41 @@ async fn bind_document_request_to_intent(
     let entity_id = req.entity_id;
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let intent = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
-            let request = store
-                .read::<DocumentRequest>("main", req.request_id)
-                .map_err(|_| {
-                    AppError::NotFound(format!("document request {} not found", req.request_id))
-                })?;
+    let intent = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+        let request = store
+            .read::<DocumentRequest>("main", req.request_id)
+            .map_err(|_| {
+                AppError::NotFound(format!("document request {} not found", req.request_id))
+            })?;
 
-            if request.entity_id() != entity_id {
-                return Err(AppError::UnprocessableEntity(format!(
-                    "document request {} belongs to a different entity",
-                    req.request_id
-                )));
-            }
-
-            let mut intent = store
-                .read::<Intent>("main", intent_id)
-                .map_err(|_| AppError::NotFound(format!("intent {} not found", intent_id)))?;
-            intent.bind_document_request(req.request_id);
-
-            let path = format!("execution/intents/{}.json", intent_id);
-            store
-                .write_json(
-                    "main",
-                    &path,
-                    &intent,
-                    &format!(
-                        "EXECUTION: bind document request {} to intent {}",
-                        req.request_id, intent_id
-                    ),
-                )
-                .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
-            Ok::<_, AppError>(intent)
+        if request.entity_id() != entity_id {
+            return Err(AppError::UnprocessableEntity(format!(
+                "document request {} belongs to a different entity",
+                req.request_id
+            )));
         }
+
+        let mut intent = store
+            .read::<Intent>("main", intent_id)
+            .map_err(|_| AppError::NotFound(format!("intent {} not found", intent_id)))?;
+        intent.bind_document_request(req.request_id);
+
+        let path = format!("execution/intents/{}.json", intent_id);
+        store
+            .write_json(
+                "main",
+                &path,
+                &intent,
+                &format!(
+                    "EXECUTION: bind document request {} to intent {}",
+                    req.request_id, intent_id
+                ),
+            )
+            .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
+        Ok(intent)
     })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+    .await?;
 
     Ok(Json(intent_to_response(&intent)))
 }
@@ -1117,6 +1077,7 @@ async fn bind_document_request_to_intent(
     post,
     path = "/v1/execution/obligations",
     tag = "execution",
+    description = "Create a new obligation tracking a required action for an entity.",
     request_body = CreateObligationRequest,
     responses(
         (status = 200, body = ObligationResponse),
@@ -1133,39 +1094,34 @@ async fn create_obligation(
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     state.enforce_creation_rate_limit("execution.obligation.create", workspace_id, 120, 60)?;
 
-    let obligation = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
+    let obligation = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
 
-            let obligation_id = ObligationId::new();
-            let obligation = Obligation::new(
-                obligation_id,
-                entity_id,
-                req.intent_id,
-                ObligationType::new(req.obligation_type),
-                req.assignee_type,
-                req.assignee_id,
-                req.description,
-                req.due_date,
-            );
+        let obligation_id = ObligationId::new();
+        let obligation = Obligation::new(
+            obligation_id,
+            entity_id,
+            req.intent_id,
+            ObligationType::new(req.obligation_type),
+            req.assignee_type,
+            req.assignee_id,
+            req.description,
+            req.due_date,
+        );
 
-            let path = format!("execution/obligations/{}.json", obligation_id);
-            store
-                .write_json(
-                    "main",
-                    &path,
-                    &obligation,
-                    &format!("Create obligation {obligation_id}"),
-                )
-                .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
+        let path = format!("execution/obligations/{}.json", obligation_id);
+        store
+            .write_json(
+                "main",
+                &path,
+                &obligation,
+                &format!("Create obligation {obligation_id}"),
+            )
+            .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
 
-            Ok::<_, AppError>(obligation)
-        }
+        Ok(obligation)
     })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+    .await?;
 
     Ok(Json(obligation_to_response(&obligation)))
 }
@@ -1174,6 +1130,7 @@ async fn create_obligation(
     get,
     path = "/v1/entities/{entity_id}/obligations",
     tag = "execution",
+    description = "List all obligations for an entity.",
     params(("entity_id" = EntityId, Path, description = "Entity ID")),
     responses(
         (status = 200, body = Vec<ObligationResponse>),
@@ -1188,27 +1145,22 @@ async fn list_obligations(
     let workspace_id = auth.workspace_id();
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let obligations = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
-            let ids = store
-                .list_ids::<Obligation>("main")
-                .map_err(|e| AppError::Internal(format!("list obligations: {e}")))?;
+    let obligations = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+        let ids = store
+            .list_ids::<Obligation>("main")
+            .map_err(|e| AppError::Internal(format!("list obligations: {e}")))?;
 
-            let mut results = Vec::new();
-            for id in ids {
-                let o = store
-                    .read::<Obligation>("main", id)
-                    .map_err(|e| AppError::Internal(format!("read obligation {id}: {e}")))?;
-                results.push(obligation_to_response(&o));
-            }
-            Ok::<_, AppError>(results)
+        let mut results = Vec::new();
+        for id in ids {
+            let o = store
+                .read::<Obligation>("main", id)
+                .map_err(|e| AppError::Internal(format!("read obligation {id}: {e}")))?;
+            results.push(obligation_to_response(&o));
         }
+        Ok(results)
     })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+    .await?;
 
     Ok(Json(obligations))
 }
@@ -1217,6 +1169,7 @@ async fn list_obligations(
     post,
     path = "/v1/obligations/{obligation_id}/fulfill",
     tag = "execution",
+    description = "Mark an obligation as fulfilled.",
     params(
         ("obligation_id" = ObligationId, Path, description = "Obligation ID"),
         ("entity_id" = EntityId, Query, description = "Entity ID"),
@@ -1236,34 +1189,29 @@ async fn fulfill_obligation(
     let entity_id = query.entity_id;
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let obligation = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
-            let mut obligation = store
-                .read::<Obligation>("main", obligation_id)
-                .map_err(|_| {
-                    AppError::NotFound(format!("obligation {} not found", obligation_id))
-                })?;
+    let obligation = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+        let mut obligation = store
+            .read::<Obligation>("main", obligation_id)
+            .map_err(|_| {
+                AppError::NotFound(format!("obligation {} not found", obligation_id))
+            })?;
 
-            obligation.fulfill()?;
+        obligation.fulfill()?;
 
-            let path = format!("execution/obligations/{}.json", obligation_id);
-            store
-                .write_json(
-                    "main",
-                    &path,
-                    &obligation,
-                    &format!("Fulfill obligation {obligation_id}"),
-                )
-                .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
+        let path = format!("execution/obligations/{}.json", obligation_id);
+        store
+            .write_json(
+                "main",
+                &path,
+                &obligation,
+                &format!("Fulfill obligation {obligation_id}"),
+            )
+            .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
 
-            Ok::<_, AppError>(obligation)
-        }
+        Ok(obligation)
     })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+    .await?;
 
     Ok(Json(obligation_to_response(&obligation)))
 }
@@ -1272,6 +1220,7 @@ async fn fulfill_obligation(
     post,
     path = "/v1/obligations/{obligation_id}/waive",
     tag = "execution",
+    description = "Waive an obligation, recording that it has been formally excused.",
     params(
         ("obligation_id" = ObligationId, Path, description = "Obligation ID"),
         ("entity_id" = EntityId, Query, description = "Entity ID"),
@@ -1291,34 +1240,29 @@ async fn waive_obligation(
     let entity_id = query.entity_id;
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let obligation = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
-            let mut obligation = store
-                .read::<Obligation>("main", obligation_id)
-                .map_err(|_| {
-                    AppError::NotFound(format!("obligation {} not found", obligation_id))
-                })?;
+    let obligation = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+        let mut obligation = store
+            .read::<Obligation>("main", obligation_id)
+            .map_err(|_| {
+                AppError::NotFound(format!("obligation {} not found", obligation_id))
+            })?;
 
-            obligation.waive()?;
+        obligation.waive()?;
 
-            let path = format!("execution/obligations/{}.json", obligation_id);
-            store
-                .write_json(
-                    "main",
-                    &path,
-                    &obligation,
-                    &format!("Waive obligation {obligation_id}"),
-                )
-                .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
+        let path = format!("execution/obligations/{}.json", obligation_id);
+        store
+            .write_json(
+                "main",
+                &path,
+                &obligation,
+                &format!("Waive obligation {obligation_id}"),
+            )
+            .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
 
-            Ok::<_, AppError>(obligation)
-        }
+        Ok(obligation)
     })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+    .await?;
 
     Ok(Json(obligation_to_response(&obligation)))
 }
@@ -1327,6 +1271,7 @@ async fn waive_obligation(
     post,
     path = "/v1/obligations/{obligation_id}/expire",
     tag = "execution",
+    description = "Mark an obligation as expired because its due date has passed without fulfillment.",
     params(
         ("obligation_id" = ObligationId, Path, description = "Obligation ID"),
         ("entity_id" = EntityId, Query, description = "Entity ID"),
@@ -1346,34 +1291,29 @@ async fn expire_obligation(
     let entity_id = query.entity_id;
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let obligation = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
-            let mut obligation = store
-                .read::<Obligation>("main", obligation_id)
-                .map_err(|_| {
-                    AppError::NotFound(format!("obligation {} not found", obligation_id))
-                })?;
+    let obligation = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+        let mut obligation = store
+            .read::<Obligation>("main", obligation_id)
+            .map_err(|_| {
+                AppError::NotFound(format!("obligation {} not found", obligation_id))
+            })?;
 
-            obligation.expire()?;
+        obligation.expire()?;
 
-            let path = format!("execution/obligations/{}.json", obligation_id);
-            store
-                .write_json(
-                    "main",
-                    &path,
-                    &obligation,
-                    &format!("Expire obligation {obligation_id}"),
-                )
-                .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
+        let path = format!("execution/obligations/{}.json", obligation_id);
+        store
+            .write_json(
+                "main",
+                &path,
+                &obligation,
+                &format!("Expire obligation {obligation_id}"),
+            )
+            .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
 
-            Ok::<_, AppError>(obligation)
-        }
+        Ok(obligation)
     })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+    .await?;
 
     Ok(Json(obligation_to_response(&obligation)))
 }
@@ -1409,6 +1349,7 @@ fn receipt_to_response(r: &Receipt) -> ReceiptResponse {
     get,
     path = "/v1/receipts/{receipt_id}",
     tag = "execution",
+    description = "Retrieve an execution receipt by ID.",
     params(
         ("receipt_id" = ReceiptId, Path, description = "Receipt ID"),
         ("entity_id" = EntityId, Query, description = "Entity ID"),
@@ -1428,18 +1369,13 @@ async fn get_receipt(
     let entity_id = query.entity_id;
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let receipt = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
-            store
-                .read::<Receipt>("main", receipt_id)
-                .map_err(|_| AppError::NotFound(format!("receipt {} not found", receipt_id)))
-        }
+    let receipt = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+        store
+            .read::<Receipt>("main", receipt_id)
+            .map_err(|_| AppError::NotFound(format!("receipt {} not found", receipt_id)))
     })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+    .await?;
 
     Ok(Json(receipt_to_response(&receipt)))
 }
@@ -1448,6 +1384,7 @@ async fn get_receipt(
     get,
     path = "/v1/intents/{intent_id}/receipts",
     tag = "execution",
+    description = "List all execution receipts associated with a specific intent.",
     params(
         ("intent_id" = IntentId, Path, description = "Intent ID"),
         ("entity_id" = EntityId, Query, description = "Entity ID"),
@@ -1467,28 +1404,23 @@ async fn list_receipts_by_intent(
     let entity_id = query.entity_id;
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let receipts = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
-            let ids = store
-                .list_ids::<Receipt>("main")
-                .map_err(|e| AppError::Internal(format!("list receipts: {e}")))?;
+    let receipts = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+        let ids = store
+            .list_ids::<Receipt>("main")
+            .map_err(|e| AppError::Internal(format!("list receipts: {e}")))?;
 
-            let mut results = Vec::new();
-            for id in ids {
-                if let Ok(r) = store.read::<Receipt>("main", id) {
-                    if r.intent_id() == intent_id {
-                        results.push(receipt_to_response(&r));
-                    }
+        let mut results = Vec::new();
+        for id in ids {
+            if let Ok(r) = store.read::<Receipt>("main", id) {
+                if r.intent_id() == intent_id {
+                    results.push(receipt_to_response(&r));
                 }
             }
-            Ok::<_, AppError>(results)
         }
+        Ok(results)
     })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+    .await?;
 
     Ok(Json(receipts))
 }
@@ -1499,6 +1431,7 @@ async fn list_receipts_by_intent(
     get,
     path = "/v1/execution/packets/{packet_id}",
     tag = "execution",
+    description = "Retrieve a transaction packet by ID.",
     params(
         ("packet_id" = PacketId, Path, description = "Packet ID"),
         ("entity_id" = EntityId, Query, description = "Entity ID"),
@@ -1519,24 +1452,19 @@ async fn get_packet(
     let entity_id = query.entity_id;
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let packet = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
-            let packet = store
-                .read::<TransactionPacket>("main", packet_id)
-                .map_err(|_| AppError::NotFound(format!("packet {} not found", packet_id)))?;
-            if packet.entity_id() != entity_id {
-                return Err(AppError::Forbidden(
-                    "packet belongs to a different entity".to_owned(),
-                ));
-            }
-            Ok::<_, AppError>(packet)
+    let packet = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+        let packet = store
+            .read::<TransactionPacket>("main", packet_id)
+            .map_err(|_| AppError::NotFound(format!("packet {} not found", packet_id)))?;
+        if packet.entity_id() != entity_id {
+            return Err(AppError::Forbidden(
+                "packet belongs to a different entity".to_owned(),
+            ));
         }
+        Ok(packet)
     })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+    .await?;
 
     Ok(Json(packet_to_response(&packet)))
 }
@@ -1545,6 +1473,7 @@ async fn get_packet(
     get,
     path = "/v1/entities/{entity_id}/packets",
     tag = "execution",
+    description = "List all transaction packets for an entity, sorted by most recent first.",
     params(("entity_id" = EntityId, Path, description = "Entity ID")),
     responses(
         (status = 200, body = Vec<TransactionPacketResponse>),
@@ -1559,28 +1488,23 @@ async fn list_entity_packets(
     let workspace_id = auth.workspace_id();
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let packets = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
-            let ids = store
-                .list_ids::<TransactionPacket>("main")
-                .map_err(|e| AppError::Internal(format!("list packets: {e}")))?;
-            let mut out = Vec::new();
-            for id in ids {
-                if let Ok(packet) = store.read::<TransactionPacket>("main", id)
-                    && packet.entity_id() == entity_id
-                {
-                    out.push(packet_to_response(&packet));
-                }
+    let packets = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+        let ids = store
+            .list_ids::<TransactionPacket>("main")
+            .map_err(|e| AppError::Internal(format!("list packets: {e}")))?;
+        let mut out = Vec::new();
+        for id in ids {
+            if let Ok(packet) = store.read::<TransactionPacket>("main", id)
+                && packet.entity_id() == entity_id
+            {
+                out.push(packet_to_response(&packet));
             }
-            out.sort_by(|a, b| b.created_at.cmp(&a.created_at));
-            Ok::<_, AppError>(out)
         }
+        out.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+        Ok(out)
     })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+    .await?;
 
     Ok(Json(packets))
 }
@@ -1597,6 +1521,7 @@ pub struct AssignObligationRequest {
     post,
     path = "/v1/obligations/{obligation_id}/assign",
     tag = "execution",
+    description = "Assign a contact as the responsible party for an obligation.",
     params(("obligation_id" = ObligationId, Path, description = "Obligation ID")),
     request_body = AssignObligationRequest,
     responses(
@@ -1614,34 +1539,29 @@ async fn assign_obligation(
     let entity_id = req.entity_id;
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let obligation = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
-            let mut obligation = store
-                .read::<Obligation>("main", obligation_id)
-                .map_err(|_| {
-                    AppError::NotFound(format!("obligation {} not found", obligation_id))
-                })?;
+    let obligation = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+        let mut obligation = store
+            .read::<Obligation>("main", obligation_id)
+            .map_err(|_| {
+                AppError::NotFound(format!("obligation {} not found", obligation_id))
+            })?;
 
-            obligation.assign(req.assignee_id)?;
+        obligation.assign(req.assignee_id)?;
 
-            let path = format!("execution/obligations/{}.json", obligation_id);
-            store
-                .write_json(
-                    "main",
-                    &path,
-                    &obligation,
-                    &format!("Assign obligation {obligation_id}"),
-                )
-                .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
+        let path = format!("execution/obligations/{}.json", obligation_id);
+        store
+            .write_json(
+                "main",
+                &path,
+                &obligation,
+                &format!("Assign obligation {obligation_id}"),
+            )
+            .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
 
-            Ok::<_, AppError>(obligation)
-        }
+        Ok(obligation)
     })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+    .await?;
 
     Ok(Json(obligation_to_response(&obligation)))
 }
@@ -1659,6 +1579,7 @@ pub struct ObligationsSummaryResponse {
     get,
     path = "/v1/entities/{entity_id}/obligations/summary",
     tag = "execution",
+    description = "Retrieve a status-count summary of all obligations for an entity.",
     params(("entity_id" = EntityId, Path, description = "Entity ID")),
     responses(
         (status = 200, body = ObligationsSummaryResponse),
@@ -1673,44 +1594,39 @@ async fn obligations_summary(
     let workspace_id = auth.workspace_id();
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let summary = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
-            let ids = store
-                .list_ids::<Obligation>("main")
-                .map_err(|e| AppError::Internal(format!("list obligations: {e}")))?;
+    let summary = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+        let ids = store
+            .list_ids::<Obligation>("main")
+            .map_err(|e| AppError::Internal(format!("list obligations: {e}")))?;
 
-            let mut total = 0;
-            let mut pending = 0;
-            let mut fulfilled = 0;
-            let mut waived = 0;
-            let mut expired = 0;
+        let mut total = 0;
+        let mut pending = 0;
+        let mut fulfilled = 0;
+        let mut waived = 0;
+        let mut expired = 0;
 
-            for id in ids {
-                if let Ok(o) = store.read::<Obligation>("main", id) {
-                    total += 1;
-                    match o.status() {
-                        ObligationStatus::Required | ObligationStatus::InProgress => pending += 1,
-                        ObligationStatus::Fulfilled => fulfilled += 1,
-                        ObligationStatus::Waived => waived += 1,
-                        ObligationStatus::Expired => expired += 1,
-                    }
+        for id in ids {
+            if let Ok(o) = store.read::<Obligation>("main", id) {
+                total += 1;
+                match o.status() {
+                    ObligationStatus::Required | ObligationStatus::InProgress => pending += 1,
+                    ObligationStatus::Fulfilled => fulfilled += 1,
+                    ObligationStatus::Waived => waived += 1,
+                    ObligationStatus::Expired => expired += 1,
                 }
             }
-
-            Ok::<_, AppError>(ObligationsSummaryResponse {
-                total,
-                pending,
-                fulfilled,
-                waived,
-                expired,
-            })
         }
+
+        Ok(ObligationsSummaryResponse {
+            total,
+            pending,
+            fulfilled,
+            waived,
+            expired,
+        })
     })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+    .await?;
 
     Ok(Json(summary))
 }
@@ -1719,6 +1635,7 @@ async fn obligations_summary(
     get,
     path = "/v1/entities/{entity_id}/obligations/human",
     tag = "execution",
+    description = "List obligations assigned to human assignees for an entity.",
     params(("entity_id" = EntityId, Path, description = "Entity ID")),
     responses(
         (status = 200, body = Vec<ObligationResponse>),
@@ -1733,28 +1650,23 @@ async fn list_human_obligations(
     let workspace_id = auth.workspace_id();
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let obligations = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
-            let ids = store
-                .list_ids::<Obligation>("main")
-                .map_err(|e| AppError::Internal(format!("list obligations: {e}")))?;
+    let obligations = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+        let ids = store
+            .list_ids::<Obligation>("main")
+            .map_err(|e| AppError::Internal(format!("list obligations: {e}")))?;
 
-            let mut results = Vec::new();
-            for id in ids {
-                if let Ok(o) = store.read::<Obligation>("main", id) {
-                    if o.assignee_type() == AssigneeType::Human {
-                        results.push(obligation_to_response(&o));
-                    }
+        let mut results = Vec::new();
+        for id in ids {
+            if let Ok(o) = store.read::<Obligation>("main", id) {
+                if o.assignee_type() == AssigneeType::Human {
+                    results.push(obligation_to_response(&o));
                 }
             }
-            Ok::<_, AppError>(results)
         }
+        Ok(results)
     })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+    .await?;
 
     Ok(Json(obligations))
 }
@@ -1765,6 +1677,7 @@ async fn list_human_obligations(
     get,
     path = "/v1/human-obligations",
     tag = "execution",
+    description = "List all unresolved human-assigned obligations across all entities in the workspace.",
     responses(
         (status = 200, body = Vec<ObligationResponse>),
     ),
@@ -1779,7 +1692,7 @@ async fn list_global_human_obligations(
         let layout = state.layout.clone();
         let valkey_client = state.valkey_client.clone();
         move || {
-            let (entity_ids, shared_store, _shared_raw_con) =
+            let (entity_ids, shared_store) =
                 EntityStore::list_and_prepare(&layout, workspace_id, valkey_client.as_ref())
                     .map_err(|e| AppError::Internal(e.to_string()))?;
             let mut results = Vec::new();
@@ -1822,6 +1735,7 @@ pub struct SignerTokenResponse {
     post,
     path = "/v1/human-obligations/{obligation_id}/signer-token",
     tag = "execution",
+    description = "Generate a short-lived signer token for a human obligation (not yet implemented).",
     params(("obligation_id" = ObligationId, Path, description = "Obligation ID")),
     responses(
         (status = 501, description = "Signer token generation is not yet implemented"),
@@ -1843,6 +1757,7 @@ async fn generate_signer_token(
     post,
     path = "/v1/human-obligations/{obligation_id}/fulfill",
     tag = "execution",
+    description = "Fulfill a human-assigned obligation, marking the required action as completed.",
     params(
         ("obligation_id" = ObligationId, Path, description = "Obligation ID"),
         ("entity_id" = EntityId, Query, description = "Entity ID"),
@@ -1907,6 +1822,7 @@ fn document_request_to_response(r: &DocumentRequest) -> DocumentRequestResponse 
     post,
     path = "/v1/obligations/{obligation_id}/document-requests",
     tag = "execution",
+    description = "Create a document request against an obligation, requiring evidence of a specific document type.",
     params(("obligation_id" = ObligationId, Path, description = "Obligation ID")),
     request_body = CreateDocumentRequestPayload,
     responses(
@@ -1925,41 +1841,36 @@ async fn create_document_request(
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let request_id = DocumentRequestId::new();
 
-    let request = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
+    let request = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
 
-            // Verify obligation exists
-            store
-                .read::<Obligation>("main", obligation_id)
-                .map_err(|_| {
-                    AppError::NotFound(format!("obligation {} not found", obligation_id))
-                })?;
+        // Verify obligation exists
+        store
+            .read::<Obligation>("main", obligation_id)
+            .map_err(|_| {
+                AppError::NotFound(format!("obligation {} not found", obligation_id))
+            })?;
 
-            let request = DocumentRequest::new(
-                request_id,
-                entity_id,
-                obligation_id,
-                req.description,
-                req.document_type,
-            );
+        let request = DocumentRequest::new(
+            request_id,
+            entity_id,
+            obligation_id,
+            req.description,
+            req.document_type,
+        );
 
-            store
-                .write_json(
-                    "main",
-                    &format!("execution/document-requests/{}.json", request_id),
-                    &request,
-                    &format!("EXECUTION: create document request {request_id}"),
-                )
-                .map_err(|e| AppError::Internal(format!("commit: {e}")))?;
+        store
+            .write_json(
+                "main",
+                &format!("execution/document-requests/{}.json", request_id),
+                &request,
+                &format!("EXECUTION: create document request {request_id}"),
+            )
+            .map_err(|e| AppError::Internal(format!("commit: {e}")))?;
 
-            Ok::<_, AppError>(request)
-        }
+        Ok(request)
     })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+    .await?;
 
     Ok(Json(document_request_to_response(&request)))
 }
@@ -1968,6 +1879,7 @@ async fn create_document_request(
     get,
     path = "/v1/obligations/{obligation_id}/document-requests",
     tag = "execution",
+    description = "List all document requests attached to an obligation.",
     params(
         ("obligation_id" = ObligationId, Path, description = "Obligation ID"),
         ("entity_id" = EntityId, Query, description = "Entity ID"),
@@ -1987,29 +1899,24 @@ async fn list_document_requests(
     let entity_id = query.entity_id;
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let requests = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
+    let requests = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
 
-            let ids = store
-                .list_ids::<DocumentRequest>("main")
-                .map_err(|e| AppError::Internal(format!("list document requests: {e}")))?;
+        let ids = store
+            .list_ids::<DocumentRequest>("main")
+            .map_err(|e| AppError::Internal(format!("list document requests: {e}")))?;
 
-            let mut results = Vec::new();
-            for id in ids {
-                if let Ok(request) = store.read::<DocumentRequest>("main", id)
-                    && request.obligation_id() == obligation_id
-                {
-                    results.push(document_request_to_response(&request));
-                }
+        let mut results = Vec::new();
+        for id in ids {
+            if let Ok(request) = store.read::<DocumentRequest>("main", id)
+                && request.obligation_id() == obligation_id
+            {
+                results.push(document_request_to_response(&request));
             }
-            Ok::<_, AppError>(results)
         }
+        Ok(results)
     })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+    .await?;
 
     Ok(Json(requests))
 }
@@ -2018,6 +1925,7 @@ async fn list_document_requests(
     patch,
     path = "/v1/document-requests/{request_id}/fulfill",
     tag = "execution",
+    description = "Mark a document request as fulfilled by indicating the document has been provided.",
     params(
         ("request_id" = DocumentRequestId, Path, description = "Document request ID"),
         ("entity_id" = EntityId, Query, description = "Entity ID"),
@@ -2049,6 +1957,7 @@ async fn fulfill_document_request(
     patch,
     path = "/v1/document-requests/{request_id}/not-applicable",
     tag = "execution",
+    description = "Mark a document request as not applicable for this entity or intent.",
     params(
         ("request_id" = DocumentRequestId, Path, description = "Document request ID"),
         ("entity_id" = EntityId, Query, description = "Entity ID"),
@@ -2084,41 +1993,36 @@ async fn update_document_request_status(
     new_status: DocumentRequestStatus,
     entity_scope: Option<Vec<EntityId>>,
 ) -> Result<Json<DocumentRequestResponse>, AppError> {
-    let result = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
-            let path = format!("execution/document-requests/{}.json", request_id);
-            let mut request: DocumentRequest = store.read_json("main", &path).map_err(|_| {
-                AppError::NotFound(format!("document request {} not found", request_id))
-            })?;
+    let result = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+        let path = format!("execution/document-requests/{}.json", request_id);
+        let mut request: DocumentRequest = store.read_json("main", &path).map_err(|_| {
+            AppError::NotFound(format!("document request {} not found", request_id))
+        })?;
 
-            match new_status {
-                DocumentRequestStatus::Provided => request.fulfill()?,
-                DocumentRequestStatus::NotApplicable => request.mark_not_applicable()?,
-                DocumentRequestStatus::Waived => request.waive()?,
-                DocumentRequestStatus::Requested => {
-                    return Err(AppError::BadRequest(
-                        "cannot transition document request back to requested".to_owned(),
-                    ));
-                }
+        match new_status {
+            DocumentRequestStatus::Provided => request.fulfill()?,
+            DocumentRequestStatus::NotApplicable => request.mark_not_applicable()?,
+            DocumentRequestStatus::Waived => request.waive()?,
+            DocumentRequestStatus::Requested => {
+                return Err(AppError::BadRequest(
+                    "cannot transition document request back to requested".to_owned(),
+                ));
             }
-
-            store
-                .write_json(
-                    "main",
-                    &path,
-                    &request,
-                    &format!("EXECUTION: update document request {request_id} to {new_status:?}"),
-                )
-                .map_err(|e| AppError::Internal(format!("commit: {e}")))?;
-
-            Ok::<_, AppError>(request)
         }
+
+        store
+            .write_json(
+                "main",
+                &path,
+                &request,
+                &format!("EXECUTION: update document request {request_id} to {new_status:?}"),
+            )
+            .map_err(|e| AppError::Internal(format!("commit: {e}")))?;
+
+        Ok(request)
     })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+    .await?;
 
     Ok(Json(document_request_to_response(&result)))
 }
@@ -2129,6 +2033,7 @@ async fn update_document_request_status(
     get,
     path = "/v1/obligations/summary",
     tag = "execution",
+    description = "Retrieve an aggregated status-count summary of obligations across all entities in the workspace.",
     responses(
         (status = 200, body = ObligationsSummaryResponse),
     ),
@@ -2143,7 +2048,7 @@ async fn global_obligations_summary(
         let layout = state.layout.clone();
         let valkey_client = state.valkey_client.clone();
         move || {
-            let (entity_ids, shared_store, _shared_raw_con) =
+            let (entity_ids, shared_store) =
                 EntityStore::list_and_prepare(&layout, workspace_id, valkey_client.as_ref())
                     .map_err(|e| AppError::Internal(e.to_string()))?;
             let mut total = 0;

@@ -199,56 +199,51 @@ async fn create_request(
     })?;
 
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
-    let service_request = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        let slug = req.service_slug.clone();
-        let item_id = catalog_item.item_id;
-        let amount_cents = catalog_item.amount_cents;
-        let obligation_id_input = req.obligation_id;
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
+    let slug = req.service_slug.clone();
+    let item_id = catalog_item.item_id;
+    let amount_cents = catalog_item.amount_cents;
+    let obligation_id_input = req.obligation_id;
+    let service_request = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
 
-            // Resolve or auto-create obligation.
-            let obligation_id = match obligation_id_input {
-                Some(id) => id,
-                None => {
-                    let ob_id = ObligationId::new();
-                    let obligation = Obligation::new(
-                        ob_id,
-                        entity_id,
-                        None,
-                        ObligationType::new(format!("service_fulfillment_{slug}")),
-                        AssigneeType::ThirdParty,
-                        None,
-                        format!("Service request: {slug}"),
-                        None,
-                    );
-                    let ob_path = format!("execution/obligations/{ob_id}.json");
-                    store
-                        .write_json("main", &ob_path, &obligation, &format!("Create obligation {ob_id} for service {slug}"))
-                        .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
-                    ob_id
-                }
-            };
+        // Resolve or auto-create obligation.
+        let obligation_id = match obligation_id_input {
+            Some(id) => id,
+            None => {
+                let ob_id = ObligationId::new();
+                let obligation = Obligation::new(
+                    ob_id,
+                    entity_id,
+                    None,
+                    ObligationType::new(format!("service_fulfillment_{slug}")),
+                    AssigneeType::ThirdParty,
+                    None,
+                    format!("Service request: {slug}"),
+                    None,
+                );
+                let ob_path = format!("execution/obligations/{ob_id}.json");
+                store
+                    .write_json("main", &ob_path, &obligation, &format!("Create obligation {ob_id} for service {slug}"))
+                    .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
+                ob_id
+            }
+        };
 
-            let request_id = ServiceRequestId::new();
-            let service_request = ServiceRequest::new(
-                request_id,
-                entity_id,
-                obligation_id,
-                item_id,
-                slug.clone(),
-                amount_cents,
-            );
+        let request_id = ServiceRequestId::new();
+        let service_request = ServiceRequest::new(
+            request_id,
+            entity_id,
+            obligation_id,
+            item_id,
+            slug.clone(),
+            amount_cents,
+        );
 
-            write_service_request(&store, &service_request, &format!("Create service request {request_id} for {slug}"))?;
+        write_service_request(&store, &service_request, &format!("Create service request {request_id} for {slug}"))?;
 
-            Ok::<_, AppError>(service_request)
-        }
+        Ok::<_, AppError>(service_request)
     })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+    .await?;
 
     Ok(Json(service_request_to_response(&service_request, workspace_id)))
 }
@@ -283,16 +278,11 @@ async fn get_request(
     }
 
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
-    let service_request = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
-            read_service_request(&store, request_id)
-        }
+    let service_request = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+        read_service_request(&store, request_id)
     })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+    .await?;
 
     Ok(Json(service_request_to_response(&service_request, workspace_id)))
 }
@@ -321,26 +311,21 @@ async fn list_requests(
     }
 
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
-    let requests = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
-            let ids: Vec<ServiceRequestId> = store
-                .list_ids_in_dir("main", "services/requests")
-                .unwrap_or_default();
-            let mut requests = Vec::new();
-            for id in ids {
-                let path = format!("services/requests/{id}.json");
-                if let Ok(req) = store.read_json::<ServiceRequest>("main", &path) {
-                    requests.push(req);
-                }
+    let requests = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+        let ids: Vec<ServiceRequestId> = store
+            .list_ids_in_dir("main", "services/requests")
+            .unwrap_or_default();
+        let mut requests = Vec::new();
+        for id in ids {
+            let path = format!("services/requests/{id}.json");
+            if let Ok(req) = store.read_json::<ServiceRequest>("main", &path) {
+                requests.push(req);
             }
-            Ok::<_, AppError>(requests)
         }
+        Ok::<_, AppError>(requests)
     })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+    .await?;
 
     let responses: Vec<ServiceRequestResponse> = requests
         .iter()
@@ -376,30 +361,25 @@ async fn begin_checkout(
     }
 
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
-    let service_request = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
-            let mut service_request = read_service_request(&store, request_id)?;
+    let service_request = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+        let mut service_request = read_service_request(&store, request_id)?;
 
-            // Generate a deterministic session ID from the request ID.
-            let session_id = format!("cs_svc_{request_id}");
-            service_request
-                .begin_checkout(session_id)
-                .map_err(|e| AppError::BadRequest(e.to_string()))?;
+        // Generate a deterministic session ID from the request ID.
+        let session_id = format!("cs_svc_{request_id}");
+        service_request
+            .begin_checkout(session_id)
+            .map_err(|e| AppError::BadRequest(e.to_string()))?;
 
-            write_service_request(
-                &store,
-                &service_request,
-                &format!("Begin checkout for service request {request_id}"),
-            )?;
+        write_service_request(
+            &store,
+            &service_request,
+            &format!("Begin checkout for service request {request_id}"),
+        )?;
 
-            Ok::<_, AppError>(service_request)
-        }
+        Ok::<_, AppError>(service_request)
     })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+    .await?;
 
     Ok(Json(service_request_to_response(&service_request, workspace_id)))
 }
@@ -425,32 +405,27 @@ async fn fulfill_request(
     let entity_id = req.entity_id;
 
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
-    let service_request = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
-            let mut service_request = read_service_request(&store, request_id)?;
+    let service_request = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+        let mut service_request = read_service_request(&store, request_id)?;
 
-            // Paid -> Fulfilling -> Fulfilled in one atomic call.
-            service_request
-                .begin_fulfillment()
-                .map_err(|e| AppError::BadRequest(e.to_string()))?;
-            service_request
-                .fulfill(req.note)
-                .map_err(|e| AppError::BadRequest(e.to_string()))?;
+        // Paid -> Fulfilling -> Fulfilled in one atomic call.
+        service_request
+            .begin_fulfillment()
+            .map_err(|e| AppError::BadRequest(e.to_string()))?;
+        service_request
+            .fulfill(req.note)
+            .map_err(|e| AppError::BadRequest(e.to_string()))?;
 
-            write_service_request(
-                &store,
-                &service_request,
-                &format!("Fulfill service request {request_id}"),
-            )?;
+        write_service_request(
+            &store,
+            &service_request,
+            &format!("Fulfill service request {request_id}"),
+        )?;
 
-            Ok::<_, AppError>(service_request)
-        }
+        Ok::<_, AppError>(service_request)
     })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+    .await?;
 
     Ok(Json(service_request_to_response(&service_request, workspace_id)))
 }
@@ -482,28 +457,23 @@ async fn cancel_request(
     }
 
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
-    let service_request = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
-            let mut service_request = read_service_request(&store, request_id)?;
+    let service_request = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+        let mut service_request = read_service_request(&store, request_id)?;
 
-            service_request
-                .fail()
-                .map_err(|e| AppError::BadRequest(e.to_string()))?;
+        service_request
+            .fail()
+            .map_err(|e| AppError::BadRequest(e.to_string()))?;
 
-            write_service_request(
-                &store,
-                &service_request,
-                &format!("Cancel service request {request_id}"),
-            )?;
+        write_service_request(
+            &store,
+            &service_request,
+            &format!("Cancel service request {request_id}"),
+        )?;
 
-            Ok::<_, AppError>(service_request)
-        }
+        Ok::<_, AppError>(service_request)
     })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+    .await?;
 
     Ok(Json(service_request_to_response(&service_request, workspace_id)))
 }
@@ -539,29 +509,24 @@ async fn stripe_webhook(
     let entity_id = payload.entity_id;
     let request_id = payload.request_id;
 
-    let service_request = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        let payment_intent_id = payload.stripe_payment_intent_id;
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, None, valkey_client.as_ref())?;
-            let mut service_request = read_service_request(&store, request_id)?;
+    let payment_intent_id = payload.stripe_payment_intent_id;
+    let service_request = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, None, valkey)?;
+        let mut service_request = read_service_request(&store, request_id)?;
 
-            service_request
-                .mark_paid(payment_intent_id)
-                .map_err(|e| AppError::BadRequest(e.to_string()))?;
+        service_request
+            .mark_paid(payment_intent_id)
+            .map_err(|e| AppError::BadRequest(e.to_string()))?;
 
-            write_service_request(
-                &store,
-                &service_request,
-                &format!("Payment confirmed for service request {request_id}"),
-            )?;
+        write_service_request(
+            &store,
+            &service_request,
+            &format!("Payment confirmed for service request {request_id}"),
+        )?;
 
-            Ok::<_, AppError>(service_request)
-        }
+        Ok::<_, AppError>(service_request)
     })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+    .await?;
 
     Ok(Json(service_request_to_response(&service_request, workspace_id)))
 }

@@ -339,25 +339,20 @@ async fn entity_next_steps(
     State(state): State<AppState>,
     Path(entity_id): Path<EntityId>,
 ) -> Result<Json<NextStepsResponse>, AppError> {
-    let response = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
-        let workspace_id = auth.workspace_id();
-        move || {
-            if let Some(ref scope) = entity_scope {
-                if !scope.contains(&entity_id) {
-                    return Err(AppError::Forbidden("entity not in scope".into()));
-                }
+    let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
+    let workspace_id = auth.workspace_id();
+    let response = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        if let Some(ref scope) = entity_scope {
+            if !scope.contains(&entity_id) {
+                return Err(AppError::Forbidden("entity not in scope".into()));
             }
-            let store = EntityStore::open(
-                &layout, workspace_id, entity_id, valkey_client.as_ref(),
-            ).map_err(|e| AppError::NotFound(format!("entity not found: {e}")))?;
-            Ok::<_, AppError>(build_response(compute_next_steps(&store, entity_id)))
         }
+        let store = EntityStore::open(
+            layout, workspace_id, entity_id, valkey,
+        ).map_err(|e| AppError::NotFound(format!("entity not found: {e}")))?;
+        Ok::<_, AppError>(build_response(compute_next_steps(&store, entity_id)))
     })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+    .await?;
     Ok(Json(response))
 }
 
@@ -375,28 +370,23 @@ async fn workspace_next_steps(
     State(state): State<AppState>,
     Path(workspace_id): Path<crate::domain::ids::WorkspaceId>,
 ) -> Result<Json<NextStepsResponse>, AppError> {
-    let response = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
-        move || {
-            let entity_ids = layout.list_entity_ids(workspace_id);
-            let mut all_items: Vec<NextStepItem> = Vec::new();
-            for eid in entity_ids {
-                if let Some(ref scope) = entity_scope {
-                    if !scope.contains(&eid) { continue; }
-                }
-                if let Ok(store) = EntityStore::open(
-                    &layout, workspace_id, eid, valkey_client.as_ref()
-                ) {
-                    all_items.extend(compute_next_steps(&store, eid));
-                }
+    let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
+    let response = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let entity_ids = layout.list_entity_ids(workspace_id);
+        let mut all_items: Vec<NextStepItem> = Vec::new();
+        for eid in entity_ids {
+            if let Some(ref scope) = entity_scope {
+                if !scope.contains(&eid) { continue; }
             }
-            Ok::<_, AppError>(build_response(all_items))
+            if let Ok(store) = EntityStore::open(
+                layout, workspace_id, eid, valkey
+            ) {
+                all_items.extend(compute_next_steps(&store, eid));
+            }
         }
+        Ok::<_, AppError>(build_response(all_items))
     })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+    .await?;
     Ok(Json(response))
 }
 

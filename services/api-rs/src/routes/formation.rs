@@ -616,7 +616,7 @@ async fn create_formation(
 ) -> Result<Json<FormationResponse>, AppError> {
     if req.members.is_empty() {
         return Err(AppError::BadRequest(
-            "at least one member is required".to_owned(),
+            "At least one member is required. Add a founder with: corp form add-founder @last --name '...' --email '...'".to_owned(),
         ));
     }
     let workspace_id = auth.workspace_id();
@@ -657,7 +657,7 @@ async fn create_formation(
                 crate::domain::formation::error::FormationError::Validation(format!("{e:?}"))
             })? {
                 return Err(crate::domain::formation::error::FormationError::Validation(
-                    format!("entity legal name already exists in workspace: {legal_name}"),
+                    format!("An entity named '{legal_name}' already exists in this workspace. Use a different legal name, or check existing entities with: corp form status"),
                 ));
             }
             service::create_entity_with_profile_overrides(
@@ -709,7 +709,7 @@ async fn create_formation_with_cap_table(
 ) -> Result<Json<FormationWithCapTableResponse>, AppError> {
     if req.members.is_empty() {
         return Err(AppError::BadRequest(
-            "at least one member is required".to_owned(),
+            "At least one member is required. Add a founder with: corp form add-founder @last --name '...' --email '...'".to_owned(),
         ));
     }
     let workspace_id = auth.workspace_id();
@@ -750,7 +750,7 @@ async fn create_formation_with_cap_table(
                 crate::domain::formation::error::FormationError::Validation(format!("{e:?}"))
             })? {
                 return Err(crate::domain::formation::error::FormationError::Validation(
-                    format!("entity legal name already exists in workspace: {legal_name}"),
+                    format!("An entity named '{legal_name}' already exists in this workspace. Use a different legal name, or check existing entities with: corp form status"),
                 ));
             }
             // Step 1: Create the entity (formation documents, filing, tax profile)
@@ -1107,7 +1107,7 @@ async fn mark_documents_signed(
             })?;
             if doc_ids.is_empty() {
                 return Err(crate::domain::formation::error::FormationError::Validation(
-                    "no formation documents found".to_owned(),
+                    "No formation documents found. Generate documents first by completing the formation setup.".to_owned(),
                 ));
             }
 
@@ -1117,7 +1117,7 @@ async fn mark_documents_signed(
                 })?;
                 if !doc.is_fully_signed() {
                     return Err(crate::domain::formation::error::FormationError::Validation(
-                        format!("document {doc_id} is not fully signed"),
+                        format!("Document {doc_id} is not fully signed. All signatories must sign before marking as complete. Use: corp form sign --document {doc_id}"),
                     ));
                 }
             }
@@ -1347,55 +1347,50 @@ async fn execute_service_agreement(
 ) -> Result<Json<FormationGatesResponse>, AppError> {
     let workspace_id = auth.workspace_id();
 
-    let response = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || -> Result<FormationGatesResponse, AppError> {
-            let store =
-                open_formation_store(&layout, workspace_id, entity_id, valkey_client.as_ref()).map_err(AppError::from)?;
-            let mut entity = store
-                .read_entity("main")
-                .map_err(|e| AppError::UnprocessableEntity(format!("validation error: {e}")))?;
-            let filing = store
-                .read_filing("main")
-                .map_err(|e| AppError::UnprocessableEntity(format!("validation error: {e}")))?;
-            let contract_id = req.contract_id;
-            let document_id = req.document_id;
-            let notes = req.notes;
+    let response = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store =
+            open_formation_store(layout, workspace_id, entity_id, valkey).map_err(AppError::from)?;
+        let mut entity = store
+            .read_entity("main")
+            .map_err(|e| AppError::UnprocessableEntity(format!("validation error: {e}")))?;
+        let filing = store
+            .read_filing("main")
+            .map_err(|e| AppError::UnprocessableEntity(format!("validation error: {e}")))?;
+        let contract_id = req.contract_id;
+        let document_id = req.document_id;
+        let notes = req.notes;
 
-            if let Some(contract_id) = contract_id {
-                let contract = store.read::<Contract>("main", contract_id).map_err(|_| {
-                    AppError::NotFound(format!("contract {} not found", contract_id))
-                })?;
-                if contract.entity_id() != entity_id {
-                    return Err(AppError::UnprocessableEntity(format!(
-                        "contract {} belongs to a different entity",
-                        contract_id
-                    )));
-                }
+        if let Some(contract_id) = contract_id {
+            let contract = store.read::<Contract>("main", contract_id).map_err(|_| {
+                AppError::NotFound(format!("contract {} not found", contract_id))
+            })?;
+            if contract.entity_id() != entity_id {
+                return Err(AppError::UnprocessableEntity(format!(
+                    "contract {} belongs to a different entity",
+                    contract_id
+                )));
             }
-            if let Some(document_id) = document_id {
-                let document = store.read_document("main", document_id).map_err(|_| {
-                    AppError::NotFound(format!("document {} not found", document_id))
-                })?;
-                if document.entity_id() != entity_id {
-                    return Err(AppError::UnprocessableEntity(format!(
-                        "document {} belongs to a different entity",
-                        document_id
-                    )));
-                }
-            }
-
-            entity.record_service_agreement_execution(contract_id, document_id, notes);
-            store
-                .write_entity("main", &entity, "Record service agreement execution")
-                .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
-
-            Ok(build_formation_gates_response(&entity, &filing))
         }
+        if let Some(document_id) = document_id {
+            let document = store.read_document("main", document_id).map_err(|_| {
+                AppError::NotFound(format!("document {} not found", document_id))
+            })?;
+            if document.entity_id() != entity_id {
+                return Err(AppError::UnprocessableEntity(format!(
+                    "document {} belongs to a different entity",
+                    document_id
+                )));
+            }
+        }
+
+        entity.record_service_agreement_execution(contract_id, document_id, notes);
+        store
+            .write_entity("main", &entity, "Record service agreement execution")
+            .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
+
+        Ok(build_formation_gates_response(&entity, &filing))
     })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+    .await?;
 
     Ok(Json(response))
 }
@@ -1728,7 +1723,7 @@ fn workspace_has_legal_name(
     valkey_client: Option<&redis::Client>,
 ) -> Result<bool, AppError> {
     let normalized = normalize_legal_name(legal_name);
-    let (entity_ids, shared_store, _shared_raw_con) =
+    let (entity_ids, shared_store) =
         EntityStore::list_and_prepare(layout, workspace_id, valkey_client)
             .map_err(|e| AppError::Internal(e.to_string()))?;
     for entity_id in entity_ids {
@@ -2629,66 +2624,61 @@ async fn get_document_pdf(
     let workspace_id = auth.workspace_id();
     let entity_id = query.entity_id;
 
-    let pdf_bytes = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = open_formation_store(&layout, workspace_id, entity_id, valkey_client.as_ref())?;
-            let doc = store
-                .read_document("main", document_id)
-                .map_err(|_| AppError::NotFound(format!("document {} not found", document_id)))?;
+    let pdf_bytes = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = open_formation_store(layout, workspace_id, entity_id, valkey)?;
+        let doc = store
+            .read_document("main", document_id)
+            .map_err(|_| AppError::NotFound(format!("document {} not found", document_id)))?;
 
-            // Load AST and profile
-            let ast = doc_ast::default_doc_ast();
-            let profile: GovernanceProfile =
-                match store.read_json::<GovernanceProfile>("main", GOVERNANCE_PROFILE_PATH) {
-                    Ok(p) => p,
-                    Err(_) => {
-                        let entity = store
-                            .read_entity("main")
-                            .map_err(|e| AppError::Internal(format!("read entity: {e}")))?;
-                        GovernanceProfile::default_for_entity(&entity)
-                    }
-                };
+        // Load AST and profile
+        let ast = doc_ast::default_doc_ast();
+        let profile: GovernanceProfile =
+            match store.read_json::<GovernanceProfile>("main", GOVERNANCE_PROFILE_PATH) {
+                Ok(p) => p,
+                Err(_) => {
+                    let entity = store
+                        .read_entity("main")
+                        .map_err(|e| AppError::Internal(format!("read entity: {e}")))?;
+                    GovernanceProfile::default_for_entity(&entity)
+                }
+            };
 
-            // Map entity type
-            let entity = store
-                .read_entity("main")
-                .map_err(|e| AppError::Internal(format!("read entity: {e}")))?;
-            let entity_type = entity_type_key(entity.entity_type());
+        // Map entity type
+        let entity = store
+            .read_entity("main")
+            .map_err(|e| AppError::Internal(format!("read entity: {e}")))?;
+        let entity_type = entity_type_key(entity.entity_type());
 
-            // Find matching AST document definition via governance_tag
-            let governance_tag = doc.governance_tag().ok_or_else(|| {
-                AppError::UnprocessableEntity(format!(
-                    "document {} has no governance_tag — cannot render PDF",
-                    document_id
-                ))
-            })?;
+        // Find matching AST document definition via governance_tag
+        let governance_tag = doc.governance_tag().ok_or_else(|| {
+            AppError::UnprocessableEntity(format!(
+                "document {} has no governance_tag — cannot render PDF",
+                document_id
+            ))
+        })?;
 
-            let doc_def = find_ast_document_definition(ast, governance_tag).ok_or_else(|| {
-                AppError::NotFound(format!(
-                    "no AST document definition matches governance_tag '{}'",
-                    governance_tag
-                ))
-            })?;
-            validate_governance_document_content(&store, governance_tag, doc.content())?;
+        let doc_def = find_ast_document_definition(ast, governance_tag).ok_or_else(|| {
+            AppError::NotFound(format!(
+                "no AST document definition matches governance_tag '{}'",
+                governance_tag
+            ))
+        })?;
+        validate_governance_document_content(&store, governance_tag, doc.content())?;
 
-            // Render PDF
-            let pdf = typst_renderer::render_pdf_with_context(
-                doc_def,
-                ast,
-                entity_type,
-                &profile,
-                doc.content(),
-                doc.signatures(),
-            )
-            .map_err(|e| AppError::Internal(format!("PDF rendering failed: {e}")))?;
+        // Render PDF
+        let pdf = typst_renderer::render_pdf_with_context(
+            doc_def,
+            ast,
+            entity_type,
+            &profile,
+            doc.content(),
+            doc.signatures(),
+        )
+        .map_err(|e| AppError::Internal(format!("PDF rendering failed: {e}")))?;
 
-            Ok::<_, AppError>(pdf)
-        }
+        Ok(pdf)
     })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+    .await?;
 
     let disposition = format!("inline; filename=\"{document_id}.pdf\"");
     Ok((
@@ -2900,18 +2890,13 @@ async fn request_document_copy(
     let entity_id = req.entity_id;
 
     // Verify the document exists and read its title
-    let doc = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = open_formation_store(&layout, workspace_id, entity_id, valkey_client.as_ref())?;
-            store
-                .read_document("main", document_id)
-                .map_err(|_| AppError::NotFound(format!("document {} not found", document_id)))
-        }
+    let doc = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = open_formation_store(layout, workspace_id, entity_id, valkey)?;
+        store
+            .read_document("main", document_id)
+            .map_err(|_| AppError::NotFound(format!("document {} not found", document_id)))
     })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+    .await?;
 
     Ok(Json(DocumentCopyResponse {
         document_id,
@@ -3115,7 +3100,7 @@ async fn list_entities(
         let layout = state.layout.clone();
         let valkey_client = state.valkey_client.clone();
         move || {
-            let (entity_ids, shared_store, _shared_raw_con) =
+            let (entity_ids, shared_store) =
                 EntityStore::list_and_prepare(&layout, workspace_id, valkey_client.as_ref())
                     .map_err(|e| AppError::Internal(e.to_string()))?;
             let mut results = Vec::new();
@@ -3385,7 +3370,7 @@ async fn create_pending_formation(
                 crate::domain::formation::error::FormationError::Validation(format!("{e:?}"))
             })? {
                 return Err(crate::domain::formation::error::FormationError::Validation(
-                    format!("entity legal name already exists in workspace: {legal_name}"),
+                    format!("An entity named '{legal_name}' already exists in this workspace. Use a different legal name, or check existing entities with: corp form status"),
                 ));
             }
             service::create_pending_entity_with_profile_overrides(
@@ -3619,80 +3604,75 @@ async fn resolve_signing_link(
 ) -> Result<Json<SigningResolveResponse>, AppError> {
     let token = query.token;
 
-    let result = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let st = resolve_signing_token(&layout, &token, valkey_client.as_ref())?;
-            if st.document_id != document_id {
-                return Err(AppError::BadRequest(
-                    "token does not match document".to_owned(),
-                ));
-            }
-
-            let store = open_formation_store(&layout, st.workspace_id, st.entity_id, valkey_client.as_ref())?;
-            let doc = store
-                .read_document("main", document_id)
-                .map_err(|_| AppError::NotFound(format!("document {} not found", document_id)))?;
-
-            let signatures = doc
-                .signatures()
-                .iter()
-                .map(|s| SignatureSummary {
-                    signature_id: s.signature_id(),
-                    signer_name: s.signer_name().to_owned(),
-                    signer_role: s.signer_role().to_owned(),
-                    signed_at: s.signed_at().to_rfc3339(),
-                })
-                .collect();
-
-            // Load entity name for display
-            let entity_name = store
-                .read_entity("main")
-                .ok()
-                .map(|e| e.legal_name().to_owned());
-            let preview_text = render_governance_document_markdown(&store, &doc)?;
-
-            // If document references a contract, load contract details
-            let contract = doc
-                .content()
-                .get("contract_id")
-                .and_then(|v| v.as_str())
-                .and_then(|cid| {
-                    let path = format!("contracts/{cid}.json");
-                    store.read_json::<Contract>("main", &path).ok()
-                })
-                .map(|c| {
-                    let rendered_text = render_signing_preview_text(
-                        &c,
-                        entity_name.as_deref().unwrap_or("Company"),
-                    );
-                    SigningContractDetails {
-                        template_type: format!("{:?}", c.template_type()),
-                        template_label: Some(template_label(c.template_type(), c.parameters())),
-                        counterparty_name: c.counterparty_name().to_owned(),
-                        effective_date: c.effective_date().to_string(),
-                        parameters: c.parameters().clone(),
-                        rendered_text: Some(rendered_text),
-                    }
-                });
-
-            Ok(SigningResolveResponse {
-                document_id: doc.document_id(),
-                entity_id: st.entity_id,
-                document_title: doc.title().to_owned(),
-                document_status: format!("{:?}", doc.status()),
-                signatures,
-                pdf_url: Some(format!("/api/human/sign/{document_id}/pdf?token={token}")),
-                preview_text: preview_text
-                    .or_else(|| contract.as_ref().and_then(|c| c.rendered_text.clone())),
-                contract,
-                entity_name,
-            })
+    let result = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let st = resolve_signing_token(layout, &token, valkey)?;
+        if st.document_id != document_id {
+            return Err(AppError::BadRequest(
+                "token does not match document".to_owned(),
+            ));
         }
+
+        let store = open_formation_store(layout, st.workspace_id, st.entity_id, valkey)?;
+        let doc = store
+            .read_document("main", document_id)
+            .map_err(|_| AppError::NotFound(format!("document {} not found", document_id)))?;
+
+        let signatures = doc
+            .signatures()
+            .iter()
+            .map(|s| SignatureSummary {
+                signature_id: s.signature_id(),
+                signer_name: s.signer_name().to_owned(),
+                signer_role: s.signer_role().to_owned(),
+                signed_at: s.signed_at().to_rfc3339(),
+            })
+            .collect();
+
+        // Load entity name for display
+        let entity_name = store
+            .read_entity("main")
+            .ok()
+            .map(|e| e.legal_name().to_owned());
+        let preview_text = render_governance_document_markdown(&store, &doc)?;
+
+        // If document references a contract, load contract details
+        let contract = doc
+            .content()
+            .get("contract_id")
+            .and_then(|v| v.as_str())
+            .and_then(|cid| {
+                let path = format!("contracts/{cid}.json");
+                store.read_json::<Contract>("main", &path).ok()
+            })
+            .map(|c| {
+                let rendered_text = render_signing_preview_text(
+                    &c,
+                    entity_name.as_deref().unwrap_or("Company"),
+                );
+                SigningContractDetails {
+                    template_type: format!("{:?}", c.template_type()),
+                    template_label: Some(template_label(c.template_type(), c.parameters())),
+                    counterparty_name: c.counterparty_name().to_owned(),
+                    effective_date: c.effective_date().to_string(),
+                    parameters: c.parameters().clone(),
+                    rendered_text: Some(rendered_text),
+                }
+            });
+
+        Ok(SigningResolveResponse {
+            document_id: doc.document_id(),
+            entity_id: st.entity_id,
+            document_title: doc.title().to_owned(),
+            document_status: format!("{:?}", doc.status()),
+            signatures,
+            pdf_url: Some(format!("/api/human/sign/{document_id}/pdf?token={token}")),
+            preview_text: preview_text
+                .or_else(|| contract.as_ref().and_then(|c| c.rendered_text.clone())),
+            contract,
+            entity_name,
+        })
     })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+    .await?;
 
     Ok(Json(result))
 }
@@ -3717,47 +3697,42 @@ async fn get_signing_pdf(
 ) -> Result<impl IntoResponse, AppError> {
     let token = query.token;
 
-    let pdf_bytes = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let st = resolve_signing_token(&layout, &token, valkey_client.as_ref())?;
-            if st.document_id != document_id {
-                return Err(AppError::BadRequest("token does not match document".to_owned()));
-            }
-
-            let store = open_formation_store(&layout, st.workspace_id, st.entity_id, valkey_client.as_ref())?;
-            let doc = store
-                .read_document("main", document_id)
-                .map_err(|_| AppError::NotFound(format!("document {} not found", document_id)))?;
-            let entity_name = store
-                .read_entity("main")
-                .map_err(|e| AppError::Internal(format!("read entity: {e}")))?
-                .legal_name()
-                .to_owned();
-
-            let body_text = render_governance_document_markdown(&store, &doc)?.unwrap_or_else(|| {
-                doc.content()
-                    .get("contract_id")
-                    .and_then(|v| v.as_str())
-                    .and_then(|cid| {
-                        let path = format!("contracts/{cid}.json");
-                        store.read_json::<Contract>("main", &path).ok()
-                    })
-                    .map(|c| render_signing_preview_text(&c, &entity_name))
-                    .unwrap_or_else(|| {
-                        format!(
-                            "{}\n\nThis document is available for signature, but no contract preview text is stored for it.",
-                            doc.title()
-                        )
-                    })
-            });
-
-            render_text_preview_pdf(doc.title(), &body_text)
+    let pdf_bytes = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let st = resolve_signing_token(layout, &token, valkey)?;
+        if st.document_id != document_id {
+            return Err(AppError::BadRequest("token does not match document".to_owned()));
         }
+
+        let store = open_formation_store(layout, st.workspace_id, st.entity_id, valkey)?;
+        let doc = store
+            .read_document("main", document_id)
+            .map_err(|_| AppError::NotFound(format!("document {} not found", document_id)))?;
+        let entity_name = store
+            .read_entity("main")
+            .map_err(|e| AppError::Internal(format!("read entity: {e}")))?
+            .legal_name()
+            .to_owned();
+
+        let body_text = render_governance_document_markdown(&store, &doc)?.unwrap_or_else(|| {
+            doc.content()
+                .get("contract_id")
+                .and_then(|v| v.as_str())
+                .and_then(|cid| {
+                    let path = format!("contracts/{cid}.json");
+                    store.read_json::<Contract>("main", &path).ok()
+                })
+                .map(|c| render_signing_preview_text(&c, &entity_name))
+                .unwrap_or_else(|| {
+                    format!(
+                        "{}\n\nThis document is available for signature, but no contract preview text is stored for it.",
+                        doc.title()
+                    )
+                })
+        });
+
+        render_text_preview_pdf(doc.title(), &body_text)
     })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+    .await?;
 
     let disposition = format!("inline; filename=\"{document_id}.pdf\"");
     Ok((
@@ -3809,52 +3784,47 @@ async fn submit_signing(
 
     let token = query.token;
 
-    let (doc, sig_id) = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let st = resolve_signing_token(&layout, &token, valkey_client.as_ref())?;
-            if st.document_id != document_id {
-                return Err(AppError::BadRequest(
-                    "token does not match document".to_owned(),
-                ));
-            }
-
-            let store = open_formation_store(&layout, st.workspace_id, st.entity_id, valkey_client.as_ref())?;
-            let mut doc = store
-                .read_document("main", document_id)
-                .map_err(|_| AppError::NotFound(format!("document {} not found", document_id)))?;
-
-            let sig_request = SignatureRequest {
-                signer_name: req.signer_name,
-                signer_role: req.signer_role,
-                signer_email: req.signer_email,
-                signature_text: req.signature_text,
-                consent_text: req.consent_text,
-                signature_svg: req.signature_svg,
-                ip_address: None,
-            };
-
-            let sig_id = doc.sign(sig_request)
-                .map_err(|e| AppError::BadRequest(format!("signing failed: {e}")))?;
-
-            store
-                .write_document(
-                    "main",
-                    &doc,
-                    &format!("Sign document {document_id} (human UI)"),
-                )
-                .map_err(|e| {
-                    crate::domain::formation::error::FormationError::Validation(format!(
-                        "commit error: {e}"
-                    ))
-                })?;
-
-            Ok::<_, AppError>((doc, sig_id))
+    let (doc, sig_id) = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let st = resolve_signing_token(layout, &token, valkey)?;
+        if st.document_id != document_id {
+            return Err(AppError::BadRequest(
+                "token does not match document".to_owned(),
+            ));
         }
+
+        let store = open_formation_store(layout, st.workspace_id, st.entity_id, valkey)?;
+        let mut doc = store
+            .read_document("main", document_id)
+            .map_err(|_| AppError::NotFound(format!("document {} not found", document_id)))?;
+
+        let sig_request = SignatureRequest {
+            signer_name: req.signer_name,
+            signer_role: req.signer_role,
+            signer_email: req.signer_email,
+            signature_text: req.signature_text,
+            consent_text: req.consent_text,
+            signature_svg: req.signature_svg,
+            ip_address: None,
+        };
+
+        let sig_id = doc.sign(sig_request)
+            .map_err(|e| AppError::BadRequest(format!("signing failed: {e}")))?;
+
+        store
+            .write_document(
+                "main",
+                &doc,
+                &format!("Sign document {document_id} (human UI)"),
+            )
+            .map_err(|e| {
+                crate::domain::formation::error::FormationError::Validation(format!(
+                    "commit error: {e}"
+                ))
+            })?;
+
+        Ok((doc, sig_id))
     })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+    .await?;
 
     // Find the signature by the ID returned from sign().
     let new_sig = doc

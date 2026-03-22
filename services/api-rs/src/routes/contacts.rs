@@ -132,6 +132,7 @@ fn validate_email(email: &str) -> Result<String, AppError> {
     post,
     path = "/v1/contacts",
     tag = "contacts",
+    description = "Create a new contact for an entity.",
     request_body = CreateContactRequest,
     responses(
         (status = 200, description = "Contact created", body = ContactResponse),
@@ -236,6 +237,7 @@ async fn create_contact(
     get,
     path = "/v1/entities/{entity_id}/contacts",
     tag = "contacts",
+    description = "List all contacts belonging to an entity.",
     responses(
         (status = 200, description = "List of contacts for entity", body = Vec<ContactResponse>),
     ),
@@ -277,6 +279,7 @@ async fn list_contacts(
     get,
     path = "/v1/contacts/{contact_id}",
     tag = "contacts",
+    description = "Retrieve a single contact by ID.",
     params(
         ("contact_id" = ContactId, Path, description = "Contact ID"),
     ),
@@ -333,6 +336,7 @@ pub struct UpdateContactRequest {
     patch,
     path = "/v1/contacts/{contact_id}",
     tag = "contacts",
+    description = "Update mutable fields on an existing contact.",
     params(
         ("contact_id" = ContactId, Path, description = "Contact ID"),
     ),
@@ -454,6 +458,7 @@ pub struct ContactProfileResponse {
     get,
     path = "/v1/contacts/{contact_id}/profile",
     tag = "contacts",
+    description = "Retrieve the public profile of a contact, including their associated entities.",
     params(
         ("contact_id" = ContactId, Path, description = "Contact ID"),
     ),
@@ -520,6 +525,7 @@ fn prefs_to_response(p: &NotifPrefsRecord) -> NotificationPrefsResponse {
     get,
     path = "/v1/contacts/{contact_id}/notification-prefs",
     tag = "contacts",
+    description = "Retrieve notification channel preferences for a contact.",
     params(
         ("contact_id" = ContactId, Path, description = "Contact ID"),
     ),
@@ -581,6 +587,7 @@ pub struct UpdateNotificationPrefsRequest {
     patch,
     path = "/v1/contacts/{contact_id}/notification-prefs",
     tag = "contacts",
+    description = "Update email, SMS, and webhook notification preferences for a contact.",
     params(
         ("contact_id" = ContactId, Path, description = "Contact ID"),
     ),

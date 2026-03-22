@@ -871,7 +871,7 @@ fn ensure_current_409a_exists(store: &EntityStore<'_>) -> Result<(), AppError> {
         return Ok(());
     }
     Err(AppError::BadRequest(
-        "stock option issuances require a current approved 409A valuation".to_owned(),
+        "Stock option issuances require a current approved 409A valuation. Add one with: corp equity add-valuation --type 409a --fmv-per-share-cents <cents> --methodology independent_appraisal".to_owned(),
     ))
 }
 
@@ -2416,12 +2416,9 @@ async fn create_holder(
     state.enforce_creation_rate_limit("equity.holder.create", workspace_id, 120, 60)?;
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let holder = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        let holder_name = holder_name.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
+    let holder_name = holder_name.clone();
+    let holder = super::shared::with_blocking_store(&state, move |layout, valkey| {
+            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
             let holder = Holder::new(
                 HolderId::new(),
                 req.contact_id,
@@ -2439,11 +2436,9 @@ async fn create_holder(
                     &format!("Create holder {}", holder.holder_id()),
                 )
                 .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
-            Ok::<_, AppError>(holder)
-        }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+            Ok(holder)
+        })
+    .await?;
 
     Ok(Json(holder_to_response(&holder)))
 }
@@ -2474,11 +2469,8 @@ async fn create_legal_entity(
     state.enforce_creation_rate_limit("equity.legal_entity.create", workspace_id, 30, 60)?;
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let legal_entity = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
+    let legal_entity = super::shared::with_blocking_store(&state, move |layout, valkey| {
+            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
             // Idempotent: if a legal entity with the same name and role exists, return it
             let existing_ids = store
                 .list_ids::<LegalEntity>("main")
@@ -2509,11 +2501,9 @@ async fn create_legal_entity(
                     &format!("Create legal entity {}", le.legal_entity_id()),
                 )
                 .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
-            Ok::<_, AppError>(le)
-        }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+            Ok(le)
+        })
+    .await?;
 
     Ok(Json(legal_entity_to_response(&legal_entity)))
 }
@@ -2541,11 +2531,8 @@ async fn create_control_link(
     }
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let link = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
+    let link = super::shared::with_blocking_store(&state, move |layout, valkey| {
+            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
             let entities = store.read_all::<LegalEntity>("main").map_err(|e| AppError::Internal(e.to_string()))?;
             let known: HashSet<LegalEntityId> =
                 entities.iter().map(|e| e.legal_entity_id()).collect();
@@ -2574,11 +2561,9 @@ async fn create_control_link(
                     &format!("Create control link {}", link.control_link_id()),
                 )
                 .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
-            Ok::<_, AppError>(link)
-        }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+            Ok(link)
+        })
+    .await?;
 
     Ok(Json(control_link_to_response(&link)))
 }
@@ -2620,19 +2605,16 @@ async fn create_instrument(
     state.enforce_creation_rate_limit("equity.instrument.create", workspace_id, 120, 60)?;
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let instrument = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        let symbol = symbol.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
+    let symbol = symbol.clone();
+    let instrument = super::shared::with_blocking_store(&state, move |layout, valkey| {
+            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
             let entities = store.read_all::<LegalEntity>("main").map_err(|e| AppError::Internal(e.to_string()))?;
             if !entities
                 .iter()
                 .any(|e| e.legal_entity_id() == req.issuer_legal_entity_id)
             {
                 return Err(AppError::BadRequest(
-                    "issuer_legal_entity_id does not exist".to_owned(),
+                    "issuer_legal_entity_id does not exist. Create a legal entity first with: corp equity create-entity --name '...' --role issuer".to_owned(),
                 ));
             }
 
@@ -2654,11 +2636,9 @@ async fn create_instrument(
                     &format!("Create instrument {}", instrument.instrument_id()),
                 )
                 .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
-            Ok::<_, AppError>(instrument)
-        }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+            Ok(instrument)
+        })
+    .await?;
 
     Ok(Json(instrument_to_response(&instrument)))
 }
@@ -2686,25 +2666,22 @@ async fn adjust_position(
     }
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let position = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
+    let position = super::shared::with_blocking_store(&state, move |layout, valkey| {
+            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
 
             let holders = store.read_all::<Holder>("main").map_err(|e| AppError::Internal(e.to_string()))?;
             if !holders.iter().any(|h| h.holder_id() == req.holder_id) {
-                return Err(AppError::BadRequest("holder_id does not exist".to_owned()));
+                return Err(AppError::BadRequest("holder_id does not exist. Create a holder first with: corp equity create-holder --name '...'".to_owned()));
             }
 
             let instruments = store.read_all::<Instrument>("main").map_err(|e| AppError::Internal(e.to_string()))?;
             let instrument = instruments
                 .iter()
                 .find(|i| i.instrument_id() == req.instrument_id)
-                .ok_or_else(|| AppError::BadRequest("instrument_id does not exist".to_owned()))?;
+                .ok_or_else(|| AppError::BadRequest("instrument_id does not exist. Create an instrument first with: corp equity create-instrument --symbol '...' --kind common_stock".to_owned()))?;
             if instrument.issuer_legal_entity_id() != req.issuer_legal_entity_id {
                 return Err(AppError::BadRequest(
-                    "instrument issuer does not match issuer_legal_entity_id".to_owned(),
+                    "instrument issuer does not match issuer_legal_entity_id. Check that both the instrument and the issuer_legal_entity_id refer to the same legal entity.".to_owned(),
                 ));
             }
 
@@ -2767,11 +2744,9 @@ async fn adjust_position(
                     &format!("Adjust position {}", position.position_id()),
                 )
                 .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
-            Ok::<_, AppError>(position)
-        }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+            Ok(position)
+        })
+    .await?;
 
     Ok(Json(position_to_response(&position)))
 }
@@ -2801,12 +2776,9 @@ async fn create_round(
     state.enforce_creation_rate_limit("equity.round.create", workspace_id, 120, 60)?;
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let round = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        let round_name = round_name.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
+    let round_name = round_name.clone();
+    let round = super::shared::with_blocking_store(&state, move |layout, valkey| {
+            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
             let entities = store.read_all::<LegalEntity>("main").map_err(|e| AppError::Internal(e.to_string()))?;
             if !entities
                 .iter()
@@ -2845,11 +2817,9 @@ async fn create_round(
                     &format!("Create equity round {}", round.equity_round_id()),
                 )
                 .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
-            Ok::<_, AppError>(round)
-        }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+            Ok(round)
+        })
+    .await?;
 
     Ok(Json(round_to_response(&round)))
 }
@@ -2858,6 +2828,7 @@ async fn create_round(
     post,
     path = "/v1/equity/rounds/{round_id}/apply-terms",
     tag = "equity",
+    description = "Attach an equity rule set (anti-dilution method, conversion precedence, protective provisions) to an existing round.",
     params(
         ("round_id" = EquityRoundId, Path, description = "Equity round ID"),
     ),
@@ -2881,11 +2852,8 @@ async fn apply_round_terms(
     }
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let rules = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
+    let rules = super::shared::with_blocking_store(&state, move |layout, valkey| {
+            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
             let mut round = store
                 .read::<EquityRound>("main", round_id)
                 .map_err(|_| AppError::NotFound(format!("equity round {} not found", round_id)))?;
@@ -2919,11 +2887,9 @@ async fn apply_round_terms(
                 )
                 .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
 
-            Ok::<_, AppError>(rules)
-        }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+            Ok(rules)
+        })
+    .await?;
 
     Ok(Json(rule_set_to_response(&rules)))
 }
@@ -2932,6 +2898,7 @@ async fn apply_round_terms(
     post,
     path = "/v1/equity/rounds/{round_id}/board-approve",
     tag = "equity",
+    description = "Record board approval for an equity round by associating the approving meeting and resolution.",
     params(
         ("round_id" = EquityRoundId, Path, description = "Equity round ID"),
     ),
@@ -2955,11 +2922,8 @@ async fn board_approve_round(
     }
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let round = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
+    let round = super::shared::with_blocking_store(&state, move |layout, valkey| {
+            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
             let mut round = store
                 .read::<EquityRound>("main", round_id)
                 .map_err(|_| AppError::NotFound(format!("equity round {} not found", round_id)))?;
@@ -2982,11 +2946,9 @@ async fn board_approve_round(
                     &format!("Board approve round {}", round.equity_round_id()),
                 )
                 .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
-            Ok::<_, AppError>(round)
-        }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+            Ok(round)
+        })
+    .await?;
 
     Ok(Json(round_to_response(&round)))
 }
@@ -2995,6 +2957,7 @@ async fn board_approve_round(
     post,
     path = "/v1/equity/rounds/{round_id}/accept",
     tag = "equity",
+    description = "Mark an equity round as accepted by an investor or contact, closing the round for further participation.",
     params(
         ("round_id" = EquityRoundId, Path, description = "Equity round ID"),
     ),
@@ -3018,11 +2981,8 @@ async fn accept_round(
     }
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let round = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
+    let round = super::shared::with_blocking_store(&state, move |layout, valkey| {
+            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
             let mut round = store
                 .read::<EquityRound>("main", round_id)
                 .map_err(|_| AppError::NotFound(format!("equity round {} not found", round_id)))?;
@@ -3055,11 +3015,9 @@ async fn accept_round(
                 )
                 .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
 
-            Ok::<_, AppError>(round)
-        }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+            Ok(round)
+        })
+    .await?;
 
     Ok(Json(round_to_response(&round)))
 }
@@ -3068,6 +3026,7 @@ async fn accept_round(
     post,
     path = "/v1/equity/transfer-workflows",
     tag = "equity",
+    description = "Initiate a governed share-transfer workflow between two contacts, capturing the transfer type, governing document, and transferee rights.",
     request_body = CreateTransferWorkflowRequest,
     responses(
         (status = 200, description = "Transfer workflow created", body = TransferWorkflowResponse),
@@ -3101,11 +3060,8 @@ async fn create_transfer_workflow(
     state.enforce_creation_rate_limit("equity.transfer_workflow.create", workspace_id, 120, 60)?;
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let workflow = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
+    let workflow = super::shared::with_blocking_store(&state, move |layout, valkey| {
+            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
             store
                 .read::<ShareClass>("main", req.share_class_id)
                 .map_err(|_| AppError::BadRequest("share_class_id does not exist".to_owned()))?;
@@ -3174,11 +3130,9 @@ async fn create_transfer_workflow(
                 )
                 .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
 
-            Ok::<_, AppError>(workflow)
-        }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+            Ok(workflow)
+        })
+    .await?;
 
     Ok(Json(transfer_workflow_to_response(&workflow)))
 }
@@ -3187,6 +3141,7 @@ async fn create_transfer_workflow(
     post,
     path = "/v1/equity/transfer-workflows/{workflow_id}/generate-docs",
     tag = "equity",
+    description = "Generate the legal documents required for a share-transfer workflow (e.g., transfer agreement, stock ledger amendment).",
     params(
         ("workflow_id" = TransferWorkflowId, Path, description = "Transfer workflow ID"),
     ),
@@ -3209,11 +3164,8 @@ async fn generate_transfer_workflow_docs(
     }
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let workflow = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
+    let workflow = super::shared::with_blocking_store(&state, move |layout, valkey| {
+            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
             let mut workflow = store
                 .read::<TransferWorkflow>("main", workflow_id)
                 .map_err(|_| {
@@ -3249,11 +3201,9 @@ async fn generate_transfer_workflow_docs(
                     &format!("Generate docs for transfer workflow {}", workflow_id),
                 )
                 .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
-            Ok::<_, AppError>(workflow)
-        }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+            Ok(workflow)
+        })
+    .await?;
 
     Ok(Json(transfer_workflow_to_response(&workflow)))
 }
@@ -3262,6 +3212,7 @@ async fn generate_transfer_workflow_docs(
     post,
     path = "/v1/equity/transfer-workflows/{workflow_id}/submit-review",
     tag = "equity",
+    description = "Submit a completed share-transfer workflow package for compliance or legal review.",
     params(
         ("workflow_id" = TransferWorkflowId, Path, description = "Transfer workflow ID"),
     ),
@@ -3284,11 +3235,8 @@ async fn submit_transfer_workflow_for_review(
     }
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let workflow = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
+    let workflow = super::shared::with_blocking_store(&state, move |layout, valkey| {
+            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
             let mut workflow = store
                 .read::<TransferWorkflow>("main", workflow_id)
                 .map_err(|_| {
@@ -3330,11 +3278,9 @@ async fn submit_transfer_workflow_for_review(
                     files,
                 )
                 .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
-            Ok::<_, AppError>(workflow)
-        }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+            Ok(workflow)
+        })
+    .await?;
 
     Ok(Json(transfer_workflow_to_response(&workflow)))
 }
@@ -3343,6 +3289,7 @@ async fn submit_transfer_workflow_for_review(
     post,
     path = "/v1/equity/transfer-workflows/{workflow_id}/record-review",
     tag = "equity",
+    description = "Record the outcome of the compliance or legal review for a share-transfer workflow, including approval or rejection notes.",
     params(
         ("workflow_id" = TransferWorkflowId, Path, description = "Transfer workflow ID"),
     ),
@@ -3373,11 +3320,8 @@ async fn record_transfer_workflow_review(
     }
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let workflow = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
+    let workflow = super::shared::with_blocking_store(&state, move |layout, valkey| {
+            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
             let mut workflow = store
                 .read::<TransferWorkflow>("main", workflow_id)
                 .map_err(|_| {
@@ -3419,11 +3363,9 @@ async fn record_transfer_workflow_review(
                     files,
                 )
                 .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
-            Ok::<_, AppError>(workflow)
-        }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+            Ok(workflow)
+        })
+    .await?;
 
     Ok(Json(transfer_workflow_to_response(&workflow)))
 }
@@ -3432,6 +3374,7 @@ async fn record_transfer_workflow_review(
     post,
     path = "/v1/equity/transfer-workflows/{workflow_id}/record-rofr",
     tag = "equity",
+    description = "Record whether the company or existing holders exercised or waived their right of first refusal (ROFR) on a share transfer.",
     params(
         ("workflow_id" = TransferWorkflowId, Path, description = "Transfer workflow ID"),
     ),
@@ -3454,11 +3397,8 @@ async fn record_transfer_workflow_rofr(
     }
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let workflow = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
+    let workflow = super::shared::with_blocking_store(&state, move |layout, valkey| {
+            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
             let mut workflow = store
                 .read::<TransferWorkflow>("main", workflow_id)
                 .map_err(|_| {
@@ -3500,11 +3440,9 @@ async fn record_transfer_workflow_rofr(
                     files,
                 )
                 .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
-            Ok::<_, AppError>(workflow)
-        }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+            Ok(workflow)
+        })
+    .await?;
 
     Ok(Json(transfer_workflow_to_response(&workflow)))
 }
@@ -3513,6 +3451,7 @@ async fn record_transfer_workflow_rofr(
     post,
     path = "/v1/equity/transfer-workflows/{workflow_id}/record-board-approval",
     tag = "equity",
+    description = "Record board approval for a share transfer by associating the approving meeting and resolution with the workflow.",
     params(
         ("workflow_id" = TransferWorkflowId, Path, description = "Transfer workflow ID"),
     ),
@@ -3535,11 +3474,8 @@ async fn record_transfer_workflow_board_approval(
     }
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let workflow = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
+    let workflow = super::shared::with_blocking_store(&state, move |layout, valkey| {
+            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
             let mut workflow = store
                 .read::<TransferWorkflow>("main", workflow_id)
                 .map_err(|_| {
@@ -3590,11 +3526,9 @@ async fn record_transfer_workflow_board_approval(
                     files,
                 )
                 .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
-            Ok::<_, AppError>(workflow)
-        }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+            Ok(workflow)
+        })
+    .await?;
 
     Ok(Json(transfer_workflow_to_response(&workflow)))
 }
@@ -3603,6 +3537,7 @@ async fn record_transfer_workflow_board_approval(
     post,
     path = "/v1/equity/transfer-workflows/{workflow_id}/record-execution",
     tag = "equity",
+    description = "Record execution of a share transfer, linking the governing intent and marking the workflow as executed.",
     params(
         ("workflow_id" = TransferWorkflowId, Path, description = "Transfer workflow ID"),
     ),
@@ -3625,11 +3560,8 @@ async fn record_transfer_workflow_execution(
     }
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let workflow = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
+    let workflow = super::shared::with_blocking_store(&state, move |layout, valkey| {
+            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
             let mut workflow = store
                 .read::<TransferWorkflow>("main", workflow_id)
                 .map_err(|_| {
@@ -3689,11 +3621,9 @@ async fn record_transfer_workflow_execution(
                     files,
                 )
                 .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
-            Ok::<_, AppError>(workflow)
-        }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+            Ok(workflow)
+        })
+    .await?;
 
     Ok(Json(transfer_workflow_to_response(&workflow)))
 }
@@ -3702,6 +3632,7 @@ async fn record_transfer_workflow_execution(
     get,
     path = "/v1/equity/transfer-workflows/{workflow_id}",
     tag = "equity",
+    description = "Retrieve the current state and metadata of a share-transfer workflow by its ID.",
     params(
         ("workflow_id" = TransferWorkflowId, Path, description = "Transfer workflow ID"),
         super::EntityIdQuery,
@@ -3724,11 +3655,8 @@ async fn get_transfer_workflow(
     }
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let workflow = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
+    let workflow = super::shared::with_blocking_store(&state, move |layout, valkey| {
+            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
             let workflow = store
                 .read::<TransferWorkflow>("main", workflow_id)
                 .map_err(|_| {
@@ -3739,11 +3667,9 @@ async fn get_transfer_workflow(
                     "transfer workflow belongs to a different entity".to_owned(),
                 ));
             }
-            Ok::<_, AppError>(workflow)
-        }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+            Ok(workflow)
+        })
+    .await?;
 
     Ok(Json(transfer_workflow_to_response(&workflow)))
 }
@@ -3752,6 +3678,7 @@ async fn get_transfer_workflow(
     post,
     path = "/v1/equity/fundraising-workflows",
     tag = "equity",
+    description = "Initiate a governed fundraising workflow for a new equity round, capturing pricing, raise target, and conversion terms.",
     request_body = CreateFundraisingWorkflowRequest,
     responses(
         (status = 200, description = "Fundraising workflow created", body = FundraisingWorkflowResponse),
@@ -3777,12 +3704,9 @@ async fn create_fundraising_workflow(
     )?;
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let workflow = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        let round_name = round_name.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
+    let round_name = round_name.clone();
+    let workflow = super::shared::with_blocking_store(&state, move |layout, valkey| {
+            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
             let entities = store.read_all::<LegalEntity>("main").map_err(|e| AppError::Internal(e.to_string()))?;
             if !entities
                 .iter()
@@ -3861,11 +3785,9 @@ async fn create_fundraising_workflow(
                 )
                 .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
 
-            Ok::<_, AppError>(workflow)
-        }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+            Ok(workflow)
+        })
+    .await?;
 
     Ok(Json(fundraising_workflow_to_response(&workflow)))
 }
@@ -3874,6 +3796,7 @@ async fn create_fundraising_workflow(
     post,
     path = "/v1/equity/fundraising-workflows/{workflow_id}/apply-terms",
     tag = "equity",
+    description = "Attach an equity rule set (anti-dilution method, conversion precedence, protective provisions) to a fundraising workflow.",
     params(
         ("workflow_id" = FundraisingWorkflowId, Path, description = "Fundraising workflow ID"),
     ),
@@ -3896,11 +3819,8 @@ async fn apply_fundraising_workflow_terms(
     }
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let workflow = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
+    let workflow = super::shared::with_blocking_store(&state, move |layout, valkey| {
+            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
             let mut workflow = store
                 .read::<FundraisingWorkflow>("main", workflow_id)
                 .map_err(|_| {
@@ -3954,11 +3874,9 @@ async fn apply_fundraising_workflow_terms(
                     files,
                 )
                 .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
-            Ok::<_, AppError>(workflow)
-        }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+            Ok(workflow)
+        })
+    .await?;
 
     Ok(Json(fundraising_workflow_to_response(&workflow)))
 }
@@ -3967,6 +3885,7 @@ async fn apply_fundraising_workflow_terms(
     post,
     path = "/v1/equity/fundraising-workflows/{workflow_id}/generate-board-packet",
     tag = "equity",
+    description = "Generate the board approval packet documents (resolutions, term sheets) required for a fundraising round.",
     params(
         ("workflow_id" = FundraisingWorkflowId, Path, description = "Fundraising workflow ID"),
     ),
@@ -3989,11 +3908,8 @@ async fn generate_fundraising_board_packet(
     }
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let workflow = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
+    let workflow = super::shared::with_blocking_store(&state, move |layout, valkey| {
+            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
             let mut workflow = store
                 .read::<FundraisingWorkflow>("main", workflow_id)
                 .map_err(|_| {
@@ -4038,11 +3954,9 @@ async fn generate_fundraising_board_packet(
                     ),
                 )
                 .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
-            Ok::<_, AppError>(workflow)
-        }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+            Ok(workflow)
+        })
+    .await?;
 
     Ok(Json(fundraising_workflow_to_response(&workflow)))
 }
@@ -4051,6 +3965,7 @@ async fn generate_fundraising_board_packet(
     post,
     path = "/v1/equity/fundraising-workflows/{workflow_id}/record-board-approval",
     tag = "equity",
+    description = "Record board approval for a fundraising round by associating the approving meeting and resolution with the workflow.",
     params(
         ("workflow_id" = FundraisingWorkflowId, Path, description = "Fundraising workflow ID"),
     ),
@@ -4073,11 +3988,8 @@ async fn record_fundraising_workflow_board_approval(
     }
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let workflow = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
+    let workflow = super::shared::with_blocking_store(&state, move |layout, valkey| {
+            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
             let mut workflow = store
                 .read::<FundraisingWorkflow>("main", workflow_id)
                 .map_err(|_| {
@@ -4131,11 +4043,9 @@ async fn record_fundraising_workflow_board_approval(
                     files,
                 )
                 .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
-            Ok::<_, AppError>(workflow)
-        }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+            Ok(workflow)
+        })
+    .await?;
 
     Ok(Json(fundraising_workflow_to_response(&workflow)))
 }
@@ -4144,6 +4054,7 @@ async fn record_fundraising_workflow_board_approval(
     post,
     path = "/v1/equity/fundraising-workflows/{workflow_id}/record-investor-acceptance",
     tag = "equity",
+    description = "Record an investor's acceptance of the fundraising round terms, advancing the workflow to the closing phase.",
     params(
         ("workflow_id" = FundraisingWorkflowId, Path, description = "Fundraising workflow ID"),
     ),
@@ -4166,11 +4077,8 @@ async fn record_fundraising_workflow_acceptance(
     }
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let workflow = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
+    let workflow = super::shared::with_blocking_store(&state, move |layout, valkey| {
+            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
             let mut workflow = store
                 .read::<FundraisingWorkflow>("main", workflow_id)
                 .map_err(|_| {
@@ -4230,11 +4138,9 @@ async fn record_fundraising_workflow_acceptance(
                     files,
                 )
                 .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
-            Ok::<_, AppError>(workflow)
-        }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+            Ok(workflow)
+        })
+    .await?;
 
     Ok(Json(fundraising_workflow_to_response(&workflow)))
 }
@@ -4243,6 +4149,7 @@ async fn record_fundraising_workflow_acceptance(
     post,
     path = "/v1/equity/fundraising-workflows/{workflow_id}/generate-closing-packet",
     tag = "equity",
+    description = "Generate the closing packet documents (subscription agreements, stock certificates) required to close a fundraising round.",
     params(
         ("workflow_id" = FundraisingWorkflowId, Path, description = "Fundraising workflow ID"),
     ),
@@ -4265,11 +4172,8 @@ async fn generate_fundraising_closing_packet(
     }
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let workflow = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
+    let workflow = super::shared::with_blocking_store(&state, move |layout, valkey| {
+            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
             let mut workflow = store
                 .read::<FundraisingWorkflow>("main", workflow_id)
                 .map_err(|_| {
@@ -4314,11 +4218,9 @@ async fn generate_fundraising_closing_packet(
                     ),
                 )
                 .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
-            Ok::<_, AppError>(workflow)
-        }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+            Ok(workflow)
+        })
+    .await?;
 
     Ok(Json(fundraising_workflow_to_response(&workflow)))
 }
@@ -4327,6 +4229,7 @@ async fn generate_fundraising_closing_packet(
     post,
     path = "/v1/equity/fundraising-workflows/{workflow_id}/record-close",
     tag = "equity",
+    description = "Record the formal close of a fundraising round, linking the closing intent and marking the round as closed.",
     params(
         ("workflow_id" = FundraisingWorkflowId, Path, description = "Fundraising workflow ID"),
     ),
@@ -4349,11 +4252,8 @@ async fn record_fundraising_workflow_close(
     }
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let workflow = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
+    let workflow = super::shared::with_blocking_store(&state, move |layout, valkey| {
+            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
             let mut workflow = store
                 .read::<FundraisingWorkflow>("main", workflow_id)
                 .map_err(|_| {
@@ -4413,11 +4313,9 @@ async fn record_fundraising_workflow_close(
                     files,
                 )
                 .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
-            Ok::<_, AppError>(workflow)
-        }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+            Ok(workflow)
+        })
+    .await?;
 
     Ok(Json(fundraising_workflow_to_response(&workflow)))
 }
@@ -4426,6 +4324,7 @@ async fn record_fundraising_workflow_close(
     get,
     path = "/v1/equity/fundraising-workflows/{workflow_id}",
     tag = "equity",
+    description = "Retrieve the current state and metadata of a fundraising workflow by its ID.",
     params(
         ("workflow_id" = FundraisingWorkflowId, Path, description = "Fundraising workflow ID"),
         super::EntityIdQuery,
@@ -4448,11 +4347,8 @@ async fn get_fundraising_workflow(
     }
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let workflow = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
+    let workflow = super::shared::with_blocking_store(&state, move |layout, valkey| {
+            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
             let workflow = store
                 .read::<FundraisingWorkflow>("main", workflow_id)
                 .map_err(|_| {
@@ -4463,11 +4359,9 @@ async fn get_fundraising_workflow(
                     "fundraising workflow belongs to a different entity".to_owned(),
                 ));
             }
-            Ok::<_, AppError>(workflow)
-        }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+            Ok(workflow)
+        })
+    .await?;
 
     Ok(Json(fundraising_workflow_to_response(&workflow)))
 }
@@ -4476,6 +4370,7 @@ async fn get_fundraising_workflow(
     post,
     path = "/v1/equity/transfer-workflows/{workflow_id}/prepare-execution",
     tag = "equity",
+    description = "Prepare the execution phase of a share-transfer workflow by associating the approval artifact and document requests.",
     params(
         ("workflow_id" = TransferWorkflowId, Path, description = "Transfer workflow ID"),
     ),
@@ -4498,11 +4393,8 @@ async fn prepare_transfer_workflow_execution(
     }
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let response = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
+    let response = super::shared::with_blocking_store(&state, move |layout, valkey| {
+            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
             let mut workflow = store
                 .read::<TransferWorkflow>("main", workflow_id)
                 .map_err(|_| {
@@ -4578,11 +4470,9 @@ async fn prepare_transfer_workflow_execution(
                 )
                 .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
 
-            Ok::<_, AppError>(workflow)
-        }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+            Ok(workflow)
+        })
+    .await?;
 
     Ok(Json(transfer_workflow_to_response(&response)))
 }
@@ -4591,6 +4481,7 @@ async fn prepare_transfer_workflow_execution(
     post,
     path = "/v1/equity/fundraising-workflows/{workflow_id}/prepare-execution",
     tag = "equity",
+    description = "Prepare the execution phase of a fundraising workflow by associating the approval artifact and document requests.",
     params(
         ("workflow_id" = FundraisingWorkflowId, Path, description = "Fundraising workflow ID"),
     ),
@@ -4615,11 +4506,8 @@ async fn prepare_fundraising_workflow_execution(
     let is_close = phase.eq_ignore_ascii_case("close");
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let response = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
+    let response = super::shared::with_blocking_store(&state, move |layout, valkey| {
+            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
             let mut workflow = store
                 .read::<FundraisingWorkflow>("main", workflow_id)
                 .map_err(|_| {
@@ -4693,11 +4581,9 @@ async fn prepare_fundraising_workflow_execution(
                 )
                 .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
 
-            Ok::<_, AppError>(workflow)
-        }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+            Ok(workflow)
+        })
+    .await?;
 
     Ok(Json(fundraising_workflow_to_response(&response)))
 }
@@ -4706,6 +4592,7 @@ async fn prepare_fundraising_workflow_execution(
     post,
     path = "/v1/equity/transfer-workflows/{workflow_id}/compile-packet",
     tag = "equity",
+    description = "Compile the transaction packet for a share-transfer workflow, assembling all documents and required signers into a single hashed bundle.",
     params(
         ("workflow_id" = TransferWorkflowId, Path, description = "Transfer workflow ID"),
     ),
@@ -4729,11 +4616,8 @@ async fn compile_transfer_workflow_packet(
     }
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let packet = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
+    let packet = super::shared::with_blocking_store(&state, move |layout, valkey| {
+            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
             let mut workflow = store
                 .read::<TransferWorkflow>("main", workflow_id)
                 .map_err(|_| {
@@ -4793,11 +4677,9 @@ async fn compile_transfer_workflow_packet(
                     files,
                 )
                 .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
-            Ok::<_, AppError>(packet)
-        }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+            Ok(packet)
+        })
+    .await?;
 
     Ok(Json(packet_to_response(&packet)))
 }
@@ -4806,6 +4688,7 @@ async fn compile_transfer_workflow_packet(
     post,
     path = "/v1/equity/fundraising-workflows/{workflow_id}/compile-packet",
     tag = "equity",
+    description = "Compile the transaction packet for a fundraising workflow, assembling all documents and required signers into a single hashed bundle.",
     params(
         ("workflow_id" = FundraisingWorkflowId, Path, description = "Fundraising workflow ID"),
     ),
@@ -4831,11 +4714,8 @@ async fn compile_fundraising_workflow_packet(
     let is_close = phase.eq_ignore_ascii_case("close");
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let packet = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
+    let packet = super::shared::with_blocking_store(&state, move |layout, valkey| {
+            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
             let mut workflow = store
                 .read::<FundraisingWorkflow>("main", workflow_id)
                 .map_err(|_| {
@@ -4929,11 +4809,9 @@ async fn compile_fundraising_workflow_packet(
                     files,
                 )
                 .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
-            Ok::<_, AppError>(packet)
-        }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+            Ok(packet)
+        })
+    .await?;
 
     Ok(Json(packet_to_response(&packet)))
 }
@@ -4942,6 +4820,7 @@ async fn compile_fundraising_workflow_packet(
     post,
     path = "/v1/equity/transfer-workflows/{workflow_id}/start-signatures",
     tag = "equity",
+    description = "Open the signature collection phase on a compiled transfer workflow packet, making it ready to receive individual signatures.",
     params(
         ("workflow_id" = TransferWorkflowId, Path, description = "Transfer workflow ID"),
     ),
@@ -4964,11 +4843,8 @@ async fn start_transfer_workflow_signatures(
         return Err(AppError::Forbidden("entity access denied".to_owned()));
     }
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
-    let packet = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
+    let packet = super::shared::with_blocking_store(&state, move |layout, valkey| {
+            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
             let mut workflow = store
                 .read::<TransferWorkflow>("main", workflow_id)
                 .map_err(|_| {
@@ -5004,11 +4880,9 @@ async fn start_transfer_workflow_signatures(
                     files,
                 )
                 .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
-            Ok::<_, AppError>(packet)
-        }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+            Ok(packet)
+        })
+    .await?;
     Ok(Json(packet_to_response(&packet)))
 }
 
@@ -5016,6 +4890,7 @@ async fn start_transfer_workflow_signatures(
     post,
     path = "/v1/equity/fundraising-workflows/{workflow_id}/start-signatures",
     tag = "equity",
+    description = "Open the signature collection phase on a compiled fundraising workflow packet, making it ready to receive individual signatures.",
     params(
         ("workflow_id" = FundraisingWorkflowId, Path, description = "Fundraising workflow ID"),
     ),
@@ -5038,11 +4913,8 @@ async fn start_fundraising_workflow_signatures(
         return Err(AppError::Forbidden("entity access denied".to_owned()));
     }
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
-    let packet = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
+    let packet = super::shared::with_blocking_store(&state, move |layout, valkey| {
+            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
             let mut workflow = store
                 .read::<FundraisingWorkflow>("main", workflow_id)
                 .map_err(|_| {
@@ -5078,11 +4950,9 @@ async fn start_fundraising_workflow_signatures(
                     files,
                 )
                 .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
-            Ok::<_, AppError>(packet)
-        }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+            Ok(packet)
+        })
+    .await?;
     Ok(Json(packet_to_response(&packet)))
 }
 
@@ -5090,6 +4960,7 @@ async fn start_fundraising_workflow_signatures(
     post,
     path = "/v1/equity/transfer-workflows/{workflow_id}/record-signature",
     tag = "equity",
+    description = "Record an individual signer's signature on the active transaction packet for a share-transfer workflow.",
     params(
         ("workflow_id" = TransferWorkflowId, Path, description = "Transfer workflow ID"),
     ),
@@ -5118,11 +4989,8 @@ async fn record_transfer_workflow_signature(
     }
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let packet = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
+    let packet = super::shared::with_blocking_store(&state, move |layout, valkey| {
+            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
             let mut workflow = store
                 .read::<TransferWorkflow>("main", workflow_id)
                 .map_err(|_| {
@@ -5166,11 +5034,9 @@ async fn record_transfer_workflow_signature(
                     files,
                 )
                 .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
-            Ok::<_, AppError>(packet)
-        }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+            Ok(packet)
+        })
+    .await?;
     Ok(Json(packet_to_response(&packet)))
 }
 
@@ -5178,6 +5044,7 @@ async fn record_transfer_workflow_signature(
     post,
     path = "/v1/equity/fundraising-workflows/{workflow_id}/record-signature",
     tag = "equity",
+    description = "Record an individual signer's signature on the active transaction packet for a fundraising workflow.",
     params(
         ("workflow_id" = FundraisingWorkflowId, Path, description = "Fundraising workflow ID"),
     ),
@@ -5206,11 +5073,8 @@ async fn record_fundraising_workflow_signature(
     }
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let packet = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
+    let packet = super::shared::with_blocking_store(&state, move |layout, valkey| {
+            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
             let mut workflow = store
                 .read::<FundraisingWorkflow>("main", workflow_id)
                 .map_err(|_| {
@@ -5254,11 +5118,9 @@ async fn record_fundraising_workflow_signature(
                     files,
                 )
                 .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
-            Ok::<_, AppError>(packet)
-        }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+            Ok(packet)
+        })
+    .await?;
     Ok(Json(packet_to_response(&packet)))
 }
 
@@ -5266,6 +5128,7 @@ async fn record_fundraising_workflow_signature(
     post,
     path = "/v1/equity/transfer-workflows/{workflow_id}/finalize",
     tag = "equity",
+    description = "Finalize a fully-signed share-transfer workflow, committing the transfer on the cap table and closing the workflow.",
     params(
         ("workflow_id" = TransferWorkflowId, Path, description = "Transfer workflow ID"),
     ),
@@ -5289,11 +5152,8 @@ async fn finalize_transfer_workflow(
     }
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let workflow = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
+    let workflow = super::shared::with_blocking_store(&state, move |layout, valkey| {
+            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
             let mut workflow = store
                 .read::<TransferWorkflow>("main", workflow_id)
                 .map_err(|_| {
@@ -5369,11 +5229,9 @@ async fn finalize_transfer_workflow(
                     files,
                 )
                 .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
-            Ok::<_, AppError>(workflow)
-        }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+            Ok(workflow)
+        })
+    .await?;
     Ok(Json(transfer_workflow_to_response(&workflow)))
 }
 
@@ -5381,6 +5239,7 @@ async fn finalize_transfer_workflow(
     post,
     path = "/v1/equity/fundraising-workflows/{workflow_id}/finalize",
     tag = "equity",
+    description = "Finalize a fully-signed fundraising workflow, committing security issuances on the cap table and closing the round.",
     params(
         ("workflow_id" = FundraisingWorkflowId, Path, description = "Fundraising workflow ID"),
     ),
@@ -5406,11 +5265,8 @@ async fn finalize_fundraising_workflow(
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let is_close = phase.eq_ignore_ascii_case("close");
 
-    let workflow = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
+    let workflow = super::shared::with_blocking_store(&state, move |layout, valkey| {
+            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
             let mut workflow = store
                 .read::<FundraisingWorkflow>("main", workflow_id)
                 .map_err(|_| {
@@ -5500,11 +5356,9 @@ async fn finalize_fundraising_workflow(
                     files,
                 )
                 .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
-            Ok::<_, AppError>(workflow)
-        }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+            Ok(workflow)
+        })
+    .await?;
     Ok(Json(fundraising_workflow_to_response(&workflow)))
 }
 
@@ -5512,6 +5366,7 @@ async fn finalize_fundraising_workflow(
     get,
     path = "/v1/equity/workflows/{workflow_type}/{workflow_id}/status",
     tag = "equity",
+    description = "Fetch the unified execution status of any equity workflow (transfer or fundraising), including the active packet if present.",
     params(
         ("workflow_type" = String, Path, description = "Workflow type (transfer or fundraising)"),
         ("workflow_id" = String, Path, description = "Workflow ID"),
@@ -5536,11 +5391,8 @@ async fn get_workflow_status(
     }
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let response = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
+    let response = super::shared::with_blocking_store(&state, move |layout, valkey| {
+            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
             if workflow_type == "transfer" {
                 let id = workflow_id
                     .parse::<uuid::Uuid>()
@@ -5553,7 +5405,7 @@ async fn get_workflow_status(
                     .active_packet_id()
                     .and_then(|packet_id| store.read::<TransactionPacket>("main", packet_id).ok())
                     .map(|p| packet_to_response(&p));
-                return Ok::<_, AppError>(WorkflowStatusResponse {
+                return Ok(WorkflowStatusResponse {
                     workflow_type: WorkflowType::Transfer,
                     workflow_id,
                     execution_status: format!("{:?}", workflow.execution_status()),
@@ -5578,7 +5430,7 @@ async fn get_workflow_status(
                     .active_packet_id()
                     .and_then(|packet_id| store.read::<TransactionPacket>("main", packet_id).ok())
                     .map(|p| packet_to_response(&p));
-                return Ok::<_, AppError>(WorkflowStatusResponse {
+                return Ok(WorkflowStatusResponse {
                     workflow_type: WorkflowType::Fundraising,
                     workflow_id,
                     execution_status: format!("{:?}", workflow.execution_status()),
@@ -5592,10 +5444,8 @@ async fn get_workflow_status(
             Err(AppError::BadRequest(
                 "workflow_type must be 'transfer' or 'fundraising'".to_owned(),
             ))
-        }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+        })
+    .await?;
 
     Ok(Json(response))
 }
@@ -5603,7 +5453,8 @@ async fn get_workflow_status(
 #[utoipa::path(
     get,
     path = "/v1/entities/{entity_id}/cap-table",
-    tag = "equity",
+    tag = "cap_table",
+    description = "Return the cap table for an entity, optionally scoped to an issuer legal entity and calculated on an outstanding, as-converted, or fully-diluted basis.",
     params(
         ("entity_id" = EntityId, Path, description = "Entity ID"),
         CapTableQuery,
@@ -5625,11 +5476,8 @@ async fn get_cap_table(
     }
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let response = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
+    let response = super::shared::with_blocking_store(&state, move |layout, valkey| {
+            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
             let holders = store.read_all::<Holder>("main").map_err(|e| AppError::Internal(e.to_string()))?;
             let legal_entities = store.read_all::<LegalEntity>("main").map_err(|e| AppError::Internal(e.to_string()))?;
             let instruments = store.read_all::<Instrument>("main").map_err(|e| AppError::Internal(e.to_string()))?;
@@ -5639,7 +5487,7 @@ async fn get_cap_table(
             let issuer_legal_entity_id =
                 infer_issuer(entity_id, &legal_entities, query.issuer_legal_entity_id)?;
 
-            Ok::<_, AppError>(compute_cap_table(
+            Ok(compute_cap_table(
                 entity_id,
                 issuer_legal_entity_id,
                 query.basis,
@@ -5648,10 +5496,8 @@ async fn get_cap_table(
                 &positions,
                 &share_classes,
             ))
-        }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+        })
+    .await?;
 
     Ok(Json(response))
 }
@@ -5660,6 +5506,7 @@ async fn get_cap_table(
     post,
     path = "/v1/equity/conversions/preview",
     tag = "equity",
+    description = "Preview the cap-table effect of converting convertible instruments (SAFEs, notes) into equity for a given round without committing any changes.",
     request_body = PreviewConversionRequest,
     responses(
         (status = 200, description = "Conversion preview", body = ConversionPreviewResponse),
@@ -5679,11 +5526,8 @@ async fn preview_conversion(
     }
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let preview = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
+    let preview = super::shared::with_blocking_store(&state, move |layout, valkey| {
+            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
             let round = store
                 .read::<EquityRound>("main", req.round_id)
                 .map_err(|_| {
@@ -5713,7 +5557,7 @@ async fn preview_conversion(
                 .sum::<i64>()
                 .saturating_add(anti_dilution_adjustment_units);
 
-            Ok::<_, AppError>(ConversionPreviewResponse {
+            Ok(ConversionPreviewResponse {
                 entity_id,
                 round_id: req.round_id,
                 target_instrument_id,
@@ -5721,10 +5565,8 @@ async fn preview_conversion(
                 anti_dilution_adjustment_units,
                 total_new_units,
             })
-        }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+        })
+    .await?;
 
     Ok(Json(preview))
 }
@@ -5733,6 +5575,7 @@ async fn preview_conversion(
     post,
     path = "/v1/equity/conversions/execute",
     tag = "equity",
+    description = "Execute the conversion of convertible instruments into equity for a given round, writing the resulting positions to the cap table.",
     request_body = ExecuteConversionRequest,
     responses(
         (status = 200, description = "Conversion executed", body = ConversionExecuteResponse),
@@ -5752,11 +5595,8 @@ async fn execute_conversion(
     }
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let result = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
+    let result = super::shared::with_blocking_store(&state, move |layout, valkey| {
+            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
             let mut round = store
                 .read::<EquityRound>("main", req.round_id)
                 .map_err(|_| {
@@ -5985,17 +5825,15 @@ async fn execute_conversion(
                 )
                 .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
 
-            Ok::<_, AppError>(ConversionExecuteResponse {
+            Ok(ConversionExecuteResponse {
                 conversion_execution_id: execution.conversion_execution_id(),
                 round_id: req.round_id,
                 converted_positions: lines.len(),
                 target_positions_touched: touched_targets.len(),
                 total_new_units,
             })
-        }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+        })
+    .await?;
 
     Ok(Json(result))
 }
@@ -6004,6 +5842,7 @@ async fn execute_conversion(
     get,
     path = "/v1/equity/control-map",
     tag = "equity",
+    description = "Traverse the control-link graph from a root legal entity and return all reachable entities with their control relationships.",
     params(ControlMapQuery),
     responses(
         (status = 200, description = "Control map", body = ControlMapResponse),
@@ -6021,11 +5860,8 @@ async fn get_control_map(
     }
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let response = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, query.entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
+    let response = super::shared::with_blocking_store(&state, move |layout, valkey| {
+            let store = super::shared::open_entity_store(layout, workspace_id, query.entity_id, entity_scope.as_deref(), valkey)?;
             let links = store.read_all::<ControlLink>("main").map_err(|e| AppError::Internal(e.to_string()))?;
             let entities = store.read_all::<LegalEntity>("main").map_err(|e| AppError::Internal(e.to_string()))?;
             let entity_ids: HashSet<LegalEntityId> =
@@ -6059,15 +5895,13 @@ async fn get_control_map(
             let mut traversed_entities: Vec<LegalEntityId> = visited.into_iter().collect();
             traversed_entities.sort_by_key(|id| id.to_string());
 
-            Ok::<_, AppError>(ControlMapResponse {
+            Ok(ControlMapResponse {
                 root_entity_id: query.root_entity_id,
                 traversed_entities,
                 edges,
             })
-        }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+        })
+    .await?;
 
     Ok(Json(response))
 }
@@ -6076,6 +5910,7 @@ async fn get_control_map(
     get,
     path = "/v1/equity/dilution/preview",
     tag = "equity",
+    description = "Preview the projected dilution impact of a pending equity round on existing outstanding units without committing any changes.",
     params(DilutionPreviewQuery),
     responses(
         (status = 200, description = "Dilution preview", body = DilutionPreviewResponse),
@@ -6093,11 +5928,8 @@ async fn get_dilution_preview(
     }
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let response = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, query.entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
+    let response = super::shared::with_blocking_store(&state, move |layout, valkey| {
+            let store = super::shared::open_entity_store(layout, workspace_id, query.entity_id, entity_scope.as_deref(), valkey)?;
             let round = store
                 .read::<EquityRound>("main", query.round_id)
                 .map_err(|_| {
@@ -6141,7 +5973,7 @@ async fn get_dilution_preview(
             let projected_dilution_bps =
                 checked_bps(projected_new_units, projected_post_outstanding_units);
 
-            Ok::<_, AppError>(DilutionPreviewResponse {
+            Ok(DilutionPreviewResponse {
                 round_id: query.round_id,
                 issuer_legal_entity_id: round.issuer_legal_entity_id(),
                 pre_round_outstanding_units,
@@ -6149,10 +5981,8 @@ async fn get_dilution_preview(
                 projected_post_outstanding_units,
                 projected_dilution_bps,
             })
-        }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+        })
+    .await?;
 
     Ok(Json(response))
 }
@@ -6163,6 +5993,7 @@ async fn get_dilution_preview(
     post,
     path = "/v1/equity/rounds/staged",
     tag = "equity",
+    description = "Open a new staged equity round that allows securities to be accumulated before bulk issuance.",
     request_body = StartStagedRoundRequest,
     responses(
         (status = 200, description = "Staged round started", body = RoundResponse),
@@ -6181,13 +6012,10 @@ async fn start_staged_round(
         return Err(AppError::Forbidden("entity access denied".to_owned()));
     }
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
+    let round_name = round_name.clone();
 
-    let round = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        let round_name = round_name.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
+    let round = super::shared::with_blocking_store(&state, move |layout, valkey| {
+            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
 
             // Validate issuer legal entity exists
             let entities = store.read_all::<LegalEntity>("main").map_err(|e| AppError::Internal(e.to_string()))?;
@@ -6237,11 +6065,9 @@ async fn start_staged_round(
                 )
                 .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
 
-            Ok::<_, AppError>(round)
-        }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+            Ok(round)
+        })
+    .await?;
 
     Ok(Json(round_to_response(&round)))
 }
@@ -6250,6 +6076,7 @@ async fn start_staged_round(
     get,
     path = "/v1/entities/{entity_id}/equity-rounds",
     tag = "equity",
+    description = "List all equity financing rounds for an entity, ordered by creation time.",
     params(
         ("entity_id" = EntityId, Path, description = "Entity ID"),
     ),
@@ -6269,17 +6096,12 @@ async fn list_equity_rounds(
     }
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let rounds = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
+    let rounds = super::shared::with_blocking_store(&state, move |layout, valkey| {
+            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
             let all = store.read_all::<EquityRound>("main").map_err(|e| AppError::Internal(e.to_string()))?;
-            Ok::<_, AppError>(all.iter().map(round_to_response).collect::<Vec<_>>())
-        }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+            Ok(all.iter().map(round_to_response).collect::<Vec<_>>())
+        })
+    .await?;
 
     Ok(Json(rounds))
 }
@@ -6288,6 +6110,7 @@ async fn list_equity_rounds(
     post,
     path = "/v1/equity/rounds/{round_id}/securities",
     tag = "equity",
+    description = "Add a pending security allocation (holder, instrument, quantity) to a staged equity round prior to bulk issuance.",
     params(
         ("round_id" = EquityRoundId, Path, description = "Equity round ID"),
     ),
@@ -6315,11 +6138,8 @@ async fn add_round_security(
     }
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let security = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
+    let security = super::shared::with_blocking_store(&state, move |layout, valkey| {
+            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
 
             // Verify round exists and is Draft
             let round = store
@@ -6329,9 +6149,10 @@ async fn add_round_security(
                 round.status(),
                 EquityRoundStatus::Draft | EquityRoundStatus::BoardApproved
             ) {
-                return Err(AppError::BadRequest(
-                    "round must be in Draft or BoardApproved status".to_owned(),
-                ));
+                return Err(AppError::BadRequest(format!(
+                    "Cannot add securities to round {round_id}: it is in {:?} status. Securities can only be added to rounds in Draft or BoardApproved status.",
+                    round.status()
+                )));
             }
 
             // Validate instrument exists
@@ -6352,7 +6173,7 @@ async fn add_round_security(
             let holder_id = if let Some(hid) = req.holder_id {
                 // Direct holder_id — validate it exists
                 if !holders.iter().any(|h| h.holder_id() == hid) {
-                    return Err(AppError::BadRequest("holder_id does not exist".to_owned()));
+                    return Err(AppError::BadRequest(format!("holder_id {hid} does not exist. Omit holder_id and supply an email or recipient_name instead to auto-create the holder.")));
                 }
                 hid
             } else if let Some(ref email) = req.email {
@@ -6488,11 +6309,9 @@ async fn add_round_security(
                 )
                 .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
 
-            Ok::<_, AppError>(security)
-        }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+            Ok(security)
+        })
+    .await?;
 
     Ok(Json(security))
 }
@@ -6501,6 +6320,7 @@ async fn add_round_security(
     post,
     path = "/v1/equity/rounds/{round_id}/issue",
     tag = "equity",
+    description = "Bulk-issue all pending securities in a staged equity round, creating cap-table positions and optionally recording board approval.",
     params(
         ("round_id" = EquityRoundId, Path, description = "Equity round ID"),
     ),
@@ -6525,20 +6345,18 @@ async fn issue_staged_round(
     state.enforce_creation_rate_limit("equity.round.issue", workspace_id, 120, 60)?;
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let (round, positions, board_meeting_id) = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
+    let (round, positions, board_meeting_id) = super::shared::with_blocking_store(&state, move |layout, valkey| {
+            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
 
             // Read and validate round
             let mut round = store
                 .read::<EquityRound>("main", round_id)
                 .map_err(|e| AppError::NotFound(format!("round {round_id} not found: {e}")))?;
             if round.status() != EquityRoundStatus::Draft {
-                return Err(AppError::BadRequest(
-                    "round is not in Draft status".to_owned(),
-                ));
+                return Err(AppError::BadRequest(format!(
+                    "Round {round_id} is in {:?} status and cannot be issued. Only Draft rounds can be issued.",
+                    round.status()
+                )));
             }
 
             // Read pending securities
@@ -6549,7 +6367,7 @@ async fn issue_staged_round(
                 })?;
             if pending.securities.is_empty() {
                 return Err(AppError::BadRequest(
-                    "no pending securities to issue".to_owned(),
+                    "No pending securities to issue. Add securities to the round first with: corp equity add-security --round <round_id> --recipient '...' --quantity <n>".to_owned(),
                 ));
             }
 
@@ -6686,15 +6504,13 @@ async fn issue_staged_round(
                 )
                 .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
 
-            Ok::<_, AppError>((
+            Ok((
                 round,
                 result_positions,
                 board_meeting_id,
             ))
-        }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+        })
+    .await?;
 
     Ok(Json(IssueStagedRoundResponse {
         round: round_to_response(&round),
@@ -6838,6 +6654,7 @@ fn safe_note_to_response(note: &SafeNote) -> SafeNoteResponse {
     post,
     path = "/v1/safe-notes",
     tag = "equity",
+    description = "Issue a new SAFE note to an investor with principal amount, valuation cap, discount rate, and optional board approval references.",
     request_body = CreateSafeNoteRequest,
     responses(
         (status = 200, description = "SAFE note issued", body = SafeNoteResponse),
@@ -6898,11 +6715,8 @@ async fn create_safe_note(
     state.enforce_creation_rate_limit("equity.safe_note.create", workspace_id, 60, 60)?;
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let safe_note = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
+    let safe_note = super::shared::with_blocking_store(&state, move |layout, valkey| {
+            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
             let (investor_contact_id, mut files) = resolve_or_prepare_investor_contact(
                 &store,
                 entity_id,
@@ -6963,11 +6777,9 @@ async fn create_safe_note(
             store
                 .commit("main", &format!("Issue SAFE note {safe_note_id}"), files)
                 .map_err(|e| AppError::Internal(format!("commit: {e}")))?;
-            Ok::<_, AppError>(safe_note)
-        }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+            Ok(safe_note)
+        })
+    .await?;
 
     Ok(Json(safe_note_to_response(&safe_note)))
 }
@@ -6976,6 +6788,7 @@ async fn create_safe_note(
     get,
     path = "/v1/entities/{entity_id}/safe-notes",
     tag = "equity",
+    description = "List all SAFE notes for an entity, ordered by creation time descending.",
     params(
         ("entity_id" = EntityId, Path, description = "Entity ID"),
     ),
@@ -6995,24 +6808,19 @@ async fn list_safe_notes(
     }
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let safe_notes = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
+    let safe_notes = super::shared::with_blocking_store(&state, move |layout, valkey| {
+            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
             let mut notes = store.read_all::<SafeNote>("main").map_err(|e| AppError::Internal(e.to_string()))?;
             notes.sort_by_key(|note| note.created_at());
-            Ok::<_, AppError>(
+            Ok(
                 notes
                     .iter()
                     .rev()
                     .map(safe_note_to_response)
                     .collect::<Vec<_>>(),
             )
-        }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+        })
+    .await?;
 
     Ok(Json(safe_notes))
 }
@@ -7023,6 +6831,7 @@ async fn list_safe_notes(
     post,
     path = "/v1/valuations",
     tag = "equity",
+    description = "Record a new equity valuation (409A, board, or internal) with FMV per share, enterprise value, and effective date.",
     request_body = CreateValuationRequest,
     responses(
         (status = 200, description = "Valuation created", body = ValuationResponse),
@@ -7087,11 +6896,8 @@ async fn create_valuation(
     }
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let valuation = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
+    let valuation = super::shared::with_blocking_store(&state, move |layout, valkey| {
+            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
             let (entity, _profile) = entity_profile_for_docs(&store)?;
             if let Some(formation_date) = entity.formation_date()
                 && req.effective_date < formation_date.date_naive()
@@ -7155,11 +6961,9 @@ async fn create_valuation(
                     &format!("Create valuation {valuation_id}"),
                 )
                 .map_err(|e| AppError::Internal(format!("commit: {e}")))?;
-            Ok::<_, AppError>(valuation)
-        }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+            Ok(valuation)
+        })
+    .await?;
 
     Ok(Json(valuation_to_response(&valuation)))
 }
@@ -7168,6 +6972,7 @@ async fn create_valuation(
     get,
     path = "/v1/entities/{entity_id}/valuations",
     tag = "equity",
+    description = "List all valuations (409A, board, and internal) on record for an entity.",
     params(
         ("entity_id" = EntityId, Path, description = "Entity ID"),
     ),
@@ -7187,17 +6992,12 @@ async fn list_valuations(
     }
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let valuations = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
+    let valuations = super::shared::with_blocking_store(&state, move |layout, valkey| {
+            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
             let all = store.read_all::<Valuation>("main").map_err(|e| AppError::Internal(e.to_string()))?;
-            Ok::<_, AppError>(all.iter().map(valuation_to_response).collect::<Vec<_>>())
-        }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+            Ok(all.iter().map(valuation_to_response).collect::<Vec<_>>())
+        })
+    .await?;
 
     Ok(Json(valuations))
 }
@@ -7206,6 +7006,7 @@ async fn list_valuations(
     get,
     path = "/v1/entities/{entity_id}/current-409a",
     tag = "equity",
+    description = "Return the most recent approved 409A valuation for an entity, required before issuing stock options.",
     params(
         ("entity_id" = EntityId, Path, description = "Entity ID"),
     ),
@@ -7225,21 +7026,16 @@ async fn get_current_409a(
     }
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let valuation = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
+    let valuation = super::shared::with_blocking_store(&state, move |layout, valkey| {
+            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
             let all = store.read_all::<Valuation>("main").map_err(|e| AppError::Internal(e.to_string()))?;
             all.into_iter()
                 .find(|v| v.is_current_409a())
                 .ok_or_else(|| {
                     AppError::NotFound("no current approved 409A valuation found".to_owned())
                 })
-        }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+        })
+    .await?;
 
     Ok(Json(valuation_to_response(&valuation)))
 }
@@ -7248,6 +7044,7 @@ async fn get_current_409a(
     post,
     path = "/v1/valuations/{valuation_id}/submit-for-approval",
     tag = "equity",
+    description = "Transition a draft valuation to pending-approval status, initiating the board or third-party approval workflow.",
     params(
         ("valuation_id" = ValuationId, Path, description = "Valuation ID"),
     ),
@@ -7271,11 +7068,8 @@ async fn submit_valuation_for_approval(
     }
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let result = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
+    let result = super::shared::with_blocking_store(&state, move |layout, valkey| {
+            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
             ensure_entity_is_active_for_governance(&store, "valuation approval submission")?;
 
             // Read and transition the valuation.
@@ -7370,11 +7164,9 @@ async fn submit_valuation_for_approval(
             let mut resp = valuation_to_response(&valuation);
             resp.meeting_id = Some(meeting_id);
             resp.agenda_item_id = Some(agenda_item_id);
-            Ok::<_, AppError>(resp)
-        }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+            Ok(resp)
+        })
+    .await?;
 
     Ok(Json(result))
 }
@@ -7383,6 +7175,7 @@ async fn submit_valuation_for_approval(
     post,
     path = "/v1/valuations/{valuation_id}/approve",
     tag = "equity",
+    description = "Approve a pending valuation, optionally associating the authorizing board resolution, making it the current approved valuation.",
     params(
         ("valuation_id" = ValuationId, Path, description = "Valuation ID"),
     ),
@@ -7406,11 +7199,8 @@ async fn approve_valuation(
     }
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let valuation = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
+    let valuation = super::shared::with_blocking_store(&state, move |layout, valkey| {
+            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
 
             let mut valuation = store
                 .read::<Valuation>("main", valuation_id)
@@ -7500,11 +7290,9 @@ async fn approve_valuation(
                 .commit("main", &format!("Approve valuation {valuation_id}"), files)
                 .map_err(|e| AppError::Internal(format!("commit: {e}")))?;
 
-            Ok::<_, AppError>(valuation)
-        }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+            Ok(valuation)
+        })
+    .await?;
 
     Ok(Json(valuation_to_response(&valuation)))
 }
@@ -7513,6 +7301,7 @@ async fn approve_valuation(
     post,
     path = "/v1/equity/grants",
     tag = "equity",
+    description = "Legacy equity grant endpoint — disabled; use the governed equity issuance workflow instead.",
     request_body = CreateLegacyGrantRequest,
     security(("bearer_auth" = [])),
     responses((status = 501, description = "Not implemented")),
@@ -7537,6 +7326,7 @@ async fn create_legacy_grant(
     post,
     path = "/v1/share-transfers",
     tag = "equity",
+    description = "Legacy direct share-transfer endpoint for recording simple transfers without the full governed workflow.",
     request_body = CreateLegacyShareTransferRequest,
     security(("bearer_auth" = [])),
     responses((status = 200, description = "Transfer created")),
@@ -7564,11 +7354,8 @@ async fn create_legacy_share_transfer(
     let share_class_id = req.share_class_id;
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let transfer = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
+    let transfer = super::shared::with_blocking_store(&state, move |layout, valkey| {
+            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
             let from_contact = resolve_transfer_sender_contact(&store, &from_holder)?;
             let to_contact = resolve_contact_reference(&store, &to_holder)?;
             if from_contact.contact_id() == to_contact.contact_id() {
@@ -7610,11 +7397,9 @@ async fn create_legacy_share_transfer(
                     &format!("Create share transfer {transfer_id}"),
                 )
                 .map_err(|e| AppError::Internal(format!("commit: {e}")))?;
-            Ok::<_, AppError>(transfer)
-        }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+            Ok(transfer)
+        })
+    .await?;
 
     Ok(Json(serde_json::json!({
         "transfer_id": transfer.transfer_id(),
@@ -7634,6 +7419,7 @@ async fn create_legacy_share_transfer(
     get,
     path = "/v1/entities/{entity_id}/share-transfers",
     tag = "equity",
+    description = "List all legacy share transfers for an entity.",
     security(("bearer_auth" = [])),
     responses((status = 200, description = "List of share transfers")),
 )]
@@ -7648,13 +7434,10 @@ async fn list_legacy_share_transfers(
     }
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let transfers = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
+    let transfers = super::shared::with_blocking_store(&state, move |layout, valkey| {
+            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
             let all = store.read_all::<ShareTransfer>("main").map_err(|e| AppError::Internal(e.to_string()))?;
-            Ok::<_, AppError>(
+            Ok(
                 all.into_iter()
                     .filter(|transfer| transfer.entity_id() == entity_id)
                     .map(|transfer| {
@@ -7679,10 +7462,8 @@ async fn list_legacy_share_transfers(
                     })
                     .collect::<Vec<_>>(),
             )
-        }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+        })
+    .await?;
 
     Ok(Json(transfers))
 }
@@ -7817,7 +7598,10 @@ async fn list_legacy_share_transfers(
         CreateLegacyGrantRequest,
         CreateLegacyShareTransferRequest,
     )),
-    tags((name = "equity", description = "Cap table, instruments, rounds, and conversions")),
+    tags(
+        (name = "equity", description = "Cap table, instruments, rounds, and conversions"),
+        (name = "cap_table", description = "Cap table read and summary endpoints"),
+    ),
 )]
 pub struct EquityApi;
 
