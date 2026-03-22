@@ -175,8 +175,29 @@ export async function ensureIssuancePreflight(
       msg.includes("Not found") ||
       msg.includes("not found")
     ) {
+      // Auto-create and auto-approve a 409A valuation for early-stage companies
+      try {
+        const today = new Date().toISOString().slice(0, 10);
+        const valuation = await client.createValuation({
+          entity_id: entityId,
+          valuation_type: "four_oh_nine_a",
+          effective_date: today,
+          methodology: "backsolve",
+          fmv_per_share_cents: 1, // $0.01 par value — typical early stage
+        });
+        const valuationId = String((valuation as Record<string, unknown>).valuation_id ?? "");
+        if (valuationId) {
+          await client.submitValuationForApproval(valuationId, entityId);
+          await client.approveValuation(valuationId, entityId);
+        }
+        return; // 409A now exists, proceed with grant
+      } catch {
+        // Auto-create failed (board may be required) — fall through to original error
+      }
       throw new Error(
-        "Stock option issuances require a current approved 409A valuation. Create and approve one first with: corp cap-table create-valuation --type four_oh_nine_a --date YYYY-MM-DD --methodology <method>; corp cap-table submit-valuation <valuation-ref>; corp cap-table approve-valuation <valuation-ref> --resolution-id <resolution-ref>",
+        "Stock option issuances require a current approved 409A valuation.\n" +
+        "  Auto-creation failed. Create manually:\n" +
+        "    corp cap-table create-valuation --type four_oh_nine_a --date YYYY-MM-DD --methodology backsolve --auto-approve",
       );
     }
     throw err;

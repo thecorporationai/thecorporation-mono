@@ -305,19 +305,21 @@ fn init_state(skip_validation: bool) -> routes::AppState {
         .as_str()
     {
         "git" => store::StorageBackendKind::Git,
-        "valkey" | "redis" => store::StorageBackendKind::Valkey,
-        other => panic!("unknown STORAGE_BACKEND: {other} (expected \"git\" or \"valkey\")"),
+        "kv" | "valkey" | "redis" => store::StorageBackendKind::Kv,
+        other => panic!("unknown STORAGE_BACKEND: {other} (expected \"git\" or \"kv\")"),
     };
 
-    // Sync Redis/Valkey client for corp-store operations (used inside spawn_blocking)
+    // Sync Redis-protocol client for corp-store operations (used inside spawn_blocking).
+    // Works with Redis, Valkey, Dragonfly, or any Redis-protocol server.
     let valkey_client = match storage_backend {
-        store::StorageBackendKind::Valkey => {
-            let url = std::env::var("VALKEY_URL")
+        store::StorageBackendKind::Kv => {
+            let url = std::env::var("KV_URL")
+                .or_else(|_| std::env::var("VALKEY_URL"))
                 .or_else(|_| std::env::var("REDIS_URL"))
-                .unwrap_or_else(|_| panic!("VALKEY_URL or REDIS_URL must be set when STORAGE_BACKEND=valkey"));
+                .unwrap_or_else(|_| panic!("KV_URL, VALKEY_URL, or REDIS_URL must be set when STORAGE_BACKEND=kv"));
             let client = redis::Client::open(url.as_str())
-                .unwrap_or_else(|e| panic!("invalid Valkey URL: {e}"));
-            tracing::info!("storage backend: valkey");
+                .unwrap_or_else(|e| panic!("invalid KV URL: {e}"));
+            tracing::info!("storage backend: kv (redis-protocol)");
             Some(client)
         }
         store::StorageBackendKind::Git => {

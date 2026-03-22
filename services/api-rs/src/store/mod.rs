@@ -9,8 +9,10 @@ use crate::domain::ids::{EntityId, WorkspaceId};
 /// Which storage backend to use at runtime.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StorageBackendKind {
+    /// Local bare git repos on disk (libgit2).
     Git,
-    Valkey,
+    /// Redis-protocol key-value store (Redis, Valkey, Dragonfly, etc.).
+    Kv,
 }
 
 /// Manages the on-disk layout of git repos.
@@ -90,8 +92,8 @@ pub fn list_workspace_ids(
 ) -> Result<Vec<WorkspaceId>, crate::git::error::GitStorageError> {
     match backend {
         StorageBackendKind::Git => Ok(layout.list_workspace_ids()),
-        StorageBackendKind::Valkey => {
-            let client = valkey_client.expect("valkey client required for Valkey backend");
+        StorageBackendKind::Kv => {
+            let client = valkey_client.expect("Redis-protocol client required for KV backend");
             let mut con = client
                 .get_connection()
                 .map_err(|e| crate::git::error::GitStorageError::Git(e.to_string()))?;
@@ -113,8 +115,8 @@ pub fn list_entity_ids(
 ) -> Result<Vec<EntityId>, crate::git::error::GitStorageError> {
     match backend {
         StorageBackendKind::Git => Ok(layout.list_entity_ids(workspace_id)),
-        StorageBackendKind::Valkey => {
-            let client = valkey_client.expect("valkey client required for Valkey backend");
+        StorageBackendKind::Kv => {
+            let client = valkey_client.expect("Redis-protocol client required for KV backend");
             let mut con = client
                 .get_connection()
                 .map_err(|e| crate::git::error::GitStorageError::Git(e.to_string()))?;

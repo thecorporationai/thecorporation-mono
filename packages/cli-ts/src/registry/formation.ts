@@ -1,6 +1,6 @@
 import type { CommandDef, CommandContext } from "./types.js";
 import { printDryRun, printError, printJson, printReferenceSummary, printSuccess } from "../output.js";
-import { setActiveEntityId, saveConfig, requireConfig } from "../config.js";
+import { setActiveEntityId, setLastReference, saveConfig, updateConfig, requireConfig } from "../config.js";
 import { activateFormationEntity } from "../formation-automation.js";
 import chalk from "chalk";
 import Table from "cli-table3";
@@ -107,14 +107,19 @@ async function formCreateHandler(ctx: CommandContext): Promise<void> {
 
     const result = await ctx.client.createPendingEntity(payload);
     await ctx.resolver.stabilizeRecord("entity", result);
-    ctx.resolver.rememberFromRecord("entity", result);
 
     if (result.entity_id) {
       const newEntityId = String(result.entity_id);
+      // Use a single updateConfig to set both active entity AND @last reference
+      // atomically — avoids saveConfig overwriting updateConfig's writes.
+      updateConfig((freshCfg) => {
+        setActiveEntityId(freshCfg, newEntityId);
+        setLastReference(freshCfg, "entity", newEntityId);
+      });
+      // Also update in-memory config and resolver so subsequent calls in
+      // this process see the new entity.
       setActiveEntityId(cfg, newEntityId);
-      // Ensure @last:entity points to the just-created entity
-      ctx.resolver.remember("entity", newEntityId);
-      saveConfig(cfg);
+      setLastReference(cfg, "entity", newEntityId);
     }
 
     if (ctx.quiet) {

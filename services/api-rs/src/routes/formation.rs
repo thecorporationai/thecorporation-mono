@@ -75,6 +75,9 @@ pub struct CreateFormationRequest {
     /// Company address.
     #[serde(default)]
     pub company_address: Option<crate::domain::formation::content::Address>,
+    /// Managing member / principal name (required for LLCs).
+    #[serde(default)]
+    pub principal_name: Option<String>,
 }
 
 #[derive(Serialize, utoipa::ToSchema)]
@@ -603,6 +606,14 @@ async fn create_formation(
         ));
     }
     let workspace_id = auth.workspace_id();
+    // Auto-set principal_name from first member for LLCs
+    let principal_name = req.principal_name.clone().or_else(|| {
+        if req.entity_type == EntityType::Llc {
+            req.members.first().map(|m| m.name.clone())
+        } else {
+            None
+        }
+    });
     let profile_overrides = build_profile_overrides_from_fields(
         req.formation_date.as_deref(),
         req.fiscal_year_end.as_deref(),
@@ -611,7 +622,7 @@ async fn create_formation(
         req.right_of_first_refusal,
         req.company_address.clone(),
         None,
-        None,
+        principal_name,
     )?;
     state.enforce_creation_rate_limit("formation.create", workspace_id, 20, 60)?;
 
@@ -687,6 +698,14 @@ async fn create_formation_with_cap_table(
         ));
     }
     let workspace_id = auth.workspace_id();
+    // Auto-set principal_name from first member for LLCs
+    let principal_name = req.principal_name.clone().or_else(|| {
+        if req.entity_type == EntityType::Llc {
+            req.members.first().map(|m| m.name.clone())
+        } else {
+            None
+        }
+    });
     let profile_overrides = build_profile_overrides_from_fields(
         req.formation_date.as_deref(),
         req.fiscal_year_end.as_deref(),
@@ -695,7 +714,7 @@ async fn create_formation_with_cap_table(
         req.right_of_first_refusal,
         req.company_address.clone(),
         None,
-        None,
+        principal_name,
     )?;
     state.enforce_creation_rate_limit("formation.create", workspace_id, 20, 60)?;
 

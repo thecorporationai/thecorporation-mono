@@ -75,15 +75,15 @@ pub struct AppState {
     pub model_pricing: HashMap<String, ModelPricing>,
     /// In-process throttle for bursty resource creation endpoints.
     pub creation_rate_limiter: Arc<CreationRateLimiter>,
-    /// Which storage backend is active (git or valkey).
+    /// Which storage backend is active (git or kv).
     pub storage_backend: StorageBackendKind,
-    /// Sync Redis/Valkey client for store operations inside `spawn_blocking`.
-    /// Required when `storage_backend` is `Valkey`, ignored for `Git`.
+    /// Sync Redis-protocol client for store operations inside `spawn_blocking`.
+    /// Required when `storage_backend` is `Kv`, ignored for `Git`.
     pub valkey_client: Option<redis::Client>,
     /// In-memory SSH public key fingerprint index for O(1) auth lookups.
     pub ssh_key_index: Arc<SshKeyIndex>,
-    /// Optional S3 durable backend. When present, every Valkey write is
-    /// persisted to S3 first (two-phase commit). Valkey becomes a
+    /// Optional S3 durable backend. When present, every KV write is
+    /// persisted to S3 first (two-phase commit). The KV store becomes a
     /// rebuildable materialized index.
     pub s3_backend: Option<Arc<corp_store::s3_backend::S3Backend>>,
 }
