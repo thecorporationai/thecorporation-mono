@@ -222,6 +222,15 @@ export const documentCommands: CommandDef[] = [
         parameters[key] = coerceParamValue(value);
       }
 
+      // Early validation for known required template parameters
+      if (template === "employment_offer" && !parameters.base_salary) {
+        throw new Error(
+          "base_salary is required for employment_offer template.\n" +
+          "  Use: --base-salary 150000\n" +
+          "  Or:  --param base_salary=150000",
+        );
+      }
+
       try {
         const result = await ctx.client.generateContract({
           entity_id: eid,

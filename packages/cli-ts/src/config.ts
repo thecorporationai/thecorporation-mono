@@ -19,7 +19,7 @@ const CONFIG_LOCK_DIR = join(CONFIG_DIR, "config.lock");
 const CONFIG_LOCK_TIMEOUT_MS = 5000;
 const CONFIG_LOCK_RETRY_MS = 25;
 const CONFIG_STALE_LOCK_MS = 60_000;
-const MAX_LAST_REFERENCES = 128;
+const MAX_LAST_REFERENCES = 4096;
 const TRUSTED_API_HOST_SUFFIXES = ["thecorporation.ai"];
 
 const CONFIG_WAIT_BUFFER = new SharedArrayBuffer(4);

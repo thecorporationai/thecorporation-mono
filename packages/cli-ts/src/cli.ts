@@ -1,6 +1,6 @@
 import { Command, Option } from "commander";
 import type { CommandDef, CommandContext } from "./registry/types.js";
-import { executeGenericRead } from "./generic-executor.js";
+import { executeGenericRead, executeGenericWrite } from "./generic-executor.js";
 import { createWriter } from "./writer.js";
 import { requireConfig, resolveEntityId } from "./config.js";
 import { CorpAPIClient } from "./api-client.js";
@@ -241,9 +241,22 @@ function wireCommand(parent: Command, def: CommandDef): Command {
         await def.handler(ctx);
       } else if (def.display) {
         await executeGenericRead(def, ctx);
+      } else if (def.route && def.route.method !== "GET") {
+        await executeGenericWrite(def, ctx);
       } else {
         writer.error(`Command "${def.name}" has no handler or display config`);
         process.exit(1);
+      }
+
+      // After any write command with produces metadata, print a @last hint
+      // unless in quiet/json mode (the handler may already have printed it)
+      if (def.produces?.kind && !quiet && !mergedOpts.json) {
+        const kind = def.produces.kind as string;
+        const lastId = resolver.getLastId(kind as Parameters<typeof resolver.getLastId>[0]);
+        if (lastId) {
+          const shortRef = lastId.length > 12 ? lastId.slice(0, 8) + "…" : lastId;
+          console.log(`  Ref: @last:${kind} → ${shortRef}`);
+        }
       }
     } catch (err: unknown) {
       writer.error(`Failed: ${err instanceof Error ? err.message : String(err)}`);

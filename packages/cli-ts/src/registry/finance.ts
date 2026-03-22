@@ -184,6 +184,10 @@ export const financeCommands: CommandDef[] = [
     ],
     handler: async (ctx) => {
       const eid = await ctx.resolver.resolveEntity(ctx.opts.entityId as string | undefined);
+      if (ctx.opts.amountCents != null && ctx.opts.amount != null) {
+        printError("--amount-cents and --amount are mutually exclusive. Use one or the other.");
+        process.exit(1);
+      }
       const amountCents = (ctx.opts.amountCents as number | undefined) ?? ((ctx.opts.amount as number | undefined) != null ? (ctx.opts.amount as number) * 100 : undefined);
       if (amountCents == null) {
         printError("required option '--amount-cents <n>' or '--amount <n>' not specified");
@@ -244,6 +248,10 @@ export const financeCommands: CommandDef[] = [
     ],
     handler: async (ctx) => {
       const eid = await ctx.resolver.resolveEntity(ctx.opts.entityId as string | undefined);
+      if (ctx.opts.amountCents != null && ctx.opts.amount != null) {
+        printError("--amount-cents and --amount are mutually exclusive. Use one or the other.");
+        process.exit(1);
+      }
       const amountCents = (ctx.opts.amountCents as number | undefined) ?? ((ctx.opts.amount as number | undefined) != null ? (ctx.opts.amount as number) * 100 : undefined);
       if (amountCents == null) {
         printError("required option '--amount-cents <n>' or '--amount <n>' not specified");

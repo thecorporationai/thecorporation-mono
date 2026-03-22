@@ -1257,11 +1257,15 @@ fn compute_cap_table(
         .map(|h| (h.holder_id(), h.name().to_owned()))
         .collect();
 
-    let all_holder_ids: HashSet<HolderId> = holder_units_fully_diluted
-        .keys()
-        .chain(holder_units_as_converted.keys())
-        .chain(holder_units_outstanding.keys())
-        .copied()
+    // Include all known holders — not just those with positions for this issuer.
+    // This ensures grant recipients and investors appear even before their round
+    // is issued or if they hold positions under a different issuer entity.
+    let all_holder_ids: HashSet<HolderId> = holders
+        .iter()
+        .map(|h| h.holder_id())
+        .chain(holder_units_fully_diluted.keys().copied())
+        .chain(holder_units_as_converted.keys().copied())
+        .chain(holder_units_outstanding.keys().copied())
         .collect();
 
     let mut holder_rows: Vec<CapTableHolderSummary> = all_holder_ids
@@ -2559,6 +2563,21 @@ async fn create_legal_entity(
         let valkey_client = state.valkey_client.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_id, valkey_client.as_ref())?;
+            // Enforce unique legal entity names within an entity
+            let existing_ids = store
+                .list_ids::<LegalEntity>("main")
+                .unwrap_or_default();
+            let normalized_name = req.name.trim().to_lowercase();
+            for existing_id in existing_ids {
+                if let Ok(existing) = store.read::<LegalEntity>("main", existing_id) {
+                    if existing.name().trim().to_lowercase() == normalized_name {
+                        return Err(AppError::Conflict(format!(
+                            "a legal entity named '{}' already exists",
+                            existing.name()
+                        )));
+                    }
+                }
+            }
             let le = LegalEntity::new(
                 LegalEntityId::new(),
                 workspace_id,

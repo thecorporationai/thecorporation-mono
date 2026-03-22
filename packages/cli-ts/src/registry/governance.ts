@@ -77,6 +77,9 @@ export const governanceCommands: CommandDef[] = [
     },
     handler: async (ctx) => {
       const bodyRef = ctx.positional[0];
+      if (!bodyRef) {
+        throw new Error("Missing required argument <body-ref>.\n  List bodies first: corp governance\n  Then: corp governance seats <body-id>");
+      }
       const eid = await ctx.resolver.resolveEntity(ctx.opts.entityId as string | undefined);
       const resolvedBodyId = await ctx.resolver.resolveBody(eid, bodyRef);
       const seats = await ctx.client.getGovernanceSeats(resolvedBodyId, eid);
@@ -85,7 +88,7 @@ export const governanceCommands: CommandDef[] = [
       if (seats.length === 0) { ctx.writer.writeln("No seats found."); return; }
       printSeatsTable(seats);
     },
-    examples: ["corp governance seats", "corp governance seats --json"],
+    examples: ["corp governance seats <body-ref>", "corp governance seats <body-ref> --json"],
   },
 
   // --- governance meetings <body-ref> ---
@@ -101,6 +104,9 @@ export const governanceCommands: CommandDef[] = [
     },
     handler: async (ctx) => {
       const bodyRef = ctx.positional[0];
+      if (!bodyRef) {
+        throw new Error("Missing required argument <body-ref>.\n  List bodies first: corp governance\n  Then: corp governance meetings <body-id>");
+      }
       const eid = await ctx.resolver.resolveEntity(ctx.opts.entityId as string | undefined);
       const resolvedBodyId = await ctx.resolver.resolveBody(eid, bodyRef);
       const meetings = await ctx.client.listMeetings(resolvedBodyId, eid);
@@ -109,7 +115,7 @@ export const governanceCommands: CommandDef[] = [
       if (meetings.length === 0) { ctx.writer.writeln("No meetings found."); return; }
       printMeetingsTable(meetings);
     },
-    examples: ["corp governance meetings", "corp governance meetings --json"],
+    examples: ["corp governance meetings <body-ref>", "corp governance meetings <body-ref> --json"],
   },
 
   // --- governance resolutions <meeting-ref> ---
@@ -125,6 +131,9 @@ export const governanceCommands: CommandDef[] = [
     },
     handler: async (ctx) => {
       const meetingRef = ctx.positional[0];
+      if (!meetingRef) {
+        throw new Error("Missing required argument <meeting-ref>.\n  List meetings first: corp governance meetings <body-ref>\n  Then: corp governance resolutions <meeting-id>");
+      }
       const eid = await ctx.resolver.resolveEntity(ctx.opts.entityId as string | undefined);
       const resolvedMeetingId = await ctx.resolver.resolveMeeting(eid, meetingRef);
       const resolutions = await ctx.client.getMeetingResolutions(resolvedMeetingId, eid);
@@ -133,7 +142,7 @@ export const governanceCommands: CommandDef[] = [
       if (resolutions.length === 0) { ctx.writer.writeln("No resolutions found."); return; }
       printResolutionsTable(resolutions);
     },
-    examples: ["corp governance resolutions", "corp governance resolutions --json"],
+    examples: ["corp governance resolutions <meeting-ref>", "corp governance resolutions <meeting-ref> --json"],
   },
 
   // --- governance agenda-items <meeting-ref> ---
@@ -149,6 +158,9 @@ export const governanceCommands: CommandDef[] = [
     },
     handler: async (ctx) => {
       const meetingRef = ctx.positional[0];
+      if (!meetingRef) {
+        throw new Error("Missing required argument <meeting-ref>.\n  List meetings first: corp governance meetings <body-ref>\n  Then: corp governance agenda-items <meeting-id>");
+      }
       const eid = await ctx.resolver.resolveEntity(ctx.opts.entityId as string | undefined);
       const resolvedMeetingId = await ctx.resolver.resolveMeeting(eid, meetingRef);
       const items = await ctx.client.listAgendaItems(resolvedMeetingId, eid);
@@ -157,7 +169,7 @@ export const governanceCommands: CommandDef[] = [
       if (items.length === 0) { ctx.writer.writeln("No agenda items found."); return; }
       printAgendaItemsTable(items);
     },
-    examples: ["corp governance agenda-items", "corp governance agenda-items --json"],
+    examples: ["corp governance agenda-items <meeting-ref>", "corp governance agenda-items <meeting-ref> --json"],
   },
 
   // --- governance incidents ---
@@ -245,9 +257,9 @@ export const governanceCommands: CommandDef[] = [
     dryRun: true,
     options: [
       { flags: "--name <name>", description: "Body name (e.g. 'Board of Directors')", required: true },
-      { flags: "--body-type <type>", description: "Body type (board_of_directors, llc_member_vote)", required: true },
-      { flags: "--quorum <rule>", description: "Quorum rule (majority, supermajority, unanimous)", default: "majority" },
-      { flags: "--voting <method>", description: "Voting method (per_capita, per_unit)", default: "per_capita" },
+      { flags: "--body-type <type>", description: "Body type", required: true, choices: ["board_of_directors", "llc_member_vote"] },
+      { flags: "--quorum <rule>", description: "Quorum rule", default: "majority", choices: ["majority", "supermajority", "unanimous"] },
+      { flags: "--voting <method>", description: "Voting method", default: "per_capita", choices: ["per_capita", "per_unit"] },
     ],
     handler: async (ctx) => {
       const eid = await ctx.resolver.resolveEntity(ctx.opts.entityId as string | undefined);
@@ -811,6 +823,7 @@ export const governanceCommands: CommandDef[] = [
     name: "governance audit-checkpoints",
     description: "Create a governance audit checkpoint",
     route: { method: "POST", path: "/v1/governance/audit/checkpoints" },
+    entity: true,
     examples: ["corp governance audit-checkpoints"],
     successTemplate: "Audit Checkpoints created",
   },
@@ -818,6 +831,7 @@ export const governanceCommands: CommandDef[] = [
     name: "governance audit-events",
     description: "Record a governance audit event",
     route: { method: "POST", path: "/v1/governance/audit/events" },
+    entity: true,
     options: [
       { flags: "--action <action>", description: "Action", required: true },
       { flags: "--details <details>", description: "Details" },
@@ -835,6 +849,7 @@ export const governanceCommands: CommandDef[] = [
     name: "governance audit-verify",
     description: "Verify governance state integrity",
     route: { method: "POST", path: "/v1/governance/audit/verify" },
+    entity: true,
     examples: ["corp governance audit-verify"],
     successTemplate: "Audit Verify created",
   },
@@ -850,6 +865,7 @@ export const governanceCommands: CommandDef[] = [
     name: "governance delegation-schedule-amend",
     description: "Amend the delegation schedule",
     route: { method: "POST", path: "/v1/governance/delegation-schedule/amend" },
+    entity: true,
     options: [
       { flags: "--adopted-resolution-id <adopted-resolution-id>", description: "Adopted Resolution Id" },
       { flags: "--allowed-tier1-intent-types <allowed-tier1-intent-types>", description: "Allowed Tier1 Intent Types" },
@@ -873,6 +889,7 @@ export const governanceCommands: CommandDef[] = [
     name: "governance delegation-schedule-reauthorize",
     description: "Reauthorize the delegation schedule",
     route: { method: "POST", path: "/v1/governance/delegation-schedule/reauthorize" },
+    entity: true,
     options: [
       { flags: "--adopted-resolution-id <adopted-resolution-id>", description: "Adopted Resolution Id", required: true },
       { flags: "--meeting-id <meeting-id>", description: "Meeting ID", required: true },
@@ -885,6 +902,7 @@ export const governanceCommands: CommandDef[] = [
     name: "governance evaluate",
     description: "Evaluate governance compliance for an action",
     route: { method: "POST", path: "/v1/governance/evaluate" },
+    entity: true,
     options: [
       { flags: "--intent-type <intent-type>", description: "Type of intent", required: true },
       { flags: "--metadata <metadata>", description: "Additional metadata (JSON)" },
@@ -896,6 +914,7 @@ export const governanceCommands: CommandDef[] = [
     name: "governance report-incident",
     description: "Report a governance incident",
     route: { method: "POST", path: "/v1/governance/incidents" },
+    entity: true,
     options: [
       { flags: "--description <description>", description: "Description text", required: true },
       { flags: "--severity <severity>", description: "Severity level", required: true, choices: ["low", "medium", "high", "critical"] },

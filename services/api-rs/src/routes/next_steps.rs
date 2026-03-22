@@ -9,6 +9,7 @@ use crate::auth::RequireExecutionRead;
 use crate::error::AppError;
 use crate::domain::ids::EntityId;
 use crate::store::entity_store::EntityStore;
+use crate::domain::formation::content::MemberInput;
 use crate::domain::formation::types::FormationStatus;
 use crate::domain::governance::body::GovernanceBody;
 use crate::domain::governance::seat::GovernanceSeat;
@@ -90,27 +91,73 @@ pub fn compute_next_steps(store: &EntityStore, entity_id: EntityId) -> Vec<NextS
     if let Ok(entity) = store.read_entity("main") {
         match entity.formation_status() {
             FormationStatus::Pending => {
+                let has_members = store
+                    .read_json::<Vec<MemberInput>>("main", "formation/pending_members.json")
+                    .map(|m| !m.is_empty())
+                    .unwrap_or(false);
+
+                if has_members {
+                    items.push(NextStepItem {
+                        category: "formation".into(),
+                        title: format!("Finalize formation for {}", entity.legal_name()),
+                        description: Some("Formation is pending — finalize to generate documents and cap table".into()),
+                        command: cmd(&["form", "finalize", &eid]),
+                        urgency: "critical".into(),
+                    });
+                } else {
+                    items.push(NextStepItem {
+                        category: "formation".into(),
+                        title: format!("Add a founder to {}", entity.legal_name()),
+                        description: Some("At least one founder is required before formation can be finalized".into()),
+                        command: cmd(&["form", "add-founder", &eid, "--name", "\"...\"", "--email", "\"...\"", "--role", "member", "--pct", "100"]),
+                        urgency: "critical".into(),
+                    });
+                }
+            }
+            FormationStatus::DocumentsGenerated => {
+                // Unsigned documents are surfaced by section 2 below.
+                // Add a formation-level hint so "next" always has a clear action.
                 items.push(NextStepItem {
                     category: "formation".into(),
-                    title: format!("Finalize formation for {}", entity.legal_name()),
-                    description: Some("Formation is pending — finalize to generate documents and cap table".into()),
-                    command: cmd(&["form", "finalize", &eid]),
+                    title: format!("Sign formation documents for {}", entity.legal_name()),
+                    description: Some("Documents have been generated — sign them to advance formation".into()),
+                    command: cmd(&["form", "activate", &eid]),
                     urgency: "critical".into(),
                 });
             }
-            FormationStatus::DocumentsGenerated => {
-                // Documents exist but aren't signed yet — signing is the next step.
-                // Don't recommend activation until documents are signed.
-            }
-            FormationStatus::DocumentsSigned
-            | FormationStatus::FilingSubmitted
-            | FormationStatus::Filed
-            | FormationStatus::EinApplied => {
+            FormationStatus::DocumentsSigned => {
                 items.push(NextStepItem {
                     category: "formation".into(),
-                    title: format!("Activate {}", entity.legal_name()),
-                    description: Some(format!("Formation status is {} — activate when ready", entity.formation_status())),
+                    title: format!("Submit state filing for {}", entity.legal_name()),
+                    description: Some("Documents are signed — submit filing to the state".into()),
                     command: cmd(&["form", "activate", &eid]),
+                    urgency: "critical".into(),
+                });
+            }
+            FormationStatus::FilingSubmitted => {
+                items.push(NextStepItem {
+                    category: "formation".into(),
+                    title: format!("Confirm state filing for {}", entity.legal_name()),
+                    description: Some("Filing has been submitted — confirm once the state accepts it".into()),
+                    command: cmd(&["form", "activate", &eid, "--filing-id", "\"...\"" ]),
+                    urgency: "critical".into(),
+                });
+            }
+            FormationStatus::Filed => {
+                items.push(NextStepItem {
+                    category: "formation".into(),
+                    title: format!("Apply for EIN for {}", entity.legal_name()),
+                    description: Some("State filing is complete — apply for an EIN with the IRS".into()),
+                    command: cmd(&["form", "activate", &eid]),
+                    urgency: "critical".into(),
+                });
+            }
+            FormationStatus::EinApplied => {
+                items.push(NextStepItem {
+                    category: "formation".into(),
+                    title: format!("Confirm EIN for {}", entity.legal_name()),
+                    description: Some("EIN application submitted — confirm once received to activate the entity".into()),
+                    command: cmd(&["form", "activate", &eid, "--ein", "\"...\"" ]),
                     urgency: "critical".into(),
                 });
             }

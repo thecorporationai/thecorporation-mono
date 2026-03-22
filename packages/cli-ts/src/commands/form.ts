@@ -146,7 +146,7 @@ function parseLegacyMemberSpec(raw: string): FounderInfo {
   const parts = raw.split(",").map((p) => p.trim());
   if (parts.length < 3) {
     throw new Error(
-      `Invalid member format: ${raw}. Expected: name,email,role[,pct[,address[,officer_title[,is_incorporator]]]]`,
+      `Invalid member format: ${raw}. Expected: name,email,role[,pct[,street|city|state|zip[,officer_title[,is_incorporator]]]]`,
     );
   }
   const founder: FounderInfo = { name: parts[0], email: parts[1], role: parts[2] };
@@ -187,6 +187,32 @@ function readSafeJsonFile(filePath: string, label: string): string {
   );
 }
 
+function validateFounders(founders: FounderInfo[]): void {
+  // Check for duplicate emails
+  const seenEmails = new Set<string>();
+  for (const f of founders) {
+    const email = f.email.toLowerCase().trim();
+    if (seenEmails.has(email)) {
+      throw new Error(`Duplicate founder email: ${email}. Each founder must have a unique email address.`);
+    }
+    seenEmails.add(email);
+  }
+
+  // Check total ownership doesn't exceed 100%
+  let totalOwnership = 0;
+  for (const f of founders) {
+    if (f.ownership_pct != null) {
+      if (f.ownership_pct <= 0 || f.ownership_pct > 100) {
+        throw new Error(`Invalid ownership_pct ${f.ownership_pct} for ${f.name}. Must be between 0 and 100.`);
+      }
+      totalOwnership += f.ownership_pct;
+    }
+  }
+  if (totalOwnership > 100.000001) {
+    throw new Error(`Total ownership_pct is ${totalOwnership.toFixed(2)}%, which exceeds 100%. Reduce ownership percentages.`);
+  }
+}
+
 function parseScriptedFounders(opts: FormOptions): FounderInfo[] {
   const founders: FounderInfo[] = [];
   for (const raw of opts.member ?? []) {
@@ -217,6 +243,7 @@ function parseScriptedFounders(opts: FormOptions): FounderInfo[] {
       founders.push(normalizeFounderInfo(entry as Record<string, unknown>));
     }
   }
+  validateFounders(founders);
   return founders;
 }
 
@@ -512,8 +539,8 @@ export async function formCommand(opts: FormOptions): Promise<void> {
     // Phase 3: Stock & Finalize
     const { transferRestrictions, rofr } = await phaseStock(opts, entityType, founders, scripted);
 
-    // Summary & Confirm
-    if (!opts.quiet) {
+    // Summary & Confirm (suppress for --json and --quiet to keep output clean)
+    if (!opts.quiet && !opts.json) {
       printSummary(entityType, name, jurisdiction, fiscalYearEnd, sCorpElection, founders, transferRestrictions, rofr);
     }
 

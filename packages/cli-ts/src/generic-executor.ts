@@ -168,8 +168,9 @@ export async function executeGenericRead(def: CommandDef, ctx: CommandContext): 
     path = path.replace("{pos}", encodeURIComponent(ctx.positional[posIdx++]));
   }
 
-  // Resolve {wid}
+  // Resolve workspace ID placeholders
   path = path.replace("{wid}", encodeURIComponent(ctx.client.workspaceId));
+  path = path.replace("{workspace_id}", encodeURIComponent(ctx.client.workspaceId));
 
   // Forward optQP options as query params
   if (def.optQP) {
@@ -218,4 +219,95 @@ export async function executeGenericRead(def: CommandDef, ctx: CommandContext): 
   } else {
     ctx.writer.json(data);
   }
+}
+
+/**
+ * Generic write executor for POST/PATCH/DELETE commands that lack a custom handler.
+ * Resolves path placeholders, collects option values as the body, and calls submitJSON.
+ */
+export async function executeGenericWrite(def: CommandDef, ctx: CommandContext): Promise<void> {
+  if (!def.route?.path || !def.route?.method) {
+    ctx.writer.error("No route defined for this command");
+    return;
+  }
+
+  let path = def.route.path;
+  let posIdx = 0;
+
+  // Resolve {eid}
+  if (def.entity) {
+    let eid: string | undefined;
+    const explicitEid = ctx.opts["entity-id"] as string | undefined;
+    if (explicitEid) {
+      eid = await ctx.resolver.resolveEntity(explicitEid);
+    } else if (def.entity === true && !path.includes("{pos}") && ctx.positional[posIdx]) {
+      eid = await ctx.resolver.resolveEntity(ctx.positional[posIdx++]);
+    } else {
+      eid = ctx.entityId;
+    }
+    if (eid) {
+      path = path.replace("{eid}", encodeURIComponent(eid));
+    } else if (path.includes("{eid}")) {
+      ctx.writer.error("Entity ID required. Use --entity-id or set active entity with 'corp use <name>'.");
+      return;
+    }
+  }
+
+  // Resolve {pos} and {pos2}
+  if (path.includes("{pos}")) {
+    if (!ctx.positional[posIdx]) {
+      ctx.writer.error("Missing required argument (ID or reference).");
+      return;
+    }
+    path = path.replace("{pos}", encodeURIComponent(ctx.positional[posIdx++]));
+  }
+  if (path.includes("{pos2}")) {
+    if (!ctx.positional[posIdx]) {
+      ctx.writer.error("Missing required second argument (ID or reference).");
+      return;
+    }
+    path = path.replace("{pos2}", encodeURIComponent(ctx.positional[posIdx++]));
+  }
+
+  // Resolve workspace placeholders
+  path = path.replace("{wid}", encodeURIComponent(ctx.client.workspaceId));
+  path = path.replace("{workspace_id}", encodeURIComponent(ctx.client.workspaceId));
+
+  // Build body from defined options
+  const body: Record<string, unknown> = {};
+  if (def.entity && ctx.entityId) {
+    body.entity_id = ctx.entityId;
+  }
+  for (const opt of def.options ?? []) {
+    // Extract camelCase key from flags like "--foo-bar <val>"
+    const match = opt.flags.match(/^--([a-z0-9-]+)/);
+    if (!match) continue;
+    const camelKey = match[1].replace(/-([a-z])/g, (_, c: string) => c.toUpperCase());
+    const val = ctx.opts[camelKey];
+    if (val != null && camelKey !== "entityId" && camelKey !== "json") {
+      body[match[1].replace(/-/g, "_")] = val;
+    }
+  }
+
+  if (ctx.dryRun) {
+    ctx.writer.dryRun(def.name.replace(/ /g, "."), body);
+    return;
+  }
+
+  const data = await withSpinner(
+    "Submitting",
+    () => ctx.client.submitJSON(def.route!.method, path, Object.keys(body).length ? body : undefined),
+    ctx.opts.json as boolean,
+  );
+
+  if (ctx.opts.json) {
+    ctx.writer.json(data);
+    return;
+  }
+
+  // Try to extract an ID from the response for a friendly message
+  const result = data as Record<string, unknown> | null;
+  const idKey = result ? Object.keys(result).find((k) => k.endsWith("_id")) : undefined;
+  const idVal = idKey && result ? result[idKey] : undefined;
+  ctx.writer.success(`${def.description ?? def.name}: ${idVal ?? "OK"}`);
 }

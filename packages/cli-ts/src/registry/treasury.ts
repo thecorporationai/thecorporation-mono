@@ -58,6 +58,7 @@ export const treasuryCommands: CommandDef[] = [
     name: "invoices from-agent-request",
     description: "Create an invoice from an agent request",
     route: { method: "POST", path: "/v1/invoices/from-agent-request" },
+    entity: true,
     options: [
       { flags: "--amount-cents <amount-cents>", description: "Amount in cents", required: true, type: "int" },
       { flags: "--customer-name <customer-name>", description: "Customer name for the invoice", required: true },
@@ -134,6 +135,7 @@ export const treasuryCommands: CommandDef[] = [
     name: "ledger reconcile",
     description: "Reconcile the ledger",
     route: { method: "POST", path: "/v1/ledger/reconcile" },
+    entity: true,
     options: [
       { flags: "--as-of-date <as-of-date>", description: "As Of Date" },
       { flags: "--end-date <end-date>", description: "End Date" },
@@ -146,6 +148,7 @@ export const treasuryCommands: CommandDef[] = [
     name: "payments",
     description: "Record a new payment",
     route: { method: "POST", path: "/v1/payments" },
+    entity: true,
     options: [
       { flags: "--amount-cents <amount-cents>", description: "Amount in cents", required: true, type: "int" },
       { flags: "--description <description>", description: "Description text", required: true },
@@ -159,6 +162,7 @@ export const treasuryCommands: CommandDef[] = [
     name: "payments execute",
     description: "Execute a pending payment",
     route: { method: "POST", path: "/v1/payments/execute" },
+    entity: true,
     options: [
       { flags: "--amount-cents <amount-cents>", description: "Amount in cents", required: true, type: "int" },
       { flags: "--description <description>", description: "Description text", required: true },
@@ -172,6 +176,7 @@ export const treasuryCommands: CommandDef[] = [
     name: "payroll runs",
     description: "Create a payroll run",
     route: { method: "POST", path: "/v1/payroll/runs" },
+    entity: true,
     options: [
       { flags: "--pay-period-end <pay-period-end>", description: "Pay Period End", required: true },
       { flags: "--pay-period-start <pay-period-start>", description: "Pay Period Start", required: true },
@@ -183,6 +188,7 @@ export const treasuryCommands: CommandDef[] = [
     name: "spending-limits",
     description: "Set a spending limit",
     route: { method: "POST", path: "/v1/spending-limits" },
+    entity: true,
     options: [
       { flags: "--amount-cents <amount-cents>", description: "Amount in cents", required: true, type: "int" },
       { flags: "--category <category>", description: "Category", required: true },
@@ -195,6 +201,7 @@ export const treasuryCommands: CommandDef[] = [
     name: "treasury accounts",
     description: "Create a new ledger account",
     route: { method: "POST", path: "/v1/treasury/accounts" },
+    entity: true,
     options: [
       { flags: "--account-code <account-code>", description: "Standard GL account codes with integer discriminants matching the code number.", required: true, choices: ["Cash", "AccountsReceivable", "AccountsPayable", "AccruedExpenses", "FounderCapital", "Revenue", "OperatingExpenses", "Cogs"] },
     ],
@@ -205,6 +212,7 @@ export const treasuryCommands: CommandDef[] = [
     name: "treasury bank-accounts",
     description: "Register a new bank account",
     route: { method: "POST", path: "/v1/treasury/bank-accounts" },
+    entity: true,
     options: [
       { flags: "--account-type <account-type>", description: "Account type (checking, savings)", choices: ["checking", "savings"] },
       { flags: "--bank-name <bank-name>", description: "Bank name", required: true },
@@ -224,6 +232,7 @@ export const treasuryCommands: CommandDef[] = [
     name: "treasury invoices",
     description: "Create a new invoice",
     route: { method: "POST", path: "/v1/treasury/invoices" },
+    entity: true,
     options: [
       { flags: "--amount-cents <amount-cents>", description: "Amount in cents", required: true, type: "int" },
       { flags: "--customer-name <customer-name>", description: "Customer name for the invoice", required: true },
@@ -237,6 +246,7 @@ export const treasuryCommands: CommandDef[] = [
     name: "treasury journal-entries",
     description: "Create a journal entry",
     route: { method: "POST", path: "/v1/treasury/journal-entries" },
+    entity: true,
     options: [
       { flags: "--description <description>", description: "Description text", required: true },
       { flags: "--effective-date <effective-date>", description: "Effective Date", required: true },
@@ -249,6 +259,7 @@ export const treasuryCommands: CommandDef[] = [
     name: "treasury payment-intents",
     description: "Create a payment intent",
     route: { method: "POST", path: "/v1/treasury/payment-intents" },
+    entity: true,
     options: [
       { flags: "--amount-cents <amount-cents>", description: "Amount in cents", required: true, type: "int" },
       { flags: "--currency <currency>", description: "Currency code (e.g. USD)" },
@@ -261,6 +272,7 @@ export const treasuryCommands: CommandDef[] = [
     name: "treasury payouts",
     description: "Create a payout",
     route: { method: "POST", path: "/v1/treasury/payouts" },
+    entity: true,
     options: [
       { flags: "--amount-cents <amount-cents>", description: "Amount in cents", required: true, type: "int" },
       { flags: "--description <description>", description: "Description text" },
@@ -273,6 +285,7 @@ export const treasuryCommands: CommandDef[] = [
     name: "treasury seed-chart-of-accounts",
     description: "Initialize chart of accounts for an entity",
     route: { method: "POST", path: "/v1/treasury/seed-chart-of-accounts" },
+    entity: true,
     options: [
       { flags: "--template <template>", description: "Template string with {{secret}} placeholders" },
     ],
@@ -283,6 +296,7 @@ export const treasuryCommands: CommandDef[] = [
     name: "treasury stripe-accounts",
     description: "Register a Stripe account",
     route: { method: "POST", path: "/v1/treasury/stripe-accounts" },
+    entity: true,
     examples: ["corp treasury stripe-accounts"],
     successTemplate: "Stripe Accounts created",
   },

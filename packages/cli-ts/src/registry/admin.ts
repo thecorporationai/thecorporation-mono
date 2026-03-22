@@ -428,6 +428,7 @@ export const adminCommands: CommandDef[] = [
     description: "View a specific digest by key",
     route: { method: "GET", path: "/v1/digests/{pos}" },
     args: [{ name: "digest-key", required: true, description: "Digest key" }],
+    display: { title: "Digest" },
     examples: ["corp digests"],
   },
   {
@@ -573,6 +574,7 @@ export const adminCommands: CommandDef[] = [
     description: "Validate a document preview without generating PDF",
     route: { method: "GET", path: "/v1/documents/preview/pdf/validate" },
     entity: true,
+    display: { title: "Document Preview Validation" },
     examples: ["corp documents validate-preview", "corp documents validate-preview --json"],
   },
 ];

@@ -96,16 +96,22 @@ export const complianceCommands: CommandDef[] = [
         choices: [...TAX_DOCUMENT_TYPE_CHOICES],
       },
       { flags: "--year <year>", description: "Tax year", required: true, type: "int" },
+      { flags: "--filer-contact-id <ref>", description: "Contact reference for per-person filings (e.g. 83(b) elections)" },
     ],
     handler: async (ctx) => {
       const eid = await ctx.resolver.resolveEntity(ctx.opts.entityId as string | undefined);
       const rawType = ctx.opts.type as string;
       const docType = TAX_DOCUMENT_TYPE_ALIASES[rawType] ?? rawType;
-      const result = await ctx.client.fileTaxDocument({
+      const filerContactId = (ctx.opts.filerContactId as string | undefined)
+        ? await ctx.resolver.resolveContact(eid, ctx.opts.filerContactId as string)
+        : undefined;
+      const payload: Record<string, unknown> = {
         entity_id: eid,
         document_type: docType,
         tax_year: ctx.opts.year as number,
-      });
+      };
+      if (filerContactId) payload.filer_contact_id = filerContactId;
+      const result = await ctx.client.fileTaxDocument(payload);
       await ctx.resolver.stabilizeRecord("tax_filing", result, eid);
       ctx.resolver.rememberFromRecord("tax_filing", result, eid);
       ctx.writer.writeResult(result, `Tax document filed: ${result.filing_id ?? "OK"}`, {
@@ -207,6 +213,7 @@ export const complianceCommands: CommandDef[] = [
     name: "contractors classify",
     description: "Classify a worker as employee or contractor",
     route: { method: "POST", path: "/v1/contractors/classify" },
+    entity: true,
     options: [
       { flags: "--contractor-name <contractor-name>", description: "Contractor Name", required: true },
       { flags: "--duration-months <duration-months>", description: "Duration Months" },
@@ -245,6 +252,7 @@ export const complianceCommands: CommandDef[] = [
     name: "tax create-filing",
     description: "Create a tax filing record",
     route: { method: "POST", path: "/v1/tax/filings" },
+    entity: true,
     options: [
       { flags: "--document-type <document-type>", description: "Type of document required", required: true },
       { flags: "--tax-year <tax-year>", description: "Tax Year", required: true, type: "int" },

@@ -3,7 +3,7 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use crate::domain::ids::{DocumentId, EntityId, TaxFilingId};
+use crate::domain::ids::{ContactId, DocumentId, EntityId, TaxFilingId};
 
 /// Status of a tax filing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, utoipa::ToSchema)]
@@ -25,6 +25,9 @@ pub struct TaxFiling {
     document_id: DocumentId,
     status: TaxFilingStatus,
     created_at: DateTime<Utc>,
+    /// Optional contact scoping — for per-person filings like 83(b) elections.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    filer_contact_id: Option<ContactId>,
 }
 
 impl TaxFiling {
@@ -43,7 +46,13 @@ impl TaxFiling {
             document_id,
             status: TaxFilingStatus::Pending,
             created_at: Utc::now(),
+            filer_contact_id: None,
         }
+    }
+
+    pub fn with_filer_contact(mut self, contact_id: Option<ContactId>) -> Self {
+        self.filer_contact_id = contact_id;
+        self
     }
 
     pub fn mark_filed(&mut self) {
@@ -71,6 +80,9 @@ impl TaxFiling {
     }
     pub fn created_at(&self) -> DateTime<Utc> {
         self.created_at
+    }
+    pub fn filer_contact_id(&self) -> Option<ContactId> {
+        self.filer_contact_id
     }
 }
 

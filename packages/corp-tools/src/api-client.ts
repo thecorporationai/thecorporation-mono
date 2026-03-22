@@ -186,6 +186,15 @@ export class CorpAPIClient {
     return this.get(path, params);
   }
 
+  /** Public generic request for declarative/registry-driven write commands. */
+  async submitJSON(method: string, path: string, body?: unknown): Promise<unknown> {
+    const resp = await this.request(method, path, body);
+    await this.throwIfError(resp);
+    const text = await resp.text();
+    if (!text) return {};
+    return JSON.parse(text);
+  }
+
   // --- Workspace ---
   getStatus() { return this.get(`/v1/workspaces/${pathSegment(this.workspaceId)}/status`) as Promise<WorkspaceStatusResponse>; }
 

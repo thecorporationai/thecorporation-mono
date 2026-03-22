@@ -483,16 +483,19 @@ export const capTableCommands: CommandDef[] = [
     options: [
       { flags: "--investor <name>", description: "Investor name", required: true },
       { flags: "--amount-cents <n>", description: "Principal amount in cents (e.g. 5000000000 = $50M)", required: true, type: "int" },
-      { flags: "--amount <n>", description: "", type: "int" },
-      { flags: "--safe-type <type>", description: "SAFE type", default: "post_money" },
+      { flags: "--amount <n>", description: "Amount in dollars (alternative to --amount-cents)", type: "int" },
+      { flags: "--safe-type <type>", description: "SAFE type", default: "post_money", choices: ["post_money", "pre_money", "mfn"] },
       { flags: "--valuation-cap-cents <n>", description: "Valuation cap in cents (e.g. 1000000000 = $10M)", required: true, type: "int" },
-      { flags: "--valuation-cap <n>", description: "", type: "int" },
+      { flags: "--valuation-cap <n>", description: "Valuation cap in dollars (alternative to --valuation-cap-cents)", type: "int" },
       { flags: "--meeting-id <ref>", description: "Board meeting reference required when issuing under a board-governed entity" },
       { flags: "--resolution-id <ref>", description: "Board resolution reference required when issuing under a board-governed entity" },
     ],
     handler: async (ctx) => {
       const eid = await ctx.resolver.resolveEntity(ctx.opts.entityId as string | undefined);
       const investor = ctx.opts.investor as string;
+      if (ctx.opts.amountCents != null && ctx.opts.amount != null) {
+        throw new Error("--amount-cents and --amount are mutually exclusive. Use one or the other.");
+      }
       const amountCents = (ctx.opts.amountCents ?? ctx.opts.amount) as number;
       const safeType = (ctx.opts.safeType ?? "post_money") as string;
       const valuationCapCents = (ctx.opts.valuationCapCents ?? ctx.opts.valuationCap) as number;
@@ -558,9 +561,9 @@ export const capTableCommands: CommandDef[] = [
       { flags: "--from <ref>", description: "Source contact reference (from_contact_id)", required: true },
       { flags: "--to <ref>", description: "Destination contact reference (to_contact_id)", required: true },
       { flags: "--shares <n>", description: "Number of shares to transfer", required: true, type: "int" },
-      { flags: "--share-class-id <ref>", description: "Share class reference", required: true },
-      { flags: "--governing-doc-type <type>", description: "Governing doc type (bylaws, operating_agreement, shareholder_agreement, other)", required: true },
-      { flags: "--transferee-rights <rights>", description: "Transferee rights (full_member, economic_only, limited)", required: true },
+      { flags: "--share-class-id <ref>", description: "Share class reference (auto-resolved if only one exists)" },
+      { flags: "--governing-doc-type <type>", description: "Governing doc type (bylaws, operating_agreement, shareholder_agreement, other)", default: "bylaws" },
+      { flags: "--transferee-rights <rights>", description: "Transferee rights (full_member, economic_only, limited)", default: "full_member" },
       { flags: "--prepare-intent-id <id>", description: "Prepare intent ID (auto-created if omitted)" },
       { flags: "--type <type>", description: "Transfer type (gift, trust_transfer, secondary_sale, estate, other)", default: "secondary_sale" },
       { flags: "--price-per-share-cents <n>", description: "Price per share in cents", type: "int" },
@@ -570,7 +573,22 @@ export const capTableCommands: CommandDef[] = [
       const eid = await ctx.resolver.resolveEntity(ctx.opts.entityId as string | undefined);
       const fromContactId = await ctx.resolver.resolveContact(eid, ctx.opts.from as string);
       const toContactId = await ctx.resolver.resolveContact(eid, ctx.opts.to as string);
-      const shareClassId = await ctx.resolver.resolveShareClass(eid, ctx.opts.shareClassId as string);
+      let shareClassId: string;
+      if (ctx.opts.shareClassId) {
+        shareClassId = await ctx.resolver.resolveShareClass(eid, ctx.opts.shareClassId as string);
+      } else {
+        // Auto-resolve: use the only share class if there's exactly one
+        const capTable = await ctx.client.getCapTable(eid);
+        const instruments = (capTable.instruments ?? []) as Array<{ share_class_id?: string }>;
+        const classIds = [...new Set(instruments.map((i) => i.share_class_id).filter(Boolean))] as string[];
+        if (classIds.length === 1) {
+          shareClassId = classIds[0];
+        } else if (classIds.length === 0) {
+          throw new Error("No share classes found. Create one first or specify --share-class-id.");
+        } else {
+          throw new Error(`Multiple share classes found (${classIds.length}). Specify --share-class-id to disambiguate.`);
+        }
+      }
       const shares = ctx.opts.shares as number;
       const pricePerShareCents = ctx.opts.pricePerShareCents as number | undefined;
       const relationship = ctx.opts.relationship as string | undefined;
@@ -645,12 +663,15 @@ export const capTableCommands: CommandDef[] = [
     dryRun: true,
     options: [
       { flags: "--amount-cents <n>", description: "Total distribution amount in cents (e.g. 100000 = $1,000.00)", required: true, type: "int" },
-      { flags: "--amount <n>", description: "", type: "int" },
+      { flags: "--amount <n>", description: "Amount in dollars (alternative to --amount-cents)", type: "int" },
       { flags: "--type <type>", description: "Distribution type (dividend, return, liquidation)", default: "dividend" },
       { flags: "--description <desc>", description: "Distribution description", required: true },
     ],
     handler: async (ctx) => {
       const eid = await ctx.resolver.resolveEntity(ctx.opts.entityId as string | undefined);
+      if (ctx.opts.amountCents != null && ctx.opts.amount != null) {
+        throw new Error("--amount-cents and --amount are mutually exclusive. Use one or the other.");
+      }
       const amountCents = (ctx.opts.amountCents ?? ctx.opts.amount) as number;
       const distributionType = (ctx.opts.type ?? "dividend") as string;
       const description = ctx.opts.description as string;
@@ -683,11 +704,19 @@ export const capTableCommands: CommandDef[] = [
     dryRun: true,
     options: [
       { flags: "--name <name>", description: "Round name", required: true },
-      { flags: "--issuer-legal-entity-id <ref>", description: "Issuer legal entity reference", required: true },
+      { flags: "--issuer-legal-entity-id <ref>", description: "Issuer legal entity reference (auto-resolved from cap table if omitted)" },
     ],
     handler: async (ctx) => {
       const eid = await ctx.resolver.resolveEntity(ctx.opts.entityId as string | undefined);
-      const issuerLegalEntityId = await ctx.resolver.resolveEntity(ctx.opts.issuerLegalEntityId as string);
+      let issuerLegalEntityId = ctx.opts.issuerLegalEntityId as string | undefined;
+      if (!issuerLegalEntityId) {
+        const capTable = await ctx.client.getCapTable(eid);
+        issuerLegalEntityId = capTable.issuer_legal_entity_id as string | undefined;
+      }
+      if (!issuerLegalEntityId) {
+        throw new Error("No issuer legal entity found. Provide --issuer-legal-entity-id or ensure the entity has a cap table.");
+      }
+      issuerLegalEntityId = await ctx.resolver.resolveEntity(issuerLegalEntityId);
       const payload = {
         entity_id: eid,
         name: ctx.opts.name as string,
@@ -760,8 +789,8 @@ export const capTableCommands: CommandDef[] = [
     dryRun: true,
     options: [
       { flags: "--round-id <ref>", description: "Round reference", required: true },
-      { flags: "--meeting-id <ref>", description: "Board meeting reference required when issuing under a board-governed entity" },
-      { flags: "--resolution-id <ref>", description: "Board resolution reference required when issuing under a board-governed entity" },
+      { flags: "--meeting-id <ref>", description: "Board meeting reference (required if entity has an active board)" },
+      { flags: "--resolution-id <ref>", description: "Board resolution reference (required if entity has an active board)" },
     ],
     handler: async (ctx) => {
       const eid = await ctx.resolver.resolveEntity(ctx.opts.entityId as string | undefined);
@@ -812,9 +841,10 @@ export const capTableCommands: CommandDef[] = [
     options: [
       { flags: "--type <type>", description: "Valuation type (four_oh_nine_a, fair_market_value, etc.)", required: true },
       { flags: "--date <date>", description: "Effective date (ISO 8601)", required: true },
-      { flags: "--methodology <method>", description: "Methodology (income, market, asset, backsolve, hybrid)", required: true },
+      { flags: "--methodology <method>", description: "Methodology", required: true, choices: ["income", "market", "asset", "backsolve", "hybrid", "other"] },
       { flags: "--fmv <cents>", description: "FMV per share in cents", type: "int" },
       { flags: "--enterprise-value <cents>", description: "Enterprise value in cents", type: "int" },
+      { flags: "--auto-approve", description: "Automatically submit and approve the valuation (skips board workflow)" },
     ],
     handler: async (ctx) => {
       const eid = await ctx.resolver.resolveEntity(ctx.opts.entityId as string | undefined);
@@ -833,6 +863,26 @@ export const capTableCommands: CommandDef[] = [
       const result = await ctx.client.createValuation(body);
       await ctx.resolver.stabilizeRecord("valuation", result, eid);
       ctx.resolver.rememberFromRecord("valuation", result, eid);
+
+      const valuationId = String(result.valuation_id ?? result.id);
+
+      if (ctx.opts.autoApprove && valuationId) {
+        try {
+          await ctx.client.submitValuationForApproval(valuationId, eid);
+          const approved = await ctx.client.approveValuation(valuationId, eid);
+          await ctx.resolver.stabilizeRecord("valuation", approved, eid);
+          if (ctx.opts.json) { ctx.writer.json(approved); return; }
+          ctx.writer.success(`Valuation created and approved: ${valuationId}`);
+          printReferenceSummary("valuation", approved, { showReuseHint: true });
+          return;
+        } catch (err) {
+          // Fall through to normal output if auto-approve fails (e.g. board required)
+          if (!ctx.opts.json) {
+            ctx.writer.warning(`Auto-approve failed (board approval may be required): ${err}`);
+          }
+        }
+      }
+
       if (ctx.opts.json) { ctx.writer.json(result); return; }
       ctx.writer.success(`Valuation created: ${result.valuation_id ?? "OK"}`);
       printReferenceSummary("valuation", result, { showReuseHint: true });
@@ -1230,7 +1280,7 @@ export const capTableCommands: CommandDef[] = [
     description: "Issue an equity grant (options, RSUs, etc.)",
     route: { method: "POST", path: "/v1/equity/grants" },
     options: [
-      { flags: "--grant-type <grant-type>", description: "The type of equity grant.", required: true, choices: ["common_stock", "preferred_stock", "membership_unit", "stock_option", "iso", "nso", "rsa", "svu"] },
+      { flags: "--grant-type <grant-type>", description: "The type of equity grant.", required: true, choices: ["common", "common_stock", "preferred", "preferred_stock", "membership_unit", "stock_option", "iso", "nso", "rsa", "svu"] },
       { flags: "--recipient-name <recipient-name>", description: "Payment recipient name", required: true },
       { flags: "--shares <shares>", description: "Shares", required: true, type: "int" },
     ],
@@ -1283,11 +1333,12 @@ export const capTableCommands: CommandDef[] = [
   },
   {
     name: "equity rounds",
-    description: "Create a new equity round",
+    description: "Create a new equity round (prefer cap-table start-round which auto-resolves issuer)",
     route: { method: "POST", path: "/v1/equity/rounds" },
+    entity: true,
     options: [
       { flags: "--conversion-target-instrument-id <conversion-target-instrument-id>", description: "Target instrument for conversion" },
-      { flags: "--issuer-legal-entity-id <issuer-legal-entity-id>", description: "Legal entity issuing the securities", required: true },
+      { flags: "--issuer-legal-entity-id <issuer-legal-entity-id>", description: "Issuer legal entity (run 'corp cap-table --json' to find this)", required: true },
       { flags: "--metadata <metadata>", description: "Additional metadata (JSON)" },
       { flags: "--name <name>", description: "Display name", required: true },
       { flags: "--pre-money-cents <pre-money-cents>", description: "Pre-money valuation in cents" },
@@ -1299,10 +1350,11 @@ export const capTableCommands: CommandDef[] = [
   },
   {
     name: "equity rounds-staged",
-    description: "Create a staged (draft) equity round",
+    description: "Create a staged (draft) equity round (prefer cap-table start-round which auto-resolves issuer)",
     route: { method: "POST", path: "/v1/equity/rounds/staged" },
+    entity: true,
     options: [
-      { flags: "--issuer-legal-entity-id <issuer-legal-entity-id>", description: "Legal entity issuing the securities", required: true },
+      { flags: "--issuer-legal-entity-id <issuer-legal-entity-id>", description: "Issuer legal entity (run 'corp cap-table --json' to find this)", required: true },
       { flags: "--metadata <metadata>", description: "Additional metadata (JSON)" },
       { flags: "--name <name>", description: "Display name", required: true },
       { flags: "--pre-money-cents <pre-money-cents>", description: "Pre-money valuation in cents" },
@@ -1316,6 +1368,7 @@ export const capTableCommands: CommandDef[] = [
     name: "equity rounds-accept",
     description: "Accept terms for an equity round",
     route: { method: "POST", path: "/v1/equity/rounds/{pos}/accept" },
+    entity: true,
     args: [{ name: "round-id", required: true, description: "Equity round ID" }],
     options: [
       { flags: "--accepted-by-contact-id <accepted-by-contact-id>", description: "Contact ID of the accepting party" },
@@ -1328,6 +1381,7 @@ export const capTableCommands: CommandDef[] = [
     name: "equity rounds-apply-terms",
     description: "Apply term sheet to an equity round",
     route: { method: "POST", path: "/v1/equity/rounds/{pos}/apply-terms" },
+    entity: true,
     args: [{ name: "round-id", required: true, description: "Equity round ID" }],
     options: [
       { flags: "--anti-dilution-method <anti-dilution-method>", description: "Anti-dilution protection method", required: true, choices: ["none", "broad_based_weighted_average", "narrow_based_weighted_average", "full_ratchet"] },
@@ -1341,6 +1395,7 @@ export const capTableCommands: CommandDef[] = [
     name: "equity rounds-board-approve",
     description: "Record board approval for an equity round",
     route: { method: "POST", path: "/v1/equity/rounds/{pos}/board-approve" },
+    entity: true,
     args: [{ name: "round-id", required: true, description: "Equity round ID" }],
     options: [
       { flags: "--meeting-id <meeting-id>", description: "Meeting ID", required: true },
@@ -1353,6 +1408,7 @@ export const capTableCommands: CommandDef[] = [
     name: "equity rounds-issue",
     description: "Issue shares for an equity round",
     route: { method: "POST", path: "/v1/equity/rounds/{pos}/issue" },
+    entity: true,
     args: [{ name: "round-id", required: true, description: "Equity round ID" }],
     options: [
       { flags: "--meeting-id <meeting-id>", description: "Meeting ID" },
@@ -1365,6 +1421,7 @@ export const capTableCommands: CommandDef[] = [
     name: "equity rounds-securities",
     description: "Add securities to an equity round",
     route: { method: "POST", path: "/v1/equity/rounds/{pos}/securities" },
+    entity: true,
     args: [{ name: "round-id", required: true, description: "Equity round ID" }],
     options: [
       { flags: "--email <email>", description: "Email" },

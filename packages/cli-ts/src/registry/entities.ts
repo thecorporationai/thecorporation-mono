@@ -28,6 +28,7 @@ async function entitiesHandler(ctx: CommandContext): Promise<void> {
 async function entitiesShowHandler(ctx: CommandContext): Promise<void> {
   const entityRef = ctx.positional[0];
   const jsonOutput = !!ctx.opts.json;
+  const quiet = !!ctx.opts.quiet;
   try {
     const resolvedEntityId = await ctx.resolver.resolveEntity(entityRef);
     const entities = await ctx.client.listEntities();
@@ -37,6 +38,10 @@ async function entitiesShowHandler(ctx: CommandContext): Promise<void> {
       process.exit(1);
     }
     await ctx.resolver.stabilizeRecord("entity", entity);
+    if (quiet) {
+      console.log(String(entity.entity_id ?? resolvedEntityId));
+      return;
+    }
     if (jsonOutput) {
       printJson(entity);
     } else {

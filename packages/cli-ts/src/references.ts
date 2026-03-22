@@ -102,6 +102,12 @@ export class ReferenceResolver {
   }
 
   async resolveEntity(ref?: string): Promise<string> {
+    if (ref !== undefined && ref !== null && !ref.trim()) {
+      // An explicit but empty/whitespace-only ref is likely a bug in a script
+      throw new Error(
+        "Entity reference is empty or whitespace. If you want the active entity, omit --entity-id entirely.",
+      );
+    }
     if (!ref || !ref.trim()) {
       const activeEntityId = getActiveEntityId(this.cfg);
       if (!activeEntityId) {
@@ -258,6 +264,10 @@ export class ReferenceResolver {
   ): Promise<{ kind: ResourceKind; id: string; short_id: string; label: string; alias?: string; raw: ApiRecord }[]> {
     const records = await this.listRecords(kind, scope);
     return this.tracker.findMatches(kind, query, records);
+  }
+
+  getLastId(kind: ResourceKind, entityId?: string): string | undefined {
+    return getLastReference(this.cfg, kind, entityId);
   }
 
   remember(kind: ResourceKind, referenceId: string, entityId?: string): void {
@@ -445,20 +455,28 @@ export class ReferenceResolver {
       return records;
     }
 
-    const response = await this.client.syncReferences(
-      kind,
-      missing.map(({ described }) => ({
-        resource_id: described.id,
-        label: described.label,
-      })),
-      isEntityScopedKind(kind) ? entityId : undefined,
-    );
+    // Chunk into batches of 400 to stay under the API's 500-item limit
+    const SYNC_BATCH_SIZE = 400;
     const handleById = new Map<string, string>();
-    for (const reference of response.references) {
-      if (typeof reference.resource_id === "string" && typeof reference.handle === "string") {
-        handleById.set(reference.resource_id, reference.handle);
+    const scopeEntityId = isEntityScopedKind(kind) ? entityId : undefined;
+
+    for (let i = 0; i < missing.length; i += SYNC_BATCH_SIZE) {
+      const batch = missing.slice(i, i + SYNC_BATCH_SIZE);
+      const response = await this.client.syncReferences(
+        kind,
+        batch.map(({ described }) => ({
+          resource_id: described.id,
+          label: described.label,
+        })),
+        scopeEntityId,
+      );
+      for (const reference of response.references) {
+        if (typeof reference.resource_id === "string" && typeof reference.handle === "string") {
+          handleById.set(reference.resource_id, reference.handle);
+        }
       }
     }
+
     for (const { record, described } of missing) {
       const handle = handleById.get(described.id);
       if (handle) {

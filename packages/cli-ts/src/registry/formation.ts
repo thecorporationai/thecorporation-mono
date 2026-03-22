@@ -54,6 +54,15 @@ async function resolveEntityRefForFormCommand(
 
 async function formCreateHandler(ctx: CommandContext): Promise<void> {
   const opts = ctx.opts;
+  // Reject options that belong to form finalize, not form create
+  if (opts.shares || opts.authorizedShares) {
+    ctx.writer.error(
+      "--shares / --authorized-shares is not accepted on form create.\n" +
+      "  Set authorized shares during finalize:\n" +
+      "    corp form finalize @last:entity --authorized-shares 10000000",
+    );
+    process.exit(1);
+  }
   const resolvedType = opts.type as string | undefined;
   const resolvedName = opts.name as string | undefined;
   if (!resolvedType) {
@@ -88,7 +97,7 @@ async function formCreateHandler(ctx: CommandContext): Promise<void> {
     if (opts.sCorp !== undefined) payload.s_corp_election = opts.sCorp;
     if (opts.transferRestrictions !== undefined) payload.transfer_restrictions = opts.transferRestrictions;
     if (opts.rofr !== undefined) payload.right_of_first_refusal = opts.rofr;
-    const companyAddress = parseCsvAddress(opts.companyAddress as string | undefined);
+    const companyAddress = parseCsvAddress((opts.companyAddress ?? opts.address) as string | undefined);
     if (companyAddress) payload.company_address = companyAddress;
 
     if (ctx.dryRun) {
@@ -134,11 +143,21 @@ async function formAddFounderHandler(ctx: CommandContext): Promise<void> {
   const opts = ctx.opts;
   try {
     const resolvedEntityId = await resolveEntityRefForFormCommand(ctx.resolver, entityRef, ctx.dryRun);
+    const rawPct = (opts.ownershipPct ?? opts.pct) as string | undefined;
+    if (!rawPct) {
+      ctx.writer.error("required option '--ownership-pct <percent>' not specified");
+      process.exit(1);
+    }
+    const pctValue = parseFloat(rawPct);
+    if (isNaN(pctValue) || pctValue <= 0 || pctValue > 100) {
+      ctx.writer.error(`--ownership-pct must be between 0 and 100 (e.g. 60 for 60%), got: ${rawPct}`);
+      process.exit(1);
+    }
     const payload: ApiRecord = {
       name: opts.name as string,
       email: opts.email as string,
       role: opts.role as string,
-      ownership_pct: parseFloat(opts.pct as string),
+      ownership_pct: pctValue,
     };
     if (opts.officerTitle) payload.officer_title = (opts.officerTitle as string).toLowerCase();
     if (opts.incorporator) payload.is_incorporator = true;
@@ -326,7 +345,7 @@ export const formationCommands: CommandDef[] = [
       { flags: "--name <name>", description: "Legal name" },
       { flags: "--legal-name <name>", description: "Legal name (alias for --name)" },
       { flags: "--jurisdiction <jurisdiction>", description: "Jurisdiction (e.g. US-DE, US-WY)" },
-      { flags: "--member <member>", description: "Founder as 'name,email,role[,pct[,address[,officer_title[,is_incorporator]]]]' (repeatable)", type: "array", default: [] },
+      { flags: "--member <member>", description: "Founder as 'name,email,role[,pct[,street|city|state|zip[,officer_title[,is_incorporator]]]]' (repeatable)", type: "array", default: [] },
       { flags: "--member-json <json>", description: "Founder JSON object (repeatable)", type: "array", default: [] },
       { flags: "--members-file <path>", description: "Path to a JSON array of founders or {\"members\": [...]}" },
       { flags: "--address <address>", description: "Company address as 'street,city,state,zip'" },
@@ -340,9 +359,10 @@ export const formationCommands: CommandDef[] = [
     successTemplate: "Entity formed: {legal_name}",
     examples: [
       'corp form --type llc --name "My LLC" --member "Alice,alice@co.com,member,100"',
+      'corp form --type c_corp --name "Acme Inc" --member "Bob,bob@co.com,director,100,123 Main|City|DE|19801,ceo,true"',
       "corp form --type c_corp --name \"Acme Inc\" --jurisdiction US-DE --member-json '{\"name\":\"Bob\",\"email\":\"bob@acme.com\",\"role\":\"director\",\"pct\":100}'",
       'corp form create --type llc --name "My LLC"',
-      'corp form add-founder @last:entity --name "Alice" --email "alice@co.com" --role member --pct 100',
+      'corp form add-founder @last:entity --name "Alice" --email "alice@co.com" --role member --ownership-pct 100',
       "corp form finalize @last:entity",
       "corp form activate @last:entity",
     ],
@@ -363,6 +383,7 @@ export const formationCommands: CommandDef[] = [
       { flags: "--transfer-restrictions", description: "Enable transfer restrictions" },
       { flags: "--rofr", description: "Enable right of first refusal" },
       { flags: "--company-address <address>", description: "Company address as 'street,city,state,zip'" },
+      { flags: "--address <address>", description: "Company address (alias for --company-address)" },
     ],
     handler: formCreateHandler,
     produces: { kind: "entity", trackEntity: true },
@@ -378,7 +399,8 @@ export const formationCommands: CommandDef[] = [
       { flags: "--name <name>", description: "Founder name", required: true },
       { flags: "--email <email>", description: "Founder email", required: true },
       { flags: "--role <role>", description: "Role: director|officer|manager|member|chair", required: true },
-      { flags: "--pct <pct>", description: "Ownership percentage", required: true },
+      { flags: "--ownership-pct <percent>", description: "Ownership percentage (e.g. 60 for 60%)", required: true },
+      { flags: "--pct <percent>", description: "Alias for --ownership-pct" },
       { flags: "--officer-title <title>", description: "Officer title (corporations only)", choices: ["ceo", "cfo", "cto", "coo", "secretary", "treasurer", "president", "vp", "other"] },
       { flags: "--incorporator", description: "Mark as sole incorporator (corporations only)" },
       { flags: "--address <address>", description: "Founder address as 'street,city,state,zip'" },

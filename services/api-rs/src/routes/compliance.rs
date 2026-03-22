@@ -46,6 +46,9 @@ pub struct FileTaxDocumentRequest {
     pub entity_id: EntityId,
     pub document_type: String,
     pub tax_year: i32,
+    /// Optional contact for per-person filings (e.g. 83(b) elections).
+    #[serde(default)]
+    pub filer_contact_id: Option<crate::domain::ids::ContactId>,
 }
 
 #[derive(Deserialize, utoipa::ToSchema)]
@@ -523,10 +526,15 @@ async fn file_tax_document(
                 })?;
                 if canonical_tax_document_type(existing.document_type()) == document_type
                     && existing.tax_year() == req.tax_year
+                    && existing.filer_contact_id() == req.filer_contact_id
                 {
+                    let scope = match req.filer_contact_id {
+                        Some(cid) => format!(" for filer {cid}"),
+                        None => String::new(),
+                    };
                     return Err(AppError::Conflict(format!(
-                        "tax filing already exists for {} tax year {}",
-                        document_type, req.tax_year
+                        "tax filing already exists for {} tax year {}{}",
+                        document_type, req.tax_year, scope
                     )));
                 }
             }
@@ -539,7 +547,7 @@ async fn file_tax_document(
                 document_type,
                 req.tax_year,
                 document_id,
-            );
+            ).with_filer_contact(req.filer_contact_id);
 
             let path = format!("tax/filings/{}.json", filing_id);
             store

@@ -22,7 +22,7 @@ export async function contactsListCommand(opts: { entityId?: string; json?: bool
   }
 }
 
-export async function contactsShowCommand(contactId: string, opts: { entityId?: string; json?: boolean }): Promise<void> {
+export async function contactsShowCommand(contactId: string, opts: { entityId?: string; json?: boolean; quiet?: boolean }): Promise<void> {
   const cfg = requireConfig("api_url", "api_key", "workspace_id");
   const client = new CorpAPIClient(cfg.api_url, cfg.api_key, cfg.workspace_id);
   const resolver = new ReferenceResolver(client, cfg);
@@ -31,6 +31,10 @@ export async function contactsShowCommand(contactId: string, opts: { entityId?: 
     const resolvedContactId = await resolver.resolveContact(eid, contactId);
     const profile = await client.getContactProfile(resolvedContactId, eid);
     const contact = await resolver.stabilizeRecord("contact", (profile.contact ?? profile) as ApiRecord, eid);
+    if (opts.quiet) {
+      console.log(String(contact.contact_id ?? resolvedContactId));
+      return;
+    }
     if (opts.json) {
       printJson(profile);
     } else {
@@ -40,6 +44,10 @@ export async function contactsShowCommand(contactId: string, opts: { entityId?: 
       console.log(`  ${chalk.bold("Name:")} ${contact.name ?? "N/A"}`);
       console.log(`  ${chalk.bold("Email:")} ${contact.email ?? "N/A"}`);
       console.log(`  ${chalk.bold("Category:")} ${contact.category ?? "N/A"}`);
+      if (contact.contact_type) console.log(`  ${chalk.bold("Type:")} ${contact.contact_type}`);
+      if (contact.status) console.log(`  ${chalk.bold("Status:")} ${contact.status}`);
+      if (contact.cap_table_access) console.log(`  ${chalk.bold("Cap Table Access:")} ${contact.cap_table_access}`);
+      if (contact.created_at) console.log(`  ${chalk.bold("Created:")} ${contact.created_at}`);
       printReferenceSummary("contact", contact, { showReuseHint: true });
       if (contact.phone) console.log(`  ${chalk.bold("Phone:")} ${contact.phone}`);
       if (contact.notes) console.log(`  ${chalk.bold("Notes:")} ${contact.notes}`);

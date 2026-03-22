@@ -316,8 +316,31 @@ export const workspaceCommands: CommandDef[] = [
           printNextSteps(data);
         }
       } catch (err) {
-        ctx.writer.error(`Failed to fetch next steps: ${err}`);
-        process.exit(1);
+        const msg = String(err);
+        if (msg.includes("Not found") || msg.includes("404")) {
+          // Entity store may not exist yet (e.g. formation not finalized)
+          if (localItems.length > 0) {
+            const top = localItems[0];
+            const backlog = localItems.slice(1);
+            const summary = { critical: 0, high: 0, medium: 0, low: 0 };
+            for (const item of [top, ...backlog]) {
+              const key = item.urgency as keyof typeof summary;
+              if (key in summary) summary[key]++;
+            }
+            const response = { top, backlog, summary };
+            if (opts.json) { ctx.writer.json(response); } else { printNextSteps(response); }
+          } else {
+            ctx.writer.error(
+              "Entity not found. The entity may not have been finalized yet.\n" +
+              "  Try: corp form finalize <entity-id>\n" +
+              "  Or:  corp next --workspace",
+            );
+            process.exit(1);
+          }
+        } else {
+          ctx.writer.error(`Failed to fetch next steps: ${err}`);
+          process.exit(1);
+        }
       }
     },
   },

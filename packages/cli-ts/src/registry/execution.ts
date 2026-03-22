@@ -88,6 +88,7 @@ export const executionCommands: CommandDef[] = [
     name: "execution intents",
     description: "Create an execution intent (action requiring authorization)",
     route: { method: "POST", path: "/v1/execution/intents" },
+    entity: true,
     options: [
       { flags: "--authority-tier <authority-tier>", description: "Authority tier required (tier_1, tier_2, tier_3)", choices: ["tier_1", "tier_2", "tier_3"] },
       { flags: "--description <description>", description: "Description text", required: true },
@@ -192,6 +193,7 @@ export const executionCommands: CommandDef[] = [
     name: "obligations assign",
     description: "Assign an obligation to a party",
     route: { method: "POST", path: "/v1/obligations/{pos}/assign" },
+    entity: true,
     args: [{ name: "obligation-id", required: true, description: "Obligation ID" }],
     options: [
       { flags: "--assignee-id <assignee-id>", description: "ID of the party to assign to", required: true },
@@ -212,6 +214,7 @@ export const executionCommands: CommandDef[] = [
     name: "obligations create-document-request",
     description: "List or create document requests for an obligation",
     route: { method: "POST", path: "/v1/obligations/{pos}/document-requests" },
+    entity: true,
     args: [{ name: "obligation-id", required: true, description: "Obligation ID" }],
     options: [
       { flags: "--description <description>", description: "Description text", required: true },

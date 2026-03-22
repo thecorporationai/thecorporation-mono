@@ -368,6 +368,7 @@ export const agentCommands: CommandDef[] = [
     description: "View execution logs for an agent run",
     route: { method: "GET", path: "/v1/agents/{pos}/executions/{pos2}/logs" },
     args: [{ name: "agent-id", required: true, description: "Agent ID" }, { name: "execution-id", required: true, description: "Agent execution ID" }],
+    display: { title: "Execution Logs", cols: ["@timestamp>Time", "level>Level", "message>Message"] },
     examples: ["corp agents executions-logs"],
   },
 
@@ -378,6 +379,7 @@ export const agentCommands: CommandDef[] = [
     description: "View a specific agent message",
     route: { method: "GET", path: "/v1/agents/{pos}/messages/{pos2}" },
     args: [{ name: "agent-id", required: true, description: "Agent ID" }, { name: "message-id", required: true, description: "Message Id" }],
+    display: { title: "Agent Message" },
     examples: ["corp agents messages"],
   },
 
