@@ -744,23 +744,42 @@ export const governanceCommands: CommandDef[] = [
       const meetingId = String(consentResult.data?.meeting_id);
       ctx.resolver.remember("meeting", meetingId, eid);
 
-      // Step 2: Get agenda items and compute resolution
+      // Step 2: Get agenda items
       const agendaItems = await ctx.client.listAgendaItems(meetingId, eid);
       if (agendaItems.length === 0) {
         throw new Error("Written consent created but no agenda items found.");
       }
       const itemId = String((agendaItems[0] as ApiRecord).agenda_item_id);
+
+      // Step 3: Auto-vote — all seated members vote "for"
+      const seats = await ctx.client.getGovernanceSeats(resolvedBodyId, eid);
+      const filledSeats = seats.filter((s: ApiRecord) => s.status === "filled" || s.status === "active");
+      for (const seat of filledSeats) {
+        const seatId = String(seat.seat_id);
+        try {
+          await ctx.client.castVote(eid, meetingId, itemId, {
+            seat_id: seatId,
+            vote: "for",
+          });
+        } catch {
+          // Seat may have already voted or be ineligible — continue
+        }
+      }
+
+      // Step 4: Compute resolution (tallies votes and determines outcome)
       const resolution = await ctx.client.computeResolution(meetingId, itemId, eid, {
         resolution_text: resolutionText,
       });
       const resolutionId = String(resolution.resolution_id);
       ctx.resolver.remember("resolution", resolutionId, eid);
 
+      const passed = resolution.passed === true;
+
       if (ctx.opts.json) {
-        ctx.writer.json({ meeting_id: meetingId, resolution_id: resolutionId, status: "approved" });
+        ctx.writer.json({ meeting_id: meetingId, resolution_id: resolutionId, passed, votes: filledSeats.length });
         return;
       }
-      ctx.writer.success("Board approval completed");
+      ctx.writer.success(passed ? "Board approval completed" : "Board vote completed (resolution did not pass)");
       console.log(`  Meeting:    ${meetingId}`);
       console.log(`  Resolution: ${resolutionId}`);
       console.log(chalk.dim("\n  Use with:"));

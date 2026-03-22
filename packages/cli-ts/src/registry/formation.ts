@@ -340,7 +340,7 @@ export const formationCommands: CommandDef[] = [
     passThroughOptions: true,
     dryRun: true,
     options: [
-      { flags: "--type <type>", description: "Entity type (llc, c_corp)" },
+      { flags: "--type <type>", description: "Entity type", choices: ["llc", "c_corp", "s_corp"] },
       { flags: "--entity-type <type>", description: "Entity type (alias for --type)" },
       { flags: "--name <name>", description: "Legal name" },
       { flags: "--legal-name <name>", description: "Legal name (alias for --name)" },
@@ -348,7 +348,7 @@ export const formationCommands: CommandDef[] = [
       { flags: "--member <member>", description: "Founder as 'name,email,role[,pct[,street|city|state|zip[,officer_title[,is_incorporator]]]]' (repeatable)", type: "array", default: [] },
       { flags: "--member-json <json>", description: "Founder JSON object (repeatable)", type: "array", default: [] },
       { flags: "--members-file <path>", description: "Path to a JSON array of founders or {\"members\": [...]}" },
-      { flags: "--address <address>", description: "Company address as 'street,city,state,zip'" },
+      { flags: "--address <address>", description: "Company address as 'street,city,state,zip' (required for c_corp)" },
       { flags: "--fiscal-year-end <date>", description: "Fiscal year end (MM-DD)", default: "12-31" },
       { flags: "--s-corp", description: "Elect S-Corp status" },
       { flags: "--transfer-restrictions", description: "Enable transfer restrictions" },
@@ -372,7 +372,7 @@ export const formationCommands: CommandDef[] = [
     description: "Create a pending entity (staged flow step 1)",
     dryRun: true,
     options: [
-      { flags: "--type <type>", description: "Entity type (llc, c_corp)" },
+      { flags: "--type <type>", description: "Entity type", choices: ["llc", "c_corp", "s_corp"] },
       { flags: "--name <name>", description: "Legal name" },
       { flags: "--jurisdiction <jurisdiction>", description: "Jurisdiction (e.g. US-DE, US-WY)" },
       { flags: "--registered-agent-name <name>", description: "Registered agent legal name" },
@@ -390,7 +390,10 @@ export const formationCommands: CommandDef[] = [
     handler: formCreateHandler,
     produces: { kind: "entity", trackEntity: true },
     successTemplate: "Pending entity created: {legal_name}",
-    examples: ["corp form create"],
+    examples: [
+      'corp form create --type c_corp --name "Acme Inc" --jurisdiction US-DE --address "123 Main,City,ST,12345"',
+      'corp form create --type llc --name "My LLC" --jurisdiction US-WY',
+    ],
   },
   {
     name: "form add-founder",
@@ -400,7 +403,7 @@ export const formationCommands: CommandDef[] = [
     options: [
       { flags: "--name <name>", description: "Founder name", required: true },
       { flags: "--email <email>", description: "Founder email", required: true },
-      { flags: "--role <role>", description: "Role: director|officer|manager|member|chair", required: true },
+      { flags: "--role <role>", description: "Founder role", required: true, choices: ["director", "officer", "manager", "member", "chair"] },
       { flags: "--ownership-pct <percent>", description: "Ownership percentage (e.g. 60 for 60%)", required: true },
       { flags: "--pct <percent>", description: "Alias for --ownership-pct" },
       { flags: "--officer-title <title>", description: "Officer title (corporations only)", choices: ["ceo", "cfo", "cto", "coo", "secretary", "treasurer", "president", "vp", "other"] },
@@ -408,7 +411,10 @@ export const formationCommands: CommandDef[] = [
       { flags: "--address <address>", description: "Founder address as 'street,city,state,zip'" },
     ],
     handler: formAddFounderHandler,
-    examples: ["corp form add-founder"],
+    examples: [
+      'corp form add-founder @last --name "Alice" --email "alice@co.com" --role director --ownership-pct 60 --officer-title ceo --incorporator',
+      'corp form add-founder @last --name "Bob" --email "bob@co.com" --role member --ownership-pct 40 --address "123 Main|City|ST|12345"',
+    ],
   },
   {
     name: "form finalize",

@@ -57,7 +57,16 @@ export const capTableCommands: CommandDef[] = [
     },
     handler: async (ctx) => {
       const eid = await ctx.resolver.resolveEntity(ctx.opts.entityId as string | undefined);
-      const data = await ctx.client.getCapTable(eid);
+      let data: ApiRecord;
+      try {
+        data = await ctx.client.getCapTable(eid);
+      } catch (err) {
+        const msg = String(err);
+        if (msg.includes("no linked legal entity") || msg.includes("Not found")) {
+          throw new Error("No cap table found. Finalize formation first: corp form finalize " + eid);
+        }
+        throw err;
+      }
       const instruments = Array.isArray(data.instruments) ? data.instruments as ApiRecord[] : [];
       const shareClasses = Array.isArray(data.share_classes) ? data.share_classes as ApiRecord[] : [];
       await ctx.resolver.stabilizeRecords("instrument", instruments, eid);
@@ -470,7 +479,10 @@ export const capTableCommands: CommandDef[] = [
     },
     produces: { kind: "round" },
     successTemplate: "Equity issued: {round_name}",
-    examples: ["corp cap-table issue-equity --grant-type 'type' --shares 'n' --recipient 'name'", "corp cap-table issue-equity --json"],
+    examples: [
+      'corp cap-table issue-equity --grant-type common --shares 50000 --recipient "Alice Smith"',
+      'corp cap-table issue-equity --grant-type iso --shares 10000 --recipient "Bob" --email "bob@co.com"',
+    ],
   },
 
   // --- cap-table issue-safe ---
@@ -482,10 +494,10 @@ export const capTableCommands: CommandDef[] = [
     dryRun: true,
     options: [
       { flags: "--investor <name>", description: "Investor name", required: true },
-      { flags: "--amount-cents <n>", description: "Principal amount in cents (e.g. 5000000000 = $50M)", required: true, type: "int" },
+      { flags: "--amount-cents <n>", description: "Principal amount in cents (e.g. 50000000 = $500,000)", type: "int" },
       { flags: "--amount <n>", description: "Amount in dollars (alternative to --amount-cents)", type: "int" },
       { flags: "--safe-type <type>", description: "SAFE type", default: "post_money", choices: ["post_money", "pre_money", "mfn"] },
-      { flags: "--valuation-cap-cents <n>", description: "Valuation cap in cents (e.g. 1000000000 = $10M)", required: true, type: "int" },
+      { flags: "--valuation-cap-cents <n>", description: "Valuation cap in cents (e.g. 100000000 = $1M)", type: "int" },
       { flags: "--valuation-cap <n>", description: "Valuation cap in dollars (alternative to --valuation-cap-cents)", type: "int" },
       { flags: "--meeting-id <ref>", description: "Board meeting reference required when issuing under a board-governed entity" },
       { flags: "--resolution-id <ref>", description: "Board resolution reference required when issuing under a board-governed entity" },
@@ -503,7 +515,15 @@ export const capTableCommands: CommandDef[] = [
         throw new Error("required option '--amount-cents <n>' or '--amount <n>' not specified");
       }
       const safeType = (ctx.opts.safeType ?? "post_money") as string;
-      const valuationCapCents = (ctx.opts.valuationCapCents ?? ctx.opts.valuationCap) as number;
+      if (ctx.opts.valuationCapCents != null && ctx.opts.valuationCap != null) {
+        throw new Error("--valuation-cap-cents and --valuation-cap are mutually exclusive. Use one or the other.");
+      }
+      const valuationCapCents = ctx.opts.valuationCapCents != null
+        ? (ctx.opts.valuationCapCents as number)
+        : ctx.opts.valuationCap != null ? (ctx.opts.valuationCap as number) * 100 : undefined;
+      if (valuationCapCents == null) {
+        throw new Error("required option '--valuation-cap-cents <n>' or '--valuation-cap <n>' not specified");
+      }
       const email = ctx.opts.email as string | undefined;
       const optMeetingId = ctx.opts.meetingId as string | undefined;
       const optResolutionId = ctx.opts.resolutionId as string | undefined;

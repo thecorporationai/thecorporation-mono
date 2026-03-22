@@ -536,6 +536,29 @@ export async function formCommand(opts: FormOptions): Promise<void> {
     // Phase 2: People
     const founders = await phasePeople(opts, entityType, scripted);
 
+    // C-Corp upfront validation — check all requirements at once
+    if (isCorp(entityType) && scripted) {
+      const missing: string[] = [];
+      const hasAddress = founders.some((f) => f.address);
+      const hasOfficer = founders.some((f) => f.officer_title);
+      const hasIncorporator = founders.some((f) => f.is_incorporator);
+      if (!hasAddress) missing.push("At least one member with an address (for incorporator filing)");
+      if (!hasOfficer) missing.push("At least one member with --officer-title (for initial board consent)");
+      if (!hasIncorporator && founders.length === 1) {
+        // Single founder auto-marked as incorporator, no error needed
+      } else if (!hasIncorporator && founders.length > 1) {
+        missing.push("At least one member marked as --incorporator");
+      }
+      if (missing.length > 0) {
+        printError(
+          "C-Corp formation requires:\n" +
+          missing.map((m) => `  - ${m}`).join("\n") + "\n" +
+          '  Example: --member "Name,email,director,100,street|city|state|zip,ceo,true"',
+        );
+        process.exit(1);
+      }
+    }
+
     // Phase 3: Stock & Finalize
     const { transferRestrictions, rofr } = await phaseStock(opts, entityType, founders, scripted);
 
