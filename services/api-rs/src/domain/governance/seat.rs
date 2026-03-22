@@ -58,7 +58,7 @@ impl GovernanceSeat {
     /// Resign from this seat. Only valid if currently `Active`.
     pub fn resign(&mut self) -> Result<(), GovernanceError> {
         if self.status != SeatStatus::Active {
-            return Err(GovernanceError::SeatAlreadyFilled(self.seat_id));
+            return Err(GovernanceError::SeatNotActive(self.seat_id));
         }
         self.status = SeatStatus::Resigned;
         Ok(())

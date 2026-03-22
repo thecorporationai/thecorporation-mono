@@ -395,6 +395,7 @@ fn insert_commits_into_log(
             scopes: Vec::new(),
             signed_by: None,
             tree_sha1,
+            branch: None, // Branch unknown for git-pushed commits.
             changes: Vec::new(), // We don't compute per-file diffs for pushed commits.
         };
 

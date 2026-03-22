@@ -54,6 +54,10 @@ pub enum GovernanceError {
     #[error("governance seat {0} is already filled")]
     SeatAlreadyFilled(GovernanceSeatId),
 
+    /// The seat is not in active status (e.g., already resigned or expired).
+    #[error("governance seat {0} is not active")]
+    SeatNotActive(GovernanceSeatId),
+
     /// Observers do not have voting rights.
     #[error("observers cannot vote")]
     CannotVoteAsObserver,

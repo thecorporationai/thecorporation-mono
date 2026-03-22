@@ -283,6 +283,9 @@ pub struct SafeConversionResult {
 }
 
 /// Calculate the conversion price and shares for a SAFE note.
+///
+/// Returns `Err` if `post_money_shares_outstanding` or `pre_money_shares_outstanding` is zero
+/// (depending on SAFE type), since that would cause a division-by-zero.
 #[allow(clippy::too_many_arguments)]
 pub fn calculate_safe_conversion(
     safe_type: SafeType,
@@ -292,7 +295,17 @@ pub fn calculate_safe_conversion(
     financing_price_per_share_cents: Cents,
     pre_money_shares_outstanding: ShareCount,
     post_money_shares_outstanding: ShareCount,
-) -> SafeConversionResult {
+) -> Result<SafeConversionResult, EquityError> {
+    if post_money_shares_outstanding.is_zero() {
+        return Err(EquityError::Validation(
+            "post_money_shares_outstanding must not be zero".into(),
+        ));
+    }
+    if pre_money_shares_outstanding.is_zero() {
+        return Err(EquityError::Validation(
+            "pre_money_shares_outstanding must not be zero".into(),
+        ));
+    }
     let financing_price = financing_price_per_share_cents.raw();
 
     match safe_type {
@@ -314,11 +327,11 @@ pub fn calculate_safe_conversion(
 
             let price = price.max(1);
             let shares = principal_amount_cents.raw() / price;
-            SafeConversionResult {
+            Ok(SafeConversionResult {
                 conversion_price_cents: Cents::new(price),
                 conversion_shares: ShareCount::new(shares),
                 price_basis: basis,
-            }
+            })
         }
         SafeType::PreMoney => {
             // Pre-money: price = valuation_cap / pre_money_shares
@@ -337,11 +350,11 @@ pub fn calculate_safe_conversion(
 
             let price = price.max(1);
             let shares = principal_amount_cents.raw() / price;
-            SafeConversionResult {
+            Ok(SafeConversionResult {
                 conversion_price_cents: Cents::new(price),
                 conversion_shares: ShareCount::new(shares),
                 price_basis: basis,
-            }
+            })
         }
         SafeType::Mfn => {
             // MFN: convert at the most favorable (lowest) price for investor
@@ -367,11 +380,11 @@ pub fn calculate_safe_conversion(
 
             let price = price.max(1);
             let shares = principal_amount_cents.raw() / price;
-            SafeConversionResult {
+            Ok(SafeConversionResult {
                 conversion_price_cents: Cents::new(price),
                 conversion_shares: ShareCount::new(shares),
                 price_basis: basis.to_string(),
-            }
+            })
         }
     }
 }
@@ -469,7 +482,8 @@ mod tests {
             Cents::new(2_00), // financing price $2/share
             ShareCount::new(8_000_000),
             ShareCount::new(10_000_000),
-        );
+        )
+        .unwrap();
         assert_eq!(result.conversion_price_cents.raw(), 1_00);
         assert_eq!(result.conversion_shares.raw(), 100_000);
         assert_eq!(result.price_basis, "valuation_cap");
@@ -486,7 +500,8 @@ mod tests {
             Cents::new(2_00),
             ShareCount::new(8_000_000),
             ShareCount::new(10_000_000),
-        );
+        )
+        .unwrap();
         assert_eq!(result.conversion_price_cents.raw(), 1_00);
         assert_eq!(result.conversion_shares.raw(), 100_000);
         assert_eq!(result.price_basis, "valuation_cap");
@@ -503,7 +518,8 @@ mod tests {
             Cents::new(2_00),
             ShareCount::new(8_000_000),
             ShareCount::new(10_000_000),
-        );
+        )
+        .unwrap();
         // Cap price ($1.00) < discount price ($1.60) < financing ($2.00)
         assert_eq!(result.conversion_price_cents.raw(), 1_00);
         assert_eq!(result.price_basis, "valuation_cap");
@@ -520,8 +536,34 @@ mod tests {
             Cents::new(2_50),                // financing $2.50
             ShareCount::new(8_000_000),
             ShareCount::new(10_000_000),
-        );
+        )
+        .unwrap();
         // Cap price = $2.00, discount price = $2.00 — cap wins on tie (not strictly less)
         assert_eq!(result.conversion_price_cents.raw(), 2_00);
+    }
+
+    #[test]
+    fn conversion_rejects_zero_shares() {
+        let result = calculate_safe_conversion(
+            SafeType::PostMoney,
+            Cents::new(100_000_00),
+            Some(Cents::new(10_000_000_00)),
+            None,
+            Cents::new(2_00),
+            ShareCount::new(0),
+            ShareCount::new(10_000_000),
+        );
+        assert!(result.is_err());
+
+        let result = calculate_safe_conversion(
+            SafeType::PostMoney,
+            Cents::new(100_000_00),
+            Some(Cents::new(10_000_000_00)),
+            None,
+            Cents::new(2_00),
+            ShareCount::new(8_000_000),
+            ShareCount::new(0),
+        );
+        assert!(result.is_err());
     }
 }

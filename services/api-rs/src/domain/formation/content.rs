@@ -137,10 +137,10 @@ fn sig_req_to_json(req: &SignatureRequirement) -> Value {
 
 fn statutory_reference(jurisdiction: &str, entity_type: &str) -> String {
     match (jurisdiction, entity_type) {
-        ("Delaware", "limited_liability_company") => {
+        ("US-DE", "limited_liability_company") => {
             "Delaware Limited Liability Company Act, 6 Del. C. § 18-101 et seq.".to_string()
         }
-        ("Delaware", "corporation") => {
+        ("US-DE", "corporation") => {
             "Delaware General Corporation Law, 8 Del. C. § 101 et seq.".to_string()
         }
         (state, "limited_liability_company") => {
@@ -155,7 +155,7 @@ fn statutory_reference(jurisdiction: &str, entity_type: &str) -> String {
 
 fn filing_office(jurisdiction: &str) -> String {
     match jurisdiction {
-        "Delaware" => "Delaware Division of Corporations".to_string(),
+        "US-DE" => "Delaware Division of Corporations".to_string(),
         state => format!("{state} Secretary of State"),
     }
 }
@@ -635,14 +635,14 @@ mod tests {
     fn articles_of_organization_structure() {
         let content = generate_articles_of_organization(
             "Test LLC",
-            "Delaware",
+            "US-DE",
             "Registered Agents Inc.",
             "123 Main St, Dover, DE 19901",
             &alice(),
         );
 
         assert_eq!(content["document_type"], "articles_of_organization");
-        assert_eq!(content["jurisdiction"], "Delaware");
+        assert_eq!(content["jurisdiction"], "US-DE");
         assert_eq!(content["filing_fee_cents"], 9000);
         assert_eq!(content["fields"]["legal_name"], "Test LLC");
         assert_eq!(
@@ -667,7 +667,7 @@ mod tests {
     fn articles_of_incorporation_structure() {
         let content = generate_articles_of_incorporation(
             "Test Corp",
-            "Delaware",
+            "US-DE",
             "Registered Agents Inc.",
             "123 Main St, Dover, DE 19901",
             &alice(),
@@ -693,7 +693,7 @@ mod tests {
     #[test]
     fn operating_agreement_manager_managed() {
         let members = vec![alice(), bob()];
-        let content = generate_operating_agreement("Test LLC", "Delaware", &members);
+        let content = generate_operating_agreement("Test LLC", "US-DE", &members);
 
         assert_eq!(content["document_type"], "operating_agreement");
         assert_eq!(content["filing_fee_cents"], 0);
@@ -713,14 +713,14 @@ mod tests {
     fn operating_agreement_member_managed() {
         let mut m = alice();
         m.role = Some(MemberRole::Member);
-        let content = generate_operating_agreement("Test LLC", "Delaware", &[m, bob()]);
+        let content = generate_operating_agreement("Test LLC", "US-DE", &[m, bob()]);
         assert_eq!(content["fields"]["management_structure"], "member-managed");
     }
 
     #[test]
     fn operating_agreement_agent_not_required_signer() {
         let members = vec![alice(), agent_member()];
-        let content = generate_operating_agreement("Test LLC", "Delaware", &members);
+        let content = generate_operating_agreement("Test LLC", "US-DE", &members);
 
         let sigs = content["signature_requirements"].as_array().unwrap();
         // Agent should be excluded
@@ -731,7 +731,7 @@ mod tests {
     #[test]
     fn operating_agreement_entity_signs_as_officer() {
         let members = vec![alice(), entity_member()];
-        let content = generate_operating_agreement("Test LLC", "Delaware", &members);
+        let content = generate_operating_agreement("Test LLC", "US-DE", &members);
 
         let sigs = content["signature_requirements"].as_array().unwrap();
         assert_eq!(sigs.len(), 2);
@@ -751,7 +751,7 @@ mod tests {
         let mut bob = bob();
         bob.role = Some(MemberRole::Officer);
 
-        let content = generate_bylaws("Test Corp", "Delaware", &[alice, bob], 10_000_000, "0.0001");
+        let content = generate_bylaws("Test Corp", "US-DE", &[alice, bob], 10_000_000, "0.0001");
 
         assert_eq!(content["document_type"], "bylaws");
         assert_eq!(content["filing_fee_cents"], 0);
@@ -775,7 +775,7 @@ mod tests {
 
     #[test]
     fn ss4_application_structure() {
-        let content = generate_ss4_application("Test LLC", EntityType::Llc, "Delaware", &alice());
+        let content = generate_ss4_application("Test LLC", EntityType::Llc, "US-DE", &alice());
 
         assert_eq!(content["document_type"], "ss4_application");
         assert_eq!(content["filing_fee_cents"], 0);
@@ -795,7 +795,7 @@ mod tests {
     #[test]
     fn ss4_application_corp() {
         let content =
-            generate_ss4_application("Test Corp", EntityType::CCorp, "Delaware", &alice());
+            generate_ss4_application("Test Corp", EntityType::CCorp, "US-DE", &alice());
         assert_eq!(content["fields"]["entity_type_irs"], "Corporation");
     }
 
@@ -805,7 +805,7 @@ mod tests {
         let docs = generate_formation_documents(
             EntityType::Llc,
             "Test LLC",
-            "Delaware",
+            "US-DE",
             "RA Inc.",
             "123 Main St",
             &members,
@@ -829,7 +829,7 @@ mod tests {
         let docs = generate_formation_documents(
             EntityType::CCorp,
             "Test Corp",
-            "Delaware",
+            "US-DE",
             "RA Inc.",
             "123 Main St",
             &[alice],
@@ -849,7 +849,7 @@ mod tests {
         let docs = generate_formation_documents(
             EntityType::CCorp,
             "Test Corp",
-            "Delaware",
+            "US-DE",
             "RA Inc.",
             "123 Main St",
             &[alice],
@@ -866,7 +866,7 @@ mod tests {
     #[test]
     fn statutory_reference_delaware() {
         let content =
-            generate_articles_of_organization("Test LLC", "Delaware", "RA", "123 Main", &alice());
+            generate_articles_of_organization("Test LLC", "US-DE", "RA", "123 Main", &alice());
         let ref_str = content["fields"]["statutory_reference"].as_str().unwrap();
         assert!(ref_str.contains("Delaware Limited Liability Company Act"));
         assert!(ref_str.contains("6 Del. C."));
@@ -875,9 +875,9 @@ mod tests {
     #[test]
     fn statutory_reference_other_state() {
         let content =
-            generate_articles_of_organization("Test LLC", "Wyoming", "RA", "123 Main", &alice());
+            generate_articles_of_organization("Test LLC", "US-WY", "RA", "123 Main", &alice());
         let ref_str = content["fields"]["statutory_reference"].as_str().unwrap();
-        assert!(ref_str.contains("Wyoming"));
+        assert!(ref_str.contains("US-WY"));
     }
 
     #[test]

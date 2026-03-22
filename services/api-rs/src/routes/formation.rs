@@ -1001,7 +1001,7 @@ async fn sign_document(
     let workspace_id = auth.workspace_id();
     let entity_id = query.entity_id;
 
-    let doc = tokio::task::spawn_blocking({
+    let (doc, sig_id) = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         let valkey_client = state.valkey_client.clone();
         move || {
@@ -1030,7 +1030,7 @@ async fn sign_document(
                 ip_address: None,
             };
 
-            doc.sign(sig_request)?;
+            let sig_id = doc.sign(sig_request)?;
 
             store
                 .write_document("main", &doc, &format!("Sign document {document_id}"))
@@ -1040,23 +1040,24 @@ async fn sign_document(
                     ))
                 })?;
 
-            Ok::<_, crate::domain::formation::error::FormationError>(doc)
+            Ok::<_, crate::domain::formation::error::FormationError>((doc, sig_id))
         }
     })
     .await
     .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
 
-    // The last signature is the one we just added.
-    let last_sig = doc
+    // Find the signature by the ID returned from sign().
+    let new_sig = doc
         .signatures()
-        .last()
+        .iter()
+        .find(|s| s.signature_id() == sig_id)
         .ok_or_else(|| AppError::Internal("signature was added but not found".to_string()))?;
 
     Ok(Json(SignDocumentResponse {
-        signature_id: last_sig.signature_id(),
+        signature_id: new_sig.signature_id(),
         document_id: doc.document_id(),
         document_status: doc.status(),
-        signed_at: last_sig.signed_at().to_rfc3339(),
+        signed_at: new_sig.signed_at().to_rfc3339(),
     }))
 }
 
@@ -1485,28 +1486,32 @@ async fn confirm_filing(
                     ))
                 })?;
 
-            // Also update the filing record if it exists.
-            if let Ok(mut filing) = store.read_filing("main") {
-                filing.confirm(req.external_filing_id, req.receipt_reference);
-                store
-                    .commit(
-                        "main",
-                        "Update filing record",
-                        vec![
-                            crate::git::commit::FileWrite::json("formation/filing.json", &filing)
-                                .map_err(|e| {
-                                crate::domain::formation::error::FormationError::Validation(
-                                    e.to_string(),
-                                )
-                            })?,
-                        ],
-                    )
-                    .map_err(|e| {
-                        crate::domain::formation::error::FormationError::Validation(format!(
-                            "failed to update filing: {e}"
-                        ))
-                    })?;
-            }
+            // Update the filing record — the caller provided an external_filing_id
+            // that must be persisted, so a missing filing record is an error.
+            let mut filing = store.read_filing("main").map_err(|e| {
+                crate::domain::formation::error::FormationError::Validation(format!(
+                    "failed to read filing record: {e}"
+                ))
+            })?;
+            filing.confirm(req.external_filing_id, req.receipt_reference);
+            store
+                .commit(
+                    "main",
+                    "Update filing record",
+                    vec![
+                        crate::git::commit::FileWrite::json("formation/filing.json", &filing)
+                            .map_err(|e| {
+                            crate::domain::formation::error::FormationError::Validation(
+                                e.to_string(),
+                            )
+                        })?,
+                    ],
+                )
+                .map_err(|e| {
+                    crate::domain::formation::error::FormationError::Validation(format!(
+                        "failed to update filing: {e}"
+                    ))
+                })?;
 
             Ok::<_, crate::domain::formation::error::FormationError>(entity)
         }
@@ -1634,7 +1639,7 @@ async fn confirm_ein(
             entity.advance_status(FormationStatus::Active)?;
 
             store
-                .write_entity("main", &entity, &format!("Confirm EIN: {ein}"))
+                .write_entity("main", &entity, "Confirm EIN")
                 .map_err(|e| {
                     crate::domain::formation::error::FormationError::Validation(format!(
                         "commit error: {e}"
@@ -1948,7 +1953,7 @@ fn company_governing_law(store: &EntityStore<'_>) -> String {
         .read_entity("main")
         .ok()
         .map(|entity| entity.jurisdiction().to_string())
-        .unwrap_or_else(|| "Delaware".to_owned())
+        .unwrap_or_else(|| "US-DE".to_owned())
 }
 
 fn company_notice_address(store: &EntityStore<'_>) -> Option<String> {
@@ -2570,16 +2575,14 @@ async fn get_signing_link(
     let requested_entity_id = query.entity_id;
     let allowed_entity_ids = auth.entity_ids().map(|ids| ids.to_vec());
 
-    // Generate a signing token — only the hash is stored at rest
-    let raw_token = format!("sig_{}", uuid::Uuid::new_v4().simple());
-    let token_hash = hash_signing_token(&raw_token);
     let expires_at = (chrono::Utc::now() + chrono::Duration::hours(72)).to_rfc3339();
 
-    // Verify document exists and persist the signing token (hashed)
-    tokio::task::spawn_blocking({
+    // Verify document exists, resolve the entity, then generate and persist
+    // the signing token.  The token encodes workspace/entity IDs so
+    // resolve_signing_token can open the right store in O(1).
+    let raw_token = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         let valkey_client = state.valkey_client.clone();
-        let token_hash = token_hash.clone();
         let expires_at = expires_at.clone();
         move || {
             let resolved_entity_id = resolve_document_entity_id(
@@ -2590,6 +2593,13 @@ async fn get_signing_link(
                 document_id,
                 valkey_client.as_ref(),
             )?;
+
+            // Generate token with embedded IDs: sig_{workspace}_{entity}_{random}
+            let raw_token = format!(
+                "sig_{}_{}_{}", workspace_id, resolved_entity_id, uuid::Uuid::new_v4().simple()
+            );
+            let token_hash = hash_signing_token(&raw_token);
+
             let store = open_formation_store(&layout, workspace_id, resolved_entity_id, valkey_client.as_ref())?;
             let signing_token = SigningToken {
                 token_hash: token_hash.clone(),
@@ -2614,7 +2624,7 @@ async fn get_signing_link(
                     ))
                 })?;
 
-            Ok::<_, AppError>(())
+            Ok::<_, AppError>(raw_token)
         }
     })
     .await
@@ -3594,8 +3604,9 @@ async fn finalize_pending_formation(
 
 // ── Public signing endpoints (token-authenticated, no API key needed) ──
 
-/// Helper: look up a signing token by hashing the raw token and scanning
-/// workspaces/entities for the matching hash file.
+/// Helper: look up a signing token by parsing workspace/entity IDs from the
+/// token format `sig_{workspace_id}_{entity_id}_{random}` and opening exactly
+/// one store instead of scanning all workspaces and entities.
 fn resolve_signing_token(
     layout: &crate::store::RepoLayout,
     raw_token: &str,
@@ -3603,65 +3614,38 @@ fn resolve_signing_token(
 ) -> Result<SigningToken, AppError> {
     let token_hash = hash_signing_token(raw_token);
 
-    // Create one shared connection for the entire scan.
-    let shared_con = valkey_client
-        .map(|client| -> Result<_, AppError> {
-            let con = client
-                .get_connection()
-                .map_err(|e| AppError::Internal(e.to_string()))?;
-            // Wrap in CorpStore with dummy ws/ent — open_shared uses the raw connection.
-            let cs = corp_store::CorpStore::new(con, "", "");
-            Ok(std::rc::Rc::new(std::cell::RefCell::new(cs)))
-        })
-        .transpose()?;
+    // Parse workspace_id and entity_id from the token: sig_{ws}_{ent}_{random}
+    let parts: Vec<&str> = raw_token.splitn(4, '_').collect();
+    if parts.len() != 4 || parts[0] != "sig" {
+        return Err(AppError::BadRequest("malformed signing token".to_owned()));
+    }
+    let workspace_id: WorkspaceId = parts[1]
+        .parse()
+        .map_err(|_| AppError::BadRequest("malformed signing token: bad workspace_id".to_owned()))?;
+    let entity_id: EntityId = parts[2]
+        .parse()
+        .map_err(|_| AppError::BadRequest("malformed signing token: bad entity_id".to_owned()))?;
 
-    let workspace_ids: Vec<WorkspaceId> = match &shared_con {
-        Some(cs) => corp_store::store::list_workspaces(cs.borrow_mut().con())
-            .map_err(|e| AppError::Internal(e.to_string()))?
-            .into_iter()
-            .filter_map(|s| s.parse().ok())
-            .collect(),
-        None => layout.list_workspace_ids(),
-    };
+    let store = open_formation_store(layout, workspace_id, entity_id, valkey_client)
+        .map_err(|_| AppError::NotFound("invalid signing token".to_owned()))?;
 
-    for workspace_id in workspace_ids {
-        let entity_ids: Vec<EntityId> = match &shared_con {
-            Some(cs) => corp_store::store::list_entities(
-                cs.borrow_mut().con(),
-                &workspace_id.to_string(),
-            )
-            .map_err(|e| AppError::Internal(e.to_string()))?
-            .into_iter()
-            .filter_map(|s| s.parse().ok())
-            .collect(),
-            None => layout.list_entity_ids(workspace_id),
-        };
+    let path = format!("signing-tokens/{}.json", token_hash);
+    let st = store
+        .read_json::<SigningToken>("main", &path)
+        .map_err(|_| AppError::NotFound("invalid signing token".to_owned()))?;
 
-        for entity_id in entity_ids {
-            let store = match EntityStore::open_shared(
-                layout, workspace_id, entity_id, shared_con.clone(),
-            ) {
-                Ok(s) => s,
-                Err(_) => continue,
-            };
-            let path = format!("signing-tokens/{}.json", token_hash);
-            if let Ok(st) = store.read_json::<SigningToken>("main", &path) {
-                // Verify the stored hash matches (constant-time not critical here
-                // since the hash is already derived from the token)
-                if st.token_hash != token_hash {
-                    continue;
-                }
-                // Check expiration
-                if let Ok(expires) = chrono::DateTime::parse_from_rfc3339(&st.expires_at) {
-                    if expires < chrono::Utc::now() {
-                        return Err(AppError::BadRequest("signing token has expired".to_owned()));
-                    }
-                }
-                return Ok(st);
-            }
+    if st.token_hash != token_hash {
+        return Err(AppError::NotFound("invalid signing token".to_owned()));
+    }
+
+    // Check expiration
+    if let Ok(expires) = chrono::DateTime::parse_from_rfc3339(&st.expires_at) {
+        if expires < chrono::Utc::now() {
+            return Err(AppError::BadRequest("signing token has expired".to_owned()));
         }
     }
-    Err(AppError::NotFound("invalid signing token".to_owned()))
+
+    Ok(st)
 }
 
 #[utoipa::path(
@@ -3874,7 +3858,7 @@ async fn submit_signing(
 
     let token = query.token;
 
-    let doc = tokio::task::spawn_blocking({
+    let (doc, sig_id) = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         let valkey_client = state.valkey_client.clone();
         move || {
@@ -3900,7 +3884,7 @@ async fn submit_signing(
                 ip_address: None,
             };
 
-            doc.sign(sig_request)
+            let sig_id = doc.sign(sig_request)
                 .map_err(|e| AppError::BadRequest(format!("signing failed: {e}")))?;
 
             store
@@ -3915,22 +3899,24 @@ async fn submit_signing(
                     ))
                 })?;
 
-            Ok::<_, AppError>(doc)
+            Ok::<_, AppError>((doc, sig_id))
         }
     })
     .await
     .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
 
-    let last_sig = doc
+    // Find the signature by the ID returned from sign().
+    let new_sig = doc
         .signatures()
-        .last()
+        .iter()
+        .find(|s| s.signature_id() == sig_id)
         .ok_or_else(|| AppError::Internal("signature was added but not found".to_string()))?;
 
     Ok(Json(SignDocumentResponse {
-        signature_id: last_sig.signature_id(),
+        signature_id: new_sig.signature_id(),
         document_id: doc.document_id(),
         document_status: doc.status(),
-        signed_at: last_sig.signed_at().to_rfc3339(),
+        signed_at: new_sig.signed_at().to_rfc3339(),
     }))
 }
 

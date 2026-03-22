@@ -257,6 +257,7 @@ fn merge_in_valkey(
         scopes: actor.map_or(Vec::new(), |a| a.scopes.clone()),
         signed_by: actor.and_then(|a| a.signed_by.clone()),
         tree_sha1: root_tree_oid.sha1_hex(),
+        branch: Some(target_branch.to_owned()),
         changes: changes.clone(),
     };
 

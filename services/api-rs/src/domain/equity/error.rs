@@ -4,6 +4,7 @@ use super::{
     round::EquityRoundStatus,
     types::{
         FundingRoundStatus, GrantStatus, SafeStatus, ShareCount, TransferStatus, ValuationStatus,
+        VestingEventStatus,
     },
 };
 use crate::domain::ids::{
@@ -113,6 +114,13 @@ pub enum EquityError {
     /// The requested repurchase right does not exist.
     #[error("repurchase right {0} not found")]
     RepurchaseNotFound(RepurchaseRightId),
+
+    /// A vesting event cannot transition between the given states.
+    #[error("invalid vesting event transition from {from} to {to}")]
+    InvalidVestingEventTransition {
+        from: VestingEventStatus,
+        to: VestingEventStatus,
+    },
 
     /// General validation error.
     #[error("equity validation error: {0}")]

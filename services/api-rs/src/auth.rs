@@ -66,6 +66,7 @@ macro_rules! define_scoped_extractor {
         where
             S: Send + Sync + 'static,
             Arc<RepoLayout>: FromRef<S>,
+            Arc<[u8]>: FromRef<S>,
             ValkeyClient: FromRef<S>,
         {
             type Rejection = AuthRejection;
@@ -207,6 +208,7 @@ impl<S> FromRequestParts<S> for Principal
 where
     S: Send + Sync + 'static,
     Arc<RepoLayout>: FromRef<S>,
+    Arc<[u8]>: FromRef<S>,
     ValkeyClient: FromRef<S>,
 {
     type Rejection = AuthRejection;
@@ -227,21 +229,13 @@ where
                     .map_err(AuthRejection);
             }
 
-            // JWT path — decode the token using the shared secret from env.
-            // In production JWT_SECRET must be set; in debug builds we fall
-            // back to an insecure dev secret (matching main.rs startup).
-            let secret = std::env::var("JWT_SECRET").unwrap_or_else(|_| {
-                if cfg!(debug_assertions) {
-                    "dev-secret-do-not-use-in-production".into()
-                } else {
-                    // In release, if the env var is missing, reject all tokens.
-                    String::new()
-                }
-            });
+            // JWT path — decode the token using the shared secret from AppState
+            // (loaded once at startup from JWT_SECRET env var).
+            let secret: Arc<[u8]> = Arc::<[u8]>::from_ref(state);
             if secret.is_empty() {
                 return Err(AuthRejection(AuthError::Unauthorized));
             }
-            let claims = decode_token(token, secret.as_bytes()).map_err(AuthRejection)?;
+            let claims = decode_token(token, &secret).map_err(AuthRejection)?;
 
             return Ok(Principal {
                 workspace_id: claims.workspace_id(),

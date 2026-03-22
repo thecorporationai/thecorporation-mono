@@ -481,6 +481,9 @@ fn meeting_to_response(m: &Meeting) -> MeetingResponse {
         location: m.location().to_owned(),
         status: m.status(),
         quorum_met: m.quorum_met(),
+        // Agenda item IDs are not populated here because the store is not
+        // available in this pure mapping function. Callers that need agenda
+        // items should query the /meetings/{id}/agenda-items endpoint.
         agenda_item_ids: Vec::new(),
         created_at: m.created_at().to_rfc3339(),
     }
@@ -2228,7 +2231,9 @@ async fn list_incidents(
                 let incident = store
                     .read::<GovernanceIncident>("main", id)
                     .map_err(|e| AppError::Internal(format!("read incident {id}: {e}")))?;
-                out.push(incident_to_response(&incident));
+                if incident.entity_id() == entity_id {
+                    out.push(incident_to_response(&incident));
+                }
             }
             out.sort_by(|a, b| b.created_at.cmp(&a.created_at));
             Ok::<_, AppError>(out)
@@ -3178,21 +3183,19 @@ async fn convene_meeting(
                     AppError::NotFound(format!("governance body {} not found", meeting.body_id()))
                 })?;
 
-            // Read all seats for the body, filter to those that can vote
-            let seat_ids = store.list_ids::<GovernanceSeat>("main").unwrap_or_default();
-            let mut total_eligible: u32 = 0;
-            for id in &seat_ids {
-                if let Ok(s) = store.read::<GovernanceSeat>("main", *id) {
+            // Total eligible voting power for the body
+            let total_eligible = eligible_voting_power_for_body(&store, meeting.body_id())?;
+
+            // Sum voting power of present seats
+            let mut present_power: u32 = 0;
+            for seat_id in &req.present_seat_ids {
+                if let Ok(s) = store.read::<GovernanceSeat>("main", *seat_id) {
                     if s.body_id() == meeting.body_id() && s.can_vote() {
-                        total_eligible += 1;
+                        present_power += s.voting_power().raw();
                     }
                 }
             }
-
-            // Count present seats that can vote
-            let present_count = u32::try_from(req.present_seat_ids.len())
-                .map_err(|_| AppError::BadRequest("too many seats".to_owned()))?;
-            let quorum_met = body.quorum_rule().is_met(present_count, total_eligible);
+            let quorum_met = body.quorum_rule().is_met(present_power, total_eligible);
 
             meeting.convene(req.present_seat_ids, quorum_met)?;
 
@@ -3705,7 +3708,7 @@ async fn finalize_agenda_item(
     ),
 )]
 async fn compute_resolution(
-    RequireGovernanceRead(auth): RequireGovernanceRead,
+    RequireGovernanceWrite(auth): RequireGovernanceWrite,
     State(state): State<AppState>,
     Path((meeting_id, item_id)): Path<(MeetingId, AgendaItemId)>,
     Query(query): Query<MeetingQuery>,
@@ -3996,42 +3999,36 @@ async fn scan_expired_seats(
         let valkey_client = state.valkey_client.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id, valkey_client.as_ref())?;
-            let body_ids = store
-                .list_ids::<GovernanceBody>("main")
-                .map_err(|e| AppError::Internal(format!("list bodies: {e}")))?;
 
             let today = chrono::Utc::now().date_naive();
             let mut scanned = 0usize;
             let mut expired = 0usize;
 
-            for body_id in body_ids {
-                let seat_ids = store
-                    .list_ids::<GovernanceSeat>("main")
-                    .map_err(|e| AppError::Internal(format!("list seats: {e}")))?;
+            let seat_ids = store
+                .list_ids::<GovernanceSeat>("main")
+                .map_err(|e| AppError::Internal(format!("list seats: {e}")))?;
 
-                for seat_id in seat_ids {
-                    scanned += 1;
-                    if let Ok(seat) = store.read::<GovernanceSeat>("main", seat_id) {
-                        if let Some(term_end) = seat.term_expiration() {
-                            if term_end < today
-                                && seat.status()
-                                    == crate::domain::governance::types::SeatStatus::Active
-                            {
-                                // Seat has expired — mark it
-                                let mut seat = seat;
-                                seat.resign()?;
-                                let path =
-                                    format!("governance/bodies/{}/seats/{}.json", body_id, seat_id);
-                                store
-                                    .write_json(
-                                        "main",
-                                        &path,
-                                        &seat,
-                                        &format!("Expire seat {seat_id}"),
-                                    )
-                                    .map_err(|e| AppError::Internal(format!("commit: {e}")))?;
-                                expired += 1;
-                            }
+            for seat_id in seat_ids {
+                scanned += 1;
+                if let Ok(seat) = store.read::<GovernanceSeat>("main", seat_id) {
+                    if let Some(term_end) = seat.term_expiration() {
+                        if term_end < today
+                            && seat.status()
+                                == crate::domain::governance::types::SeatStatus::Active
+                        {
+                            // Seat has expired — mark it
+                            let mut seat = seat;
+                            seat.resign()?;
+                            let path = format!("governance/seats/{}.json", seat_id);
+                            store
+                                .write_json(
+                                    "main",
+                                    &path,
+                                    &seat,
+                                    &format!("Expire seat {seat_id}"),
+                                )
+                                .map_err(|e| AppError::Internal(format!("commit: {e}")))?;
+                            expired += 1;
                         }
                     }
                 }

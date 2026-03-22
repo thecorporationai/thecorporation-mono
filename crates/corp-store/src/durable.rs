@@ -149,7 +149,15 @@ pub fn durable_commit_files(
         tree.insert(path.clone(), blob_oid.clone());
     }
 
-    let (root_tree_oid, _) = oid::compute_root_tree(&tree);
+    let (root_tree_oid, all_trees) = oid::compute_root_tree(&tree);
+
+    // Persist tree objects to S3 alongside blobs (Phase 1a continued).
+    for (tree_oid, tree_raw) in &all_trees {
+        let tree_sha = tree_oid.sha256_hex();
+        if !backend.blob_exists(&tree_sha)? {
+            backend.put_blob(&tree_sha, tree_raw)?;
+        }
+    }
 
     let ref_key = keys::ref_key(ws, ent);
     let parent_sha1: Option<String> = con.hget(&ref_key, branch)?;
@@ -163,7 +171,11 @@ pub fn durable_commit_files(
         message,
     });
 
-    let seq: u64 = con.incr(keys::seq_key(ws, ent), 1)?;
+    // Peek at the next sequence number without claiming it yet.
+    // The counter is only incremented after S3 confirms durability,
+    // so a failed S3 write never wastes a sequence slot.
+    let current_seq: u64 = con.get(keys::seq_key(ws, ent)).unwrap_or(0);
+    let seq = current_seq + 1;
 
     let entry = CommitEntry {
         ld_type: "Commit".to_owned(),
@@ -181,6 +193,7 @@ pub fn durable_commit_files(
         scopes: actor.map_or(Vec::new(), |a| a.scopes.clone()),
         signed_by: actor.and_then(|a| a.signed_by.clone()),
         tree_sha1: root_tree_oid.sha1_hex(),
+        branch: Some(branch.to_owned()),
         changes: changes.clone(),
     };
 
@@ -190,6 +203,9 @@ pub fn durable_commit_files(
     // THIS is the durability point. After this returns Ok, the commit is safe.
 
     backend.put_commit(ws, ent, seq, entry_json.as_bytes())?;
+
+    // Sequence is only claimed after S3 confirms the write.
+    let _: u64 = con.incr(keys::seq_key(ws, ent), 1)?;
 
     let ref_json = serde_json::to_string(&serde_json::json!({
         "branch": branch,
@@ -336,11 +352,22 @@ pub fn rebuild_from_backend(
     clear_pipe.query::<()>(con)?;
 
     let mut count = 0u64;
-    let mut tree_state: BTreeMap<String, String> = BTreeMap::new();
-    let last_branch = String::from("main");
+    // Per-branch tree states so each branch is replayed independently.
+    let mut tree_states: BTreeMap<String, BTreeMap<String, String>> = BTreeMap::new();
 
     for json_bytes in &commit_jsons {
         let entry: CommitEntry = serde_json::from_slice(json_bytes)?;
+
+        // Read branch from the commit entry; fall back to "main" for
+        // legacy entries that predate the branch field.
+        let commit_branch = entry
+            .branch
+            .clone()
+            .unwrap_or_else(|| "main".to_owned());
+
+        let tree_state = tree_states
+            .entry(commit_branch.clone())
+            .or_default();
 
         // Ensure blobs are in Valkey OID tables (fetch from S3 to get content for hashing).
         for fc in &entry.changes {
@@ -358,7 +385,7 @@ pub fn rebuild_from_backend(
             }
         }
 
-        // Apply changes to tree state.
+        // Apply changes to the branch's tree state.
         for fc in &entry.changes {
             match fc.action {
                 ChangeAction::Add | ChangeAction::Modify => {
@@ -410,21 +437,23 @@ pub fn rebuild_from_backend(
         p.sadd(keys::workspaces_key(), ws);
         p.sadd(keys::entities_key(ws), ent);
 
-        // Update ref to point to this commit.
-        p.hset(&ref_key, &last_branch, &entry.sha1);
+        // Update ref to point to this commit on its original branch.
+        p.hset(&ref_key, &commit_branch, &entry.sha1);
 
         p.query::<()>(con)?;
         count += 1;
     }
 
-    // Write final tree state.
-    let tree_key = keys::tree_key(ws, ent, &last_branch);
-    if !tree_state.is_empty() {
-        let mut p = redis::pipe();
-        for (path, sha1) in &tree_state {
-            p.hset(&tree_key, path, sha1);
+    // Write final tree state for each branch.
+    for (branch_name, tree_state) in &tree_states {
+        let tree_key = keys::tree_key(ws, ent, branch_name);
+        if !tree_state.is_empty() {
+            let mut p = redis::pipe();
+            for (path, sha1) in tree_state {
+                p.hset(&tree_key, path, sha1);
+            }
+            p.query::<()>(con)?;
         }
-        p.query::<()>(con)?;
     }
 
     tracing::info!(

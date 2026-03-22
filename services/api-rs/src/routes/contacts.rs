@@ -582,7 +582,9 @@ async fn get_notification_prefs(
         move || {
             let store = open_store(&layout, workspace_id, entity_id, valkey_client.as_ref())?;
 
-            // Try to read existing prefs; create defaults if not found
+            // Try to read existing prefs; return in-memory defaults if not found.
+            // We intentionally do NOT write defaults on GET — only PATCH should
+            // persist notification preferences.
             let path = format!("contacts/{}/notification-prefs.json", contact_id);
             match store.read_json::<NotifPrefsRecord>("main", &path) {
                 Ok(p) => Ok::<_, AppError>(p),
@@ -591,16 +593,8 @@ async fn get_notification_prefs(
                     store.read::<Contact>("main", contact_id).map_err(|_| {
                         AppError::NotFound(format!("contact {} not found", contact_id))
                     })?;
-                    let p = NotifPrefsRecord::new(contact_id);
-                    store
-                        .write_json(
-                            "main",
-                            &path,
-                            &p,
-                            &format!("Init notification prefs for {contact_id}"),
-                        )
-                        .map_err(|e| AppError::Internal(format!("commit: {e}")))?;
-                    Ok(p)
+                    // Return default prefs without committing to storage.
+                    Ok(NotifPrefsRecord::new(contact_id))
                 }
             }
         }

@@ -435,6 +435,17 @@ pub enum VestingEventStatus {
     Cancelled,
 }
 
+impl fmt::Display for VestingEventStatus {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Scheduled => write!(f, "scheduled"),
+            Self::Vested => write!(f, "vested"),
+            Self::Forfeited => write!(f, "forfeited"),
+            Self::Cancelled => write!(f, "cancelled"),
+        }
+    }
+}
+
 /// Reason for termination of employment/service.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]

@@ -313,7 +313,7 @@ fn canonicalize_jurisdiction(input: &str) -> Option<String> {
             return Some((*code).to_owned());
         }
         if upper == name.to_ascii_uppercase() {
-            return Some((*name).to_owned());
+            return Some((*code).to_owned());
         }
     }
     None
@@ -485,9 +485,12 @@ mod tests {
 
     #[test]
     fn jurisdiction_valid() {
-        assert!(Jurisdiction::new("Delaware").is_ok());
-        assert!(Jurisdiction::new("California").is_ok());
+        // Name input canonicalizes to code form
+        assert_eq!(Jurisdiction::new("Delaware").unwrap().as_str(), "US-DE");
+        assert_eq!(Jurisdiction::new("California").unwrap().as_str(), "US-CA");
+        // Short code input canonicalizes to code form
         assert_eq!(Jurisdiction::new("de").unwrap().as_str(), "US-DE");
+        // Full code input canonicalizes to code form
         assert_eq!(Jurisdiction::new("US-wy").unwrap().as_str(), "US-WY");
     }
 

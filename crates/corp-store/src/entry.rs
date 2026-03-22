@@ -58,6 +58,10 @@ pub struct CommitEntry {
     /// SHA-1 of the root tree object.
     pub tree_sha1: String,
 
+    /// Branch this commit was written to.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub branch: Option<String>,
+
     /// File-level changes.
     pub changes: Vec<FileChange>,
 }

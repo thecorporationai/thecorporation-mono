@@ -87,6 +87,28 @@ impl Deadline {
         self.completed_at = Some(Utc::now());
     }
 
+    /// Compute the current status dynamically from `due_date` vs today.
+    ///
+    /// Unlike the stored `status` field (which is set once at creation and only
+    /// updated by explicit transitions like `mark_completed`), this method
+    /// always reflects the real-time relationship between the due date and the
+    /// current date. Use this when you need an up-to-date status after
+    /// deserialization.
+    pub fn current_status(&self) -> DeadlineStatus {
+        // If explicitly completed, honour that regardless of date.
+        if self.status == DeadlineStatus::Completed {
+            return DeadlineStatus::Completed;
+        }
+        let today = Utc::now().date_naive();
+        if self.due_date < today {
+            DeadlineStatus::Overdue
+        } else if self.due_date == today {
+            DeadlineStatus::Due
+        } else {
+            DeadlineStatus::Upcoming
+        }
+    }
+
     // Accessors
     pub fn deadline_id(&self) -> DeadlineId {
         self.deadline_id

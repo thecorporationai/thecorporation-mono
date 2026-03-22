@@ -1958,7 +1958,7 @@ mod tests {
         // Verify entity fields
         assert_eq!(result.entity.legal_name(), "Acme LLC");
         assert_eq!(result.entity.entity_type(), EntityType::Llc);
-        assert_eq!(result.entity.jurisdiction(), "Delaware");
+        assert_eq!(result.entity.jurisdiction(), "US-DE");
         assert_eq!(
             result.entity.formation_status(),
             FormationStatus::DocumentsGenerated
@@ -1984,7 +1984,7 @@ mod tests {
         // Verify filing record exists
         let filing_from_repo: Filing = repo.read_json("main", "formation/filing.json").unwrap();
         assert_eq!(filing_from_repo.entity_id(), entity_id);
-        assert_eq!(filing_from_repo.jurisdiction(), "Delaware");
+        assert_eq!(filing_from_repo.jurisdiction(), "US-DE");
 
         // Verify tax profile exists
         let tax_from_repo: TaxProfile = repo.read_json("main", "tax/profile.json").unwrap();
@@ -2137,7 +2137,7 @@ mod tests {
         assert_eq!(entity.legal_name(), "Store Test LLC");
 
         let filing = store.read_filing("main").unwrap();
-        assert_eq!(filing.jurisdiction(), "Wyoming");
+        assert_eq!(filing.jurisdiction(), "US-WY");
 
         let tax = store.read_tax_profile("main").unwrap();
         assert_eq!(tax.entity_id(), result.entity.entity_id());

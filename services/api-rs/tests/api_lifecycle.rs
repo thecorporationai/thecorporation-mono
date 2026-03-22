@@ -966,7 +966,7 @@ async fn test_formation_lifecycle() {
     assert_eq!(status, StatusCode::OK, "get formation: {body}");
     assert_eq!(body["legal_name"], "FormCo Inc.");
     assert_eq!(body["entity_type"], "c_corp");
-    assert_eq!(body["jurisdiction"], "Delaware");
+    assert_eq!(body["jurisdiction"], "US-DE");
 
     // 3. List documents
     let (status, body) = get_json(

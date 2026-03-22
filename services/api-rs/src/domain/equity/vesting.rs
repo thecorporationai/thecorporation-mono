@@ -3,6 +3,7 @@
 use chrono::{DateTime, Datelike, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 
+use super::error::EquityError;
 use super::types::{ShareCount, VestingEventStatus, VestingEventType, VestingStatus};
 use crate::domain::ids::{EntityId, EquityGrantId, VestingEventId, VestingScheduleId};
 
@@ -163,19 +164,40 @@ impl VestingEvent {
         }
     }
 
-    /// Mark this event as vested.
-    pub fn vest(&mut self) {
+    /// Mark this event as vested. Only valid from `Scheduled`.
+    pub fn vest(&mut self) -> Result<(), EquityError> {
+        if self.status != VestingEventStatus::Scheduled {
+            return Err(EquityError::InvalidVestingEventTransition {
+                from: self.status,
+                to: VestingEventStatus::Vested,
+            });
+        }
         self.status = VestingEventStatus::Vested;
+        Ok(())
     }
 
-    /// Mark this event as forfeited.
-    pub fn forfeit(&mut self) {
+    /// Mark this event as forfeited. Only valid from `Scheduled`.
+    pub fn forfeit(&mut self) -> Result<(), EquityError> {
+        if self.status != VestingEventStatus::Scheduled {
+            return Err(EquityError::InvalidVestingEventTransition {
+                from: self.status,
+                to: VestingEventStatus::Forfeited,
+            });
+        }
         self.status = VestingEventStatus::Forfeited;
+        Ok(())
     }
 
-    /// Cancel this event.
-    pub fn cancel(&mut self) {
+    /// Cancel this event. Only valid from `Scheduled`.
+    pub fn cancel(&mut self) -> Result<(), EquityError> {
+        if self.status != VestingEventStatus::Scheduled {
+            return Err(EquityError::InvalidVestingEventTransition {
+                from: self.status,
+                to: VestingEventStatus::Cancelled,
+            });
+        }
         self.status = VestingEventStatus::Cancelled;
+        Ok(())
     }
 
     pub fn event_id(&self) -> VestingEventId {
@@ -429,14 +451,14 @@ mod tests {
         let mut events = materialize_vesting_events(&schedule);
         assert_eq!(events[0].status(), VestingEventStatus::Scheduled);
 
-        events[0].vest();
+        events[0].vest().unwrap();
         assert_eq!(events[0].status(), VestingEventStatus::Vested);
 
         // Create another to test forfeit
         let schedule2 = make_schedule(1000, 0, 2);
         let mut events2 = materialize_vesting_events(&schedule2);
-        events2[0].vest();
-        events2[1].forfeit();
+        events2[0].vest().unwrap();
+        events2[1].forfeit().unwrap();
         assert_eq!(events2[0].status(), VestingEventStatus::Vested);
         assert_eq!(events2[1].status(), VestingEventStatus::Forfeited);
     }
@@ -445,7 +467,34 @@ mod tests {
     fn cancel_event() {
         let schedule = make_schedule(1000, 0, 1);
         let mut events = materialize_vesting_events(&schedule);
-        events[0].cancel();
+        events[0].cancel().unwrap();
         assert_eq!(events[0].status(), VestingEventStatus::Cancelled);
+    }
+
+    #[test]
+    fn vest_rejects_non_scheduled() {
+        let schedule = make_schedule(1000, 0, 2);
+        let mut events = materialize_vesting_events(&schedule);
+        events[0].vest().unwrap();
+        // Attempting to vest again from Vested should fail
+        assert!(events[0].vest().is_err());
+    }
+
+    #[test]
+    fn forfeit_rejects_non_scheduled() {
+        let schedule = make_schedule(1000, 0, 2);
+        let mut events = materialize_vesting_events(&schedule);
+        events[0].cancel().unwrap();
+        // Attempting to forfeit from Cancelled should fail
+        assert!(events[0].forfeit().is_err());
+    }
+
+    #[test]
+    fn cancel_rejects_non_scheduled() {
+        let schedule = make_schedule(1000, 0, 2);
+        let mut events = materialize_vesting_events(&schedule);
+        events[0].vest().unwrap();
+        // Attempting to cancel from Vested should fail
+        assert!(events[0].cancel().is_err());
     }
 }

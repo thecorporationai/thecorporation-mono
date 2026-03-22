@@ -1050,7 +1050,7 @@ fn checked_bps(part: i64, total: i64) -> u32 {
 }
 
 fn hash_json<T: Serialize>(value: &T) -> String {
-    let bytes = serde_json::to_vec(value).unwrap_or_default();
+    let bytes = serde_json::to_vec(value).expect("serialization of typed value cannot fail");
     let mut hasher = Sha256::new();
     hasher.update(bytes);
     hex::encode(hasher.finalize())
@@ -2565,7 +2565,9 @@ async fn create_legal_entity(
             let normalized_name = req.name.trim().to_lowercase();
             for existing_id in existing_ids {
                 if let Ok(existing) = store.read::<LegalEntity>("main", existing_id) {
-                    if existing.name().trim().to_lowercase() == normalized_name {
+                    if existing.name().trim().to_lowercase() == normalized_name
+                        && existing.role() == req.role
+                    {
                         return Ok(existing);
                     }
                 }
@@ -6373,8 +6375,10 @@ async fn add_round_security(
                 ensure_current_409a_exists(&store)?;
             }
 
-            // Resolve holder
+            // Resolve holder — collect file writes without committing so that
+            // the capacity check runs before any data is persisted.
             let holders = read_all::<Holder>(&store)?;
+            let mut deferred_writes: Vec<FileWrite> = Vec::new();
             let holder_id = if let Some(hid) = req.holder_id {
                 // Direct holder_id — validate it exists
                 if !holders.iter().any(|h| h.holder_id() == hid) {
@@ -6396,7 +6400,7 @@ async fn add_round_security(
                     if let Some(h) = holders.iter().find(|h| h.contact_id() == cid) {
                         h.holder_id()
                     } else {
-                        // Contact exists but no holder — create one
+                        // Contact exists but no holder — stage holder write
                         let new_holder = Holder::new(
                             HolderId::new(),
                             cid,
@@ -6406,18 +6410,14 @@ async fn add_round_security(
                             None,
                         );
                         let hid = new_holder.holder_id();
-                        store
-                            .write_json(
-                                "main",
-                                &format!("cap-table/holders/{}.json", hid),
-                                &new_holder,
-                                &format!("Create holder {} for {}", hid, req.recipient_name),
-                            )
-                            .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
+                        deferred_writes.push(FileWrite::json(
+                            format!("cap-table/holders/{}.json", hid),
+                            &new_holder,
+                        )?);
                         hid
                     }
                 } else {
-                    // No contact found — create new contact + holder
+                    // No contact found — stage new contact + holder writes
                     let contact_id = ContactId::new();
                     let contact = Contact::new(
                         contact_id,
@@ -6438,21 +6438,18 @@ async fn add_round_security(
                         None,
                     );
                     let hid = new_holder.holder_id();
-                    let files = vec![
-                        FileWrite::json(format!("contacts/{}.json", contact_id), &contact)?,
-                        FileWrite::json(format!("cap-table/holders/{}.json", hid), &new_holder)?,
-                    ];
-                    store
-                        .commit(
-                            "main",
-                            &format!("Create contact + holder for {}", req.recipient_name),
-                            files,
-                        )
-                        .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
+                    deferred_writes.push(FileWrite::json(
+                        format!("contacts/{}.json", contact_id),
+                        &contact,
+                    )?);
+                    deferred_writes.push(FileWrite::json(
+                        format!("cap-table/holders/{}.json", hid),
+                        &new_holder,
+                    )?);
                     hid
                 }
             } else {
-                // Neither holder_id nor email — create new contact + holder from recipient_name
+                // Neither holder_id nor email — stage new contact + holder from recipient_name
                 let contact_id = ContactId::new();
                 let contact = Contact::new(
                     contact_id,
@@ -6473,17 +6470,14 @@ async fn add_round_security(
                     None,
                 );
                 let hid = new_holder.holder_id();
-                let files = vec![
-                    FileWrite::json(format!("contacts/{}.json", contact_id), &contact)?,
-                    FileWrite::json(format!("cap-table/holders/{}.json", hid), &new_holder)?,
-                ];
-                store
-                    .commit(
-                        "main",
-                        &format!("Create contact + holder for {}", req.recipient_name),
-                        files,
-                    )
-                    .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
+                deferred_writes.push(FileWrite::json(
+                    format!("contacts/{}.json", contact_id),
+                    &contact,
+                )?);
+                deferred_writes.push(FileWrite::json(
+                    format!("cap-table/holders/{}.json", hid),
+                    &new_holder,
+                )?);
                 hid
             };
 
@@ -6496,7 +6490,7 @@ async fn add_round_security(
                 grant_type: req.grant_type,
             };
 
-            // Read pending securities, append, write back
+            // Run capacity check BEFORE committing any writes
             let pending_path = format!("cap-table/pending_securities/{}.json", round_id);
             let mut pending: PendingSecuritiesFile =
                 store.read_json("main", &pending_path).map_err(|e| {
@@ -6511,15 +6505,16 @@ async fn add_round_security(
             )?;
             pending.securities.push(security.clone());
 
+            // All validations passed — commit everything atomically
+            deferred_writes.push(FileWrite::json(&pending_path, &pending)?);
             store
-                .write_json(
+                .commit(
                     "main",
-                    &pending_path,
-                    &pending,
                     &format!(
                         "Add security for {} to round {}",
                         security.recipient_name, round_id
                     ),
+                    deferred_writes,
                 )
                 .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
 

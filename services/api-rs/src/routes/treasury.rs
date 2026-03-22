@@ -1825,18 +1825,24 @@ async fn reconcile_ledger(
 
             for id in store.list_ids::<Invoice>("main").unwrap_or_default() {
                 if let Ok(invoice) = store.read::<Invoice>("main", id) {
+                    if invoice.status() != InvoiceStatus::Paid {
+                        continue;
+                    }
                     if invoice.due_date() > as_of_date {
                         continue;
                     }
                     if start_date.is_some_and(|start| invoice.due_date() < start) {
                         continue;
                     }
-                    total_debits += invoice.amount_cents();
+                    // Paid invoices represent incoming revenue → credit.
                     total_credits += invoice.amount_cents();
                 }
             }
             for id in store.list_ids::<Payment>("main").unwrap_or_default() {
                 if let Ok(payment) = store.read::<Payment>("main", id) {
+                    if payment.status() != PaymentStatus::Completed {
+                        continue;
+                    }
                     let payment_date = payment.created_at().date_naive();
                     if payment_date > as_of_date {
                         continue;
@@ -1844,8 +1850,8 @@ async fn reconcile_ledger(
                     if start_date.is_some_and(|start| payment_date < start) {
                         continue;
                     }
+                    // Completed payments represent outgoing funds → debit.
                     total_debits += payment.amount_cents();
-                    total_credits += payment.amount_cents();
                 }
             }
             for id in store.list_ids::<Distribution>("main").unwrap_or_default() {
@@ -1934,8 +1940,8 @@ async fn get_stripe_account(
             // Try to read existing connection
             match store.read_json::<StripeConnection>("main", "treasury/stripe-connection.json") {
                 Ok(c) => Ok::<_, AppError>(c),
-                Err(_) => {
-                    // Create a new connection on first access
+                Err(crate::git::error::GitStorageError::NotFound(_)) => {
+                    // Create a new connection only on first access (not found)
                     let conn = StripeConnection::new(
                         StripeConnectionId::new(),
                         entity_id,
@@ -1951,6 +1957,7 @@ async fn get_stripe_account(
                         .map_err(|e| AppError::Internal(format!("commit: {e}")))?;
                     Ok(conn)
                 }
+                Err(e) => Err(AppError::Internal(format!("read stripe connection: {e}"))),
             }
         }
     })
@@ -2420,6 +2427,20 @@ async fn create_stripe_account(
         let valkey_client = state.valkey_client.clone();
         move || {
             let store = open_store(&layout, workspace_id, entity_scope.as_deref(), entity_id, valkey_client.as_ref())?;
+
+            // Check if a Stripe connection already exists — reject duplicates.
+            match store.read_json::<StripeConnection>("main", "treasury/stripe-connection.json") {
+                Ok(_existing) => {
+                    return Err(AppError::Conflict(
+                        "stripe connection already exists for this entity".to_owned(),
+                    ));
+                }
+                Err(crate::git::error::GitStorageError::NotFound(_)) => { /* expected */ }
+                Err(e) => {
+                    return Err(AppError::Internal(format!("read stripe connection: {e}")));
+                }
+            }
+
             let conn = StripeConnection::new(
                 StripeConnectionId::new(),
                 entity_id,
