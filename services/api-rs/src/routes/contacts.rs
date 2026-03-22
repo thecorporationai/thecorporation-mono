@@ -166,8 +166,8 @@ async fn create_contact(
 
     let name_clone = name.clone();
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
-    let contact = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let contact = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
         ensure_entity_allows_contact_mutation(&store, "contact creation")?;
         let contact_ids = store
             .list_ids::<Contact>("main")
@@ -253,8 +253,8 @@ async fn list_contacts(
     }
 
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
-    let contacts = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let contacts = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
         let ids = store
             .list_ids::<Contact>("main")
             .map_err(|e| AppError::Internal(format!("list contacts: {e}")))?;
@@ -301,8 +301,8 @@ async fn get_contact(
     }
 
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
-    let contact = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let contact = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
         store
             .read::<Contact>("main", contact_id)
             .map_err(|_| AppError::NotFound(format!("contact {} not found", contact_id)))
@@ -374,8 +374,8 @@ async fn update_contact(
 
     let name_clone = name.clone();
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
-    let contact = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let contact = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
         ensure_entity_allows_contact_mutation(&store, "contact updates")?;
         let mut contact = store
             .read::<Contact>("main", contact_id)
@@ -480,8 +480,8 @@ async fn get_contact_profile(
     }
 
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
-    let contact = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let contact = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
         store
             .read::<Contact>("main", contact_id)
             .map_err(|_| AppError::NotFound(format!("contact {} not found", contact_id)))
@@ -547,8 +547,8 @@ async fn get_notification_prefs(
     }
 
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
-    let prefs = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let prefs = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
 
         // Try to read existing prefs; return in-memory defaults if not found.
         // We intentionally do NOT write defaults on GET — only PATCH should
@@ -610,8 +610,8 @@ async fn update_notification_prefs(
     }
 
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
-    let prefs = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let prefs = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
         ensure_entity_allows_contact_mutation(&store, "notification preference updates")?;
         let path = format!("contacts/{}/notification-prefs.json", contact_id);
 

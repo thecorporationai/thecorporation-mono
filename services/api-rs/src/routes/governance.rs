@@ -978,8 +978,8 @@ async fn get_governance_profile(
     let workspace_id = auth.workspace_id();
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let profile = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let profile = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
         let profile = read_profile_or_default(&store, entity_id)?;
         profile.validate().map_err(AppError::UnprocessableEntity)?;
         Ok::<_, AppError>(profile)
@@ -1011,8 +1011,8 @@ async fn update_governance_profile(
     let workspace_id = auth.workspace_id();
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let profile = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let profile = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
         let mut profile = read_profile_or_default(&store, entity_id)?;
         profile.update(
             req.legal_name,
@@ -1090,8 +1090,8 @@ async fn generate_governance_doc_bundle(
     state.enforce_creation_rate_limit("governance.doc_bundle.generate", workspace_id, 120, 60)?;
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let response = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let response = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
         let profile = read_profile_or_default(&store, entity_id)?;
         profile.validate().map_err(AppError::UnprocessableEntity)?;
 
@@ -1173,8 +1173,8 @@ async fn get_current_governance_doc_bundle(
     let workspace_id = auth.workspace_id();
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let current = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let current = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
         let current = read_doc_bundle_current(&store)?;
         if current.entity_id != entity_id {
             return Err(AppError::NotFound(format!(
@@ -1207,8 +1207,8 @@ async fn list_governance_doc_bundles(
     let workspace_id = auth.workspace_id();
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let summaries = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let summaries = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
         let summaries = list_doc_bundle_summaries(&store)?;
         Ok::<_, AppError>(summaries)
     }).await?;
@@ -1238,8 +1238,8 @@ async fn get_governance_doc_bundle(
     let workspace_id = auth.workspace_id();
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let manifest = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let manifest = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
         let path = bundle_manifest_path(bundle_id);
         let manifest = store
             .read_json::<GovernanceDocBundleManifest>("main", &path)
@@ -1283,8 +1283,9 @@ async fn list_governance_triggers(
     let triggers = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         let valkey_client = state.valkey_client.clone();
+        let s3_backend = state.s3_backend.clone();
         move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
+            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref(), s3_backend.as_ref())?;
             let ids = store
                 .list_ids::<GovernanceTriggerEvent>("main")
                 .map_err(|e| AppError::Internal(format!("list governance triggers: {e}")))?;
@@ -1332,8 +1333,9 @@ async fn list_governance_mode_history(
     let events = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         let valkey_client = state.valkey_client.clone();
+        let s3_backend = state.s3_backend.clone();
         move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
+            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref(), s3_backend.as_ref())?;
             let ids = store
                 .list_ids::<GovernanceModeChangeEvent>("main")
                 .map_err(|e| AppError::Internal(format!("list governance mode history: {e}")))?;
@@ -1382,8 +1384,9 @@ async fn ingest_lockdown_trigger(
     let response = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         let valkey_client = state.valkey_client.clone();
+        let s3_backend = state.s3_backend.clone();
         move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, None, valkey_client.as_ref())?;
+            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, None, valkey_client.as_ref(), s3_backend.as_ref())?;
             let result = apply_lockdown_trigger(
                 &store,
                 entity_id,
@@ -1438,8 +1441,9 @@ async fn list_governance_audit_entries(
     let entries = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         let valkey_client = state.valkey_client.clone();
+        let s3_backend = state.s3_backend.clone();
         move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
+            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref(), s3_backend.as_ref())?;
             let mut entries = list_audit_entries_sorted(&store, entity_id)?;
             entries.reverse();
             Ok::<_, AppError>(entries)
@@ -1477,8 +1481,8 @@ async fn create_governance_audit_event(
         ));
     }
 
-    let entry = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let entry = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
         let entry = build_audit_entry(
             &store,
             entity_id,
@@ -1527,8 +1531,8 @@ async fn write_governance_audit_checkpoint(
     let entity_id = req.entity_id;
     state.enforce_creation_rate_limit("governance.audit_checkpoint.create", workspace_id, 120, 60)?;
 
-    let checkpoint = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let checkpoint = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
         let entries = list_audit_entries_sorted(&store, entity_id)?;
         let latest = entries.last().ok_or_else(|| {
             AppError::UnprocessableEntity(
@@ -1613,8 +1617,8 @@ async fn list_governance_audit_checkpoints(
     let workspace_id = auth.workspace_id();
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let checkpoints = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let checkpoints = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
         let ids = store
             .list_ids::<GovernanceAuditCheckpoint>("main")
             .map_err(|e| {
@@ -1656,8 +1660,8 @@ async fn verify_governance_audit_chain(
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = req.entity_id;
 
-    let report = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let report = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
         let entries = list_audit_entries_sorted(&store, entity_id)?;
         let total_entries = u64::try_from(entries.len())
             .map_err(|_| AppError::Internal("audit entry count overflow".to_owned()))?;
@@ -1805,8 +1809,8 @@ async fn list_governance_audit_verifications(
     let workspace_id = auth.workspace_id();
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let reports = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let reports = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
         let ids = store
             .list_ids::<GovernanceAuditVerificationReport>("main")
             .map_err(|e| {
@@ -1852,8 +1856,8 @@ async fn create_governance_body(
     let entity_id = req.entity_id;
     state.enforce_creation_rate_limit("governance.body.create", workspace_id, 120, 60)?;
 
-    let body = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let body = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
         ensure_entity_ready_for_governance(&store, "governance body creation")?;
         let entity = store
             .read_entity("main")
@@ -1926,8 +1930,8 @@ async fn list_governance_bodies(
     let workspace_id = auth.workspace_id();
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let bodies = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let bodies = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
         let ids = store
             .list_ids::<GovernanceBody>("main")
             .map_err(|e| AppError::Internal(format!("list governance bodies: {e}")))?;
@@ -1968,8 +1972,8 @@ async fn get_governance_mode(
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = query.entity_id;
 
-    let mode = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let mode = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
         Ok::<_, AppError>(read_mode_or_default(&store, entity_id))
     }).await?;
 
@@ -1996,8 +2000,8 @@ async fn set_governance_mode(
     let entity_id = req.entity_id;
     let updated_by = auth.contact_id();
 
-    let mode = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let mode = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
         let current = read_mode_or_default(&store, entity_id);
 
         if matches!(current.mode(), GovernanceMode::IncidentLockdown)
@@ -2059,8 +2063,8 @@ async fn create_incident(
     let title = require_non_empty_trimmed(&req.title, "title")?;
     let description = require_non_empty_trimmed(&req.description, "description")?;
 
-    let incident = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let incident = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
         let incident = GovernanceIncident::new(
             IncidentId::new(),
             entity_id,
@@ -2103,8 +2107,8 @@ async fn list_incidents(
     let workspace_id = auth.workspace_id();
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let incidents = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let incidents = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
         let ids = store
             .list_ids::<GovernanceIncident>("main")
             .map_err(|e| AppError::Internal(format!("list incidents: {e}")))?;
@@ -2147,8 +2151,8 @@ async fn resolve_incident(
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = query.entity_id;
 
-    let incident = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let incident = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
         let mut incident = store
             .read::<GovernanceIncident>("main", incident_id)
             .map_err(|_| AppError::NotFound(format!("incident {incident_id} not found")))?;
@@ -2188,8 +2192,8 @@ async fn get_delegation_schedule(
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = query.entity_id;
 
-    let schedule = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let schedule = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
         Ok::<_, AppError>(read_schedule_or_default(&store, entity_id))
     }).await?;
 
@@ -2216,8 +2220,8 @@ async fn amend_delegation_schedule(
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = req.entity_id;
 
-    let response = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let response = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
         let current = read_schedule_or_default(&store, entity_id);
         let mut amended = current.clone();
 
@@ -2352,8 +2356,8 @@ async fn reauthorize_delegation_schedule(
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = req.entity_id;
 
-    let response = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let response = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
         validate_schedule_resolution(&store, req.meeting_id, req.adopted_resolution_id)?;
 
         let current = read_schedule_or_default(&store, entity_id);
@@ -2424,8 +2428,8 @@ async fn list_delegation_schedule_history(
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = query.entity_id;
 
-    let history = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let history = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
         let ids = store
             .list_ids::<ScheduleAmendment>("main")
             .map_err(|e| AppError::Internal(format!("list schedule amendments: {e}")))?;
@@ -2463,8 +2467,8 @@ async fn evaluate_governance(
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = req.entity_id;
 
-    let decision = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let decision = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
         let mode = read_mode_or_default(&store, entity_id);
         let schedule = read_schedule_or_default(&store, entity_id);
         let entity = store
@@ -2515,8 +2519,8 @@ async fn create_seat(
     let entity_id = query.entity_id;
     state.enforce_creation_rate_limit("governance.seat.create", workspace_id, 120, 60)?;
 
-    let seat = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let seat = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
         ensure_entity_ready_for_governance(&store, "seat appointment")?;
 
         let body = store.read::<GovernanceBody>("main", body_id).map_err(|_| {
@@ -2606,8 +2610,8 @@ async fn list_seats(
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = query.entity_id;
 
-    let seats = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let seats = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
         let body = store.read::<GovernanceBody>("main", body_id).map_err(|_| {
             AppError::NotFound(format!("governance body {} not found", body_id))
         })?;
@@ -2669,8 +2673,8 @@ async fn resign_seat(
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = query.entity_id;
 
-    let seat = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let seat = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
         let mut seat = store.read::<GovernanceSeat>("main", seat_id).map_err(|_| {
             AppError::NotFound(format!("governance seat {} not found", seat_id))
         })?;
@@ -2729,8 +2733,8 @@ async fn schedule_meeting(
         validate_not_too_far_future("scheduled_date", scheduled_date, 730)?;
     }
 
-    let (meeting, agenda_item_ids) = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let (meeting, agenda_item_ids) = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
         ensure_entity_ready_for_governance(&store, "meeting scheduling")?;
 
         // Verify body exists
@@ -2818,8 +2822,8 @@ async fn list_meetings(
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = query.entity_id;
 
-    let meetings = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let meetings = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
         let body = store.read::<GovernanceBody>("main", body_id).map_err(|_| {
             AppError::NotFound(format!("governance body {} not found", body_id))
         })?;
@@ -2870,8 +2874,8 @@ async fn list_agenda_items(
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = query.entity_id;
 
-    let agenda_items = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let agenda_items = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
         // Ensure the meeting exists and belongs to this entity's store.
         store
             .read::<Meeting>("main", meeting_id)
@@ -2917,8 +2921,8 @@ async fn send_notice(
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = query.entity_id;
 
-    let meeting = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let meeting = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
         ensure_entity_ready_for_governance(&store, "meeting notice")?;
         let mut meeting = store
             .read::<Meeting>("main", meeting_id)
@@ -2967,8 +2971,8 @@ async fn convene_meeting(
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = query.entity_id;
 
-    let meeting = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let meeting = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
         ensure_entity_ready_for_governance(&store, "meeting convening")?;
         let mut meeting = store
             .read::<Meeting>("main", meeting_id)
@@ -3036,8 +3040,8 @@ async fn adjourn_meeting(
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = query.entity_id;
 
-    let meeting = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let meeting = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
         ensure_entity_ready_for_governance(&store, "meeting adjournment")?;
         let mut meeting = store
             .read::<Meeting>("main", meeting_id)
@@ -3116,8 +3120,8 @@ async fn reopen_meeting(
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = query.entity_id;
 
-    let meeting = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let meeting = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
         ensure_entity_ready_for_governance(&store, "meeting reopening")?;
         let mut meeting = store
             .read::<Meeting>("main", meeting_id)
@@ -3164,8 +3168,8 @@ async fn cancel_meeting(
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = query.entity_id;
 
-    let meeting = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let meeting = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
         ensure_entity_ready_for_governance(&store, "meeting cancellation")?;
         let mut meeting = store
             .read::<Meeting>("main", meeting_id)
@@ -3219,8 +3223,8 @@ async fn cast_vote(
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = query.entity_id;
 
-    let vote = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let vote = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
         ensure_entity_ready_for_governance(&store, "vote casting")?;
 
         // Read the meeting and check it can accept votes
@@ -3349,8 +3353,8 @@ async fn list_votes(
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = query.entity_id;
 
-    let votes = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let votes = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
         let ids = store.list_vote_ids("main", meeting_id).unwrap_or_default();
 
         let mut results = Vec::new();
@@ -3393,8 +3397,8 @@ async fn finalize_agenda_item(
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = req.entity_id;
 
-    let agenda_item = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let agenda_item = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
         ensure_entity_ready_for_governance(&store, "agenda finalization")?;
         store
             .read::<Meeting>("main", meeting_id)
@@ -3490,8 +3494,8 @@ async fn compute_resolution(
         validate_not_too_far_future("effective_date", effective_date, 730)?;
     }
 
-    let resolution = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let resolution = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
         ensure_entity_ready_for_governance(&store, "resolution computation")?;
 
         // Read the meeting
@@ -3618,8 +3622,8 @@ async fn list_resolutions(
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = query.entity_id;
 
-    let resolutions = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let resolutions = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
         let meeting = store
             .read::<Meeting>("main", meeting_id)
             .map_err(|_| AppError::NotFound(format!("meeting {} not found", meeting_id)))?;
@@ -3674,8 +3678,8 @@ async fn attach_resolution_document(
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = req.entity_id;
 
-    let resolution = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let resolution = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
         // Validate attached document exists in formation records.
         store.read_document("main", req.document_id).map_err(|_| {
             AppError::NotFound(format!("document {} not found", req.document_id))
@@ -3740,8 +3744,8 @@ async fn scan_expired_seats(
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = query.entity_id;
 
-    let result = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let result = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
 
         let today = chrono::Utc::now().date_naive();
         let mut scanned = 0usize;
@@ -3824,8 +3828,8 @@ async fn written_consent(
     state.enforce_creation_rate_limit("governance.written_consent.create", workspace_id, 60, 60)?;
     let title = require_non_empty_trimmed(&req.title, "title")?;
 
-    let meeting = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let meeting = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
         ensure_entity_ready_for_governance(&store, "written consent creation")?;
 
         // Verify body exists
@@ -3908,8 +3912,8 @@ async fn list_all_meetings(
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = query.entity_id;
 
-    let meetings = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let meetings = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
         let ids = store
             .list_ids::<Meeting>("main")
             .map_err(|e| AppError::Internal(format!("list meetings: {e}")))?;
@@ -3946,8 +3950,8 @@ async fn list_all_governance_bodies(
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = query.entity_id;
 
-    let bodies = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let bodies = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
         let ids = store
             .list_ids::<GovernanceBody>("main")
             .map_err(|e| AppError::Internal(format!("list bodies: {e}")))?;

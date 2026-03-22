@@ -320,8 +320,8 @@ async fn create_account(
     let entity_id = req.entity_id;
     state.enforce_creation_rate_limit("treasury.account.create", workspace_id, 120, 60)?;
 
-    let account = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let account = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
         ensure_entity_ready_for_treasury(&store, "account creation")?;
 
         let account_id = AccountId::new();
@@ -361,8 +361,8 @@ async fn list_accounts(
     let workspace_id = auth.workspace_id();
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let accounts = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let accounts = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
         let ids = store
             .list_ids::<Account>("main")
             .map_err(|e| AppError::Internal(format!("list accounts: {e}")))?;
@@ -411,8 +411,8 @@ async fn create_journal_entry(
         validate_reasonable_amount(line.amount_cents, "line.amount_cents")?;
     }
 
-    let entry = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let entry = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
         ensure_entity_ready_for_treasury(&store, "journal entry creation")?;
 
         let entry_id = JournalEntryId::new();
@@ -472,8 +472,8 @@ async fn list_journal_entries(
     let workspace_id = auth.workspace_id();
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let entries = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let entries = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
         let ids = store
             .list_ids::<JournalEntry>("main")
             .map_err(|e| AppError::Internal(format!("list journal entries: {e}")))?;
@@ -514,8 +514,8 @@ async fn post_journal_entry(
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = query.entity_id;
 
-    let entry = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let entry = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
         let mut entry = store
             .read::<JournalEntry>("main", entry_id)
             .map_err(|_| AppError::NotFound(format!("journal entry {} not found", entry_id)))?;
@@ -561,8 +561,8 @@ async fn void_journal_entry(
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = query.entity_id;
 
-    let entry = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let entry = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
         let mut entry = store
             .read::<JournalEntry>("main", entry_id)
             .map_err(|_| AppError::NotFound(format!("journal entry {} not found", entry_id)))?;
@@ -616,8 +616,8 @@ async fn create_invoice(
     validate_not_too_far_past("due_date", req.due_date, 365)?;
     validate_reasonable_amount(req.amount_cents, "amount_cents")?;
 
-    let invoice = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let invoice = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
         ensure_entity_ready_for_treasury(&store, "invoice creation")?;
 
         let invoice_id = InvoiceId::new();
@@ -664,8 +664,8 @@ async fn list_invoices(
     let workspace_id = auth.workspace_id();
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let invoices = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let invoices = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
         let ids = store
             .list_ids::<Invoice>("main")
             .map_err(|e| AppError::Internal(format!("list invoices: {e}")))?;
@@ -706,8 +706,8 @@ async fn send_invoice(
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = query.entity_id;
 
-    let invoice = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let invoice = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
         let mut invoice = store
             .read::<Invoice>("main", invoice_id)
             .map_err(|_| AppError::NotFound(format!("invoice {} not found", invoice_id)))?;
@@ -753,8 +753,8 @@ async fn mark_invoice_paid(
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = query.entity_id;
 
-    let invoice = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let invoice = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
         let mut invoice = store
             .read::<Invoice>("main", invoice_id)
             .map_err(|_| AppError::NotFound(format!("invoice {} not found", invoice_id)))?;
@@ -800,8 +800,8 @@ async fn get_invoice_status(
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = query.entity_id;
 
-    let invoice = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let invoice = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
         store
             .read::<Invoice>("main", invoice_id)
             .map_err(|_| AppError::NotFound(format!("invoice {} not found", invoice_id)))
@@ -842,8 +842,8 @@ async fn get_pay_instructions(
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = query.entity_id;
 
-    let invoice = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let invoice = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
         store
             .read::<Invoice>("main", invoice_id)
             .map_err(|_| AppError::NotFound(format!("invoice {} not found", invoice_id)))
@@ -886,8 +886,8 @@ async fn create_bank_account(
     state.enforce_creation_rate_limit("treasury.bank_account.create", workspace_id, 60, 60)?;
     let bank_name = require_non_empty_trimmed(&req.bank_name, "bank_name")?;
 
-    let bank_account = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let bank_account = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
         ensure_entity_ready_for_treasury(&store, "bank account creation")?;
         let existing_ids = store
             .list_ids::<BankAccount>("main")
@@ -952,8 +952,8 @@ async fn list_bank_accounts(
     let workspace_id = auth.workspace_id();
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let bank_accounts = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let bank_accounts = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
         let ids = store
             .list_ids::<BankAccount>("main")
             .map_err(|e| AppError::Internal(format!("list bank accounts: {e}")))?;
@@ -989,8 +989,8 @@ async fn list_payments(
     let workspace_id = auth.workspace_id();
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let payments = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let payments = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
         let ids = store
             .list_ids::<Payment>("main")
             .map_err(|e| AppError::Internal(format!("list payments: {e}")))?;
@@ -1026,8 +1026,8 @@ async fn list_payroll_runs(
     let workspace_id = auth.workspace_id();
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let payroll_runs = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let payroll_runs = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
         let ids = store
             .list_ids::<PayrollRun>("main")
             .map_err(|e| AppError::Internal(format!("list payroll runs: {e}")))?;
@@ -1063,8 +1063,8 @@ async fn list_distributions(
     let workspace_id = auth.workspace_id();
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let distributions = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let distributions = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
         let ids = store
             .list_ids::<Distribution>("main")
             .map_err(|e| AppError::Internal(format!("list distributions: {e}")))?;
@@ -1100,8 +1100,8 @@ async fn list_reconciliations(
     let workspace_id = auth.workspace_id();
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let reconciliations = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let reconciliations = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
         let ids = store
             .list_ids::<Reconciliation>("main")
             .map_err(|e| AppError::Internal(format!("list reconciliations: {e}")))?;
@@ -1142,8 +1142,8 @@ async fn activate_bank_account(
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = query.entity_id;
 
-    let bank_account = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let bank_account = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
         let mut ba = store
             .read::<BankAccount>("main", bank_account_id)
             .map_err(|_| {
@@ -1191,8 +1191,8 @@ async fn close_bank_account(
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = query.entity_id;
 
-    let bank_account = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let bank_account = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
         let mut ba = store
             .read::<BankAccount>("main", bank_account_id)
             .map_err(|_| {
@@ -1337,8 +1337,8 @@ async fn submit_payment(
         .map_err(|e| AppError::BadRequest(e.to_owned()))?;
     validate_reasonable_amount(req.amount_cents, "amount_cents")?;
 
-    let payment = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let payment = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
         ensure_entity_ready_for_treasury(&store, "payment submission")?;
         if payment_method_requires_active_bank_account(req.payment_method) {
             ensure_active_bank_account_available(&store)?;
@@ -1403,8 +1403,8 @@ async fn execute_payment(
         .map_err(|e| AppError::BadRequest(e.to_owned()))?;
     validate_reasonable_amount(req.amount_cents, "amount_cents")?;
 
-    let payment = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let payment = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
         ensure_entity_ready_for_treasury(&store, "payment execution")?;
         if payment_method_requires_active_bank_account(req.payment_method) {
             ensure_active_bank_account_available(&store)?;
@@ -1481,8 +1481,8 @@ async fn create_payroll_run(
     validate_not_too_far_future("pay_period_start", req.pay_period_start, 366)?;
     validate_not_too_far_future("pay_period_end", req.pay_period_end, 366)?;
 
-    let run = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let run = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
         ensure_entity_ready_for_treasury(&store, "payroll creation")?;
         let existing_ids = store
             .list_ids::<PayrollRun>("main")
@@ -1550,8 +1550,8 @@ async fn create_distribution(
         .map_err(|e| AppError::BadRequest(e.to_owned()))?;
     validate_reasonable_amount(req.total_amount_cents, "total_amount_cents")?;
 
-    let dist = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let dist = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
         let entity = store
             .read_entity("main")
             .map_err(|e| AppError::Internal(format!("read entity: {e}")))?;
@@ -1645,8 +1645,8 @@ async fn reconcile_ledger(
         ));
     }
 
-    let recon = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let recon = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
         ensure_entity_ready_for_treasury(&store, "ledger reconciliation")?;
 
         // Sum up all journal entries to compute totals
@@ -1776,8 +1776,8 @@ async fn get_stripe_account(
     let workspace_id = auth.workspace_id();
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let conn = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let conn = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
 
         // Try to read existing connection
         match store.read_json::<StripeConnection>("main", "treasury/stripe-connection.json") {
@@ -1860,8 +1860,8 @@ async fn create_spending_limit(
     let entity_id = req.entity_id;
     validate_reasonable_amount(req.amount_cents, "amount_cents")?;
 
-    let sl = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let sl = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
         let sl_id = SpendingLimitId::new();
         let sl =
             SpendingLimit::new(sl_id, entity_id, req.amount_cents, req.period, req.category);
@@ -1898,8 +1898,8 @@ async fn list_spending_limits(
     let workspace_id = auth.workspace_id();
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let limits = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let limits = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
         let ids: Vec<SpendingLimitId> = store
             .list_ids_in_dir("main", "treasury/spending-limits")
             .unwrap_or_default();
@@ -1961,8 +1961,8 @@ async fn get_financial_statements(
     let workspace_id = auth.workspace_id();
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let statement = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let statement = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
 
         // Read all accounts and compute totals by type
         let account_ids = store.list_ids::<Account>("main").unwrap_or_default();
@@ -2054,8 +2054,8 @@ async fn seed_chart_of_accounts(
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = req.entity_id;
 
-    let count = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let count = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
 
         let codes = vec![
             GlAccountCode::Cash,
@@ -2112,8 +2112,8 @@ async fn get_invoice(
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = query.entity_id;
 
-    let invoice = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let invoice = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
         store
             .read::<Invoice>("main", invoice_id)
             .map_err(|_| AppError::NotFound(format!("invoice {} not found", invoice_id)))
@@ -2168,8 +2168,8 @@ async fn from_agent_request(
     }
     validate_reasonable_amount(req.amount_cents, "amount_cents")?;
 
-    let invoice = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let invoice = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
         ensure_entity_ready_for_treasury(&store, "invoice creation")?;
 
         let invoice_id = InvoiceId::new();
@@ -2233,8 +2233,8 @@ async fn create_stripe_account(
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = req.entity_id;
 
-    let conn = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let conn = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
 
         // Check if a Stripe connection already exists — reject duplicates.
         match store.read_json::<StripeConnection>("main", "treasury/stripe-connection.json") {
@@ -2297,8 +2297,8 @@ async fn get_chart_of_accounts(
     let workspace_id = auth.workspace_id();
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let accounts = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let accounts = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
         let ids = store
             .list_ids::<Account>("main")
             .map_err(|e| AppError::Internal(format!("list accounts: {e}")))?;
@@ -2371,8 +2371,8 @@ async fn create_payout(
     let payout_id_inner = payout_id.clone();
     let destination = req.destination.clone();
     let description = req.description.clone();
-    super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
         store
             .write_json(
                 "main",
@@ -2457,8 +2457,8 @@ async fn create_payment_intent(
     let currency_inner = currency.clone();
     let client_secret_inner = client_secret.clone();
     let description = req.description.clone();
-    super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
         ensure_entity_ready_for_treasury(&store, "payment intent creation")?;
         store
             .write_json(

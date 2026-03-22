@@ -2417,8 +2417,8 @@ async fn create_holder(
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
     let holder_name = holder_name.clone();
-    let holder = super::shared::with_blocking_store(&state, move |layout, valkey| {
-            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let holder = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
             let holder = Holder::new(
                 HolderId::new(),
                 req.contact_id,
@@ -2469,8 +2469,8 @@ async fn create_legal_entity(
     state.enforce_creation_rate_limit("equity.legal_entity.create", workspace_id, 30, 60)?;
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let legal_entity = super::shared::with_blocking_store(&state, move |layout, valkey| {
-            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let legal_entity = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
             // Idempotent: if a legal entity with the same name and role exists, return it
             let existing_ids = store
                 .list_ids::<LegalEntity>("main")
@@ -2531,8 +2531,8 @@ async fn create_control_link(
     }
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let link = super::shared::with_blocking_store(&state, move |layout, valkey| {
-            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let link = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
             let entities = store.read_all::<LegalEntity>("main").map_err(|e| AppError::Internal(e.to_string()))?;
             let known: HashSet<LegalEntityId> =
                 entities.iter().map(|e| e.legal_entity_id()).collect();
@@ -2606,8 +2606,8 @@ async fn create_instrument(
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
     let symbol = symbol.clone();
-    let instrument = super::shared::with_blocking_store(&state, move |layout, valkey| {
-            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let instrument = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
             let entities = store.read_all::<LegalEntity>("main").map_err(|e| AppError::Internal(e.to_string()))?;
             if !entities
                 .iter()
@@ -2666,8 +2666,8 @@ async fn adjust_position(
     }
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let position = super::shared::with_blocking_store(&state, move |layout, valkey| {
-            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let position = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
 
             let holders = store.read_all::<Holder>("main").map_err(|e| AppError::Internal(e.to_string()))?;
             if !holders.iter().any(|h| h.holder_id() == req.holder_id) {
@@ -2777,8 +2777,8 @@ async fn create_round(
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
     let round_name = round_name.clone();
-    let round = super::shared::with_blocking_store(&state, move |layout, valkey| {
-            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let round = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
             let entities = store.read_all::<LegalEntity>("main").map_err(|e| AppError::Internal(e.to_string()))?;
             if !entities
                 .iter()
@@ -2852,8 +2852,8 @@ async fn apply_round_terms(
     }
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let rules = super::shared::with_blocking_store(&state, move |layout, valkey| {
-            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let rules = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
             let mut round = store
                 .read::<EquityRound>("main", round_id)
                 .map_err(|_| AppError::NotFound(format!("equity round {} not found", round_id)))?;
@@ -2922,8 +2922,8 @@ async fn board_approve_round(
     }
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let round = super::shared::with_blocking_store(&state, move |layout, valkey| {
-            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let round = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
             let mut round = store
                 .read::<EquityRound>("main", round_id)
                 .map_err(|_| AppError::NotFound(format!("equity round {} not found", round_id)))?;
@@ -2981,8 +2981,8 @@ async fn accept_round(
     }
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let round = super::shared::with_blocking_store(&state, move |layout, valkey| {
-            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let round = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
             let mut round = store
                 .read::<EquityRound>("main", round_id)
                 .map_err(|_| AppError::NotFound(format!("equity round {} not found", round_id)))?;
@@ -3060,8 +3060,8 @@ async fn create_transfer_workflow(
     state.enforce_creation_rate_limit("equity.transfer_workflow.create", workspace_id, 120, 60)?;
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let workflow = super::shared::with_blocking_store(&state, move |layout, valkey| {
-            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let workflow = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
             store
                 .read::<ShareClass>("main", req.share_class_id)
                 .map_err(|_| AppError::BadRequest("share_class_id does not exist".to_owned()))?;
@@ -3164,8 +3164,8 @@ async fn generate_transfer_workflow_docs(
     }
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let workflow = super::shared::with_blocking_store(&state, move |layout, valkey| {
-            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let workflow = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
             let mut workflow = store
                 .read::<TransferWorkflow>("main", workflow_id)
                 .map_err(|_| {
@@ -3235,8 +3235,8 @@ async fn submit_transfer_workflow_for_review(
     }
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let workflow = super::shared::with_blocking_store(&state, move |layout, valkey| {
-            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let workflow = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
             let mut workflow = store
                 .read::<TransferWorkflow>("main", workflow_id)
                 .map_err(|_| {
@@ -3320,8 +3320,8 @@ async fn record_transfer_workflow_review(
     }
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let workflow = super::shared::with_blocking_store(&state, move |layout, valkey| {
-            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let workflow = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
             let mut workflow = store
                 .read::<TransferWorkflow>("main", workflow_id)
                 .map_err(|_| {
@@ -3397,8 +3397,8 @@ async fn record_transfer_workflow_rofr(
     }
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let workflow = super::shared::with_blocking_store(&state, move |layout, valkey| {
-            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let workflow = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
             let mut workflow = store
                 .read::<TransferWorkflow>("main", workflow_id)
                 .map_err(|_| {
@@ -3474,8 +3474,8 @@ async fn record_transfer_workflow_board_approval(
     }
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let workflow = super::shared::with_blocking_store(&state, move |layout, valkey| {
-            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let workflow = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
             let mut workflow = store
                 .read::<TransferWorkflow>("main", workflow_id)
                 .map_err(|_| {
@@ -3560,8 +3560,8 @@ async fn record_transfer_workflow_execution(
     }
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let workflow = super::shared::with_blocking_store(&state, move |layout, valkey| {
-            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let workflow = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
             let mut workflow = store
                 .read::<TransferWorkflow>("main", workflow_id)
                 .map_err(|_| {
@@ -3655,8 +3655,8 @@ async fn get_transfer_workflow(
     }
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let workflow = super::shared::with_blocking_store(&state, move |layout, valkey| {
-            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let workflow = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
             let workflow = store
                 .read::<TransferWorkflow>("main", workflow_id)
                 .map_err(|_| {
@@ -3705,8 +3705,8 @@ async fn create_fundraising_workflow(
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
     let round_name = round_name.clone();
-    let workflow = super::shared::with_blocking_store(&state, move |layout, valkey| {
-            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let workflow = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
             let entities = store.read_all::<LegalEntity>("main").map_err(|e| AppError::Internal(e.to_string()))?;
             if !entities
                 .iter()
@@ -3819,8 +3819,8 @@ async fn apply_fundraising_workflow_terms(
     }
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let workflow = super::shared::with_blocking_store(&state, move |layout, valkey| {
-            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let workflow = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
             let mut workflow = store
                 .read::<FundraisingWorkflow>("main", workflow_id)
                 .map_err(|_| {
@@ -3908,8 +3908,8 @@ async fn generate_fundraising_board_packet(
     }
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let workflow = super::shared::with_blocking_store(&state, move |layout, valkey| {
-            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let workflow = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
             let mut workflow = store
                 .read::<FundraisingWorkflow>("main", workflow_id)
                 .map_err(|_| {
@@ -3988,8 +3988,8 @@ async fn record_fundraising_workflow_board_approval(
     }
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let workflow = super::shared::with_blocking_store(&state, move |layout, valkey| {
-            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let workflow = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
             let mut workflow = store
                 .read::<FundraisingWorkflow>("main", workflow_id)
                 .map_err(|_| {
@@ -4077,8 +4077,8 @@ async fn record_fundraising_workflow_acceptance(
     }
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let workflow = super::shared::with_blocking_store(&state, move |layout, valkey| {
-            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let workflow = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
             let mut workflow = store
                 .read::<FundraisingWorkflow>("main", workflow_id)
                 .map_err(|_| {
@@ -4172,8 +4172,8 @@ async fn generate_fundraising_closing_packet(
     }
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let workflow = super::shared::with_blocking_store(&state, move |layout, valkey| {
-            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let workflow = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
             let mut workflow = store
                 .read::<FundraisingWorkflow>("main", workflow_id)
                 .map_err(|_| {
@@ -4252,8 +4252,8 @@ async fn record_fundraising_workflow_close(
     }
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let workflow = super::shared::with_blocking_store(&state, move |layout, valkey| {
-            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let workflow = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
             let mut workflow = store
                 .read::<FundraisingWorkflow>("main", workflow_id)
                 .map_err(|_| {
@@ -4347,8 +4347,8 @@ async fn get_fundraising_workflow(
     }
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let workflow = super::shared::with_blocking_store(&state, move |layout, valkey| {
-            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let workflow = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
             let workflow = store
                 .read::<FundraisingWorkflow>("main", workflow_id)
                 .map_err(|_| {
@@ -4393,8 +4393,8 @@ async fn prepare_transfer_workflow_execution(
     }
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let response = super::shared::with_blocking_store(&state, move |layout, valkey| {
-            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let response = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
             let mut workflow = store
                 .read::<TransferWorkflow>("main", workflow_id)
                 .map_err(|_| {
@@ -4506,8 +4506,8 @@ async fn prepare_fundraising_workflow_execution(
     let is_close = phase.eq_ignore_ascii_case("close");
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let response = super::shared::with_blocking_store(&state, move |layout, valkey| {
-            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let response = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
             let mut workflow = store
                 .read::<FundraisingWorkflow>("main", workflow_id)
                 .map_err(|_| {
@@ -4616,8 +4616,8 @@ async fn compile_transfer_workflow_packet(
     }
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let packet = super::shared::with_blocking_store(&state, move |layout, valkey| {
-            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let packet = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
             let mut workflow = store
                 .read::<TransferWorkflow>("main", workflow_id)
                 .map_err(|_| {
@@ -4714,8 +4714,8 @@ async fn compile_fundraising_workflow_packet(
     let is_close = phase.eq_ignore_ascii_case("close");
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let packet = super::shared::with_blocking_store(&state, move |layout, valkey| {
-            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let packet = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
             let mut workflow = store
                 .read::<FundraisingWorkflow>("main", workflow_id)
                 .map_err(|_| {
@@ -4843,8 +4843,8 @@ async fn start_transfer_workflow_signatures(
         return Err(AppError::Forbidden("entity access denied".to_owned()));
     }
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
-    let packet = super::shared::with_blocking_store(&state, move |layout, valkey| {
-            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let packet = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
             let mut workflow = store
                 .read::<TransferWorkflow>("main", workflow_id)
                 .map_err(|_| {
@@ -4913,8 +4913,8 @@ async fn start_fundraising_workflow_signatures(
         return Err(AppError::Forbidden("entity access denied".to_owned()));
     }
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
-    let packet = super::shared::with_blocking_store(&state, move |layout, valkey| {
-            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let packet = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
             let mut workflow = store
                 .read::<FundraisingWorkflow>("main", workflow_id)
                 .map_err(|_| {
@@ -4989,8 +4989,8 @@ async fn record_transfer_workflow_signature(
     }
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let packet = super::shared::with_blocking_store(&state, move |layout, valkey| {
-            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let packet = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
             let mut workflow = store
                 .read::<TransferWorkflow>("main", workflow_id)
                 .map_err(|_| {
@@ -5073,8 +5073,8 @@ async fn record_fundraising_workflow_signature(
     }
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let packet = super::shared::with_blocking_store(&state, move |layout, valkey| {
-            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let packet = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
             let mut workflow = store
                 .read::<FundraisingWorkflow>("main", workflow_id)
                 .map_err(|_| {
@@ -5152,8 +5152,8 @@ async fn finalize_transfer_workflow(
     }
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let workflow = super::shared::with_blocking_store(&state, move |layout, valkey| {
-            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let workflow = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
             let mut workflow = store
                 .read::<TransferWorkflow>("main", workflow_id)
                 .map_err(|_| {
@@ -5265,8 +5265,8 @@ async fn finalize_fundraising_workflow(
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let is_close = phase.eq_ignore_ascii_case("close");
 
-    let workflow = super::shared::with_blocking_store(&state, move |layout, valkey| {
-            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let workflow = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
             let mut workflow = store
                 .read::<FundraisingWorkflow>("main", workflow_id)
                 .map_err(|_| {
@@ -5391,8 +5391,8 @@ async fn get_workflow_status(
     }
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let response = super::shared::with_blocking_store(&state, move |layout, valkey| {
-            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let response = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
             if workflow_type == "transfer" {
                 let id = workflow_id
                     .parse::<uuid::Uuid>()
@@ -5476,8 +5476,8 @@ async fn get_cap_table(
     }
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let response = super::shared::with_blocking_store(&state, move |layout, valkey| {
-            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let response = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
             let holders = store.read_all::<Holder>("main").map_err(|e| AppError::Internal(e.to_string()))?;
             let legal_entities = store.read_all::<LegalEntity>("main").map_err(|e| AppError::Internal(e.to_string()))?;
             let instruments = store.read_all::<Instrument>("main").map_err(|e| AppError::Internal(e.to_string()))?;
@@ -5526,8 +5526,8 @@ async fn preview_conversion(
     }
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let preview = super::shared::with_blocking_store(&state, move |layout, valkey| {
-            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let preview = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
             let round = store
                 .read::<EquityRound>("main", req.round_id)
                 .map_err(|_| {
@@ -5595,8 +5595,8 @@ async fn execute_conversion(
     }
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let result = super::shared::with_blocking_store(&state, move |layout, valkey| {
-            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let result = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
             let mut round = store
                 .read::<EquityRound>("main", req.round_id)
                 .map_err(|_| {
@@ -5860,8 +5860,8 @@ async fn get_control_map(
     }
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let response = super::shared::with_blocking_store(&state, move |layout, valkey| {
-            let store = super::shared::open_entity_store(layout, workspace_id, query.entity_id, entity_scope.as_deref(), valkey)?;
+    let response = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+            let store = super::shared::open_entity_store(layout, workspace_id, query.entity_id, entity_scope.as_deref(), valkey, s3)?;
             let links = store.read_all::<ControlLink>("main").map_err(|e| AppError::Internal(e.to_string()))?;
             let entities = store.read_all::<LegalEntity>("main").map_err(|e| AppError::Internal(e.to_string()))?;
             let entity_ids: HashSet<LegalEntityId> =
@@ -5928,8 +5928,8 @@ async fn get_dilution_preview(
     }
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let response = super::shared::with_blocking_store(&state, move |layout, valkey| {
-            let store = super::shared::open_entity_store(layout, workspace_id, query.entity_id, entity_scope.as_deref(), valkey)?;
+    let response = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+            let store = super::shared::open_entity_store(layout, workspace_id, query.entity_id, entity_scope.as_deref(), valkey, s3)?;
             let round = store
                 .read::<EquityRound>("main", query.round_id)
                 .map_err(|_| {
@@ -6014,8 +6014,8 @@ async fn start_staged_round(
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let round_name = round_name.clone();
 
-    let round = super::shared::with_blocking_store(&state, move |layout, valkey| {
-            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let round = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
 
             // Validate issuer legal entity exists
             let entities = store.read_all::<LegalEntity>("main").map_err(|e| AppError::Internal(e.to_string()))?;
@@ -6096,8 +6096,8 @@ async fn list_equity_rounds(
     }
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let rounds = super::shared::with_blocking_store(&state, move |layout, valkey| {
-            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let rounds = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
             let all = store.read_all::<EquityRound>("main").map_err(|e| AppError::Internal(e.to_string()))?;
             Ok(all.iter().map(round_to_response).collect::<Vec<_>>())
         })
@@ -6138,8 +6138,8 @@ async fn add_round_security(
     }
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let security = super::shared::with_blocking_store(&state, move |layout, valkey| {
-            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let security = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
 
             // Verify round exists and is Draft
             let round = store
@@ -6345,8 +6345,8 @@ async fn issue_staged_round(
     state.enforce_creation_rate_limit("equity.round.issue", workspace_id, 120, 60)?;
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let (round, positions, board_meeting_id) = super::shared::with_blocking_store(&state, move |layout, valkey| {
-            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let (round, positions, board_meeting_id) = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
 
             // Read and validate round
             let mut round = store
@@ -6715,8 +6715,8 @@ async fn create_safe_note(
     state.enforce_creation_rate_limit("equity.safe_note.create", workspace_id, 60, 60)?;
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let safe_note = super::shared::with_blocking_store(&state, move |layout, valkey| {
-            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let safe_note = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
             let (investor_contact_id, mut files) = resolve_or_prepare_investor_contact(
                 &store,
                 entity_id,
@@ -6808,8 +6808,8 @@ async fn list_safe_notes(
     }
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let safe_notes = super::shared::with_blocking_store(&state, move |layout, valkey| {
-            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let safe_notes = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
             let mut notes = store.read_all::<SafeNote>("main").map_err(|e| AppError::Internal(e.to_string()))?;
             notes.sort_by_key(|note| note.created_at());
             Ok(
@@ -6896,8 +6896,8 @@ async fn create_valuation(
     }
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let valuation = super::shared::with_blocking_store(&state, move |layout, valkey| {
-            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let valuation = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
             let (entity, _profile) = entity_profile_for_docs(&store)?;
             if let Some(formation_date) = entity.formation_date()
                 && req.effective_date < formation_date.date_naive()
@@ -6992,8 +6992,8 @@ async fn list_valuations(
     }
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let valuations = super::shared::with_blocking_store(&state, move |layout, valkey| {
-            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let valuations = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
             let all = store.read_all::<Valuation>("main").map_err(|e| AppError::Internal(e.to_string()))?;
             Ok(all.iter().map(valuation_to_response).collect::<Vec<_>>())
         })
@@ -7026,8 +7026,8 @@ async fn get_current_409a(
     }
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let valuation = super::shared::with_blocking_store(&state, move |layout, valkey| {
-            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let valuation = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
             let all = store.read_all::<Valuation>("main").map_err(|e| AppError::Internal(e.to_string()))?;
             all.into_iter()
                 .find(|v| v.is_current_409a())
@@ -7068,8 +7068,8 @@ async fn submit_valuation_for_approval(
     }
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let result = super::shared::with_blocking_store(&state, move |layout, valkey| {
-            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let result = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
             ensure_entity_is_active_for_governance(&store, "valuation approval submission")?;
 
             // Read and transition the valuation.
@@ -7199,8 +7199,8 @@ async fn approve_valuation(
     }
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let valuation = super::shared::with_blocking_store(&state, move |layout, valkey| {
-            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let valuation = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
 
             let mut valuation = store
                 .read::<Valuation>("main", valuation_id)
@@ -7354,8 +7354,8 @@ async fn create_legacy_share_transfer(
     let share_class_id = req.share_class_id;
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let transfer = super::shared::with_blocking_store(&state, move |layout, valkey| {
-            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let transfer = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
             let from_contact = resolve_transfer_sender_contact(&store, &from_holder)?;
             let to_contact = resolve_contact_reference(&store, &to_holder)?;
             if from_contact.contact_id() == to_contact.contact_id() {
@@ -7434,8 +7434,8 @@ async fn list_legacy_share_transfers(
     }
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let transfers = super::shared::with_blocking_store(&state, move |layout, valkey| {
-            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let transfers = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+            let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
             let all = store.read_all::<ShareTransfer>("main").map_err(|e| AppError::Internal(e.to_string()))?;
             Ok(
                 all.into_iter()

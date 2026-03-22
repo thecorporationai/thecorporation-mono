@@ -486,8 +486,8 @@ async fn file_tax_document(
     validate_tax_document_type(&req.document_type)?;
     validate_reasonable_year("tax_year", req.tax_year, 1900, 2)?;
 
-    let filing = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let filing = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
         ensure_entity_ready_for_compliance(&store, "tax filing")?;
         let document_type = canonical_tax_document_type(&req.document_type).to_owned();
         let existing_ids = store
@@ -571,8 +571,8 @@ async fn create_deadline(
     require_non_empty_trimmed_max(&req.description, "description", 2000)?;
     validate_deadline_recurrence(&deadline_type, req.recurrence)?;
 
-    let deadline = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let deadline = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
 
         let deadline_id = DeadlineId::new();
         let deadline = Deadline::new(
@@ -620,8 +620,8 @@ async fn list_tax_filings(
     let workspace_id = auth.workspace_id();
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let filings = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let filings = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
         let ids = store
             .list_ids::<TaxFiling>("main")
             .map_err(|e| AppError::Internal(format!("list tax filings: {e}")))?;
@@ -658,8 +658,8 @@ async fn list_deadlines(
     let workspace_id = auth.workspace_id();
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let deadlines = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let deadlines = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
         let ids = store
             .list_ids::<Deadline>("main")
             .map_err(|e| AppError::Internal(format!("list deadlines: {e}")))?;
@@ -696,8 +696,8 @@ async fn list_contractor_classifications(
     let workspace_id = auth.workspace_id();
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let classifications = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let classifications = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
         let ids = store
             .list_ids::<ContractorClassification>("main")
             .map_err(|e| AppError::Internal(format!("list contractor classifications: {e}")))?;
@@ -764,8 +764,8 @@ async fn classify_contractor(
         });
 
     let contractor_name = req.contractor_name.trim().to_owned();
-    let classification = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let classification = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
 
         let classification_id = ClassificationId::new();
         let classification = ContractorClassification::new(
@@ -824,8 +824,8 @@ async fn scan_compliance_escalations(
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = req.entity_id;
 
-    let response = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let response = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
         let deadline_ids = store
                 .list_ids::<Deadline>("main")
                 .map_err(|e| AppError::Internal(format!("list deadlines: {e}")))?;
@@ -993,8 +993,8 @@ async fn list_entity_escalations(
     let workspace_id = auth.workspace_id();
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let escalations = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let escalations = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
         let ids = store
             .list_ids::<ComplianceEscalation>("main")
             .map_err(|e| AppError::Internal(format!("list escalations: {e}")))?;
@@ -1036,8 +1036,8 @@ async fn resolve_escalation_with_evidence(
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = req.entity_id;
 
-    let response = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let response = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
         let mut escalation = store
                 .read::<ComplianceEscalation>("main", escalation_id)
                 .map_err(|_| {

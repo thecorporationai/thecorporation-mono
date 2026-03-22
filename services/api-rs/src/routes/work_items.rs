@@ -500,8 +500,8 @@ async fn create_work_item(
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let category = category.clone();
     let title = title.clone();
-    let work_item = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let work_item = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
         let created_by = resolve_actor_input(
             layout,
             &store,
@@ -569,8 +569,8 @@ async fn list_work_items(
         return Err(AppError::Forbidden("entity access denied".to_owned()));
     }
 
-    let items = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = match EntityStore::open(layout, workspace_id, entity_id, valkey) {
+    let items = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = match EntityStore::open(layout, workspace_id, entity_id, valkey, s3) {
             Ok(s) => s,
             Err(crate::git::error::GitStorageError::RepoNotFound(_)) => {
                 return Ok(Vec::new());
@@ -633,8 +633,8 @@ async fn get_work_item(
     }
 
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
-    let work_item = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let work_item = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
         store
             .read::<WorkItem>("main", work_item_id)
             .map_err(|_| AppError::NotFound(format!("work item {} not found", work_item_id)))
@@ -671,8 +671,8 @@ async fn claim_work_item(
     }
 
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
-    let work_item = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let work_item = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
         let claimed_by = resolve_actor_input(
             layout,
             &store,
@@ -738,8 +738,8 @@ async fn complete_work_item(
     }
 
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
-    let work_item = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let work_item = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
         let completed_by = resolve_actor_input(
             layout,
             &store,
@@ -810,8 +810,8 @@ async fn release_work_item(
     }
 
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
-    let work_item = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let work_item = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
         let mut w = store
             .read::<WorkItem>("main", work_item_id)
             .map_err(|_| AppError::NotFound(format!("work item {} not found", work_item_id)))?;
@@ -860,8 +860,8 @@ async fn cancel_work_item(
     }
 
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
-    let work_item = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let work_item = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
         let mut w = store
             .read::<WorkItem>("main", work_item_id)
             .map_err(|_| AppError::NotFound(format!("work item {} not found", work_item_id)))?;

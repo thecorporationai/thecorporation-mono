@@ -341,14 +341,14 @@ async fn entity_next_steps(
 ) -> Result<Json<NextStepsResponse>, AppError> {
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let workspace_id = auth.workspace_id();
-    let response = super::shared::with_blocking_store(&state, move |layout, valkey| {
+    let response = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
         if let Some(ref scope) = entity_scope {
             if !scope.contains(&entity_id) {
                 return Err(AppError::Forbidden("entity not in scope".into()));
             }
         }
         let store = EntityStore::open(
-            layout, workspace_id, entity_id, valkey,
+            layout, workspace_id, entity_id, valkey, s3,
         ).map_err(|e| AppError::NotFound(format!("entity not found: {e}")))?;
         Ok::<_, AppError>(build_response(compute_next_steps(&store, entity_id)))
     })
@@ -371,7 +371,7 @@ async fn workspace_next_steps(
     Path(workspace_id): Path<crate::domain::ids::WorkspaceId>,
 ) -> Result<Json<NextStepsResponse>, AppError> {
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
-    let response = super::shared::with_blocking_store(&state, move |layout, valkey| {
+    let response = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
         let entity_ids = layout.list_entity_ids(workspace_id);
         let mut all_items: Vec<NextStepItem> = Vec::new();
         for eid in entity_ids {
@@ -379,7 +379,7 @@ async fn workspace_next_steps(
                 if !scope.contains(&eid) { continue; }
             }
             if let Ok(store) = EntityStore::open(
-                layout, workspace_id, eid, valkey
+                layout, workspace_id, eid, valkey, s3
             ) {
                 all_items.extend(compute_next_steps(&store, eid));
             }

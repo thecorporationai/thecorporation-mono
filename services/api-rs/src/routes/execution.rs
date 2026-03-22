@@ -478,8 +478,8 @@ async fn create_intent(
     let entity_id = req.entity_id;
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let intent = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let intent = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
         let canonical_intent_type = canonicalize_intent_type(&req.intent_type);
         let mode = read_mode_or_default(&store, entity_id);
         let schedule = read_schedule_or_default(&store, entity_id);
@@ -545,8 +545,8 @@ async fn list_intents(
     let workspace_id = auth.workspace_id();
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let intents = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let intents = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
         let ids = store
             .list_ids::<Intent>("main")
             .map_err(|e| AppError::Internal(format!("list intents: {e}")))?;
@@ -589,8 +589,8 @@ async fn evaluate_intent(
     let entity_id = query.entity_id;
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let intent = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let intent = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
         let mut intent = store
             .read::<Intent>("main", intent_id)
             .map_err(|_| AppError::NotFound(format!("intent {} not found", intent_id)))?;
@@ -664,8 +664,8 @@ async fn authorize_intent(
     let entity_id = query.entity_id;
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let intent = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let intent = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
         let mut intent = store
             .read::<Intent>("main", intent_id)
             .map_err(|_| AppError::NotFound(format!("intent {} not found", intent_id)))?;
@@ -749,8 +749,8 @@ async fn execute_intent(
     let entity_id = query.entity_id;
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let intent = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let intent = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
         let mut intent = store
             .read::<Intent>("main", intent_id)
             .map_err(|_| AppError::NotFound(format!("intent {} not found", intent_id)))?;
@@ -833,8 +833,8 @@ async fn cancel_intent(
     let entity_id = query.entity_id;
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let intent = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let intent = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
         let mut intent = store
             .read::<Intent>("main", intent_id)
             .map_err(|_| AppError::NotFound(format!("intent {} not found", intent_id)))?;
@@ -878,8 +878,8 @@ async fn create_approval_artifact(
     let entity_id = req.entity_id;
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let artifact = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let artifact = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
         let canonical_intent_type = canonicalize_intent_type(&req.intent_type);
         let artifact = ApprovalArtifact::new(
             ApprovalArtifactId::new(),
@@ -933,8 +933,8 @@ async fn list_approval_artifacts(
 ) -> Result<Json<Vec<ApprovalArtifactResponse>>, AppError> {
     let workspace_id = auth.workspace_id();
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
-    let artifacts = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let artifacts = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
         let ids = store
             .list_ids::<ApprovalArtifact>("main")
             .map_err(|e| AppError::Internal(format!("list approval artifacts: {e}")))?;
@@ -974,8 +974,8 @@ async fn bind_approval_artifact_to_intent(
     let entity_id = req.entity_id;
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let intent = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let intent = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
         // Ensure the approval artifact exists before binding.
         store
             .read::<ApprovalArtifact>("main", req.approval_artifact_id)
@@ -1032,8 +1032,8 @@ async fn bind_document_request_to_intent(
     let entity_id = req.entity_id;
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let intent = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let intent = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
         let request = store
             .read::<DocumentRequest>("main", req.request_id)
             .map_err(|_| {
@@ -1094,8 +1094,8 @@ async fn create_obligation(
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     state.enforce_creation_rate_limit("execution.obligation.create", workspace_id, 120, 60)?;
 
-    let obligation = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let obligation = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
 
         let obligation_id = ObligationId::new();
         let obligation = Obligation::new(
@@ -1145,8 +1145,8 @@ async fn list_obligations(
     let workspace_id = auth.workspace_id();
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let obligations = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let obligations = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
         let ids = store
             .list_ids::<Obligation>("main")
             .map_err(|e| AppError::Internal(format!("list obligations: {e}")))?;
@@ -1189,8 +1189,8 @@ async fn fulfill_obligation(
     let entity_id = query.entity_id;
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let obligation = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let obligation = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
         let mut obligation = store
             .read::<Obligation>("main", obligation_id)
             .map_err(|_| {
@@ -1240,8 +1240,8 @@ async fn waive_obligation(
     let entity_id = query.entity_id;
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let obligation = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let obligation = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
         let mut obligation = store
             .read::<Obligation>("main", obligation_id)
             .map_err(|_| {
@@ -1291,8 +1291,8 @@ async fn expire_obligation(
     let entity_id = query.entity_id;
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let obligation = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let obligation = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
         let mut obligation = store
             .read::<Obligation>("main", obligation_id)
             .map_err(|_| {
@@ -1369,8 +1369,8 @@ async fn get_receipt(
     let entity_id = query.entity_id;
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let receipt = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let receipt = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
         store
             .read::<Receipt>("main", receipt_id)
             .map_err(|_| AppError::NotFound(format!("receipt {} not found", receipt_id)))
@@ -1404,8 +1404,8 @@ async fn list_receipts_by_intent(
     let entity_id = query.entity_id;
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let receipts = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let receipts = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
         let ids = store
             .list_ids::<Receipt>("main")
             .map_err(|e| AppError::Internal(format!("list receipts: {e}")))?;
@@ -1452,8 +1452,8 @@ async fn get_packet(
     let entity_id = query.entity_id;
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let packet = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let packet = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
         let packet = store
             .read::<TransactionPacket>("main", packet_id)
             .map_err(|_| AppError::NotFound(format!("packet {} not found", packet_id)))?;
@@ -1488,8 +1488,8 @@ async fn list_entity_packets(
     let workspace_id = auth.workspace_id();
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let packets = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let packets = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
         let ids = store
             .list_ids::<TransactionPacket>("main")
             .map_err(|e| AppError::Internal(format!("list packets: {e}")))?;
@@ -1539,8 +1539,8 @@ async fn assign_obligation(
     let entity_id = req.entity_id;
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let obligation = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let obligation = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
         let mut obligation = store
             .read::<Obligation>("main", obligation_id)
             .map_err(|_| {
@@ -1594,8 +1594,8 @@ async fn obligations_summary(
     let workspace_id = auth.workspace_id();
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let summary = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let summary = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
         let ids = store
             .list_ids::<Obligation>("main")
             .map_err(|e| AppError::Internal(format!("list obligations: {e}")))?;
@@ -1650,8 +1650,8 @@ async fn list_human_obligations(
     let workspace_id = auth.workspace_id();
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let obligations = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let obligations = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
         let ids = store
             .list_ids::<Obligation>("main")
             .map_err(|e| AppError::Internal(format!("list obligations: {e}")))?;
@@ -1691,9 +1691,10 @@ async fn list_global_human_obligations(
     let obligations = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         let valkey_client = state.valkey_client.clone();
+        let s3_backend = state.s3_backend.clone();
         move || {
             let (entity_ids, shared_store) =
-                EntityStore::list_and_prepare(&layout, workspace_id, valkey_client.as_ref())
+                EntityStore::list_and_prepare(&layout, workspace_id, valkey_client.as_ref(), s3_backend.as_ref())
                     .map_err(|e| AppError::Internal(e.to_string()))?;
             let mut results = Vec::new();
 
@@ -1841,8 +1842,8 @@ async fn create_document_request(
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let request_id = DocumentRequestId::new();
 
-    let request = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let request = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
 
         // Verify obligation exists
         store
@@ -1899,8 +1900,8 @@ async fn list_document_requests(
     let entity_id = query.entity_id;
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let requests = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let requests = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
 
         let ids = store
             .list_ids::<DocumentRequest>("main")
@@ -1993,8 +1994,8 @@ async fn update_document_request_status(
     new_status: DocumentRequestStatus,
     entity_scope: Option<Vec<EntityId>>,
 ) -> Result<Json<DocumentRequestResponse>, AppError> {
-    let result = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let result = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
         let path = format!("execution/document-requests/{}.json", request_id);
         let mut request: DocumentRequest = store.read_json("main", &path).map_err(|_| {
             AppError::NotFound(format!("document request {} not found", request_id))
@@ -2047,9 +2048,10 @@ async fn global_obligations_summary(
     let summary = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         let valkey_client = state.valkey_client.clone();
+        let s3_backend = state.s3_backend.clone();
         move || {
             let (entity_ids, shared_store) =
-                EntityStore::list_and_prepare(&layout, workspace_id, valkey_client.as_ref())
+                EntityStore::list_and_prepare(&layout, workspace_id, valkey_client.as_ref(), s3_backend.as_ref())
                     .map_err(|e| AppError::Internal(e.to_string()))?;
             let mut total = 0;
             let mut pending = 0;

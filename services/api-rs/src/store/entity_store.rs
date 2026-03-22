@@ -2,6 +2,7 @@
 
 use std::cell::RefCell;
 use std::rc::Rc;
+use std::sync::Arc;
 
 use serde::Serialize;
 
@@ -59,6 +60,7 @@ impl<'a> EntityStore<'a> {
         entity_id: EntityId,
         entity: &Entity,
         valkey_client: Option<&redis::Client>,
+        s3_backend: Option<&Arc<corp_store::s3_backend::S3Backend>>,
     ) -> Result<Self, GitStorageError> {
         let backend = match valkey_client {
             None => {
@@ -77,7 +79,13 @@ impl<'a> EntityStore<'a> {
                     })?;
                 let ws = workspace_id.to_string();
                 let ent = entity_id.to_string();
-                let mut cs = corp_store::CorpStore::new(con, &ws, &ent);
+                let mut cs = match s3_backend {
+                    Some(backend) => corp_store::CorpStore::with_durable(
+                        con, &ws, &ent,
+                        backend.clone() as Arc<dyn corp_store::durable::DurableBackend + Send + Sync>,
+                    ),
+                    None => corp_store::CorpStore::new(con, &ws, &ent),
+                };
                 let vfiles = vec![corp_store::entry::FileWrite::json("corp.json", entity)
                     .map_err(|e| {
                         tracing::error!(error = %e, "failed to serialize entity in EntityStore::init");
@@ -104,6 +112,7 @@ impl<'a> EntityStore<'a> {
         workspace_id: WorkspaceId,
         entity_id: EntityId,
         valkey_client: Option<&redis::Client>,
+        s3_backend: Option<&Arc<corp_store::s3_backend::S3Backend>>,
     ) -> Result<Self, GitStorageError> {
         let backend = match valkey_client {
             None => {
@@ -120,7 +129,13 @@ impl<'a> EntityStore<'a> {
                     })?;
                 let ws = workspace_id.to_string();
                 let ent = entity_id.to_string();
-                let mut cs = corp_store::CorpStore::new(con, &ws, &ent);
+                let mut cs = match s3_backend {
+                    Some(backend) => corp_store::CorpStore::with_durable(
+                        con, &ws, &ent,
+                        backend.clone() as Arc<dyn corp_store::durable::DurableBackend + Send + Sync>,
+                    ),
+                    None => corp_store::CorpStore::new(con, &ws, &ent),
+                };
                 // Verify the entity exists by resolving its main ref.
                 match cs.resolve_ref("main") {
                     Ok(_) => {}
@@ -182,6 +197,7 @@ impl<'a> EntityStore<'a> {
         layout: &RepoLayout,
         workspace_id: WorkspaceId,
         valkey_client: Option<&redis::Client>,
+        s3_backend: Option<&Arc<corp_store::s3_backend::S3Backend>>,
     ) -> Result<(
         Vec<EntityId>,
         Option<Rc<RefCell<corp_store::CorpStore<redis::Connection>>>>,
@@ -201,7 +217,13 @@ impl<'a> EntityStore<'a> {
                     .into_iter()
                     .filter_map(|s| s.parse().ok())
                     .collect();
-                let cs = corp_store::CorpStore::new(con, &ws, "");
+                let cs = match s3_backend {
+                    Some(backend) => corp_store::CorpStore::with_durable(
+                        con, &ws, "",
+                        backend.clone() as Arc<dyn corp_store::durable::DurableBackend + Send + Sync>,
+                    ),
+                    None => corp_store::CorpStore::new(con, &ws, ""),
+                };
                 Ok((ids, Some(Rc::new(RefCell::new(cs)))))
             }
         }

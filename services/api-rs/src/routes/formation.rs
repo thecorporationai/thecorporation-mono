@@ -3,6 +3,8 @@
 //! Endpoints for creating entities, signing documents, and advancing through
 //! the formation lifecycle.
 
+use std::sync::Arc;
+
 use axum::{
     Json, Router,
     extract::{Path, Query, State},
@@ -387,11 +389,12 @@ fn open_formation_store<'a>(
     entity_id: EntityId,
     allowed_entity_ids: Option<&[EntityId]>,
     valkey_client: Option<&redis::Client>,
+    s3_backend: Option<&Arc<corp_store::s3_backend::S3Backend>>,
 ) -> Result<
     crate::store::entity_store::EntityStore<'a>,
     crate::domain::formation::error::FormationError,
 > {
-    super::shared::open_entity_store(layout, workspace_id, entity_id, allowed_entity_ids, valkey_client).map_err(|e| {
+    super::shared::open_entity_store(layout, workspace_id, entity_id, allowed_entity_ids, valkey_client, s3_backend).map_err(|e| {
         match e {
             crate::error::AppError::NotFound(_) => {
                 crate::domain::formation::error::FormationError::EntityNotFound(entity_id)
@@ -418,6 +421,7 @@ fn resolve_document_entity_id(
     allowed_entity_ids: Option<&[EntityId]>,
     document_id: DocumentId,
     valkey_client: Option<&redis::Client>,
+    s3_backend: Option<&Arc<corp_store::s3_backend::S3Backend>>,
 ) -> Result<EntityId, AppError> {
     resolve_document_entity_id_inner(
         layout,
@@ -427,6 +431,7 @@ fn resolve_document_entity_id(
         document_id,
         false,
         valkey_client,
+        s3_backend,
     )
 }
 
@@ -437,6 +442,7 @@ fn resolve_document_entity_id_with_fallback(
     allowed_entity_ids: Option<&[EntityId]>,
     document_id: DocumentId,
     valkey_client: Option<&redis::Client>,
+    s3_backend: Option<&Arc<corp_store::s3_backend::S3Backend>>,
 ) -> Result<EntityId, AppError> {
     resolve_document_entity_id_inner(
         layout,
@@ -446,6 +452,7 @@ fn resolve_document_entity_id_with_fallback(
         document_id,
         true,
         valkey_client,
+        s3_backend,
     )
 }
 
@@ -457,6 +464,7 @@ fn resolve_document_entity_id_inner(
     document_id: DocumentId,
     fallback_across_entities: bool,
     valkey_client: Option<&redis::Client>,
+    s3_backend: Option<&Arc<corp_store::s3_backend::S3Backend>>,
 ) -> Result<EntityId, AppError> {
     if let Some(ids) = allowed_entity_ids {
         if !ids.contains(&requested_entity_id) {
@@ -467,7 +475,7 @@ fn resolve_document_entity_id_inner(
         }
     }
 
-    let has_document = EntityStore::open(layout, workspace_id, requested_entity_id, valkey_client)
+    let has_document = EntityStore::open(layout, workspace_id, requested_entity_id, valkey_client, s3_backend)
         .ok()
         .and_then(|store| store.read_document("main", document_id).ok())
         .is_some();
@@ -487,7 +495,7 @@ fn resolve_document_entity_id_inner(
                     continue;
                 }
             }
-            let found = EntityStore::open(layout, workspace_id, entity_id, valkey_client)
+            let found = EntityStore::open(layout, workspace_id, entity_id, valkey_client, s3_backend)
                 .ok()
                 .and_then(|store| store.read_document("main", document_id).ok())
                 .is_some();
@@ -648,6 +656,7 @@ async fn create_formation(
     let result = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         let valkey_client = state.valkey_client.clone();
+        let s3_backend = state.s3_backend.clone();
         let legal_name = req.legal_name;
         let jurisdiction = req.jurisdiction;
         let members = req.members;
@@ -658,7 +667,7 @@ async fn create_formation(
         let par_value = req.par_value;
         let profile_overrides = profile_overrides.clone();
         move || {
-            if workspace_has_legal_name(&layout, workspace_id, &legal_name, None, valkey_client.as_ref()).map_err(|e| {
+            if workspace_has_legal_name(&layout, workspace_id, &legal_name, None, valkey_client.as_ref(), s3_backend.as_ref()).map_err(|e| {
                 crate::domain::formation::error::FormationError::Validation(format!("{e:?}"))
             })? {
                 return Err(crate::domain::formation::error::FormationError::Validation(
@@ -741,6 +750,7 @@ async fn create_formation_with_cap_table(
     let result = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         let valkey_client = state.valkey_client.clone();
+        let s3_backend = state.s3_backend.clone();
         let legal_name = req.legal_name;
         let jurisdiction = req.jurisdiction;
         let members = req.members;
@@ -751,7 +761,7 @@ async fn create_formation_with_cap_table(
         let par_value = req.par_value;
         let profile_overrides = profile_overrides.clone();
         move || {
-            if workspace_has_legal_name(&layout, workspace_id, &legal_name, None, valkey_client.as_ref()).map_err(|e| {
+            if workspace_has_legal_name(&layout, workspace_id, &legal_name, None, valkey_client.as_ref(), s3_backend.as_ref()).map_err(|e| {
                 crate::domain::formation::error::FormationError::Validation(format!("{e:?}"))
             })? {
                 return Err(crate::domain::formation::error::FormationError::Validation(
@@ -832,8 +842,9 @@ async fn get_formation(
     let entity = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         let valkey_client = state.valkey_client.clone();
+        let s3_backend = state.s3_backend.clone();
         move || {
-            let store = open_formation_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
+            let store = open_formation_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref(), s3_backend.as_ref())?;
             store.read_entity("main").map_err(|e| {
                 crate::domain::formation::error::FormationError::Validation(e.to_string())
             })
@@ -871,8 +882,9 @@ async fn list_documents(
     let docs = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         let valkey_client = state.valkey_client.clone();
+        let s3_backend = state.s3_backend.clone();
         move || {
-            let store = open_formation_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
+            let store = open_formation_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref(), s3_backend.as_ref())?;
 
             let doc_ids = store.list_document_ids("main").map_err(|e| {
                 crate::domain::formation::error::FormationError::Validation(e.to_string())
@@ -933,8 +945,9 @@ async fn get_document(
     let doc = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         let valkey_client = state.valkey_client.clone();
+        let s3_backend = state.s3_backend.clone();
         move || {
-            let store = open_formation_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
+            let store = open_formation_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref(), s3_backend.as_ref())?;
 
             store
                 .read_document("main", document_id)
@@ -1023,8 +1036,9 @@ async fn sign_document(
     let (doc, sig_id) = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         let valkey_client = state.valkey_client.clone();
+        let s3_backend = state.s3_backend.clone();
         move || {
-            let store = open_formation_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
+            let store = open_formation_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref(), s3_backend.as_ref())?;
 
             let mut doc = store
                 .read_document("main", document_id)
@@ -1105,8 +1119,9 @@ async fn mark_documents_signed(
     let entity = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         let valkey_client = state.valkey_client.clone();
+        let s3_backend = state.s3_backend.clone();
         move || {
-            let store = open_formation_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
+            let store = open_formation_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref(), s3_backend.as_ref())?;
 
             let mut entity = store.read_entity("main").map_err(|e| {
                 crate::domain::formation::error::FormationError::Validation(e.to_string())
@@ -1177,8 +1192,9 @@ async fn submit_filing(
     let entity = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         let valkey_client = state.valkey_client.clone();
+        let s3_backend = state.s3_backend.clone();
         move || {
-            let store = open_formation_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
+            let store = open_formation_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref(), s3_backend.as_ref())?;
             let mut entity = store.read_entity("main").map_err(|e| {
                 crate::domain::formation::error::FormationError::Validation(e.to_string())
             })?;
@@ -1238,8 +1254,9 @@ async fn record_filing_attestation(
     let response = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         let valkey_client = state.valkey_client.clone();
+        let s3_backend = state.s3_backend.clone();
         move || {
-            let store = open_formation_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
+            let store = open_formation_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref(), s3_backend.as_ref())?;
             let entity = store.read_entity("main").map_err(|e| {
                 crate::domain::formation::error::FormationError::Validation(e.to_string())
             })?;
@@ -1304,8 +1321,9 @@ async fn add_registered_agent_consent_evidence(
     let response = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         let valkey_client = state.valkey_client.clone();
+        let s3_backend = state.s3_backend.clone();
         move || {
-            let store = open_formation_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
+            let store = open_formation_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref(), s3_backend.as_ref())?;
             let entity = store.read_entity("main").map_err(|e| {
                 crate::domain::formation::error::FormationError::Validation(e.to_string())
             })?;
@@ -1361,9 +1379,9 @@ async fn execute_service_agreement(
     let workspace_id = auth.workspace_id();
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let response = super::shared::with_blocking_store(&state, move |layout, valkey| {
+    let response = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
         let store =
-            open_formation_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey).map_err(AppError::from)?;
+            open_formation_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3).map_err(AppError::from)?;
         let mut entity = store
             .read_entity("main")
             .map_err(|e| AppError::UnprocessableEntity(format!("validation error: {e}")))?;
@@ -1432,8 +1450,9 @@ async fn get_formation_gates(
     let response = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         let valkey_client = state.valkey_client.clone();
+        let s3_backend = state.s3_backend.clone();
         move || {
-            let store = open_formation_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
+            let store = open_formation_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref(), s3_backend.as_ref())?;
             let entity = store.read_entity("main").map_err(|e| {
                 crate::domain::formation::error::FormationError::Validation(e.to_string())
             })?;
@@ -1476,8 +1495,9 @@ async fn confirm_filing(
     let entity = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         let valkey_client = state.valkey_client.clone();
+        let s3_backend = state.s3_backend.clone();
         move || {
-            let store = open_formation_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
+            let store = open_formation_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref(), s3_backend.as_ref())?;
 
             let mut entity = store.read_entity("main").map_err(|e| {
                 crate::domain::formation::error::FormationError::Validation(e.to_string())
@@ -1554,8 +1574,9 @@ async fn apply_ein(
     let entity = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         let valkey_client = state.valkey_client.clone();
+        let s3_backend = state.s3_backend.clone();
         move || {
-            let store = open_formation_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
+            let store = open_formation_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref(), s3_backend.as_ref())?;
             let mut entity = store.read_entity("main").map_err(|e| {
                 crate::domain::formation::error::FormationError::Validation(e.to_string())
             })?;
@@ -1619,9 +1640,10 @@ async fn confirm_ein(
     let entity = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         let valkey_client = state.valkey_client.clone();
+        let s3_backend = state.s3_backend.clone();
         let ein = req.ein;
         move || {
-            let store = open_formation_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
+            let store = open_formation_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref(), s3_backend.as_ref())?;
 
             let mut entity = store.read_entity("main").map_err(|e| {
                 crate::domain::formation::error::FormationError::Validation(e.to_string())
@@ -1739,10 +1761,11 @@ fn workspace_has_legal_name(
     legal_name: &str,
     skip_entity_id: Option<EntityId>,
     valkey_client: Option<&redis::Client>,
+    s3_backend: Option<&Arc<corp_store::s3_backend::S3Backend>>,
 ) -> Result<bool, AppError> {
     let normalized = normalize_legal_name(legal_name);
     let (entity_ids, shared_store) =
-        EntityStore::list_and_prepare(layout, workspace_id, valkey_client)
+        EntityStore::list_and_prepare(layout, workspace_id, valkey_client, s3_backend)
             .map_err(|e| AppError::Internal(e.to_string()))?;
     for entity_id in entity_ids {
         if skip_entity_id.is_some_and(|skip| skip == entity_id) {
@@ -2443,9 +2466,10 @@ async fn generate_contract(
     let contract = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         let valkey_client = state.valkey_client.clone();
+        let s3_backend = state.s3_backend.clone();
         let counterparty_name = counterparty_name.clone();
         move || {
-            let store = open_formation_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
+            let store = open_formation_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref(), s3_backend.as_ref())?;
             let entity = store.read_entity("main").map_err(|e| {
                 crate::domain::formation::error::FormationError::Validation(e.to_string())
             })?;
@@ -2566,6 +2590,7 @@ async fn get_signing_link(
     let raw_token = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         let valkey_client = state.valkey_client.clone();
+        let s3_backend = state.s3_backend.clone();
         let expires_at = expires_at.clone();
         move || {
             let resolved_entity_id = resolve_document_entity_id(
@@ -2575,6 +2600,7 @@ async fn get_signing_link(
                 allowed_entity_ids.as_deref(),
                 document_id,
                 valkey_client.as_ref(),
+                s3_backend.as_ref(),
             )?;
 
             // Generate token with embedded IDs: sig_{workspace}_{entity}_{random}
@@ -2583,7 +2609,7 @@ async fn get_signing_link(
             );
             let token_hash = hash_signing_token(&raw_token);
 
-            let store = open_formation_store(&layout, workspace_id, resolved_entity_id, allowed_entity_ids.as_deref(), valkey_client.as_ref())?;
+            let store = open_formation_store(&layout, workspace_id, resolved_entity_id, allowed_entity_ids.as_deref(), valkey_client.as_ref(), s3_backend.as_ref())?;
             let signing_token = SigningToken {
                 token_hash: token_hash.clone(),
                 workspace_id,
@@ -2644,8 +2670,8 @@ async fn get_document_pdf(
     let entity_id = query.entity_id;
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
-    let pdf_bytes = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = open_formation_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let pdf_bytes = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = open_formation_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
         let doc = store
             .read_document("main", document_id)
             .map_err(|_| AppError::NotFound(format!("document {} not found", document_id)))?;
@@ -2730,9 +2756,10 @@ fn validate_preview_document(
     doc_id: &str,
     allowed_entity_ids: Option<&[EntityId]>,
     valkey_client: Option<&redis::Client>,
+    s3_backend: Option<&Arc<corp_store::s3_backend::S3Backend>>,
 ) -> Result<(), AppError> {
     let doc_id = normalize_preview_document_id(doc_id)?;
-    let store = open_formation_store(layout, workspace_id, entity_id, allowed_entity_ids, valkey_client)?;
+    let store = open_formation_store(layout, workspace_id, entity_id, allowed_entity_ids, valkey_client, s3_backend)?;
     let entity = store
         .read_entity("main")
         .map_err(|e| AppError::Internal(format!("read entity: {e}")))?;
@@ -2784,7 +2811,8 @@ async fn validate_preview_document_pdf(
     tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         let valkey_client = state.valkey_client.clone();
-        move || validate_preview_document(&layout, workspace_id, entity_id, &doc_id, entity_scope.as_deref(), valkey_client.as_ref())
+        let s3_backend = state.s3_backend.clone();
+        move || validate_preview_document(&layout, workspace_id, entity_id, &doc_id, entity_scope.as_deref(), valkey_client.as_ref(), s3_backend.as_ref())
     })
     .await
     .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
@@ -2822,9 +2850,10 @@ async fn preview_document_pdf(
         tokio::task::spawn_blocking({
             let layout = state.layout.clone();
             let valkey_client = state.valkey_client.clone();
+            let s3_backend = state.s3_backend.clone();
             let doc_id = doc_id.clone();
             move || {
-                let store = open_formation_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
+                let store = open_formation_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref(), s3_backend.as_ref())?;
                 let entity = store
                     .read_entity("main")
                     .map_err(|e| AppError::Internal(format!("read entity: {e}")))?;
@@ -2914,8 +2943,8 @@ async fn request_document_copy(
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
 
     // Verify the document exists and read its title
-    let doc = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = open_formation_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let doc = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = open_formation_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
         store
             .read_document("main", document_id)
             .map_err(|_| AppError::NotFound(format!("document {} not found", document_id)))
@@ -2958,8 +2987,9 @@ async fn get_amendment_history(
     let doc = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         let valkey_client = state.valkey_client.clone();
+        let s3_backend = state.s3_backend.clone();
         move || {
-            let store = open_formation_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
+            let store = open_formation_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref(), s3_backend.as_ref())?;
             store
                 .read_document("main", document_id)
                 .map_err(|e| match e {
@@ -3012,8 +3042,9 @@ async fn list_governance_documents(
     let docs = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         let valkey_client = state.valkey_client.clone();
+        let s3_backend = state.s3_backend.clone();
         move || {
-            let store = open_formation_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
+            let store = open_formation_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref(), s3_backend.as_ref())?;
             let ids = store.list_document_ids("main").map_err(|e| {
                 crate::domain::formation::error::FormationError::Validation(e.to_string())
             })?;
@@ -3065,8 +3096,9 @@ async fn get_current_governance_document(
     let doc = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         let valkey_client = state.valkey_client.clone();
+        let s3_backend = state.s3_backend.clone();
         move || {
-            let store = open_formation_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
+            let store = open_formation_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref(), s3_backend.as_ref())?;
             let ids = store.list_document_ids("main").map_err(|e| {
                 crate::domain::formation::error::FormationError::Validation(e.to_string())
             })?;
@@ -3126,9 +3158,10 @@ async fn list_entities(
     let entities = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         let valkey_client = state.valkey_client.clone();
+        let s3_backend = state.s3_backend.clone();
         move || {
             let (entity_ids, shared_store) =
-                EntityStore::list_and_prepare(&layout, workspace_id, valkey_client.as_ref())
+                EntityStore::list_and_prepare(&layout, workspace_id, valkey_client.as_ref(), s3_backend.as_ref())
                     .map_err(|e| AppError::Internal(e.to_string()))?;
             let mut results = Vec::new();
             for eid in entity_ids {
@@ -3183,8 +3216,9 @@ async fn convert_entity(
     let entity = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         let valkey_client = state.valkey_client.clone();
+        let s3_backend = state.s3_backend.clone();
         move || {
-            let store = open_formation_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
+            let store = open_formation_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref(), s3_backend.as_ref())?;
             let mut entity = store.read_entity("main").map_err(|e| {
                 crate::domain::formation::error::FormationError::Validation(e.to_string())
             })?;
@@ -3303,10 +3337,11 @@ async fn dissolve_entity(
     let entity = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         let valkey_client = state.valkey_client.clone();
+        let s3_backend = state.s3_backend.clone();
         let reason = reason.clone();
         let effective_date = req.effective_date;
         move || {
-            let store = open_formation_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
+            let store = open_formation_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref(), s3_backend.as_ref())?;
             let mut entity = store.read_entity("main").map_err(|e| {
                 crate::domain::formation::error::FormationError::Validation(e.to_string())
             })?;
@@ -3389,13 +3424,14 @@ async fn create_pending_formation(
     let entity = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         let valkey_client = state.valkey_client.clone();
+        let s3_backend = state.s3_backend.clone();
         let legal_name = req.legal_name;
         let jurisdiction = jurisdiction.clone();
         let registered_agent_name = cleaned_optional_string(req.registered_agent_name);
         let registered_agent_address = cleaned_optional_string(req.registered_agent_address);
         let profile_overrides = profile_overrides.clone();
         move || {
-            if workspace_has_legal_name(&layout, workspace_id, &legal_name, None, valkey_client.as_ref()).map_err(|e| {
+            if workspace_has_legal_name(&layout, workspace_id, &legal_name, None, valkey_client.as_ref(), s3_backend.as_ref()).map_err(|e| {
                 crate::domain::formation::error::FormationError::Validation(format!("{e:?}"))
             })? {
                 return Err(crate::domain::formation::error::FormationError::Validation(
@@ -3576,6 +3612,7 @@ fn resolve_signing_token(
     layout: &crate::store::RepoLayout,
     raw_token: &str,
     valkey_client: Option<&redis::Client>,
+    s3_backend: Option<&Arc<corp_store::s3_backend::S3Backend>>,
 ) -> Result<SigningToken, AppError> {
     let token_hash = hash_signing_token(raw_token);
 
@@ -3591,7 +3628,7 @@ fn resolve_signing_token(
         .parse()
         .map_err(|_| AppError::BadRequest("malformed signing token: bad entity_id".to_owned()))?;
 
-    let store = open_formation_store(layout, workspace_id, entity_id, None, valkey_client)
+    let store = open_formation_store(layout, workspace_id, entity_id, None, valkey_client, s3_backend)
         .map_err(|_| AppError::NotFound("invalid signing token".to_owned()))?;
 
     let path = format!("signing-tokens/{}.json", token_hash);
@@ -3633,15 +3670,15 @@ async fn resolve_signing_link(
 ) -> Result<Json<SigningResolveResponse>, AppError> {
     let token = query.token;
 
-    let result = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let st = resolve_signing_token(layout, &token, valkey)?;
+    let result = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let st = resolve_signing_token(layout, &token, valkey, s3)?;
         if st.document_id != document_id {
             return Err(AppError::BadRequest(
                 "token does not match document".to_owned(),
             ));
         }
 
-        let store = open_formation_store(layout, st.workspace_id, st.entity_id, None, valkey)?;
+        let store = open_formation_store(layout, st.workspace_id, st.entity_id, None, valkey, s3)?;
         let doc = store
             .read_document("main", document_id)
             .map_err(|_| AppError::NotFound(format!("document {} not found", document_id)))?;
@@ -3726,13 +3763,13 @@ async fn get_signing_pdf(
 ) -> Result<impl IntoResponse, AppError> {
     let token = query.token;
 
-    let pdf_bytes = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let st = resolve_signing_token(layout, &token, valkey)?;
+    let pdf_bytes = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let st = resolve_signing_token(layout, &token, valkey, s3)?;
         if st.document_id != document_id {
             return Err(AppError::BadRequest("token does not match document".to_owned()));
         }
 
-        let store = open_formation_store(layout, st.workspace_id, st.entity_id, None, valkey)?;
+        let store = open_formation_store(layout, st.workspace_id, st.entity_id, None, valkey, s3)?;
         let doc = store
             .read_document("main", document_id)
             .map_err(|_| AppError::NotFound(format!("document {} not found", document_id)))?;
@@ -3813,15 +3850,15 @@ async fn submit_signing(
 
     let token = query.token;
 
-    let (doc, sig_id) = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let st = resolve_signing_token(layout, &token, valkey)?;
+    let (doc, sig_id) = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let st = resolve_signing_token(layout, &token, valkey, s3)?;
         if st.document_id != document_id {
             return Err(AppError::BadRequest(
                 "token does not match document".to_owned(),
             ));
         }
 
-        let store = open_formation_store(layout, st.workspace_id, st.entity_id, None, valkey)?;
+        let store = open_formation_store(layout, st.workspace_id, st.entity_id, None, valkey, s3)?;
         let mut doc = store
             .read_document("main", document_id)
             .map_err(|_| AppError::NotFound(format!("document {} not found", document_id)))?;
@@ -4238,12 +4275,12 @@ mod tests {
         .expect("other entity");
 
         let resolved =
-            resolve_document_entity_id(&layout, workspace_id, owner.entity_id(), None, document_id, None)
+            resolve_document_entity_id(&layout, workspace_id, owner.entity_id(), None, document_id, None, None)
                 .expect("document should resolve for owning entity");
         assert_eq!(resolved, owner.entity_id());
 
         let err =
-            resolve_document_entity_id(&layout, workspace_id, other.entity_id(), None, document_id, None)
+            resolve_document_entity_id(&layout, workspace_id, other.entity_id(), None, document_id, None, None)
                 .expect_err("document should not resolve through a different entity");
         assert!(matches!(err, AppError::NotFound(_)));
     }
@@ -4279,7 +4316,7 @@ mod tests {
         .expect("entity");
 
         assert!(
-            workspace_has_legal_name(&layout, workspace_id, "Nexus AI Labs LLC", None, None)
+            workspace_has_legal_name(&layout, workspace_id, "Nexus AI Labs LLC", None, None, None)
                 .expect("name lookup")
         );
         assert!(
@@ -4288,6 +4325,7 @@ mod tests {
                 workspace_id,
                 "Nexus AI Labs LLC",
                 Some(entity.entity.entity_id()),
+                None,
                 None,
             )
             .expect("skip current entity")

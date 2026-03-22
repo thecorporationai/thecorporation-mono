@@ -282,7 +282,7 @@ fn validate_entity(
     stats.entities += 1;
     let ctx = entity_id.to_string();
 
-    let store = match EntityStore::open(layout, ws_id, entity_id, None) {
+    let store = match EntityStore::open(layout, ws_id, entity_id, None, None) {
         Ok(s) => s,
         Err(e) => {
             stats.push_error(

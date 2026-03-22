@@ -26,6 +26,7 @@ pub fn open_entity_store<'a>(
     entity_id: EntityId,
     allowed_entity_ids: Option<&[EntityId]>,
     valkey_client: Option<&redis::Client>,
+    s3_backend: Option<&Arc<corp_store::s3_backend::S3Backend>>,
 ) -> Result<EntityStore<'a>, AppError> {
     // Entity-scope authorization: if the token is scoped to specific entities,
     // verify this entity is in the allowed set.
@@ -38,7 +39,7 @@ pub fn open_entity_store<'a>(
         }
     }
 
-    EntityStore::open(layout, workspace_id, entity_id, valkey_client).map_err(|e| match e {
+    EntityStore::open(layout, workspace_id, entity_id, valkey_client, s3_backend).map_err(|e| match e {
         crate::git::error::GitStorageError::RepoNotFound(_) => {
             AppError::NotFound(format!("entity {} not found", entity_id))
         }
@@ -46,29 +47,21 @@ pub fn open_entity_store<'a>(
     })
 }
 
-/// Run a blocking closure with access to the store layout and optional Valkey client.
+/// Run a blocking closure with access to the store layout, optional Valkey client,
+/// and optional S3 durable backend.
 ///
 /// Replaces the 3-line `layout + valkey_client + spawn_blocking + map_err` pattern
 /// that was copy-pasted into every route handler.  The closure receives references to
-/// both so callers can pass them straight to [`open_entity_store`].
-///
-/// # Example
-///
-/// ```rust,ignore
-/// let result = with_blocking_store(&state, move |layout, valkey| {
-///     let store = open_entity_store(layout, workspace_id, entity_id, None, valkey)?;
-///     // ... work with store ...
-///     Ok(value)
-/// }).await?;
-/// ```
+/// all three so callers can pass them straight to [`open_entity_store`].
 pub async fn with_blocking_store<F, T>(state: &AppState, f: F) -> Result<T, AppError>
 where
-    F: FnOnce(&RepoLayout, Option<&redis::Client>) -> Result<T, AppError> + Send + 'static,
+    F: FnOnce(&RepoLayout, Option<&redis::Client>, Option<&Arc<corp_store::s3_backend::S3Backend>>) -> Result<T, AppError> + Send + 'static,
     T: Send + 'static,
 {
     let layout: Arc<RepoLayout> = state.layout.clone();
     let valkey_client = state.valkey_client.clone();
-    tokio::task::spawn_blocking(move || f(&layout, valkey_client.as_ref()))
+    let s3_backend = state.s3_backend.clone();
+    tokio::task::spawn_blocking(move || f(&layout, valkey_client.as_ref(), s3_backend.as_ref()))
         .await
         .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
 }

@@ -14,6 +14,8 @@ use std::collections::BTreeMap;
 use chrono::{DateTime, Utc};
 use redis::{Commands, ConnectionLike};
 
+use std::sync::Arc;
+
 use crate::durable::DurableBackend;
 use crate::entry::*;
 use crate::error::StoreError;
@@ -28,7 +30,7 @@ pub struct CorpStore<C: ConnectionLike> {
     con: C,
     ws: String,
     ent: String,
-    durable: Option<Box<dyn DurableBackend>>,
+    durable: Option<Arc<dyn DurableBackend + Send + Sync>>,
 }
 
 impl<C: ConnectionLike> CorpStore<C> {
@@ -47,7 +49,7 @@ impl<C: ConnectionLike> CorpStore<C> {
         con: C,
         ws: impl Into<String>,
         ent: impl Into<String>,
-        backend: Box<dyn DurableBackend>,
+        backend: Arc<dyn DurableBackend + Send + Sync>,
     ) -> Self {
         Self {
             con,

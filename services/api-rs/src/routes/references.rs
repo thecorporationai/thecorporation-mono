@@ -433,7 +433,7 @@ async fn sync_references(
             return Err(AppError::Forbidden("entity access denied".to_owned()));
         }
         let store =
-            EntityStore::open(&state.layout, workspace_id, entity_id, state.valkey_client.as_ref()).map_err(|err| match err {
+            EntityStore::open(&state.layout, workspace_id, entity_id, state.valkey_client.as_ref(), state.s3_backend.as_ref()).map_err(|err| match err {
                 GitStorageError::RepoNotFound(_) => {
                     AppError::NotFound(format!("entity {} not found", entity_id))
                 }

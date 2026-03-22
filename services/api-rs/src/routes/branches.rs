@@ -182,12 +182,13 @@ async fn create_branch(
 
     let name = req.name.clone();
     let from = req.from.clone();
-    let info = super::shared::with_blocking_store(&state, move |layout, valkey| {
+    let info = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
         let store = crate::store::entity_store::EntityStore::open(
             layout,
             workspace_id,
             entity_id,
             valkey,
+            s3,
         )
         .map_err(|e| AppError::Internal(e.to_string()))?;
 
@@ -222,12 +223,13 @@ async fn list_branches(
     let workspace_id = auth.workspace_id();
     let entity_id = query.entity_id;
 
-    let branches = super::shared::with_blocking_store(&state, move |layout, valkey| {
+    let branches = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
         let store = crate::store::entity_store::EntityStore::open(
             layout,
             workspace_id,
             entity_id,
             valkey,
+            s3,
         )
         .map_err(|e| AppError::Internal(e.to_string()))?;
 
@@ -273,12 +275,13 @@ async fn merge_branch(
 
     let squash = req.squash;
     let target = req.into.clone();
-    let result = super::shared::with_blocking_store(&state, move |layout, valkey| {
+    let result = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
         let store = crate::store::entity_store::EntityStore::open(
             layout,
             workspace_id,
             entity_id,
             valkey,
+            s3,
         )
         .map_err(|e| AppError::Internal(e.to_string()))?;
 
@@ -336,12 +339,13 @@ async fn delete_branch_handler(
     let entity_id = query.entity_id;
     let branch = BranchName::new(name).map_err(|e| AppError::BadRequest(e.to_string()))?;
 
-    super::shared::with_blocking_store(&state, move |layout, valkey| {
+    super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
         let store = crate::store::entity_store::EntityStore::open(
             layout,
             workspace_id,
             entity_id,
             valkey,
+            s3,
         )
         .map_err(|e| AppError::Internal(e.to_string()))?;
 

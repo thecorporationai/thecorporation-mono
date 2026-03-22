@@ -203,8 +203,8 @@ async fn create_request(
     let item_id = catalog_item.item_id;
     let amount_cents = catalog_item.amount_cents;
     let obligation_id_input = req.obligation_id;
-    let service_request = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let service_request = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
 
         // Resolve or auto-create obligation.
         let obligation_id = match obligation_id_input {
@@ -278,8 +278,8 @@ async fn get_request(
     }
 
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
-    let service_request = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let service_request = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
         read_service_request(&store, request_id)
     })
     .await?;
@@ -311,8 +311,8 @@ async fn list_requests(
     }
 
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
-    let requests = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let requests = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
         let ids: Vec<ServiceRequestId> = store
             .list_ids_in_dir("main", "services/requests")
             .unwrap_or_default();
@@ -361,8 +361,8 @@ async fn begin_checkout(
     }
 
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
-    let service_request = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let service_request = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
         let mut service_request = read_service_request(&store, request_id)?;
 
         // Generate a deterministic session ID from the request ID.
@@ -405,8 +405,8 @@ async fn fulfill_request(
     let entity_id = req.entity_id;
 
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
-    let service_request = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let service_request = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
         let mut service_request = read_service_request(&store, request_id)?;
 
         // Paid -> Fulfilling -> Fulfilled in one atomic call.
@@ -457,8 +457,8 @@ async fn cancel_request(
     }
 
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
-    let service_request = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+    let service_request = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey, s3)?;
         let mut service_request = read_service_request(&store, request_id)?;
 
         service_request
@@ -510,8 +510,8 @@ async fn stripe_webhook(
     let request_id = payload.request_id;
 
     let payment_intent_id = payload.stripe_payment_intent_id;
-    let service_request = super::shared::with_blocking_store(&state, move |layout, valkey| {
-        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, None, valkey)?;
+    let service_request = super::shared::with_blocking_store(&state, move |layout, valkey, s3| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, None, valkey, s3)?;
         let mut service_request = read_service_request(&store, request_id)?;
 
         service_request

@@ -639,7 +639,7 @@ checksum = "773648b94d0e5d620f64f280777445740e61fe701025087ec8b57f45c791888b"
 
 [[package]]
 name = "corp-store"
-version = "26.3.24"
+version = "26.3.46"
 dependencies = [
  "aws-config",
  "aws-sdk-s3",
