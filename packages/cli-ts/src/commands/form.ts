@@ -596,7 +596,6 @@ export async function formCommand(opts: FormOptions): Promise<void> {
     if (result.entity_id) {
       setActiveEntityId(cfg, String(result.entity_id));
       saveConfig(cfg);
-      console.log(chalk.dim(`  Active entity set to ${result.entity_id}`));
     }
 
     if (opts.quiet) {
@@ -608,6 +607,10 @@ export async function formCommand(opts: FormOptions): Promise<void> {
     if (opts.json) {
       printJson(result);
       return;
+    }
+
+    if (result.entity_id) {
+      console.log(chalk.dim(`  Active entity set to ${result.entity_id}`));
     }
 
     // Output results

@@ -123,6 +123,15 @@ function wireCommand(parent: Command, def: CommandDef): Command {
         v,
       ];
 
+    // Hidden options: accepted by parser but not shown in --help
+    if (opt.hidden) {
+      const o = new Option(opt.flags, opt.description);
+      o.hideHelp();
+      if (coerce) o.argParser(coerce as (value: string, previous: unknown) => unknown);
+      cmd.addOption(o);
+      continue;
+    }
+
     // When choices are specified, use Commander's Option class with .choices()
     // so Commander validates the value at parse time.
     if (opt.choices && opt.choices.length > 0) {

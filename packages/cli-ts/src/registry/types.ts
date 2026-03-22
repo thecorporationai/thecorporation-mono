@@ -54,6 +54,7 @@ export interface OptionDef {
   choices?: string[];
   default?: unknown;
   type?: "string" | "int" | "float" | "array";
+  hidden?: boolean;
 }
 
 export interface CommandContext {

@@ -384,6 +384,8 @@ export const formationCommands: CommandDef[] = [
       { flags: "--rofr", description: "Enable right of first refusal" },
       { flags: "--company-address <address>", description: "Company address as 'street,city,state,zip'" },
       { flags: "--address <address>", description: "Company address (alias for --company-address)" },
+      { flags: "--shares <count>", description: "", hidden: true },
+      { flags: "--authorized-shares <count>", description: "", hidden: true },
     ],
     handler: formCreateHandler,
     produces: { kind: "entity", trackEntity: true },
