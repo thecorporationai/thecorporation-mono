@@ -1081,57 +1081,52 @@ fn ensure_equity_resolution_unused(
     store: &EntityStore<'_>,
     resolution_id: ResolutionId,
 ) -> Result<(), AppError> {
+    let hint = ". Each issuance requires its own board approval. Run: corp governance quick-approve --text \"RESOLVED: ...\"";
     for round in read_all::<EquityRound>(store)? {
         if round.board_approval_resolution_id() == Some(resolution_id) {
             return Err(AppError::Conflict(format!(
-                "resolution {} is already bound to equity round {}",
-                resolution_id,
-                round.equity_round_id()
+                "resolution {} is already bound to equity round {}{}",
+                resolution_id, round.equity_round_id(), hint
             )));
         }
     }
     for workflow in read_all::<FundraisingWorkflow>(store)? {
         if workflow.board_approval_resolution_id() == Some(resolution_id) {
             return Err(AppError::Conflict(format!(
-                "resolution {} is already bound to fundraising workflow {}",
-                resolution_id,
-                workflow.fundraising_workflow_id()
+                "resolution {} is already bound to fundraising workflow {}{}",
+                resolution_id, workflow.fundraising_workflow_id(), hint
             )));
         }
     }
     for workflow in read_all::<TransferWorkflow>(store)? {
         if workflow.board_approval_resolution_id() == Some(resolution_id) {
             return Err(AppError::Conflict(format!(
-                "resolution {} is already bound to transfer workflow {}",
-                resolution_id,
-                workflow.transfer_workflow_id()
+                "resolution {} is already bound to transfer workflow {}{}",
+                resolution_id, workflow.transfer_workflow_id(), hint
             )));
         }
     }
     for transfer in read_all::<ShareTransfer>(store)? {
         if transfer.board_approval_resolution_id() == Some(resolution_id) {
             return Err(AppError::Conflict(format!(
-                "resolution {} is already bound to share transfer {}",
-                resolution_id,
-                transfer.transfer_id()
+                "resolution {} is already bound to share transfer {}{}",
+                resolution_id, transfer.transfer_id(), hint
             )));
         }
     }
     for note in read_all::<SafeNote>(store)? {
         if note.board_approval_resolution_id() == Some(resolution_id) {
             return Err(AppError::Conflict(format!(
-                "resolution {} is already bound to SAFE note {}",
-                resolution_id,
-                note.safe_note_id()
+                "resolution {} is already bound to SAFE note {}{}",
+                resolution_id, note.safe_note_id(), hint
             )));
         }
     }
     for valuation in read_all::<Valuation>(store)? {
         if valuation.board_approval_resolution_id() == Some(resolution_id) {
             return Err(AppError::Conflict(format!(
-                "resolution {} is already bound to valuation {}",
-                resolution_id,
-                valuation.valuation_id()
+                "resolution {} is already bound to valuation {}{}",
+                resolution_id, valuation.valuation_id(), hint
             )));
         }
     }
