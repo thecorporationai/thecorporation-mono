@@ -85,7 +85,7 @@ export const capTableCommands: CommandDef[] = [
     examples: [
       "corp cap-table",
       'corp cap-table issue-equity --grant-type common --shares 1000000 --recipient "Alice Smith"',
-      'corp cap-table issue-safe --investor "Seed Fund" --amount-cents 50000000 --valuation-cap-cents 1000000000',
+      'corp cap-table issue-safe --investor "Seed Fund" --amount-dollars 500000 --valuation-cap-dollars 10000000',
       "corp cap-table create-valuation --type four_oh_nine_a --date 2026-01-01 --methodology market",
       "corp cap-table transfer --from alice --to bob --shares 1000 --share-class-id COMMON --governing-doc-type bylaws --transferee-rights full_member",
     ],
@@ -499,34 +499,34 @@ export const capTableCommands: CommandDef[] = [
     options: [
       { flags: "--investor <name>", description: "Investor name", required: true },
       { flags: "--amount-cents <n>", description: "Principal amount in cents (e.g. 50000000 = $500,000)", type: "int" },
-      { flags: "--amount <n>", description: "Amount in dollars (alternative to --amount-cents)", type: "int" },
+      { flags: "--amount-dollars <n>", description: "Principal amount in dollars (e.g. 500000 = $500,000)", type: "int" },
       { flags: "--safe-type <type>", description: "SAFE type", default: "post_money", choices: ["post_money", "pre_money", "mfn"] },
       { flags: "--valuation-cap-cents <n>", description: "Valuation cap in cents (e.g. 100000000 = $1M)", type: "int" },
-      { flags: "--valuation-cap <n>", description: "Valuation cap in dollars (alternative to --valuation-cap-cents)", type: "int" },
+      { flags: "--valuation-cap-dollars <n>", description: "Valuation cap in dollars (e.g. 1000000 = $1M)", type: "int" },
       { flags: "--meeting-id <ref>", description: "Board meeting reference required when issuing under a board-governed entity" },
       { flags: "--resolution-id <ref>", description: "Board resolution reference required when issuing under a board-governed entity" },
     ],
     handler: async (ctx) => {
       const eid = await ctx.resolver.resolveEntity(ctx.opts.entityId as string | undefined);
       const investor = ctx.opts.investor as string;
-      if (ctx.opts.amountCents != null && ctx.opts.amount != null) {
-        throw new Error("--amount-cents and --amount are mutually exclusive. Use one or the other.");
+      if (ctx.opts.amountCents != null && ctx.opts.amountDollars != null) {
+        throw new Error("--amount-cents and --amount-dollars are mutually exclusive. Use one or the other.");
       }
       const amountCents = ctx.opts.amountCents != null
         ? (ctx.opts.amountCents as number)
-        : ctx.opts.amount != null ? (ctx.opts.amount as number) * 100 : undefined;
+        : ctx.opts.amountDollars != null ? (ctx.opts.amountDollars as number) * 100 : undefined;
       if (amountCents == null) {
-        throw new Error("required option '--amount-cents <n>' or '--amount <n>' not specified");
+        throw new Error("required: --amount-cents <n> or --amount-dollars <n>");
       }
       const safeType = (ctx.opts.safeType ?? "post_money") as string;
-      if (ctx.opts.valuationCapCents != null && ctx.opts.valuationCap != null) {
-        throw new Error("--valuation-cap-cents and --valuation-cap are mutually exclusive. Use one or the other.");
+      if (ctx.opts.valuationCapCents != null && ctx.opts.valuationCapDollars != null) {
+        throw new Error("--valuation-cap-cents and --valuation-cap-dollars are mutually exclusive. Use one or the other.");
       }
       const valuationCapCents = ctx.opts.valuationCapCents != null
         ? (ctx.opts.valuationCapCents as number)
-        : ctx.opts.valuationCap != null ? (ctx.opts.valuationCap as number) * 100 : undefined;
+        : ctx.opts.valuationCapDollars != null ? (ctx.opts.valuationCapDollars as number) * 100 : undefined;
       if (valuationCapCents == null) {
-        throw new Error("required option '--valuation-cap-cents <n>' or '--valuation-cap <n>' not specified");
+        throw new Error("required: --valuation-cap-cents <n> or --valuation-cap-dollars <n>");
       }
       const email = ctx.opts.email as string | undefined;
       const optMeetingId = ctx.opts.meetingId as string | undefined;
@@ -580,7 +580,10 @@ export const capTableCommands: CommandDef[] = [
     },
     produces: { kind: "safe_note" },
     successTemplate: "SAFE created: {investor_name}",
-    examples: ["corp cap-table issue-safe --investor 'name' --amount-cents 'n' --valuation-cap-cents 'n'", "corp cap-table issue-safe --json"],
+    examples: [
+      'corp cap-table issue-safe --investor "Seed Fund" --amount-dollars 500000 --valuation-cap-dollars 10000000',
+      "corp cap-table issue-safe --investor \"Angel\" --amount-cents 50000000 --valuation-cap-cents 1000000000",
+    ],
   },
 
   // --- cap-table transfer ---
@@ -696,22 +699,22 @@ export const capTableCommands: CommandDef[] = [
     dryRun: true,
     options: [
       { flags: "--amount-cents <n>", description: "Total distribution amount in cents (e.g. 100000 = $1,000.00)", required: true, type: "int" },
-      { flags: "--amount <n>", description: "Amount in dollars (alternative to --amount-cents)", type: "int" },
+      { flags: "--amount-dollars <n>", description: "Total distribution amount in dollars (e.g. 1000 = $1,000.00)", type: "int" },
       { flags: "--type <type>", description: "Distribution type (dividend, return, liquidation)", default: "dividend" },
       { flags: "--description <desc>", description: "Distribution description", required: true },
     ],
     handler: async (ctx) => {
       const eid = await ctx.resolver.resolveEntity(ctx.opts.entityId as string | undefined);
-      if (ctx.opts.amountCents != null && ctx.opts.amount != null) {
-        throw new Error("--amount-cents and --amount are mutually exclusive. Use one or the other.");
+      if (ctx.opts.amountCents != null && ctx.opts.amountDollars != null) {
+        throw new Error("--amount-cents and --amount-dollars are mutually exclusive. Use one or the other.");
       }
       const amountCents = ctx.opts.amountCents != null
         ? (ctx.opts.amountCents as number)
-        : ctx.opts.amount != null
-          ? (ctx.opts.amount as number) * 100
+        : ctx.opts.amountDollars != null
+          ? (ctx.opts.amountDollars as number) * 100
           : undefined;
       if (amountCents == null) {
-        throw new Error("required option '--amount-cents <n>' or '--amount <n>' not specified");
+        throw new Error("required: --amount-cents <n> or --amount-dollars <n>");
       }
       const distributionType = (ctx.opts.type ?? "dividend") as string;
       const description = ctx.opts.description as string;

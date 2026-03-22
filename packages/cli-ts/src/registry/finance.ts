@@ -178,19 +178,19 @@ export const financeCommands: CommandDef[] = [
     options: [
       { flags: "--customer <name>", description: "Customer name", required: true },
       { flags: "--amount-cents <n>", description: "Amount in cents (e.g. 500000 = $5,000.00)", type: "int" },
-      { flags: "--amount <n>", description: "Amount in dollars (converted to cents)", type: "int" },
+      { flags: "--amount-dollars <n>", description: "Amount in dollars (e.g. 5000 = $5,000.00)", type: "int" },
       { flags: "--due-date <date>", description: "Due date (ISO 8601)", required: true },
       { flags: "--description <desc>", description: "Description text", default: "Services rendered" },
     ],
     handler: async (ctx) => {
       const eid = await ctx.resolver.resolveEntity(ctx.opts.entityId as string | undefined);
-      if (ctx.opts.amountCents != null && ctx.opts.amount != null) {
-        printError("--amount-cents and --amount are mutually exclusive. Use one or the other.");
+      if (ctx.opts.amountCents != null && ctx.opts.amountDollars != null) {
+        printError("--amount-cents and --amount-dollars are mutually exclusive. Use one or the other.");
         process.exit(1);
       }
-      const amountCents = (ctx.opts.amountCents as number | undefined) ?? ((ctx.opts.amount as number | undefined) != null ? (ctx.opts.amount as number) * 100 : undefined);
+      const amountCents = (ctx.opts.amountCents as number | undefined) ?? ((ctx.opts.amountDollars as number | undefined) != null ? (ctx.opts.amountDollars as number) * 100 : undefined);
       if (amountCents == null) {
-        printError("required option '--amount-cents <n>' or '--amount <n>' not specified");
+        printError("required: --amount-cents <n> or --amount-dollars <n>");
         process.exit(1);
       }
       const result = await ctx.client.createInvoice({
@@ -242,19 +242,19 @@ export const financeCommands: CommandDef[] = [
     entity: true,
     options: [
       { flags: "--amount-cents <n>", description: "Amount in cents (e.g. 500000 = $5,000.00)", type: "int" },
-      { flags: "--amount <n>", description: "Amount in dollars (converted to cents)", type: "int" },
+      { flags: "--amount-dollars <n>", description: "Amount in dollars (e.g. 5000 = $5,000.00)", type: "int" },
       { flags: "--recipient <name>", description: "Recipient name", required: true },
       { flags: "--method <method>", description: "Payment method", default: "ach" },
     ],
     handler: async (ctx) => {
       const eid = await ctx.resolver.resolveEntity(ctx.opts.entityId as string | undefined);
-      if (ctx.opts.amountCents != null && ctx.opts.amount != null) {
-        printError("--amount-cents and --amount are mutually exclusive. Use one or the other.");
+      if (ctx.opts.amountCents != null && ctx.opts.amountDollars != null) {
+        printError("--amount-cents and --amount-dollars are mutually exclusive. Use one or the other.");
         process.exit(1);
       }
-      const amountCents = (ctx.opts.amountCents as number | undefined) ?? ((ctx.opts.amount as number | undefined) != null ? (ctx.opts.amount as number) * 100 : undefined);
+      const amountCents = (ctx.opts.amountCents as number | undefined) ?? ((ctx.opts.amountDollars as number | undefined) != null ? (ctx.opts.amountDollars as number) * 100 : undefined);
       if (amountCents == null) {
-        printError("required option '--amount-cents <n>' or '--amount <n>' not specified");
+        printError("required: --amount-cents <n> or --amount-dollars <n>");
         process.exit(1);
       }
       const method = ctx.opts.method as string;
