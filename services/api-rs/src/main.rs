@@ -167,7 +167,7 @@ async fn main() {
     }
 }
 
-fn init_state(skip_validation: bool) -> routes::AppState {
+async fn init_state(skip_validation: bool) -> routes::AppState {
     let data_dir = PathBuf::from(
         std::env::var("DATA_DIR").unwrap_or_else(|_| "./data/repos".to_owned()),
     );
@@ -362,7 +362,7 @@ fn init_state(skip_validation: bool) -> routes::AppState {
 
     // S3 durable backend (opt-in via S3_BUCKET env var)
     let s3_backend = if std::env::var("S3_BUCKET").is_ok() {
-        match corp_store::s3_backend::S3Backend::from_env() {
+        match corp_store::s3_backend::S3Backend::from_env_async().await {
             Ok(backend) => {
                 tracing::info!("S3 durable backend enabled");
                 Some(Arc::new(backend))
@@ -430,7 +430,7 @@ async fn run_server(skip_validation: bool) {
         .with_env_filter(EnvFilter::from_default_env())
         .init();
 
-    let state = init_state(skip_validation);
+    let state = init_state(skip_validation).await;
     let app = build_router(state);
 
     let port: u16 = std::env::var("PORT")
@@ -489,7 +489,7 @@ async fn call_oneshot(
         .with_writer(std::io::stderr)
         .init();
 
-    let state = init_state(skip_validation);
+    let state = init_state(skip_validation).await;
     let app = build_router(state);
 
     // Read body from stdin only when explicitly requested.
