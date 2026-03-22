@@ -152,6 +152,7 @@ impl From<FormationError> for AppError {
             FormationError::ContentHashMismatch(_) => Self::UnprocessableEntity(e.to_string()),
             FormationError::EinAlreadyAssigned(_) => Self::Conflict(e.to_string()),
             FormationError::InvalidEntityType { .. } => Self::UnprocessableEntity(e.to_string()),
+            FormationError::Forbidden(msg) => Self::Forbidden(msg),
         }
     }
 }

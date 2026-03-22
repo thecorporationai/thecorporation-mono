@@ -55,4 +55,8 @@ pub enum FormationError {
     /// An error from the git storage layer.
     #[error("storage error: {0}")]
     Storage(String),
+
+    /// The token is not authorized to access this entity.
+    #[error("forbidden: {0}")]
+    Forbidden(String),
 }
