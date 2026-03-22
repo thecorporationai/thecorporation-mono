@@ -90,7 +90,7 @@ pub trait DurableBackend {
 /// Returns the commit's dual OID only after S3 confirms.
 pub fn durable_commit_files(
     con: &mut impl ConnectionLike,
-    backend: &impl DurableBackend,
+    backend: &dyn DurableBackend,
     ws: &str,
     ent: &str,
     branch: &str,
@@ -313,7 +313,7 @@ fn update_valkey_indexes(
 /// a new Valkey instance.
 pub fn rebuild_from_backend(
     con: &mut impl ConnectionLike,
-    backend: &impl DurableBackend,
+    backend: &dyn DurableBackend,
     ws: &str,
     ent: &str,
 ) -> Result<u64, StoreError> {
@@ -438,7 +438,7 @@ pub fn rebuild_from_backend(
 /// Read a blob — tries Valkey cache first, falls back to S3.
 pub fn durable_read_blob(
     con: &mut impl ConnectionLike,
-    backend: &impl DurableBackend,
+    backend: &dyn DurableBackend,
     ws: &str,
     ent: &str,
     branch: &str,

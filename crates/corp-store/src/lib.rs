@@ -46,6 +46,7 @@
 //! ```
 
 pub mod branch;
+pub mod corp_store;
 pub mod durable;
 pub mod entry;
 pub mod error;
@@ -58,6 +59,7 @@ pub mod store;
 #[cfg(feature = "s3")]
 pub mod s3_backend;
 
+pub use corp_store::CorpStore;
 pub use error::StoreError;
 pub use oid::DualOid;
 pub use store::GitObjectType;
