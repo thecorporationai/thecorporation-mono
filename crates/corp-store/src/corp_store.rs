@@ -18,7 +18,7 @@ use crate::durable::DurableBackend;
 use crate::entry::*;
 use crate::error::StoreError;
 use crate::keys;
-use crate::oid::{self, DualOid};
+use crate::oid::DualOid;
 use crate::store::{self, GitObjectType};
 
 // ── CorpStore ────────────────────────────────────────────────────────
@@ -119,6 +119,9 @@ impl<C: ConnectionLike> CorpStore<C> {
     }
 
     /// Delete a file in a commit.
+    ///
+    /// When a durable backend is present, the deletion commit is persisted
+    /// to S3 first (phase 1), then KV indexes are updated (phase 2).
     pub fn delete_file(
         &mut self,
         branch: &str,
@@ -127,17 +130,30 @@ impl<C: ConnectionLike> CorpStore<C> {
         actor: Option<&CommitActor>,
         timestamp: DateTime<Utc>,
     ) -> Result<DualOid, StoreError> {
-        // TODO: durable path for delete_file
-        store::delete_file(
-            &mut self.con,
-            &self.ws,
-            &self.ent,
-            branch,
-            path,
-            message,
-            actor,
-            timestamp,
-        )
+        if let Some(ref backend) = self.durable {
+            crate::durable::durable_delete_file(
+                &mut self.con,
+                backend.as_ref(),
+                &self.ws,
+                &self.ent,
+                branch,
+                path,
+                message,
+                actor,
+                timestamp,
+            )
+        } else {
+            store::delete_file(
+                &mut self.con,
+                &self.ws,
+                &self.ent,
+                branch,
+                path,
+                message,
+                actor,
+                timestamp,
+            )
+        }
     }
 
     // ── Read operations ──────────────────────────────────────────

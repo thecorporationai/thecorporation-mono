@@ -1831,20 +1831,17 @@ pub struct SignerTokenResponse {
     tag = "execution",
     params(("obligation_id" = ObligationId, Path, description = "Obligation ID")),
     responses(
-        (status = 200, body = SignerTokenResponse),
+        (status = 501, description = "Signer token generation is not yet implemented"),
     ),
 )]
 async fn generate_signer_token(
     RequireExecutionWrite(_auth): RequireExecutionWrite,
     Path(obligation_id): Path<ObligationId>,
-) -> Json<SignerTokenResponse> {
-    let token = format!("signer_{}", uuid::Uuid::new_v4().simple());
-    let expires_at = (chrono::Utc::now() + chrono::Duration::hours(24)).to_rfc3339();
-    Json(SignerTokenResponse {
-        obligation_id,
-        token,
-        expires_at,
-    })
+) -> Result<Json<SignerTokenResponse>, crate::error::AppError> {
+    Err(crate::error::AppError::NotImplemented(format!(
+        "signer token generation is not yet implemented for obligation {}",
+        obligation_id
+    )))
 }
 
 // ── Handlers: Human obligation fulfill ──────────────────────────────

@@ -1355,16 +1355,6 @@ fn default_payment_method() -> PaymentMethod {
 }
 
 #[derive(Deserialize, utoipa::ToSchema)]
-pub struct ExecutePaymentRequest {
-    pub entity_id: EntityId,
-    pub amount_cents: i64,
-    pub recipient: String,
-    #[serde(default = "default_payment_method")]
-    pub payment_method: PaymentMethod,
-    pub description: String,
-}
-
-#[derive(Deserialize, utoipa::ToSchema)]
 pub struct CreatePayrollRunRequest {
     pub entity_id: EntityId,
     pub pay_period_start: chrono::NaiveDate,
@@ -1519,7 +1509,7 @@ async fn submit_payment(
     post,
     path = "/v1/payments/execute",
     tag = "treasury",
-    request_body = ExecutePaymentRequest,
+    request_body = SubmitPaymentRequest,
     responses(
         (status = 200, description = "Payment executed", body = PaymentResponse),
     ),
@@ -1527,7 +1517,7 @@ async fn submit_payment(
 async fn execute_payment(
     RequireTreasuryWrite(auth): RequireTreasuryWrite,
     State(state): State<AppState>,
-    Json(req): Json<ExecutePaymentRequest>,
+    Json(req): Json<SubmitPaymentRequest>,
 ) -> Result<Json<PaymentResponse>, AppError> {
     let workspace_id = auth.workspace_id();
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
@@ -2895,7 +2885,6 @@ pub fn treasury_routes() -> Router<AppState> {
         BankAccountResponse,
         PayInstructionsResponse,
         SubmitPaymentRequest,
-        ExecutePaymentRequest,
         PaymentResponse,
         CreatePayrollRunRequest,
         PayrollRunResponse,

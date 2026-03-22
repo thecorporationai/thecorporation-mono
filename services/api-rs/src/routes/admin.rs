@@ -69,9 +69,13 @@ fn ensure_workspace_access(
     path = "/v1/admin/workspaces",
     tag = "admin",
     responses(
-        (status = 200, description = "List all workspaces", body = Vec<WorkspaceSummary>),
+        (status = 200, description = "List workspaces visible to the caller (scoped to the caller's own workspace for tenant isolation)", body = Vec<WorkspaceSummary>),
     ),
 )]
+/// Returns only the caller's workspace.
+///
+/// This is intentional: workspace isolation ensures each tenant can only see
+/// its own workspace. A cross-tenant admin view is not exposed by design.
 async fn list_workspaces(
     RequireAdmin(auth): RequireAdmin,
     State(state): State<AppState>,
@@ -182,10 +186,18 @@ async fn system_health(
         "unavailable"
     };
 
+    let status = if storage_status == "operational" {
+        "healthy"
+    } else {
+        "degraded"
+    };
+
+    let uptime_seconds = state.startup_time.elapsed().as_secs();
+
     Ok(Json(SystemHealth {
-        status: "healthy".to_owned(),
+        status: status.to_owned(),
         version: env!("CARGO_PKG_VERSION").to_owned(),
-        uptime_seconds: 0, // Would need a start-time static to compute
+        uptime_seconds,
         git_storage: storage_status.to_owned(),
         workspace_count,
     }))

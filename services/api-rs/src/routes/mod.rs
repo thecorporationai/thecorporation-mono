@@ -86,6 +86,8 @@ pub struct AppState {
     /// persisted to S3 first (two-phase commit). The KV store becomes a
     /// rebuildable materialized index.
     pub s3_backend: Option<Arc<corp_store::s3_backend::S3Backend>>,
+    /// Instant when the application started, used to compute uptime.
+    pub startup_time: Instant,
 }
 
 #[derive(Default)]

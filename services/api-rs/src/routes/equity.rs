@@ -6553,7 +6553,7 @@ async fn issue_staged_round(
         return Err(AppError::Forbidden("entity access denied".to_owned()));
     }
 
-    let (round, positions, board_meeting_id, board_agenda_item_id) = tokio::task::spawn_blocking({
+    let (round, positions, board_meeting_id) = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
         let valkey_client = state.valkey_client.clone();
         move || {
@@ -6700,7 +6700,6 @@ async fn issue_staged_round(
                 format!("cap-table/rounds/{}.json", round.equity_round_id()),
                 &round,
             )?);
-            let board_agenda_item_id = None;
 
             store
                 .commit(
@@ -6718,7 +6717,6 @@ async fn issue_staged_round(
                 round,
                 result_positions,
                 board_meeting_id,
-                board_agenda_item_id,
             ))
         }
     })
@@ -6729,7 +6727,7 @@ async fn issue_staged_round(
         round: round_to_response(&round),
         positions: positions.iter().map(position_to_response).collect(),
         meeting_id: board_meeting_id,
-        agenda_item_id: board_agenda_item_id,
+        agenda_item_id: None,
     }))
 }
 

@@ -93,7 +93,11 @@ pub fn list_workspace_ids(
     match backend {
         StorageBackendKind::Git => Ok(layout.list_workspace_ids()),
         StorageBackendKind::Kv => {
-            let client = valkey_client.expect("Redis-protocol client required for KV backend");
+            let client = valkey_client.ok_or_else(|| {
+                crate::git::error::GitStorageError::Git(
+                    "Redis-protocol client required for KV backend".to_owned(),
+                )
+            })?;
             let mut con = client
                 .get_connection()
                 .map_err(|e| crate::git::error::GitStorageError::Git(e.to_string()))?;
@@ -116,7 +120,11 @@ pub fn list_entity_ids(
     match backend {
         StorageBackendKind::Git => Ok(layout.list_entity_ids(workspace_id)),
         StorageBackendKind::Kv => {
-            let client = valkey_client.expect("Redis-protocol client required for KV backend");
+            let client = valkey_client.ok_or_else(|| {
+                crate::git::error::GitStorageError::Git(
+                    "Redis-protocol client required for KV backend".to_owned(),
+                )
+            })?;
             let mut con = client
                 .get_connection()
                 .map_err(|e| crate::git::error::GitStorageError::Git(e.to_string()))?;

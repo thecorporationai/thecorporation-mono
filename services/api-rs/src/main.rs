@@ -365,6 +365,7 @@ fn init_state(skip_validation: bool) -> routes::AppState {
         valkey_client,
         ssh_key_index,
         s3_backend,
+        startup_time: std::time::Instant::now(),
     }
 }
 

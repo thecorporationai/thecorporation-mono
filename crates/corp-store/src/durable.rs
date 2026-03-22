@@ -238,6 +238,134 @@ pub fn durable_commit_files(
     Ok(commit_oid)
 }
 
+/// Two-phase durable delete.
+///
+/// Phase 1: Compute the deletion commit and persist to S3.
+/// Phase 2: Update Valkey indexes (remove the file from the tree).
+pub fn durable_delete_file(
+    con: &mut impl ConnectionLike,
+    backend: &dyn DurableBackend,
+    ws: &str,
+    ent: &str,
+    branch: &str,
+    path: &str,
+    message: &str,
+    actor: Option<&CommitActor>,
+    timestamp: DateTime<Utc>,
+) -> Result<DualOid, StoreError> {
+    // Verify the file exists in the current tree.
+    let tree_key = keys::tree_key(ws, ent, branch);
+    let exists: bool = con.hexists(&tree_key, path)?;
+    if !exists {
+        return Err(StoreError::NotFound(format!("{path} not in tree")));
+    }
+
+    // Build the new tree state with the file removed.
+    let current_tree: BTreeMap<String, String> = con.hgetall(&tree_key)?;
+    let mut tree: BTreeMap<String, DualOid> = BTreeMap::new();
+    for (p, sha1_hex) in &current_tree {
+        if p == path {
+            continue;
+        }
+        let sha256_hex: String = con.hget(keys::oid_1to256_key(), sha1_hex)?;
+        let sha1: [u8; 20] = hex::decode(sha1_hex)?
+            .try_into()
+            .map_err(|_| StoreError::NotFound("bad sha1".into()))?;
+        let sha256: [u8; 32] = hex::decode(&sha256_hex)?
+            .try_into()
+            .map_err(|_| StoreError::NotFound("bad sha256".into()))?;
+        tree.insert(p.clone(), DualOid { sha1, sha256 });
+    }
+
+    let (root_tree_oid, all_trees) = oid::compute_root_tree(&tree);
+
+    // Persist tree objects to S3.
+    for (tree_oid, tree_raw) in &all_trees {
+        let tree_sha = tree_oid.sha256_hex();
+        if !backend.blob_exists(&tree_sha)? {
+            backend.put_blob(&tree_sha, tree_raw)?;
+        }
+    }
+
+    let ref_key = keys::ref_key(ws, ent);
+    let parent_sha1: Option<String> = con.hget(&ref_key, branch)?;
+
+    let commit_oid = oid::hash_commit(&oid::CommitHash {
+        tree_sha1_hex: &root_tree_oid.sha1_hex(),
+        parent_sha1_hex: parent_sha1.as_deref(),
+        author_name: "corp-engine",
+        author_email: "engine@thecorporation.ai",
+        author_timestamp: timestamp.timestamp(),
+        message,
+    });
+
+    let current_seq: u64 = con.get(keys::seq_key(ws, ent)).unwrap_or(0);
+    let seq = current_seq + 1;
+
+    let changes = vec![FileChange {
+        path: path.to_owned(),
+        action: ChangeAction::Delete,
+        blob_sha1: None,
+        blob_sha256: None,
+        old_path: None,
+    }];
+
+    let entry = CommitEntry {
+        ld_type: "Commit".to_owned(),
+        ld_id: format!("git:sha/{}", commit_oid.sha1_hex()),
+        sha1: commit_oid.sha1_hex(),
+        sha256: commit_oid.sha256_hex(),
+        parents: parent_sha1.clone().into_iter().collect(),
+        author_name: "corp-engine".to_owned(),
+        author_email: "engine@thecorporation.ai".to_owned(),
+        message: message.to_owned(),
+        timestamp,
+        sequence: seq,
+        workspace_id: actor.map(|a| a.workspace_id.clone()),
+        entity_id: actor.and_then(|a| a.entity_id.clone()),
+        scopes: actor.map_or(Vec::new(), |a| a.scopes.clone()),
+        signed_by: actor.and_then(|a| a.signed_by.clone()),
+        tree_sha1: root_tree_oid.sha1_hex(),
+        branch: Some(branch.to_owned()),
+        changes: changes.clone(),
+    };
+
+    let entry_json = serde_json::to_string(&entry)?;
+
+    // ── Phase 1: Persist commit to S3 (durability point) ──
+    backend.put_commit(ws, ent, seq, entry_json.as_bytes())?;
+
+    let _: u64 = con.incr(keys::seq_key(ws, ent), 1)?;
+
+    let ref_json = serde_json::to_string(&serde_json::json!({
+        "branch": branch,
+        "sha1": commit_oid.sha1_hex(),
+        "sha256": commit_oid.sha256_hex(),
+        "sequence": seq,
+        "timestamp": timestamp.to_rfc3339(),
+    }))?;
+    backend.put_ref(ws, ent, branch, ref_json.as_bytes())?;
+
+    tracing::info!(
+        ws = ws, ent = ent, sha1 = %commit_oid.sha1_hex(),
+        seq = seq, path = path, "durable delete — phase 1 complete"
+    );
+
+    // ── Phase 2: Update Valkey indexes ──
+    // No blob_oids for a delete, pass empty slice.
+    if let Err(e) = update_valkey_indexes(
+        con, ws, ent, branch, &entry, &entry_json, &[], &changes, seq,
+    ) {
+        tracing::warn!(
+            ws = ws, ent = ent, seq = seq,
+            error = %e,
+            "durable delete phase 2 failed — Valkey indexes stale, rebuild from S3"
+        );
+    }
+
+    Ok(commit_oid)
+}
+
 fn update_valkey_indexes(
     con: &mut impl ConnectionLike,
     ws: &str,

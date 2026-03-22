@@ -94,6 +94,54 @@ jobs:
         working-directory: packages/corp-tools
         run: npx vitest run
 
+  test-corp-store-integration:
+    runs-on: ubuntu-latest
+    services:
+      dragonfly:
+        image: docker.dragonflydb.io/dragonflydb/dragonfly:latest
+        ports:
+          - 16379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 5
+      minio:
+        image: quay.io/minio/minio:latest
+        ports:
+          - 19000:9000
+          - 19001:9001
+        env:
+          MINIO_ROOT_USER: minioadmin
+          MINIO_ROOT_PASSWORD: minioadmin
+        options: >-
+          --health-cmd "mc ready local"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+      - name: Cache cargo
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            crates/corp-store/target
+          key: ${{ runner.os }}-cargo-corp-store-${{ hashFiles('crates/corp-store/Cargo.lock') }}
+      - name: Create MinIO bucket
+        run: |
+          curl -sSL https://dl.min.io/client/mc/release/linux-amd64/mc -o /usr/local/bin/mc
+          chmod +x /usr/local/bin/mc
+          mc alias set local http://localhost:19000 minioadmin minioadmin
+          mc mb --ignore-existing local/corp-store-test
+      - name: Run corp-store S3 integration tests
+        working-directory: crates/corp-store
+        run: cargo test --test integration_s3 --features s3 -- --include-ignored
+
   docker-build:
     runs-on: ubuntu-latest
     needs: [test]

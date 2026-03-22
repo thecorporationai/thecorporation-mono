@@ -78,7 +78,6 @@ macro_rules! define_id {
 
 // ── Formation ──────────────────────────────────────────────────────────
 define_id!(EntityId);
-define_id!(FormationId);
 define_id!(DocumentId);
 define_id!(SignatureId);
 define_id!(TaxProfileId);

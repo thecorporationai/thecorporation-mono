@@ -53,6 +53,7 @@ fn build_app(tmp: &TempDir) -> Router {
         valkey_client: None,
         ssh_key_index: Arc::new(api_rs::domain::auth::ssh_key::SshKeyIndex::empty()),
         s3_backend: None,
+        startup_time: std::time::Instant::now(),
     };
 
     Router::new()
