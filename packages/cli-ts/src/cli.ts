@@ -17,7 +17,16 @@ export function buildCLI(commands: CommandDef[], version: string): Command {
   const program = new Command();
   program
     .name("corp")
-    .description("corp — Corporate governance from the terminal")
+    .description(
+      "The Corporation CLI — form entities, manage cap tables, govern, and operate.\n" +
+      "\n" +
+      "Quick start:\n" +
+      '  corp form --type llc --name "My LLC" --member "Alice,a@co.com,member,100"\n' +
+      "  corp cap-table\n" +
+      "  corp next\n" +
+      "\n" +
+      "Docs: https://docs.thecorporation.ai",
+    )
     .version(version)
     .enablePositionalOptions();
   program.option("-q, --quiet", "Only output the resource ID (for scripting)");
@@ -44,6 +53,67 @@ export function buildCLI(commands: CommandDef[], version: string): Command {
       children.get(parent)!.push(def);
     }
   }
+
+  // ── Sort top-level commands into logical groups ───────────────────────────
+  // Formation → cap table → governance → finance → compliance → operations
+  // → agents → admin/config/setup at the end.
+
+  const commandGroupOrder: Record<string, number> = {
+    // Core workflow — formation & entity management
+    form: 0,
+    entities: 1,
+    contacts: 2,
+    // Cap table
+    "cap-table": 10,
+    "safe-notes": 11,
+    "share-transfers": 12,
+    valuations: 13,
+    // Governance
+    governance: 20,
+    // Finance
+    finance: 30,
+    // Compliance & tax
+    tax: 40,
+    deadlines: 41,
+    // Status / context / actions
+    status: 50,
+    context: 51,
+    use: 52,
+    next: 53,
+    obligations: 54,
+    "human-obligations": 55,
+    digest: 56,
+    // Services & work items
+    services: 60,
+    "work-items": 61,
+    contracts: 62,
+    // Agents
+    agents: 70,
+    // Admin / config / setup (last)
+    billing: 80,
+    "api-keys": 81,
+    link: 82,
+    claim: 83,
+    feedback: 84,
+    resolve: 85,
+    find: 86,
+    approvals: 87,
+    receipts: 88,
+    config: 90,
+    setup: 91,
+    schema: 92,
+    serve: 93,
+    demo: 94,
+    chat: 95,
+    completions: 96,
+  };
+
+  topLevel.sort((a, b) => {
+    const ga = commandGroupOrder[a.name] ?? 75;
+    const gb = commandGroupOrder[b.name] ?? 75;
+    if (ga !== gb) return ga - gb;
+    return a.name.localeCompare(b.name);
+  });
 
   // ── Create top-level commands ─────────────────────────────────────────────
 

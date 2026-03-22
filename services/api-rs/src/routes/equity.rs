@@ -2394,6 +2394,7 @@ fn generate_fundraising_packet_documents(
     post,
     path = "/v1/equity/holders",
     tag = "equity",
+    description = "Register a new cap-table holder linked to a contact and optional entity for a given workspace entity.",
     request_body = CreateHolderRequest,
     responses(
         (status = 200, description = "Holder created", body = HolderResponse),
@@ -2451,6 +2452,7 @@ async fn create_holder(
     post,
     path = "/v1/equity/entities",
     tag = "equity",
+    description = "Create a legal entity (issuer or subsidiary) on the cap table; idempotent if the same name and role already exist.",
     request_body = CreateLegalEntityRequest,
     responses(
         (status = 200, description = "Legal entity created", body = LegalEntityResponse),
@@ -2462,11 +2464,7 @@ async fn create_legal_entity(
     State(state): State<AppState>,
     Json(req): Json<CreateLegalEntityRequest>,
 ) -> Result<Json<LegalEntityResponse>, AppError> {
-    if req.name.trim().is_empty() {
-        return Err(AppError::BadRequest(
-            "legal entity name is required".to_owned(),
-        ));
-    }
+    let entity_name = require_safe_single_line_max(&req.name, "name", 256)?;
 
     let workspace_id = auth.workspace_id();
     let entity_id = req.entity_id;
@@ -2485,7 +2483,7 @@ async fn create_legal_entity(
             let existing_ids = store
                 .list_ids::<LegalEntity>("main")
                 .unwrap_or_default();
-            let normalized_name = req.name.trim().to_lowercase();
+            let normalized_name = entity_name.to_lowercase();
             for existing_id in existing_ids {
                 if let Ok(existing) = store.read::<LegalEntity>("main", existing_id) {
                     if existing.name().trim().to_lowercase() == normalized_name
@@ -2499,7 +2497,7 @@ async fn create_legal_entity(
                 LegalEntityId::new(),
                 workspace_id,
                 req.linked_entity_id,
-                req.name,
+                entity_name,
                 req.role,
             );
             let path = format!("cap-table/entities/{}.json", le.legal_entity_id());
@@ -2524,6 +2522,7 @@ async fn create_legal_entity(
     post,
     path = "/v1/equity/control-links",
     tag = "equity",
+    description = "Define a control relationship (e.g., ownership or voting authority) between two legal entities in the cap structure.",
     request_body = CreateControlLinkRequest,
     responses(
         (status = 200, description = "Control link created", body = ControlLinkResponse),
@@ -2588,6 +2587,7 @@ async fn create_control_link(
     post,
     path = "/v1/equity/instruments",
     tag = "equity",
+    description = "Define a new equity instrument (common stock, preferred, SAFE, options, etc.) for a legal entity issuer.",
     request_body = CreateInstrumentRequest,
     responses(
         (status = 200, description = "Instrument created", body = InstrumentResponse),
@@ -2667,6 +2667,7 @@ async fn create_instrument(
     post,
     path = "/v1/equity/positions/adjust",
     tag = "equity",
+    description = "Apply a unit and principal delta to an existing holder position, creating a new position record if none exists.",
     request_body = AdjustPositionRequest,
     responses(
         (status = 200, description = "Position adjusted", body = PositionResponse),
@@ -2779,6 +2780,7 @@ async fn adjust_position(
     post,
     path = "/v1/equity/rounds",
     tag = "equity",
+    description = "Open a new equity financing round with optional pricing, raise target, and conversion terms for a legal entity issuer.",
     request_body = CreateRoundRequest,
     responses(
         (status = 200, description = "Equity round created", body = RoundResponse),

@@ -163,76 +163,71 @@ async fn create_contact(
     }
     let normalized_email = req.email.as_deref().map(validate_email).transpose()?;
 
-    let contact = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        let name = name.clone();
-        let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
-            ensure_entity_allows_contact_mutation(&store, "contact creation")?;
-            let contact_ids = store
-                .list_ids::<Contact>("main")
-                .map_err(|e| AppError::Internal(format!("list contacts: {e}")))?;
-            for existing_id in contact_ids {
-                let existing = store
-                    .read::<Contact>("main", existing_id)
-                    .map_err(|e| AppError::Internal(format!("read contact {existing_id}: {e}")))?;
-                if let (Some(existing_email), Some(new_email)) =
-                    (existing.email(), normalized_email.as_deref())
-                    && normalize_email(existing_email) == new_email
-                {
-                    return Err(AppError::Conflict(format!(
-                        "contact email already exists for entity: {new_email}"
-                    )));
-                }
-            }
-
-            let contact_id = ContactId::new();
-            let mut contact = Contact::new(
-                contact_id,
-                entity_id,
-                workspace_id,
-                req.contact_type,
-                name,
-                normalized_email,
-                req.category,
-            )
-            .map_err(AppError::BadRequest)?;
-            if let Some(access) = req.cap_table_access {
-                contact.set_cap_table_access(access);
-            }
-            if let Some(mailing_address) = req.mailing_address
-                && !mailing_address.trim().is_empty()
+    let name_clone = name.clone();
+    let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
+    let contact = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+        ensure_entity_allows_contact_mutation(&store, "contact creation")?;
+        let contact_ids = store
+            .list_ids::<Contact>("main")
+            .map_err(|e| AppError::Internal(format!("list contacts: {e}")))?;
+        for existing_id in contact_ids {
+            let existing = store
+                .read::<Contact>("main", existing_id)
+                .map_err(|e| AppError::Internal(format!("read contact {existing_id}: {e}")))?;
+            if let (Some(existing_email), Some(new_email)) =
+                (existing.email(), normalized_email.as_deref())
+                && normalize_email(existing_email) == new_email
             {
-                contact.set_mailing_address(Some(mailing_address));
+                return Err(AppError::Conflict(format!(
+                    "contact email already exists for entity: {new_email}"
+                )));
             }
-            if let Some(phone) = req.phone
-                && !phone.trim().is_empty()
-            {
-                contact.set_phone(phone);
-            }
-            if let Some(notes) = req.notes
-                && !notes.trim().is_empty()
-            {
-                contact.set_notes(notes);
-            }
-
-            let path = format!("contacts/{}.json", contact_id);
-            store
-                .write_json(
-                    "main",
-                    &path,
-                    &contact,
-                    &format!("Create contact {contact_id}"),
-                )
-                .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
-
-            Ok::<_, AppError>(contact)
         }
+
+        let contact_id = ContactId::new();
+        let mut contact = Contact::new(
+            contact_id,
+            entity_id,
+            workspace_id,
+            req.contact_type,
+            name_clone,
+            normalized_email,
+            req.category,
+        )
+        .map_err(AppError::BadRequest)?;
+        if let Some(access) = req.cap_table_access {
+            contact.set_cap_table_access(access);
+        }
+        if let Some(mailing_address) = req.mailing_address
+            && !mailing_address.trim().is_empty()
+        {
+            contact.set_mailing_address(Some(mailing_address));
+        }
+        if let Some(phone) = req.phone
+            && !phone.trim().is_empty()
+        {
+            contact.set_phone(phone);
+        }
+        if let Some(notes) = req.notes
+            && !notes.trim().is_empty()
+        {
+            contact.set_notes(notes);
+        }
+
+        let path = format!("contacts/{}.json", contact_id);
+        store
+            .write_json(
+                "main",
+                &path,
+                &contact,
+                &format!("Create contact {contact_id}"),
+            )
+            .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
+
+        Ok(contact)
     })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+    .await?;
 
     Ok(Json(contact_to_response(&contact)))
 }
@@ -255,28 +250,23 @@ async fn list_contacts(
         return Err(AppError::Forbidden("entity access denied".to_owned()));
     }
 
-    let contacts = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
-            let ids = store
-                .list_ids::<Contact>("main")
-                .map_err(|e| AppError::Internal(format!("list contacts: {e}")))?;
+    let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
+    let contacts = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+        let ids = store
+            .list_ids::<Contact>("main")
+            .map_err(|e| AppError::Internal(format!("list contacts: {e}")))?;
 
-            let mut results = Vec::new();
-            for id in ids {
-                let c = store
-                    .read::<Contact>("main", id)
-                    .map_err(|e| AppError::Internal(format!("read contact {id}: {e}")))?;
-                results.push(contact_to_response(&c));
-            }
-            Ok::<_, AppError>(results)
+        let mut results = Vec::new();
+        for id in ids {
+            let c = store
+                .read::<Contact>("main", id)
+                .map_err(|e| AppError::Internal(format!("read contact {id}: {e}")))?;
+            results.push(contact_to_response(&c));
         }
+        Ok(results)
     })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+    .await?;
 
     Ok(Json(contacts))
 }
@@ -307,19 +297,14 @@ async fn get_contact(
         return Err(AppError::Forbidden("entity access denied".to_owned()));
     }
 
-    let contact = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
-            store
-                .read::<Contact>("main", contact_id)
-                .map_err(|_| AppError::NotFound(format!("contact {} not found", contact_id)))
-        }
+    let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
+    let contact = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+        store
+            .read::<Contact>("main", contact_id)
+            .map_err(|_| AppError::NotFound(format!("contact {} not found", contact_id)))
     })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+    .await?;
 
     Ok(Json(contact_to_response(&contact)))
 }
@@ -383,77 +368,72 @@ async fn update_contact(
     }
     let normalized_email = req.email.as_deref().map(validate_email).transpose()?;
 
-    let contact = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        let name = name.clone();
-        let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
-            ensure_entity_allows_contact_mutation(&store, "contact updates")?;
-            let mut contact = store
-                .read::<Contact>("main", contact_id)
-                .map_err(|_| AppError::NotFound(format!("contact {} not found", contact_id)))?;
+    let name_clone = name.clone();
+    let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
+    let contact = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+        ensure_entity_allows_contact_mutation(&store, "contact updates")?;
+        let mut contact = store
+            .read::<Contact>("main", contact_id)
+            .map_err(|_| AppError::NotFound(format!("contact {} not found", contact_id)))?;
 
-            if let Some(new_email) = normalized_email.as_deref() {
-                let contact_ids = store
-                    .list_ids::<Contact>("main")
-                    .map_err(|e| AppError::Internal(format!("list contacts: {e}")))?;
-                for existing_id in contact_ids {
-                    if existing_id == contact_id {
-                        continue;
-                    }
-                    let existing = store.read::<Contact>("main", existing_id).map_err(|e| {
-                        AppError::Internal(format!("read contact {existing_id}: {e}"))
-                    })?;
-                    if existing
-                        .email()
-                        .is_some_and(|email| normalize_email(email) == new_email)
-                    {
-                        return Err(AppError::Conflict(format!(
-                            "contact email already exists for entity: {new_email}"
-                        )));
-                    }
+        if let Some(new_email) = normalized_email.as_deref() {
+            let contact_ids = store
+                .list_ids::<Contact>("main")
+                .map_err(|e| AppError::Internal(format!("list contacts: {e}")))?;
+            for existing_id in contact_ids {
+                if existing_id == contact_id {
+                    continue;
+                }
+                let existing = store.read::<Contact>("main", existing_id).map_err(|e| {
+                    AppError::Internal(format!("read contact {existing_id}: {e}"))
+                })?;
+                if existing
+                    .email()
+                    .is_some_and(|email| normalize_email(email) == new_email)
+                {
+                    return Err(AppError::Conflict(format!(
+                        "contact email already exists for entity: {new_email}"
+                    )));
                 }
             }
-
-            if let Some(name) = name {
-                contact.set_name(name).map_err(AppError::BadRequest)?;
-            }
-            if let Some(email) = normalized_email {
-                contact.set_email(Some(email));
-            }
-            if let Some(mailing_address) = req.mailing_address {
-                contact.set_mailing_address(Some(mailing_address));
-            }
-            if let Some(phone) = req.phone {
-                contact.set_phone(phone);
-            }
-            if let Some(notes) = req.notes {
-                contact.set_notes(notes);
-            }
-            if let Some(category) = req.category {
-                contact.set_category(category);
-            }
-            if let Some(access) = req.cap_table_access {
-                contact.set_cap_table_access(access);
-            }
-
-            let path = format!("contacts/{}.json", contact_id);
-            store
-                .write_json(
-                    "main",
-                    &path,
-                    &contact,
-                    &format!("Update contact {contact_id}"),
-                )
-                .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
-
-            Ok::<_, AppError>(contact)
         }
+
+        if let Some(name) = name_clone {
+            contact.set_name(name).map_err(AppError::BadRequest)?;
+        }
+        if let Some(email) = normalized_email {
+            contact.set_email(Some(email));
+        }
+        if let Some(mailing_address) = req.mailing_address {
+            contact.set_mailing_address(Some(mailing_address));
+        }
+        if let Some(phone) = req.phone {
+            contact.set_phone(phone);
+        }
+        if let Some(notes) = req.notes {
+            contact.set_notes(notes);
+        }
+        if let Some(category) = req.category {
+            contact.set_category(category);
+        }
+        if let Some(access) = req.cap_table_access {
+            contact.set_cap_table_access(access);
+        }
+
+        let path = format!("contacts/{}.json", contact_id);
+        store
+            .write_json(
+                "main",
+                &path,
+                &contact,
+                &format!("Update contact {contact_id}"),
+            )
+            .map_err(|e| AppError::Internal(format!("commit error: {e}")))?;
+
+        Ok(contact)
     })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+    .await?;
 
     Ok(Json(contact_to_response(&contact)))
 }
@@ -494,19 +474,14 @@ async fn get_contact_profile(
         return Err(AppError::Forbidden("entity access denied".to_owned()));
     }
 
-    let contact = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
-            store
-                .read::<Contact>("main", contact_id)
-                .map_err(|_| AppError::NotFound(format!("contact {} not found", contact_id)))
-        }
+    let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
+    let contact = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+        store
+            .read::<Contact>("main", contact_id)
+            .map_err(|_| AppError::NotFound(format!("contact {} not found", contact_id)))
     })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+    .await?;
 
     Ok(Json(ContactProfileResponse {
         contact_id: contact.contact_id(),
@@ -565,32 +540,27 @@ async fn get_notification_prefs(
         return Err(AppError::Forbidden("entity access denied".to_owned()));
     }
 
-    let prefs = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
+    let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
+    let prefs = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
 
-            // Try to read existing prefs; return in-memory defaults if not found.
-            // We intentionally do NOT write defaults on GET — only PATCH should
-            // persist notification preferences.
-            let path = format!("contacts/{}/notification-prefs.json", contact_id);
-            match store.read_json::<NotifPrefsRecord>("main", &path) {
-                Ok(p) => Ok::<_, AppError>(p),
-                Err(_) => {
-                    // Verify the contact exists first
-                    store.read::<Contact>("main", contact_id).map_err(|_| {
-                        AppError::NotFound(format!("contact {} not found", contact_id))
-                    })?;
-                    // Return default prefs without committing to storage.
-                    Ok(NotifPrefsRecord::new(contact_id))
-                }
+        // Try to read existing prefs; return in-memory defaults if not found.
+        // We intentionally do NOT write defaults on GET — only PATCH should
+        // persist notification preferences.
+        let path = format!("contacts/{}/notification-prefs.json", contact_id);
+        match store.read_json::<NotifPrefsRecord>("main", &path) {
+            Ok(p) => Ok(p),
+            Err(_) => {
+                // Verify the contact exists first
+                store.read::<Contact>("main", contact_id).map_err(|_| {
+                    AppError::NotFound(format!("contact {} not found", contact_id))
+                })?;
+                // Return default prefs without committing to storage.
+                Ok(NotifPrefsRecord::new(contact_id))
             }
         }
     })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+    .await?;
 
     Ok(Json(prefs_to_response(&prefs)))
 }
@@ -632,50 +602,45 @@ async fn update_notification_prefs(
         return Err(AppError::Forbidden("entity access denied".to_owned()));
     }
 
-    let prefs = tokio::task::spawn_blocking({
-        let layout = state.layout.clone();
-        let valkey_client = state.valkey_client.clone();
-        let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
-        move || {
-            let store = super::shared::open_entity_store(&layout, workspace_id, entity_id, entity_scope.as_deref(), valkey_client.as_ref())?;
-            ensure_entity_allows_contact_mutation(&store, "notification preference updates")?;
-            let path = format!("contacts/{}/notification-prefs.json", contact_id);
+    let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
+    let prefs = super::shared::with_blocking_store(&state, move |layout, valkey| {
+        let store = super::shared::open_entity_store(layout, workspace_id, entity_id, entity_scope.as_deref(), valkey)?;
+        ensure_entity_allows_contact_mutation(&store, "notification preference updates")?;
+        let path = format!("contacts/{}/notification-prefs.json", contact_id);
 
-            // Read existing or create defaults
-            let mut prefs = match store.read_json::<NotifPrefsRecord>("main", &path) {
-                Ok(p) => p,
-                Err(_) => {
-                    store.read::<Contact>("main", contact_id).map_err(|_| {
-                        AppError::NotFound(format!("contact {} not found", contact_id))
-                    })?;
-                    NotifPrefsRecord::new(contact_id)
-                }
-            };
-
-            if let Some(v) = req.email_enabled {
-                prefs.set_email_enabled(v);
+        // Read existing or create defaults
+        let mut prefs = match store.read_json::<NotifPrefsRecord>("main", &path) {
+            Ok(p) => p,
+            Err(_) => {
+                store.read::<Contact>("main", contact_id).map_err(|_| {
+                    AppError::NotFound(format!("contact {} not found", contact_id))
+                })?;
+                NotifPrefsRecord::new(contact_id)
             }
-            if let Some(v) = req.sms_enabled {
-                prefs.set_sms_enabled(v);
-            }
-            if let Some(v) = req.webhook_enabled {
-                prefs.set_webhook_enabled(v);
-            }
+        };
 
-            store
-                .write_json(
-                    "main",
-                    &path,
-                    &prefs,
-                    &format!("Update notification prefs for {contact_id}"),
-                )
-                .map_err(|e| AppError::Internal(format!("commit: {e}")))?;
-
-            Ok::<_, AppError>(prefs)
+        if let Some(v) = req.email_enabled {
+            prefs.set_email_enabled(v);
         }
+        if let Some(v) = req.sms_enabled {
+            prefs.set_sms_enabled(v);
+        }
+        if let Some(v) = req.webhook_enabled {
+            prefs.set_webhook_enabled(v);
+        }
+
+        store
+            .write_json(
+                "main",
+                &path,
+                &prefs,
+                &format!("Update notification prefs for {contact_id}"),
+            )
+            .map_err(|e| AppError::Internal(format!("commit: {e}")))?;
+
+        Ok(prefs)
     })
-    .await
-    .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
+    .await?;
 
     Ok(Json(prefs_to_response(&prefs)))
 }

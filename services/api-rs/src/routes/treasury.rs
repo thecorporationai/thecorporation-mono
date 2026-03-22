@@ -236,6 +236,11 @@ fn reconciliation_to_response(recon: &Reconciliation) -> ReconciliationResponse 
 const MAX_FINANCIAL_AMOUNT_CENTS: i64 = 1_000_000_000_000; // $10B
 
 fn validate_reasonable_amount(amount_cents: i64, field_name: &str) -> Result<(), AppError> {
+    if amount_cents <= 0 {
+        return Err(AppError::BadRequest(format!(
+            "{field_name} must be a positive amount"
+        )));
+    }
     if amount_cents > MAX_FINANCIAL_AMOUNT_CENTS {
         return Err(AppError::BadRequest(format!(
             "{field_name} exceeds the supported maximum of {MAX_FINANCIAL_AMOUNT_CENTS} cents"
@@ -1984,6 +1989,7 @@ async fn create_spending_limit(
     let workspace_id = auth.workspace_id();
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = req.entity_id;
+    validate_reasonable_amount(req.amount_cents, "amount_cents")?;
 
     let sl = tokio::task::spawn_blocking({
         let layout = state.layout.clone();

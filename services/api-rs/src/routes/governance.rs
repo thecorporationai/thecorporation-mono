@@ -956,6 +956,7 @@ fn validate_schedule_resolution(
     get,
     path = "/v1/entities/{entity_id}/governance/profile",
     tag = "governance",
+    description = "Retrieve the governance profile for an entity, including legal details, officers, directors, and document generation options.",
     params(
         ("entity_id" = EntityId, Path, description = "Entity ID"),
     ),
@@ -992,6 +993,7 @@ async fn get_governance_profile(
     put,
     path = "/v1/entities/{entity_id}/governance/profile",
     tag = "governance",
+    description = "Update the governance profile for an entity with new legal details, personnel, stock configuration, or document options.",
     params(
         ("entity_id" = EntityId, Path, description = "Entity ID"),
     ),
@@ -1075,6 +1077,7 @@ async fn update_governance_profile(
     post,
     path = "/v1/entities/{entity_id}/governance/doc-bundles/generate",
     tag = "governance",
+    description = "Render and persist a new governance document bundle from the entity's current governance profile, returning the manifest and summary.",
     params(
         ("entity_id" = EntityId, Path, description = "Entity ID"),
     ),
@@ -1166,6 +1169,7 @@ async fn generate_governance_doc_bundle(
     get,
     path = "/v1/entities/{entity_id}/governance/doc-bundles/current",
     tag = "governance",
+    description = "Return a pointer to the most recently generated governance document bundle for an entity.",
     params(
         ("entity_id" = EntityId, Path, description = "Entity ID"),
     ),
@@ -1206,6 +1210,7 @@ async fn get_current_governance_doc_bundle(
     get,
     path = "/v1/entities/{entity_id}/governance/doc-bundles",
     tag = "governance",
+    description = "List all historical governance document bundle summaries for an entity, sorted by generation date descending.",
     params(
         ("entity_id" = EntityId, Path, description = "Entity ID"),
     ),
@@ -1240,6 +1245,7 @@ async fn list_governance_doc_bundles(
     get,
     path = "/v1/entities/{entity_id}/governance/doc-bundles/{bundle_id}",
     tag = "governance",
+    description = "Retrieve the full manifest for a specific historical governance document bundle by its bundle ID.",
     params(
         ("entity_id" = EntityId, Path, description = "Entity ID"),
         ("bundle_id" = GovernanceDocBundleId, Path, description = "Bundle ID"),
@@ -1289,6 +1295,7 @@ async fn get_governance_doc_bundle(
     get,
     path = "/v1/entities/{entity_id}/governance/triggers",
     tag = "governance",
+    description = "List all governance trigger events for an entity, such as lockdowns and compliance escalations, sorted newest first.",
     params(
         ("entity_id" = EntityId, Path, description = "Entity ID"),
     ),
@@ -1337,6 +1344,7 @@ async fn list_governance_triggers(
     get,
     path = "/v1/entities/{entity_id}/governance/mode-history",
     tag = "governance",
+    description = "Return the full history of governance mode transitions (e.g., normal → lockdown) for an entity, newest first.",
     params(
         ("entity_id" = EntityId, Path, description = "Entity ID"),
     ),
@@ -1385,6 +1393,7 @@ async fn list_governance_mode_history(
     post,
     path = "/v1/internal/workspaces/{workspace_id}/entities/{entity_id}/governance/triggers/lockdown",
     tag = "governance",
+    description = "Internal worker endpoint: ingest an external lockdown trigger event, creating an incident and switching governance mode if not already locked.",
     params(
         ("workspace_id" = WorkspaceId, Path, description = "Workspace ID"),
         ("entity_id" = EntityId, Path, description = "Entity ID"),
@@ -1888,6 +1897,7 @@ async fn list_governance_audit_verifications(
     post,
     path = "/v1/governance-bodies",
     tag = "governance",
+    description = "Create a new governance body (board of directors or LLC member vote) for an active entity.",
     request_body = CreateGovernanceBodyRequest,
     responses(
         (status = 200, description = "Created governance body", body = GovernanceBodyResponse),
@@ -2131,6 +2141,8 @@ async fn create_incident(
     let entity_scope = auth.entity_ids().map(|ids| ids.to_vec());
     let entity_id = req.entity_id;
     state.enforce_creation_rate_limit("governance.incident.create", workspace_id, 120, 60)?;
+    let title = require_non_empty_trimmed(&req.title, "title")?;
+    let description = require_non_empty_trimmed(&req.description, "description")?;
 
     let incident = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
@@ -2141,8 +2153,8 @@ async fn create_incident(
                 IncidentId::new(),
                 entity_id,
                 req.severity,
-                req.title,
-                req.description,
+                title,
+                description,
             );
             let path = format!("governance/incidents/{}.json", incident.incident_id());
             store

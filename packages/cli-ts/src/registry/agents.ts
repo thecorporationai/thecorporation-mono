@@ -105,7 +105,10 @@ export const agentCommands: CommandDef[] = [
       }
       console.log(chalk.magenta("\u2500".repeat(40)));
     },
-    examples: ["corp agents show"],
+    examples: [
+      "corp agents show @last:agent",
+      "corp agents show agt_01hx9k3n2p4q7r8s9t0uvwxyz",
+    ],
   },
 
   // --- agents create ---
@@ -147,7 +150,10 @@ export const agentCommands: CommandDef[] = [
     },
     produces: { kind: "agent" },
     successTemplate: "Agent created: {name}",
-    examples: ["corp agents create --name 'name' --prompt 'prompt'", "corp agents create --json"],
+    examples: [
+      'corp agents create --name "bookkeeper" --prompt "You manage accounts payable for the company"',
+      'corp agents create --name "compliance-monitor" --prompt "You monitor regulatory deadlines" --model gpt-4o',
+    ],
   },
 
   // --- agents pause <agent-ref> ---
@@ -162,7 +168,10 @@ export const agentCommands: CommandDef[] = [
       const result = await ctx.client.updateAgent(resolvedAgentId, { status: "paused" });
       ctx.writer.writeResult(result, `Agent ${resolvedAgentId} paused.`, { jsonOnly: ctx.opts.json });
     },
-    examples: ["corp agents pause <agent-ref>"],
+    examples: [
+      "corp agents pause @last:agent",
+      "corp agents pause agt_01hx9k3n2p4q7r8s9t0uvwxyz",
+    ],
   },
 
   // --- agents resume <agent-ref> ---
@@ -190,7 +199,10 @@ export const agentCommands: CommandDef[] = [
         }
       }
     },
-    examples: ["corp agents resume <agent-ref>"],
+    examples: [
+      "corp agents resume @last:agent",
+      "corp agents resume agt_01hx9k3n2p4q7r8s9t0uvwxyz",
+    ],
   },
 
   // --- agents delete <agent-ref> ---
@@ -215,7 +227,10 @@ export const agentCommands: CommandDef[] = [
       const result = await ctx.client.deleteAgent(resolvedAgentId);
       ctx.writer.writeResult(result, `Agent ${resolvedAgentId} deleted.`, { jsonOnly: ctx.opts.json });
     },
-    examples: ["corp agents delete <agent-ref>", "corp agents delete --json"],
+    examples: [
+      "corp agents delete @last:agent",
+      "corp agents delete agt_01hx9k3n2p4q7r8s9t0uvwxyz --yes",
+    ],
   },
 
   // --- agents message <agent-ref> ---
@@ -248,7 +263,10 @@ export const agentCommands: CommandDef[] = [
         }
       }
     },
-    examples: ["corp agents message <agent-ref>", "corp agents message --json"],
+    examples: [
+      'corp agents message @last:agent --body "Process this month\'s invoices"',
+      'corp agents message agt_01hx9k3n2p4q7r8s9t0uvwxyz --body-file ./task.txt',
+    ],
   },
 
   // --- agents skill <agent-ref> ---
@@ -278,7 +296,10 @@ export const agentCommands: CommandDef[] = [
       });
       ctx.writer.writeResult(result, `Skill '${ctx.opts.name}' added to agent ${resolvedAgentId}.`, { jsonOnly: ctx.opts.json });
     },
-    examples: ["corp agents skill <agent-ref> --name 'name' --description 'desc'", "corp agents skill --json"],
+    examples: [
+      'corp agents skill @last:agent --name invoice-processing --description "Process AP invoices from email"',
+      'corp agents skill agt_01hx9k3n2p4q7r8s9t0uvwxyz --name bookkeeping --description "Reconcile ledger entries" --instructions-file ./skills/bookkeeping.txt',
+    ],
   },
 
   // --- agents execution <agent-ref> <execution-id> ---
@@ -307,7 +328,10 @@ export const agentCommands: CommandDef[] = [
       if (result.completed_at) console.log(`  ${chalk.bold("Completed:")} ${result.completed_at}`);
       console.log(chalk.magenta("\u2500".repeat(40)));
     },
-    examples: ["corp agents execution"],
+    examples: [
+      "corp agents execution @last:agent exc_01hx9k3n2p4q7r8s9t0uvwxyz",
+      "corp agents execution agt_01hx9k3n2p4q7r8s9t0uvwxyz exc_01hx9k3n2p4q7r8s9t0uvwxyz",
+    ],
   },
 
   // --- agents execution-result <agent-ref> <execution-id> ---
@@ -329,7 +353,10 @@ export const agentCommands: CommandDef[] = [
       ctx.writer.success(`Result for execution ${executionId}:`);
       printJson(result);
     },
-    examples: ["corp agents execution-result"],
+    examples: [
+      "corp agents execution-result @last:agent exc_01hx9k3n2p4q7r8s9t0uvwxyz",
+      "corp agents execution-result @last:agent exc_01hx9k3n2p4q7r8s9t0uvwxyz --json",
+    ],
   },
 
   // --- agents kill <agent-ref> <execution-id> ---
@@ -355,7 +382,10 @@ export const agentCommands: CommandDef[] = [
       const result = await ctx.client.killAgentExecution(resolvedAgentId, executionId);
       ctx.writer.writeResult(result, `Execution ${executionId} killed.`, { jsonOnly: ctx.opts.json });
     },
-    examples: ["corp agents kill <agent-ref> <execution-id>", "corp agents kill --json"],
+    examples: [
+      "corp agents kill @last:agent exc_01hx9k3n2p4q7r8s9t0uvwxyz",
+      "corp agents kill @last:agent exc_01hx9k3n2p4q7r8s9t0uvwxyz --yes",
+    ],
   },
 
   // ── Auto-generated from OpenAPI ──────────────────────────────
@@ -365,7 +395,10 @@ export const agentCommands: CommandDef[] = [
     route: { method: "GET", path: "/v1/agents/{pos}/executions/{pos2}/logs" },
     args: [{ name: "agent-id", required: true, description: "Agent ID", posKind: "agent" }, { name: "execution-id", required: true, description: "Agent execution ID" }],
     display: { title: "Execution Logs", cols: ["@timestamp>Time", "level>Level", "message>Message"] },
-    examples: ["corp agents executions-logs"],
+    examples: [
+      "corp agents executions-logs @last:agent exc_01hx9k3n2p4q7r8s9t0uvwxyz",
+      "corp agents executions-logs agt_01hx9k3n2p4q7r8s9t0uvwxyz exc_01hx9k3n2p4q7r8s9t0uvwxyz --json",
+    ],
   },
 
 
@@ -376,7 +409,10 @@ export const agentCommands: CommandDef[] = [
     route: { method: "GET", path: "/v1/agents/{pos}/messages/{pos2}" },
     args: [{ name: "agent-id", required: true, description: "Agent ID", posKind: "agent" }, { name: "message-id", required: true, description: "Message Id" }],
     display: { title: "Agent Message" },
-    examples: ["corp agents messages"],
+    examples: [
+      "corp agents messages @last:agent msg_01hx9k3n2p4q7r8s9t0uvwxyz",
+      "corp agents messages @last:agent msg_01hx9k3n2p4q7r8s9t0uvwxyz --json",
+    ],
   },
 
 ];

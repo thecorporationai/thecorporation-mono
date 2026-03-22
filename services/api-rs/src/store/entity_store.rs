@@ -71,12 +71,18 @@ impl<'a> EntityStore<'a> {
             Some(client) => {
                 let con = client
                     .get_connection()
-                    .map_err(|e| GitStorageError::Git(e.to_string()))?;
+                    .map_err(|e| {
+                        tracing::error!(error = %e, "failed to acquire Valkey connection in EntityStore::init");
+                        GitStorageError::Git(e.to_string())
+                    })?;
                 let ws = workspace_id.to_string();
                 let ent = entity_id.to_string();
                 let mut cs = corp_store::CorpStore::new(con, &ws, &ent);
                 let vfiles = vec![corp_store::entry::FileWrite::json("corp.json", entity)
-                    .map_err(|e| GitStorageError::SerializationError(e.to_string()))?];
+                    .map_err(|e| {
+                        tracing::error!(error = %e, "failed to serialize entity in EntityStore::init");
+                        GitStorageError::SerializationError(e.to_string())
+                    })?];
                 cs.commit_files(
                     "main",
                     "Initialize entity",
@@ -108,7 +114,10 @@ impl<'a> EntityStore<'a> {
             Some(client) => {
                 let con = client
                     .get_connection()
-                    .map_err(|e| GitStorageError::Git(e.to_string()))?;
+                    .map_err(|e| {
+                        tracing::error!(error = %e, "failed to acquire Valkey connection in EntityStore::open");
+                        GitStorageError::Git(e.to_string())
+                    })?;
                 let ws = workspace_id.to_string();
                 let ent = entity_id.to_string();
                 let mut cs = corp_store::CorpStore::new(con, &ws, &ent);
@@ -188,10 +197,16 @@ impl<'a> EntityStore<'a> {
                 // Two connections: one for CorpStore (EntityStore), one raw (WorkspaceStore).
                 let mut con1 = client
                     .get_connection()
-                    .map_err(|e| GitStorageError::Git(e.to_string()))?;
+                    .map_err(|e| {
+                        tracing::error!(error = %e, "failed to acquire Valkey connection (con1) in EntityStore::list_and_prepare");
+                        GitStorageError::Git(e.to_string())
+                    })?;
                 let con2 = client
                     .get_connection()
-                    .map_err(|e| GitStorageError::Git(e.to_string()))?;
+                    .map_err(|e| {
+                        tracing::error!(error = %e, "failed to acquire Valkey connection (con2) in EntityStore::list_and_prepare");
+                        GitStorageError::Git(e.to_string())
+                    })?;
                 let ws = workspace_id.to_string();
                 let ids = corp_store::store::list_entities(&mut con1, &ws)
                     .map_err(GitStorageError::from)?

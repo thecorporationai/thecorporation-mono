@@ -602,6 +602,7 @@ fn is_core_governance_document(doc: &Document) -> bool {
     post,
     path = "/v1/formations",
     tag = "formation",
+    description = "Create a new formation entity with members and generate the initial set of formation documents.",
     request_body = CreateFormationRequest,
     responses(
         (status = 200, description = "Formation created", body = FormationResponse),
@@ -694,6 +695,7 @@ async fn create_formation(
     post,
     path = "/v1/formations/with-cap-table",
     tag = "formation",
+    description = "Create a new formation entity and simultaneously initialize its cap table with contacts, a legal entity, an instrument, and holder positions.",
     request_body = CreateFormationRequest,
     responses(
         (status = 200, description = "Formation created with cap table", body = FormationWithCapTableResponse),
@@ -805,6 +807,7 @@ async fn create_formation_with_cap_table(
     get,
     path = "/v1/formations/{entity_id}",
     tag = "formation",
+    description = "Retrieve the current formation status and lifecycle state for a given entity.",
     params(
         ("entity_id" = EntityId, Path, description = "Entity ID"),
     ),
@@ -842,6 +845,7 @@ async fn get_formation(
     get,
     path = "/v1/formations/{entity_id}/documents",
     tag = "formation",
+    description = "List all formation documents (articles, bylaws, consents, etc.) associated with an entity.",
     params(
         ("entity_id" = EntityId, Path, description = "Entity ID"),
     ),
@@ -899,6 +903,7 @@ async fn list_documents(
     get,
     path = "/v1/documents/{document_id}",
     tag = "formation",
+    description = "Fetch the full content and signature list for a single formation document.",
     params(
         ("document_id" = DocumentId, Path, description = "Document ID"),
         ("entity_id" = EntityId, Query, description = "Entity ID"),
@@ -969,6 +974,7 @@ async fn get_document(
     post,
     path = "/v1/documents/{document_id}/sign",
     tag = "formation",
+    description = "Record an electronic signature on a formation document, advancing its status when all required signers have signed.",
     params(
         ("document_id" = DocumentId, Path, description = "Document ID"),
         ("entity_id" = EntityId, Query, description = "Entity ID"),
@@ -1069,6 +1075,7 @@ async fn sign_document(
     post,
     path = "/v1/formations/{entity_id}/mark-documents-signed",
     tag = "formation",
+    description = "Advance the formation lifecycle to DocumentsSigned once all formation documents have been fully signed.",
     params(
         ("entity_id" = EntityId, Path, description = "Entity ID"),
     ),
@@ -1139,6 +1146,7 @@ async fn mark_documents_signed(
     post,
     path = "/v1/formations/{entity_id}/submit-filing",
     tag = "formation",
+    description = "Mark the entity's state filing as submitted, advancing it to FilingSubmitted if all blockers are cleared.",
     params(
         ("entity_id" = EntityId, Path, description = "Entity ID"),
     ),
@@ -1197,6 +1205,7 @@ async fn submit_filing(
     post,
     path = "/v1/formations/{entity_id}/filing-attestation",
     tag = "formation",
+    description = "Record a natural-person attestation confirming the filing information is accurate, required before state submission.",
     params(
         ("entity_id" = EntityId, Path, description = "Entity ID"),
     ),
@@ -1261,6 +1270,7 @@ async fn record_filing_attestation(
     post,
     path = "/v1/formations/{entity_id}/registered-agent-consent-evidence",
     tag = "formation",
+    description = "Attach evidence of registered agent consent (e.g., a URI to a signed consent document) to the entity's filing record.",
     params(
         ("entity_id" = EntityId, Path, description = "Entity ID"),
     ),

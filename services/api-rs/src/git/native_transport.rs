@@ -3,6 +3,8 @@
 //! Implements `info/refs`, `upload-pack`, and `receive-pack` directly
 //! against the corp_store Valkey backend, without shelling out to git.
 
+use std::collections::HashSet;
+
 use corp_store::git_protocol::{ParsedObject, RefUpdate, RefUpdateResult};
 use redis::ConnectionLike;
 
@@ -211,6 +213,55 @@ pub fn receive_pack(
         // No pack data (e.g., delete-only push).
         Vec::new()
     };
+
+    // Validate that every non-delete ref update points to an object that
+    // was either included in this pack or already exists in the store.
+    //
+    // Without this check a client could send a push command that moves a
+    // ref to an arbitrary SHA-1 without actually sending the object,
+    // potentially pointing a branch at an object that belongs to a
+    // different entity or workspace, or at a SHA-1 that does not exist
+    // at all.  corp_store::git_protocol::receive_push does not perform
+    // this check itself (it only fails later when tree materialisation
+    // tries to read the missing object), so we enforce it here as an
+    // explicit, early rejection.
+    {
+        let packed_sha1s: HashSet<&str> =
+            objects.iter().map(|o| o.sha1_hex.as_str()).collect();
+
+        for update in &ref_updates {
+            // Deletes (new_sha1 all-zeros) are always allowed — there is
+            // nothing to validate.
+            if update.is_delete() {
+                continue;
+            }
+
+            let new_sha = update.new_sha1.as_str();
+
+            // Accept the ref if the object arrived in this pack.
+            if packed_sha1s.contains(new_sha) {
+                continue;
+            }
+
+            // Accept the ref if the object is already stored (e.g. the
+            // client is moving a branch to an existing ancestor commit).
+            let in_store = corp_store::store::git_object_exists(con, new_sha)
+                .map_err(|e| {
+                    GitProtocolError::SubprocessError(format!(
+                        "object existence check failed: {e}"
+                    ))
+                })?;
+
+            if !in_store {
+                return Err(GitProtocolError::SubprocessError(format!(
+                    "push rejected: ref {} points to object {} \
+                     which was not included in the pack and is not \
+                     already in the store",
+                    update.refname, new_sha,
+                )));
+            }
+        }
+    }
 
     // Process the push.
     let results = corp_store::git_protocol::receive_push(con, ws, ent, &ref_updates, &objects)

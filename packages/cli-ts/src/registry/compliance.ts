@@ -122,7 +122,10 @@ export const complianceCommands: CommandDef[] = [
     },
     produces: { kind: "tax_filing" },
     successTemplate: "Tax filing created",
-    examples: ["corp tax file --type 1120 --year 'year'"],
+    examples: [
+      "corp tax file --type 1120 --year 2025",
+      "corp tax file --type 83b --year 2025 --filer-contact-id @last:contact",
+    ],
   },
 
   // --- tax deadlines ---
@@ -182,7 +185,10 @@ export const complianceCommands: CommandDef[] = [
     },
     produces: { kind: "deadline" },
     successTemplate: "Deadline tracked",
-    examples: ["corp tax deadline --type 'type' --due-date 'date' --description 'desc'", "corp tax deadline --json"],
+    examples: [
+      'corp tax deadline --type annual_report --due-date 2026-03-31 --description "Delaware annual report due"',
+      'corp tax deadline --type annual_report --due-date 2026-03-31 --description "Delaware annual report" --recurrence annual',
+    ],
   },
 
   // ── Auto-generated from OpenAPI ──────────────────────────────
@@ -190,7 +196,10 @@ export const complianceCommands: CommandDef[] = [
     name: "compliance escalations-scan",
     description: "Scan for compliance issues and create escalations",
     route: { method: "POST", path: "/v1/compliance/escalations/scan" },
-    examples: ["corp compliance escalations-scan"],
+    examples: [
+      "corp compliance escalations-scan",
+      "corp compliance escalations-scan --json",
+    ],
     successTemplate: "Escalation scan complete",
   },
   {
@@ -206,7 +215,10 @@ export const complianceCommands: CommandDef[] = [
       { flags: "--resolve-incident", description: "Resolve Incident" },
       { flags: "--resolve-obligation", description: "Resolve Obligation" },
     ],
-    examples: ["corp compliance escalations-resolve-with-evidence <escalation-id>", "corp compliance escalations-resolve-with-evidence --json"],
+    examples: [
+      'corp compliance escalations-resolve-with-evidence esc_01hx9k3n2p4q7r8s9t0uvwxyz --evidence-type filing --filing-reference DE-2026-0042',
+      "corp compliance escalations-resolve-with-evidence esc_01hx9k3n2p4q7r8s9t0uvwxyz --resolve-incident --notes \"Filed on time\"",
+    ],
     successTemplate: "Escalations Resolve With Evidence created",
   },
   {
@@ -223,7 +235,10 @@ export const complianceCommands: CommandDef[] = [
       { flags: "--provides-tools <provides-tools>", description: "Provides Tools" },
       { flags: "--state <state>", description: "State" },
     ],
-    examples: ["corp contractors classify --contractor-name 'contractor-name'", "corp contractors classify --json"],
+    examples: [
+      'corp contractors classify --contractor-name "Jane Doe" --state CA --hours-per-week 20',
+      'corp contractors classify --contractor-name "Acme Services LLC" --duration-months 6 --exclusive-client false',
+    ],
     successTemplate: "Classify created",
   },
   {
@@ -237,7 +252,10 @@ export const complianceCommands: CommandDef[] = [
       { flags: "--recurrence <recurrence>", description: "Recurrence pattern for a deadline.", choices: ["one_time", "monthly", "quarterly", "annual"] },
       { flags: "--severity <severity>", description: "Risk severity of missing a deadline.", choices: ["low", "medium", "high", "critical"] },
     ],
-    examples: ["corp deadlines --deadline-type 'deadline-type' --description 'description' --due-date one_time", "corp deadlines --json"],
+    examples: [
+      'corp deadlines --deadline-type annual_report --description "Delaware annual report" --due-date 2026-03-31 --recurrence annual',
+      'corp deadlines --deadline-type tax_filing --description "Q1 estimated taxes" --due-date 2026-04-15 --severity high',
+    ],
     successTemplate: "Deadlines created",
   },
   {
@@ -257,7 +275,10 @@ export const complianceCommands: CommandDef[] = [
       { flags: "--document-type <document-type>", description: "Type of document required", required: true },
       { flags: "--tax-year <tax-year>", description: "Tax Year", required: true, type: "int" },
     ],
-    examples: ["corp tax create-filing --document-type 'document-type' --tax-year 'tax-year'"],
+    examples: [
+      "corp tax create-filing --document-type 1120 --tax-year 2025",
+      "corp tax create-filing --document-type 1065 --tax-year 2025 --json",
+    ],
     successTemplate: "Filings created",
   },
 

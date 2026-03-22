@@ -3,13 +3,14 @@
 
 use axum::http::HeaderValue;
 use axum::response::Response;
-use axum::{Json, Router, middleware, routing::get};
+use axum::{Json, Router, extract::State, middleware, routing::get};
 use clap::{Parser, Subcommand, ValueEnum};
 use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
+use tokio::signal::unix::SignalKind;
 use tracing_subscriber::EnvFilter;
 
 mod auth;
@@ -77,8 +78,34 @@ enum GovernanceEntityTypeArg {
     Llc,
 }
 
-async fn health() -> Json<Value> {
-    Json(json!({ "status": "ok" }))
+async fn health(State(state): State<routes::AppState>) -> Json<Value> {
+    let storage_status = match state.storage_backend {
+        store::StorageBackendKind::Git => {
+            if state.layout.data_dir().exists() {
+                "operational"
+            } else {
+                "unavailable"
+            }
+        }
+        store::StorageBackendKind::Kv => {
+            match state.valkey_client.as_ref().and_then(|c| c.get_connection().ok()) {
+                Some(_) => "operational",
+                None => "unavailable",
+            }
+        }
+    };
+
+    let overall = if storage_status == "operational" {
+        "healthy"
+    } else {
+        "degraded"
+    };
+
+    Json(json!({
+        "status": overall,
+        "version": env!("CARGO_PKG_VERSION"),
+        "storage": storage_status,
+    }))
 }
 
 async fn openapi_json() -> Json<utoipa::openapi::OpenApi> {
@@ -421,12 +448,23 @@ async fn run_server(skip_validation: bool) {
         })
         .unwrap();
     axum::serve(listener, app)
+        .with_graceful_shutdown(shutdown_signal())
         .await
         .map_err(|e| {
             eprintln!("ERROR: server error: {e}");
             std::process::exit(1);
         })
         .unwrap();
+}
+
+async fn shutdown_signal() {
+    let ctrl_c = tokio::signal::ctrl_c();
+    let mut terminate = tokio::signal::unix::signal(SignalKind::terminate())
+        .expect("install SIGTERM handler");
+    tokio::select! {
+        _ = ctrl_c => tracing::info!("received SIGINT, shutting down"),
+        _ = terminate.recv() => tracing::info!("received SIGTERM, shutting down"),
+    }
 }
 
 async fn call_oneshot(

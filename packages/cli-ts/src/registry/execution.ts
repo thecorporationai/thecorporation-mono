@@ -82,7 +82,10 @@ export const executionCommands: CommandDef[] = [
       { flags: "--max-amount-cents <max-amount-cents>", description: "Maximum authorized amount in cents" },
       { flags: "--scope <scope>", description: "Authorization scope", required: true },
     ],
-    examples: ["corp execution approval-artifacts --approver-identity 'approver-identity' --channel 'channel' --intent-type 'intent-type' --scope 'scope'", "corp execution approval-artifacts --json"],
+    examples: [
+      'corp execution approval-artifacts --approver-identity "alice@acme.com" --channel board_vote --intent-type equity_grant --scope entity',
+      'corp execution approval-artifacts --approver-identity "alice@acme.com" --channel written_consent --intent-type equity_grant --scope entity --approved-at 2026-03-01T00:00:00Z',
+    ],
     successTemplate: "Approval Artifacts created",
   },
   {
@@ -96,7 +99,10 @@ export const executionCommands: CommandDef[] = [
       { flags: "--intent-type <intent-type>", description: "Type of intent", required: true },
       { flags: "--metadata <metadata>", description: "Additional metadata (JSON)" },
     ],
-    examples: ["corp execution intents --description 'description' --intent-type 'intent-type'", "corp execution intents --json"],
+    examples: [
+      'corp execution intents --description "Issue 10,000 options to Alice" --intent-type equity_grant --authority-tier tier_2',
+      'corp execution intents --description "Wire $50,000 to vendor" --intent-type payment --authority-tier tier_1',
+    ],
     successTemplate: "Intents created",
   },
   {
@@ -112,7 +118,10 @@ export const executionCommands: CommandDef[] = [
       { flags: "--intent-id <intent-id>", description: "Execution intent ID" },
       { flags: "--obligation-type <obligation-type>", description: "Type of obligation", required: true },
     ],
-    examples: ["corp execution obligations --assignee-type internal --description 'description' --obligation-type 'obligation-type'", "corp execution obligations --json"],
+    examples: [
+      'corp execution obligations --assignee-type human --description "Sign equity grant agreement" --obligation-type signature',
+      'corp execution obligations --assignee-type internal --description "File 83(b) election" --obligation-type document --due-date 2026-04-15',
+    ],
     successTemplate: "Obligations created",
   },
   {
@@ -122,7 +131,10 @@ export const executionCommands: CommandDef[] = [
     entity: true,
     args: [{ name: "packet-id", required: true, description: "Document packet ID" }],
     display: { title: "Execution Packets", cols: ["finalized_at>Finalized At", "items>Items", "manifest_hash>Manifest Hash", "required_signers>Required Signers", "@created_at>Created At", "#entity_id>ID"] },
-    examples: ["corp execution packets", "corp execution packets --json"],
+    examples: [
+      "corp execution packets pkt_01hx9k3n2p4q7r8s9t0uvwxyz",
+      "corp execution packets pkt_01hx9k3n2p4q7r8s9t0uvwxyz --json",
+    ],
   },
   {
     name: "intents authorize",
@@ -141,7 +153,9 @@ export const executionCommands: CommandDef[] = [
     options: [
       { flags: "--approval-artifact-id <approval-artifact-id>", description: "Approval artifact ID to bind", required: true },
     ],
-    examples: ["corp intents bind-approval-artifact <intent-id> --approval-artifact-id 'approval-artifact-id'"],
+    examples: [
+      "corp intents bind-approval-artifact @last:intent --approval-artifact-id art_01hx9k3n2p4q7r8s9t0uvwxyz",
+    ],
     successTemplate: "Bind Approval Artifact created",
   },
   {
@@ -152,7 +166,9 @@ export const executionCommands: CommandDef[] = [
     options: [
       { flags: "--request-id <request-id>", description: "Document request ID", required: true },
     ],
-    examples: ["corp intents bind-document-request <intent-id> --request-id 'request-id'"],
+    examples: [
+      "corp intents bind-document-request @last:intent --request-id req_01hx9k3n2p4q7r8s9t0uvwxyz",
+    ],
     successTemplate: "Bind Document Request created",
   },
   {
@@ -189,7 +205,10 @@ export const executionCommands: CommandDef[] = [
     entity: true,
     args: [{ name: "intent-id", required: true, description: "Execution intent ID" }],
     display: { title: "Intents Receipts", cols: ["executed_at>Executed At", "idempotency_key>Idempotency Key", "request_hash>Request Hash", "response_hash>Response Hash", "@created_at>Created At", "#intent_id>ID"] },
-    examples: ["corp intents receipts", "corp intents receipts --json"],
+    examples: [
+      "corp intents receipts int_01hx9k3n2p4q7r8s9t0uvwxyz",
+      "corp intents receipts @last:intent --json",
+    ],
   },
   {
     name: "obligations assign",
@@ -200,7 +219,9 @@ export const executionCommands: CommandDef[] = [
     options: [
       { flags: "--assignee-id <assignee-id>", description: "ID of the party to assign to", required: true },
     ],
-    examples: ["corp obligations assign <obligation-id> --assignee-id 'assignee-id'"],
+    examples: [
+      "corp obligations assign obl_01hx9k3n2p4q7r8s9t0uvwxyz --assignee-id usr_01hx9k3n2p4q7r8s9t0uvwxyz",
+    ],
     successTemplate: "Assign created",
   },
   {
@@ -210,7 +231,10 @@ export const executionCommands: CommandDef[] = [
     entity: true,
     args: [{ name: "obligation-id", required: true, description: "Obligation ID" }],
     display: { title: "Obligations Document Requests", cols: ["description>Description", "document_type>Document Type", "fulfilled_at>Fulfilled At", "not_applicable_at>Not Applicable At", "@created_at>Created At", "#entity_id>ID"] },
-    examples: ["corp obligations document-requests", "corp obligations document-requests --json"],
+    examples: [
+      "corp obligations document-requests obl_01hx9k3n2p4q7r8s9t0uvwxyz",
+      "corp obligations document-requests obl_01hx9k3n2p4q7r8s9t0uvwxyz --json",
+    ],
   },
   {
     name: "obligations create-document-request",
@@ -222,7 +246,9 @@ export const executionCommands: CommandDef[] = [
       { flags: "--description <description>", description: "Description text", required: true },
       { flags: "--document-type <document-type>", description: "Type of document required", required: true },
     ],
-    examples: ["corp obligations document-requests <obligation-id> --description 'description' --document-type 'document-type'"],
+    examples: [
+      'corp obligations create-document-request obl_01hx9k3n2p4q7r8s9t0uvwxyz --description "Signed equity grant agreement" --document-type equity_grant',
+    ],
     successTemplate: "Document Requests created",
   },
   {
@@ -259,7 +285,10 @@ export const executionCommands: CommandDef[] = [
     entity: true,
     args: [{ name: "receipt-id", required: true, description: "Execution receipt ID" }],
     display: { title: "Receipts", cols: ["executed_at>Executed At", "idempotency_key>Idempotency Key", "request_hash>Request Hash", "response_hash>Response Hash", "@created_at>Created At", "#intent_id>ID"] },
-    examples: ["corp receipts", "corp receipts --json"],
+    examples: [
+      "corp receipts rcp_01hx9k3n2p4q7r8s9t0uvwxyz",
+      "corp receipts rcp_01hx9k3n2p4q7r8s9t0uvwxyz --json",
+    ],
   },
 
   // ── Human obligations ───────────────────────────────────────────────

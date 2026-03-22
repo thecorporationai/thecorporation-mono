@@ -235,7 +235,10 @@ where
             if secret.is_empty() {
                 return Err(AuthRejection(AuthError::Unauthorized));
             }
-            let claims = decode_token(token, &secret).map_err(AuthRejection)?;
+            let claims = decode_token(token, &secret).map_err(|e| {
+                tracing::warn!(reason = %e, "JWT token validation failed");
+                AuthRejection(e)
+            })?;
 
             return Ok(Principal {
                 workspace_id: claims.workspace_id(),
@@ -265,7 +268,10 @@ fn principal_from_api_key(
     valkey_client: Option<&redis::Client>,
 ) -> Result<Principal, AuthError> {
     let (workspace_ids, shared_con) = WorkspaceStore::list_and_prepare(layout, valkey_client)
-        .map_err(|_| AuthError::Unauthorized)?;
+        .map_err(|e| {
+            tracing::warn!(error = %e, "failed to list workspaces during API key auth");
+            AuthError::Unauthorized
+        })?;
 
     for workspace_id in workspace_ids {
         let ws_store = match WorkspaceStore::open_shared(layout, workspace_id, shared_con.clone()) {
@@ -333,6 +339,7 @@ where
 
         let expected = std::env::var("INTERNAL_WORKER_TOKEN").unwrap_or_default();
         if expected.is_empty() || token != expected {
+            tracing::warn!("internal worker token validation failed: token mismatch or INTERNAL_WORKER_TOKEN not configured");
             return Err(AuthRejection(AuthError::Unauthorized));
         }
 

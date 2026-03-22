@@ -460,7 +460,11 @@ export const formationCommands: CommandDef[] = [
       { flags: "--incorporator-address <address>", description: "Incorporator mailing address (overrides founder)" },
     ],
     handler: formFinalizeHandler,
-    examples: ["corp form finalize"],
+    examples: [
+      "corp form finalize @last:entity",
+      "corp form finalize @last:entity --authorized-shares 10000000 --par-value 0.0001",
+      "corp form finalize @last:entity --company-address \"123 Main St,Wilmington,DE,19801\" --incorporator-name \"Alice Smith\"",
+    ],
   },
   {
     name: "form activate",
@@ -475,7 +479,11 @@ export const formationCommands: CommandDef[] = [
       { flags: "--ein <ein>", description: "EIN to confirm (defaults to a deterministic simulated EIN)" },
     ],
     handler: formActivateHandler,
-    examples: ["corp form activate"],
+    examples: [
+      "corp form activate @last:entity",
+      "corp form activate @last:entity --ein 84-1234567",
+      "corp form activate @last:entity --filing-id DE-2026-0042 --receipt-reference RECEIPT-001",
+    ],
   },
 
   // ── Auto-generated from OpenAPI ──────────────────────────────

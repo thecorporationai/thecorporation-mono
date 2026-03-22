@@ -17,8 +17,11 @@ import { executionCommands } from "./execution.js";
 import { secretProxyCommands } from "./secret-proxies.js";
 import { treasuryCommands } from "./treasury.js";
 import { branchCommands } from "./branches.js";
+import { makeCompletionsCommand } from "./completions.js";
 
-export const registry: CommandDef[] = [
+// Build the base registry without the completions command so we can pass it
+// into makeCompletionsCommand without creating a circular reference.
+const baseRegistry: CommandDef[] = [
   ...workspaceCommands,
   ...entityCommands,
   ...formationCommands,
@@ -35,6 +38,11 @@ export const registry: CommandDef[] = [
   ...secretProxyCommands,
   ...treasuryCommands,
   ...branchCommands,
+];
+
+export const registry: CommandDef[] = [
+  ...baseRegistry,
+  makeCompletionsCommand(baseRegistry),
 ];
 
 /** Attach produces/successTemplate to a web-route entry if present on the CommandDef */
