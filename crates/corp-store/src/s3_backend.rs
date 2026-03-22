@@ -41,6 +41,10 @@ impl S3Backend {
     ///
     /// Reads `S3_BUCKET` (required), `S3_PREFIX` (optional, default ""),
     /// and standard AWS SDK config (`AWS_REGION`, credentials, etc.).
+    ///
+    /// **Note**: This creates an internal tokio runtime and must NOT be
+    /// called from within an existing tokio runtime. Use `from_env_async`
+    /// instead when calling from async code.
     pub fn from_env() -> Result<Self, StoreError> {
         let bucket = std::env::var("S3_BUCKET")
             .map_err(|_| StoreError::Config("S3_BUCKET env var is required".into()))?;
@@ -55,6 +59,33 @@ impl S3Backend {
             let config = aws_config::load_defaults(aws_config::BehaviorVersion::latest()).await;
             Client::new(&config)
         });
+
+        tracing::info!(bucket = %bucket, prefix = %prefix, "S3 durable backend initialized");
+
+        Ok(Self {
+            client,
+            bucket,
+            prefix,
+            rt,
+        })
+    }
+
+    /// Async version of `from_env` — safe to call from within a tokio runtime.
+    ///
+    /// Loads AWS config using the caller's async runtime, then creates a
+    /// dedicated single-threaded runtime for the sync `DurableBackend` methods.
+    pub async fn from_env_async() -> Result<Self, StoreError> {
+        let bucket = std::env::var("S3_BUCKET")
+            .map_err(|_| StoreError::Config("S3_BUCKET env var is required".into()))?;
+        let prefix = std::env::var("S3_PREFIX").unwrap_or_default();
+
+        let config = aws_config::load_defaults(aws_config::BehaviorVersion::latest()).await;
+        let client = Client::new(&config);
+
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .map_err(|e| StoreError::Internal(format!("tokio runtime: {e}")))?;
 
         tracing::info!(bucket = %bucket, prefix = %prefix, "S3 durable backend initialized");
 
