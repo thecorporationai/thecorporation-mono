@@ -231,6 +231,7 @@ describe("CorpAPIClient HTTP methods", () => {
   });
 
   it("throws 'HTTP <status>' for other error codes", async () => {
+    vi.useFakeTimers();
     globalThis.fetch = vi.fn(async () => {
       return new Response(JSON.stringify({ error: "rate limited" }), {
         status: 429,
@@ -238,7 +239,13 @@ describe("CorpAPIClient HTTP methods", () => {
         headers: { "Content-Type": "application/json" },
       });
     });
-    await expect(client.getStatus()).rejects.toThrow("HTTP 429: rate limited");
+    const promise = client.getStatus();
+    // Attach rejection handler early to avoid unhandled rejection warning
+    const assertion = expect(promise).rejects.toThrow("HTTP 429: rate limited");
+    // Advance past retry backoff delays
+    for (let i = 0; i < 3; i++) await vi.advanceTimersByTimeAsync(10_000);
+    await assertion;
+    vi.useRealTimers();
   });
 
   it("falls back to response text when body is not JSON", async () => {
