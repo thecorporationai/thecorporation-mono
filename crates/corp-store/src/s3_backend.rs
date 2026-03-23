@@ -239,6 +239,16 @@ impl DurableBackend for S3Backend {
         self.put_object(&key, ref_json)
     }
 
+    fn get_ref(
+        &self,
+        ws: &str,
+        ent: &str,
+        branch: &str,
+    ) -> Result<Vec<u8>, StoreError> {
+        let key = self.key(&format!("refs/{ws}/{ent}/{branch}.json"));
+        self.get_object(&key)
+    }
+
     fn list_commits(&self, ws: &str, ent: &str) -> Result<Vec<Vec<u8>>, StoreError> {
         let prefix = self.key(&format!("commits/{ws}/{ent}/"));
         let keys = self.list_objects(&prefix)?;

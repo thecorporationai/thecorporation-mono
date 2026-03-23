@@ -246,8 +246,31 @@ impl<C: ConnectionLike> CorpStore<C> {
     }
 
     /// Resolve a branch ref to a commit SHA-1.
+    ///
+    /// When a durable backend is present and the KV lookup misses (e.g. after
+    /// Dragonfly eviction), falls back to reading the ref from S3 and
+    /// re-hydrating the KV index.
     pub fn resolve_ref(&mut self, branch: &str) -> Result<String, StoreError> {
-        store::resolve_ref(&mut self.con, &self.ws, &self.ent, branch)
+        match store::resolve_ref(&mut self.con, &self.ws, &self.ent, branch) {
+            Ok(sha1) => Ok(sha1),
+            Err(StoreError::RefNotFound(_)) if self.durable.is_some() => {
+                let backend = self.durable.as_ref().unwrap();
+                let ref_json = backend.get_ref(&self.ws, &self.ent, branch)?;
+                let parsed: serde_json::Value = serde_json::from_slice(&ref_json)
+                    .map_err(|e| StoreError::Internal(format!("corrupt S3 ref: {e}")))?;
+                let sha1 = parsed
+                    .get("sha1")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| StoreError::Internal("S3 ref missing sha1 field".into()))?
+                    .to_owned();
+                // Re-hydrate the KV ref so subsequent lookups are fast
+                let ref_key = crate::keys::ref_key(&self.ws, &self.ent);
+                let _: () = redis::Commands::hset(&mut self.con, &ref_key, branch, &sha1)?;
+                tracing::debug!(ws = %self.ws, ent = %self.ent, branch, "re-hydrated ref from S3");
+                Ok(sha1)
+            }
+            Err(e) => Err(e),
+        }
     }
 
     /// Read a raw git object by SHA-1.

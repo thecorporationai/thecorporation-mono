@@ -76,6 +76,16 @@ pub trait DurableBackend {
     /// Returns the raw JSON bytes of each commit entry.
     fn list_commits(&self, ws: &str, ent: &str) -> Result<Vec<Vec<u8>>, StoreError>;
 
+    /// Retrieve a branch ref.
+    /// Key: `refs/{ws}/{ent}/{branch}.json`
+    /// Returns the raw JSON bytes, or `StoreError::RefNotFound` if missing.
+    fn get_ref(
+        &self,
+        ws: &str,
+        ent: &str,
+        branch: &str,
+    ) -> Result<Vec<u8>, StoreError>;
+
     /// List all blob SHA-256 keys (for GC / inventory).
     fn list_blobs(&self) -> Result<Vec<String>, StoreError>;
 }
@@ -716,6 +726,17 @@ impl DurableBackend for FsBackend {
         std::fs::create_dir_all(path.parent().unwrap())?;
         std::fs::write(&path, ref_json)?;
         Ok(())
+    }
+
+    fn get_ref(
+        &self,
+        ws: &str,
+        ent: &str,
+        branch: &str,
+    ) -> Result<Vec<u8>, StoreError> {
+        let path = self.ref_path(ws, ent, branch);
+        std::fs::read(&path)
+            .map_err(|_| StoreError::RefNotFound(format!("{ws}/{ent}@{branch}")))
     }
 
     fn list_commits(&self, ws: &str, ent: &str) -> Result<Vec<Vec<u8>>, StoreError> {

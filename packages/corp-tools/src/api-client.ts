@@ -134,6 +134,26 @@ export class CorpAPIClient {
     const url = `${this.apiUrl}${fullPath}`;
     const opts: RequestInit = { method, headers: this.headers() };
     if (body !== undefined) opts.body = JSON.stringify(body);
+
+    const MAX_RETRIES = 3;
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+      const resp = await fetch(url, opts);
+      if (resp.status !== 429 || attempt === MAX_RETRIES) return resp;
+
+      // Parse Retry-After header (seconds) or fall back to exponential backoff
+      const retryAfter = resp.headers.get("retry-after");
+      let waitMs: number;
+      if (retryAfter) {
+        const secs = parseInt(retryAfter, 10);
+        waitMs = Number.isFinite(secs) ? secs * 1000 : (attempt + 1) * 2000;
+      } else {
+        // Exponential backoff: 2s, 4s, 8s
+        waitMs = Math.min((attempt + 1) * 2000, 10000);
+      }
+      await new Promise((resolve) => setTimeout(resolve, waitMs));
+    }
+
+    // Unreachable, but TypeScript needs a return
     return fetch(url, opts);
   }
 
