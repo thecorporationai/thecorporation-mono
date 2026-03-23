@@ -24,7 +24,7 @@ async function requestMagicLink(
   const resp = await fetch(`${apiUrl}/v1/auth/magic-link`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ email, tos_accepted: tosAccepted }),
+    body: JSON.stringify({ email, tos_accepted: tosAccepted, client: "cli" }),
   });
   if (!resp.ok) {
     const data = await resp.json().catch(() => ({}));
