@@ -826,7 +826,7 @@ fn set_schedule_last_reauthorized_at(
 ) {
     let layout = api_rs::store::RepoLayout::new(tmp.path().to_path_buf());
     let parsed_entity_id: EntityId = entity_id.parse().unwrap();
-    let store = EntityStore::open(&layout, workspace_id, parsed_entity_id, None).unwrap();
+    let store = EntityStore::open(&layout, workspace_id, parsed_entity_id, None, None).unwrap();
 
     let mut schedule_json: Value = store
         .read_json("main", "governance/delegation-schedule/current.json")
@@ -852,7 +852,7 @@ fn tamper_governance_audit_entry_action(
     let layout = api_rs::store::RepoLayout::new(tmp.path().to_path_buf());
     let parsed_entity_id: EntityId = entity_id.parse().unwrap();
     let parsed_entry_id: GovernanceAuditEntryId = entry_id.parse().unwrap();
-    let store = EntityStore::open(&layout, workspace_id, parsed_entity_id, None).unwrap();
+    let store = EntityStore::open(&layout, workspace_id, parsed_entity_id, None, None).unwrap();
 
     let mut entry_json: Value = store
         .read_json(
@@ -2021,7 +2021,7 @@ async fn test_equity_lifecycle() {
     // 10. Persisted state checks: round closed, intents executed, conversion record stored.
     let layout = api_rs::store::RepoLayout::new(tmp.path().to_path_buf());
     let parsed_entity_id: EntityId = entity_id.parse().unwrap();
-    let store = EntityStore::open(&layout, ws_id, parsed_entity_id, None).unwrap();
+    let store = EntityStore::open(&layout, ws_id, parsed_entity_id, None, None).unwrap();
 
     let parsed_round_id: EquityRoundId = round_id.parse().unwrap();
     let persisted_round = store.read::<EquityRound>("main", parsed_round_id).unwrap();
@@ -4252,7 +4252,7 @@ async fn test_three_way_merge_via_api() {
         let ws: uuid::Uuid = ws_id.into_uuid();
         let eid: uuid::Uuid = entity_id.parse().unwrap();
         let store =
-            api_rs::store::entity_store::EntityStore::open(&layout, ws.into(), eid.into(), None).unwrap();
+            api_rs::store::entity_store::EntityStore::open(&layout, ws.into(), eid.into(), None, None).unwrap();
 
         // Commit a new file on main.
         store
@@ -4368,7 +4368,7 @@ async fn test_packet_routes_and_escalation_evidence_resolution() {
     );
 
     let layout = api_rs::store::RepoLayout::new(tmp.path().to_path_buf());
-    let store = EntityStore::open(&layout, ws_id, entity_id, None).unwrap();
+    let store = EntityStore::open(&layout, ws_id, entity_id, None, None).unwrap();
     store
         .commit(
             "main",
@@ -4454,7 +4454,7 @@ async fn test_packet_routes_and_escalation_evidence_resolution() {
             .parse()
             .unwrap();
 
-    let store = EntityStore::open(&layout, ws_id, entity_id, None).unwrap();
+    let store = EntityStore::open(&layout, ws_id, entity_id, None, None).unwrap();
     let stored_packet = store
         .read::<api_rs::domain::execution::transaction_packet::TransactionPacket>("main", packet_id)
         .unwrap();
@@ -4614,7 +4614,7 @@ async fn test_governance_profile_and_doc_bundle_generation() {
 
     let layout = api_rs::store::RepoLayout::new(tmp.path().to_path_buf());
     let parsed_entity_id: EntityId = entity_id.parse().unwrap();
-    let store = EntityStore::open(&layout, ws_id, parsed_entity_id, None).unwrap();
+    let store = EntityStore::open(&layout, ws_id, parsed_entity_id, None, None).unwrap();
     let current_bundle: api_rs::domain::governance::doc_generator::GovernanceDocBundleCurrent =
         store
             .read_json("main", "governance/doc-bundles/current.json")
