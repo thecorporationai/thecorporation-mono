@@ -267,16 +267,21 @@ impl<C: ConnectionLike> CorpStore<C> {
                 };
                 let parsed: serde_json::Value = serde_json::from_slice(&ref_json)
                     .map_err(|e| StoreError::Internal(format!("corrupt S3 ref: {e}")))?;
-                let sha1 = parsed
+                let _sha1 = parsed
                     .get("sha1")
                     .and_then(|v| v.as_str())
                     .ok_or_else(|| StoreError::Internal("S3 ref missing sha1 field".into()))?
                     .to_owned();
-                // Re-hydrate the KV ref so subsequent lookups are fast
-                let ref_key = crate::keys::ref_key(&self.ws, &self.ent);
-                let _: () = redis::Commands::hset(&mut self.con, &ref_key, branch, &sha1)?;
-                tracing::debug!(ws = %self.ws, ent = %self.ent, branch, "re-hydrated ref from S3");
-                Ok(sha1)
+                // Full rebuild: replay all S3 commits to reconstruct KV indexes
+                // (tree state, file listings, refs, etc.)
+                tracing::info!(ws = %self.ws, ent = %self.ent, branch, "KV cache miss — rebuilding from S3");
+                let replayed = self.rebuild_from_durable()?;
+                tracing::info!(ws = %self.ws, ent = %self.ent, replayed, "KV indexes rebuilt from S3");
+                // After rebuild, the ref should be in KV — resolve again
+                store::resolve_ref(&mut self.con, &self.ws, &self.ent, branch)
+                    .map_err(|_| StoreError::Internal(
+                        format!("ref still missing after S3 rebuild: {}/{}@{}", self.ws, self.ent, branch),
+                    ))
             }
             Err(e) => Err(e),
         }

@@ -136,7 +136,20 @@ impl S3Backend {
                 .key(key)
                 .send()
                 .await
-                .map_err(|e| StoreError::NotFound(format!("S3 GET {key}: {e}")))?;
+                .map_err(|e| {
+                    // Check HTTP status to distinguish "not found" from real errors.
+                    let is_missing = e.raw_response()
+                        .map(|r| {
+                            let status = r.status().as_u16();
+                            status == 404 || status == 403
+                        })
+                        .unwrap_or(false);
+                    if is_missing || e.as_service_error().map_or(false, |se| se.is_no_such_key()) {
+                        StoreError::NotFound(format!("S3 GET {key}: not found"))
+                    } else {
+                        StoreError::Internal(format!("S3 GET {key}: {e}"))
+                    }
+                })?;
             let bytes = resp.body.collect().await
                 .map_err(|e| StoreError::Internal(format!("S3 read body {key}: {e}")))?;
             Ok(bytes.into_bytes().to_vec())
@@ -154,6 +167,17 @@ impl S3Backend {
             {
                 Ok(_) => Ok(true),
                 Err(e) => {
+                    // Check HTTP status code directly — is_not_found() only matches
+                    // AWS-specific error codes and misses S3-compatible stores like RustFS.
+                    let is_missing = e.raw_response()
+                        .map(|r| {
+                            let status = r.status().as_u16();
+                            status == 404 || status == 403
+                        })
+                        .unwrap_or(false);
+                    if is_missing {
+                        return Ok(false);
+                    }
                     let svc_err = e.into_service_error();
                     if svc_err.is_not_found() {
                         Ok(false)
