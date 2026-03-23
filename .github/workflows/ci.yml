@@ -106,16 +106,18 @@ jobs:
           --health-interval 5s
           --health-timeout 3s
           --health-retries 5
-      minio:
-        image: quay.io/minio/minio:latest
+      rustfs:
+        image: rustfs/rustfs:latest
         ports:
           - 19000:9000
-          - 19001:9001
         env:
-          MINIO_ROOT_USER: minioadmin
-          MINIO_ROOT_PASSWORD: minioadmin
+          RUSTFS_ACCESS_KEY: minioadmin
+          RUSTFS_SECRET_KEY: minioadmin
+          RUSTFS_VOLUMES: /data
+          RUSTFS_CONSOLE_ENABLE: "false"
+          RUSTFS_OBS_LOGGER_LEVEL: warn
         options: >-
-          --health-cmd "mc ready local"
+          --health-cmd "curl -f http://127.0.0.1:9000/health"
           --health-interval 5s
           --health-timeout 3s
           --health-retries 5
@@ -132,12 +134,13 @@ jobs:
             ~/.cargo/git
             crates/corp-store/target
           key: ${{ runner.os }}-cargo-corp-store-${{ hashFiles('crates/corp-store/Cargo.lock') }}
-      - name: Create MinIO bucket
+      - name: Create S3 test bucket
         run: |
-          curl -sSL https://dl.min.io/client/mc/release/linux-amd64/mc -o /usr/local/bin/mc
-          chmod +x /usr/local/bin/mc
-          mc alias set local http://localhost:19000 minioadmin minioadmin
-          mc mb --ignore-existing local/corp-store-test
+          aws --endpoint-url http://localhost:19000 s3 mb s3://corp-store-test || true
+        env:
+          AWS_ACCESS_KEY_ID: minioadmin
+          AWS_SECRET_ACCESS_KEY: minioadmin
+          AWS_DEFAULT_REGION: us-east-1
       - name: Run corp-store S3 integration tests
         working-directory: crates/corp-store
         run: cargo test --test integration_s3 --features s3 -- --include-ignored
