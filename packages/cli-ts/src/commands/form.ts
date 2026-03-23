@@ -249,10 +249,38 @@ function parseScriptedFounders(opts: FormOptions): FounderInfo[] {
 }
 
 async function promptAddress(): Promise<{ street: string; city: string; state: string; zip: string }> {
-  const street = await input({ message: "    Street address" });
-  const city = await input({ message: "    City" });
-  const state = await input({ message: "    State (2-letter)", default: "DE" });
-  const zip = await input({ message: "    ZIP code" });
+  const streetRaw = await input({ message: "    Street address" });
+
+  // If user pasted a full address, parse it: "123 Main St, City, ST 12345" or "123 Main St, City, ST, 12345"
+  const commaParts = streetRaw.split(",").map((p) => p.trim());
+  let street = streetRaw;
+  let defaultCity = "";
+  let defaultState = "DE";
+  let defaultZip = "";
+
+  if (commaParts.length >= 3) {
+    street = commaParts[0];
+    defaultCity = commaParts[1];
+    // Last part(s) may be "ST 12345" or "ST", "12345"
+    const rest = commaParts.slice(2).join(", ").trim();
+    const stateZip = rest.match(/^([A-Za-z]{2})\s+(\d{5}(?:-\d{4})?)$/);
+    if (stateZip) {
+      defaultState = stateZip[1].toUpperCase();
+      defaultZip = stateZip[2];
+    } else if (commaParts.length >= 4) {
+      defaultState = commaParts[2].trim().toUpperCase();
+      defaultZip = commaParts[3].trim();
+    } else {
+      // Could be just "ST" or just "12345"
+      const token = rest.replace(/,/g, "").trim();
+      if (/^[A-Za-z]{2}$/.test(token)) defaultState = token.toUpperCase();
+      else if (/^\d{5}(-\d{4})?$/.test(token)) defaultZip = token;
+    }
+  }
+
+  const city = await input({ message: "    City", default: defaultCity || undefined });
+  const state = await input({ message: "    State (2-letter)", default: defaultState });
+  const zip = await input({ message: "    ZIP code", default: defaultZip || undefined });
   return { street, city, state, zip };
 }
 
