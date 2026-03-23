@@ -205,6 +205,8 @@ pub fn create_entity(
     members: &[MemberInput],
     authorized_shares: Option<i64>,
     par_value: Option<&str>,
+    valkey_client: Option<&redis::Client>,
+    s3_backend: Option<&std::sync::Arc<corp_store::s3_backend::S3Backend>>,
 ) -> Result<FormationResult, FormationError> {
     create_entity_with_profile_overrides(
         layout,
@@ -218,6 +220,8 @@ pub fn create_entity(
         authorized_shares,
         par_value,
         FormationProfileOverrides::default(),
+        valkey_client,
+        s3_backend,
     )
 }
 
@@ -235,6 +239,8 @@ pub fn create_entity_with_profile_overrides(
     authorized_shares: Option<i64>,
     par_value: Option<&str>,
     profile_overrides: FormationProfileOverrides,
+    valkey_client: Option<&redis::Client>,
+    s3_backend: Option<&std::sync::Arc<corp_store::s3_backend::S3Backend>>,
 ) -> Result<FormationResult, FormationError> {
     // Validate members
     if members.is_empty() {
@@ -322,12 +328,8 @@ pub fn create_entity_with_profile_overrides(
 
     let document_ids: Vec<DocumentId> = documents.iter().map(|d| d.document_id()).collect();
 
-    // Build all files for the initial commit
+    // Build remaining files (EntityStore::init writes corp.json)
     let mut files = Vec::new();
-    files.push(
-        FileWrite::json("corp.json", &entity)
-            .map_err(|e| FormationError::Storage(e.to_string()))?,
-    );
     files.push(
         FileWrite::json("formation/filing.json", &filing)
             .map_err(|e| FormationError::Storage(e.to_string()))?,
@@ -345,33 +347,19 @@ pub fn create_entity_with_profile_overrides(
         files.push(FileWrite::json(path, doc).map_err(|e| FormationError::Storage(e.to_string()))?);
     }
 
-    // Initialize the entity repo with all files in one atomic commit
-    let repo_path = layout.entity_repo_path(workspace_id, entity_id);
-    let repo = crate::git::repo::CorpRepo::init(&repo_path, None)
-        .map_err(|e| FormationError::Storage(format!("failed to init repo: {e}")))?;
-    crate::git::commit::commit_files(
-        &repo,
-        "main",
-        &format!("Form entity: {}", entity.legal_name()),
-        &files,
-        None,
-    )
-    .map_err(|e| FormationError::Storage(format!("failed to commit: {e}")))?;
+    // Initialize entity store (creates the repo/KV entry with corp.json)
+    use crate::store::entity_store::EntityStore;
+    let store = EntityStore::init(layout, workspace_id, entity_id, &entity, valkey_client, s3_backend)
+        .map_err(|e| FormationError::Storage(format!("failed to init entity store: {e}")))?;
+
+    // Commit remaining files (filing, tax profile, governance, documents)
+    store.commit("main", &format!("Form entity: {}", entity.legal_name()), files)
+        .map_err(|e| FormationError::Storage(format!("failed to commit: {e}")))?;
 
     // Advance status to documents_generated
     entity.advance_status(FormationStatus::DocumentsGenerated)?;
-
-    // Write the updated entity to reflect the new status
-    let entity_file = FileWrite::json("corp.json", &entity)
-        .map_err(|e| FormationError::Storage(e.to_string()))?;
-    crate::git::commit::commit_files(
-        &repo,
-        "main",
-        "Advance to documents_generated",
-        &[entity_file],
-        None,
-    )
-    .map_err(|e| FormationError::Storage(format!("failed to commit status: {e}")))?;
+    store.write_entity("main", &entity, "Advance to documents_generated")
+        .map_err(|e| FormationError::Storage(format!("failed to commit status: {e}")))?;
 
     Ok(FormationResult {
         entity,
@@ -1173,6 +1161,8 @@ pub fn setup_cap_table(
     members: &[MemberInput],
     authorized_shares: Option<i64>,
     par_value: Option<&str>,
+    valkey_client: Option<&redis::Client>,
+    s3_backend: Option<&std::sync::Arc<corp_store::s3_backend::S3Backend>>,
 ) -> Result<CapTableSetupResult, FormationError> {
     let non_agent_members: Vec<&MemberInput> = members
         .iter()
@@ -1366,9 +1356,9 @@ pub fn setup_cap_table(
     )?;
 
     // 5. Write all records in a single atomic commit
-    let repo_path = layout.entity_repo_path(workspace_id, entity_id);
-    let repo = crate::git::repo::CorpRepo::open(&repo_path)
-        .map_err(|e| FormationError::Storage(format!("failed to open repo: {e}")))?;
+    use crate::store::entity_store::EntityStore;
+    let store = EntityStore::open(layout, workspace_id, entity_id, valkey_client, s3_backend)
+        .map_err(|e| FormationError::Storage(format!("failed to open entity store: {e}")))?;
 
     let mut files = Vec::new();
 
@@ -1439,14 +1429,8 @@ pub fn setup_cap_table(
             .push(FileWrite::json(path, seat).map_err(|e| FormationError::Storage(e.to_string()))?);
     }
 
-    crate::git::commit::commit_files(
-        &repo,
-        "main",
-        "Initialize cap table and governance with founding members",
-        &files,
-        None,
-    )
-    .map_err(|e| FormationError::Storage(format!("failed to commit cap table: {e}")))?;
+    store.commit("main", "Initialize cap table and governance with founding members", files)
+        .map_err(|e| FormationError::Storage(format!("failed to commit cap table: {e}")))?;
 
     Ok(CapTableSetupResult {
         legal_entity_id,
@@ -1467,6 +1451,8 @@ pub fn create_pending_entity(
     legal_name: String,
     entity_type: EntityType,
     jurisdiction: Jurisdiction,
+    valkey_client: Option<&redis::Client>,
+    s3_backend: Option<&std::sync::Arc<corp_store::s3_backend::S3Backend>>,
 ) -> Result<Entity, FormationError> {
     create_pending_entity_with_profile_overrides(
         layout,
@@ -1477,6 +1463,8 @@ pub fn create_pending_entity(
         None,
         None,
         FormationProfileOverrides::default(),
+        valkey_client,
+        s3_backend,
     )
 }
 
@@ -1491,6 +1479,8 @@ pub fn create_pending_entity_with_profile_overrides(
     registered_agent_name: Option<String>,
     registered_agent_address: Option<String>,
     profile_overrides: FormationProfileOverrides,
+    valkey_client: Option<&redis::Client>,
+    s3_backend: Option<&std::sync::Arc<corp_store::s3_backend::S3Backend>>,
 ) -> Result<Entity, FormationError> {
     let entity_id = EntityId::new();
 
@@ -1512,12 +1502,8 @@ pub fn create_pending_entity_with_profile_overrides(
         .validate()
         .map_err(FormationError::Validation)?;
 
-    // Build files: corp.json + governance profile + empty pending members list
+    // Build remaining files (EntityStore::init writes corp.json)
     let mut files = Vec::new();
-    files.push(
-        FileWrite::json("corp.json", &entity)
-            .map_err(|e| FormationError::Storage(e.to_string()))?,
-    );
     files.push(
         FileWrite::json(GOVERNANCE_PROFILE_PATH, &governance_profile)
             .map_err(|e| FormationError::Storage(e.to_string()))?,
@@ -1528,17 +1514,14 @@ pub fn create_pending_entity_with_profile_overrides(
             .map_err(|e| FormationError::Storage(e.to_string()))?,
     );
 
-    let repo_path = layout.entity_repo_path(workspace_id, entity_id);
-    let repo = crate::git::repo::CorpRepo::init(&repo_path, None)
-        .map_err(|e| FormationError::Storage(format!("failed to init repo: {e}")))?;
-    crate::git::commit::commit_files(
-        &repo,
-        "main",
-        &format!("Create pending entity: {}", entity.legal_name()),
-        &files,
-        None,
-    )
-    .map_err(|e| FormationError::Storage(format!("failed to commit: {e}")))?;
+    // Initialize entity store (creates the repo/KV entry with corp.json)
+    use crate::store::entity_store::EntityStore;
+    let store = EntityStore::init(layout, workspace_id, entity_id, &entity, valkey_client, s3_backend)
+        .map_err(|e| FormationError::Storage(format!("failed to init entity store: {e}")))?;
+
+    // Commit remaining files (governance profile, empty pending members)
+    store.commit("main", &format!("Create pending entity: {}", entity.legal_name()), files)
+        .map_err(|e| FormationError::Storage(format!("failed to commit: {e}")))?;
 
     Ok(entity)
 }
@@ -1552,14 +1535,16 @@ pub fn add_pending_member(
     workspace_id: WorkspaceId,
     entity_id: EntityId,
     member: MemberInput,
+    valkey_client: Option<&redis::Client>,
+    s3_backend: Option<&std::sync::Arc<corp_store::s3_backend::S3Backend>>,
 ) -> Result<Vec<MemberInput>, FormationError> {
-    let repo_path = layout.entity_repo_path(workspace_id, entity_id);
-    let repo = crate::git::repo::CorpRepo::open(&repo_path)
-        .map_err(|e| FormationError::Storage(format!("failed to open repo: {e}")))?;
+    use crate::store::entity_store::EntityStore;
+    let store = EntityStore::open(layout, workspace_id, entity_id, valkey_client, s3_backend)
+        .map_err(|e| FormationError::Storage(format!("failed to open entity store: {e}")))?;
 
     // Verify entity is still Pending
-    let entity: Entity = repo
-        .read_json("main", "corp.json")
+    let entity: Entity = store
+        .read_entity("main")
         .map_err(|e| FormationError::Storage(format!("failed to read entity: {e}")))?;
     if entity.formation_status() != FormationStatus::Pending {
         return Err(FormationError::Validation(format!(
@@ -1569,7 +1554,7 @@ pub fn add_pending_member(
     }
 
     // Read existing pending members
-    let mut members: Vec<MemberInput> = repo
+    let mut members: Vec<MemberInput> = store
         .read_json("main", "formation/pending_members.json")
         .map_err(|e| FormationError::Storage(format!("failed to read pending members: {e}")))?;
 
@@ -1579,12 +1564,10 @@ pub fn add_pending_member(
     // Commit updated list
     let file = FileWrite::json("formation/pending_members.json", &members)
         .map_err(|e| FormationError::Storage(e.to_string()))?;
-    crate::git::commit::commit_files(
-        &repo,
+    store.commit(
         "main",
         &format!("Add pending member: {}", members.last().unwrap().name),
-        &[file],
-        None,
+        vec![file],
     )
     .map_err(|e| FormationError::Storage(format!("failed to commit: {e}")))?;
 
@@ -1600,6 +1583,8 @@ pub fn finalize_formation(
     entity_id: EntityId,
     authorized_shares: Option<i64>,
     par_value: Option<&str>,
+    valkey_client: Option<&redis::Client>,
+    s3_backend: Option<&std::sync::Arc<corp_store::s3_backend::S3Backend>>,
 ) -> Result<(FormationResult, CapTableSetupResult), FormationError> {
     finalize_formation_with_profile_overrides(
         layout,
@@ -1612,6 +1597,8 @@ pub fn finalize_formation(
         None,
         None,
         FormationProfileOverrides::default(),
+        valkey_client,
+        s3_backend,
     )
 }
 
@@ -1628,14 +1615,16 @@ pub fn finalize_formation_with_profile_overrides(
     incorporator_name_override: Option<String>,
     incorporator_address_override: Option<String>,
     profile_overrides: FormationProfileOverrides,
+    valkey_client: Option<&redis::Client>,
+    s3_backend: Option<&std::sync::Arc<corp_store::s3_backend::S3Backend>>,
 ) -> Result<(FormationResult, CapTableSetupResult), FormationError> {
-    let repo_path = layout.entity_repo_path(workspace_id, entity_id);
-    let repo = crate::git::repo::CorpRepo::open(&repo_path)
-        .map_err(|e| FormationError::Storage(format!("failed to open repo: {e}")))?;
+    use crate::store::entity_store::EntityStore;
+    let store = EntityStore::open(layout, workspace_id, entity_id, valkey_client, s3_backend)
+        .map_err(|e| FormationError::Storage(format!("failed to open entity store: {e}")))?;
 
     // Read entity and verify Pending status
-    let mut entity: Entity = repo
-        .read_json("main", "corp.json")
+    let mut entity: Entity = store
+        .read_entity("main")
         .map_err(|e| FormationError::Storage(format!("failed to read entity: {e}")))?;
     if entity.formation_status() != FormationStatus::Pending {
         return Err(FormationError::Validation(format!(
@@ -1645,7 +1634,7 @@ pub fn finalize_formation_with_profile_overrides(
     }
 
     // Read pending members
-    let members: Vec<MemberInput> = repo
+    let members: Vec<MemberInput> = store
         .read_json("main", "formation/pending_members.json")
         .map_err(|e| FormationError::Storage(format!("failed to read pending members: {e}")))?;
     if members.is_empty() {
@@ -1672,7 +1661,7 @@ pub fn finalize_formation_with_profile_overrides(
     }
 
     let existing_profile =
-        match repo.read_json::<GovernanceProfile>("main", GOVERNANCE_PROFILE_PATH) {
+        match store.read_json::<GovernanceProfile>("main", GOVERNANCE_PROFILE_PATH) {
             Ok(profile) => Some(profile),
             Err(crate::git::error::GitStorageError::NotFound(_)) => None,
             Err(e) => {
@@ -1777,27 +1766,13 @@ pub fn finalize_formation_with_profile_overrides(
         files.push(FileWrite::json(path, doc).map_err(|e| FormationError::Storage(e.to_string()))?);
     }
 
-    crate::git::commit::commit_files(
-        &repo,
-        "main",
-        &format!("Generate formation documents for: {}", entity.legal_name()),
-        &files,
-        None,
-    )
-    .map_err(|e| FormationError::Storage(format!("failed to commit: {e}")))?;
+    store.commit("main", &format!("Generate formation documents for: {}", entity.legal_name()), files)
+        .map_err(|e| FormationError::Storage(format!("failed to commit: {e}")))?;
 
     // Advance status to DocumentsGenerated
     entity.advance_status(FormationStatus::DocumentsGenerated)?;
-    let entity_file = FileWrite::json("corp.json", &entity)
-        .map_err(|e| FormationError::Storage(e.to_string()))?;
-    crate::git::commit::commit_files(
-        &repo,
-        "main",
-        "Advance to documents_generated",
-        &[entity_file],
-        None,
-    )
-    .map_err(|e| FormationError::Storage(format!("failed to commit status: {e}")))?;
+    store.write_entity("main", &entity, "Advance to documents_generated")
+        .map_err(|e| FormationError::Storage(format!("failed to commit status: {e}")))?;
 
     let formation_result = FormationResult {
         entity,
@@ -1816,6 +1791,8 @@ pub fn finalize_formation_with_profile_overrides(
         &members,
         resolved_authorized_shares,
         resolved_par_value.as_deref(),
+        valkey_client,
+        s3_backend,
     )?;
 
     Ok((formation_result, cap_table_result))
@@ -1952,6 +1929,8 @@ mod tests {
             &members,
             None,
             None,
+            None,
+            None,
         )
         .expect("create_entity should succeed");
 
@@ -2024,6 +2003,8 @@ mod tests {
             &[alice],
             Some(10_000_000),
             Some("0.0001"),
+            None,
+            None,
         )
         .expect("create_entity should succeed for corporation");
 
@@ -2053,6 +2034,8 @@ mod tests {
             &[], // no members
             None,
             None,
+            None,
+            None,
         );
 
         assert!(result.is_err());
@@ -2075,6 +2058,8 @@ mod tests {
             &[service_agent()],
             Some(1_000_000),
             Some("0.0001"),
+            None,
+            None,
         );
 
         assert!(result.is_err());
@@ -2103,6 +2088,8 @@ mod tests {
             &[alice()],
             None,
             None,
+            None,
+            None,
         );
 
         assert!(result.is_err());
@@ -2125,6 +2112,8 @@ mod tests {
             Some("Wyoming Registered Agent LLC".to_string()),
             Some("123 Capitol Ave, Cheyenne, WY 82001".to_string()),
             &[alice()],
+            None,
+            None,
             None,
             None,
         )
@@ -2198,6 +2187,8 @@ mod tests {
             Some("Wyoming Registered Agent LLC".to_string()),
             Some("123 Capitol Ave, Cheyenne, WY 82001".to_string()),
             FormationProfileOverrides::default(),
+            None,
+            None,
         )
         .expect("create_pending_entity should succeed");
 
@@ -2213,17 +2204,17 @@ mod tests {
         assert_eq!(profile.legal_name(), "Staged LLC");
 
         // Step 2: Add founders
-        let members = add_pending_member(&layout, workspace_id, entity_id, alice())
+        let members = add_pending_member(&layout, workspace_id, entity_id, alice(), None, None)
             .expect("add first member should succeed");
         assert_eq!(members.len(), 1);
 
-        let members = add_pending_member(&layout, workspace_id, entity_id, bob())
+        let members = add_pending_member(&layout, workspace_id, entity_id, bob(), None, None)
             .expect("add second member should succeed");
         assert_eq!(members.len(), 2);
 
         // Step 3: Finalize
         let (formation, cap_table) =
-            finalize_formation(&layout, workspace_id, entity_id, None, None)
+            finalize_formation(&layout, workspace_id, entity_id, None, None, None, None)
                 .expect("finalize_formation should succeed");
 
         assert_eq!(
@@ -2246,10 +2237,12 @@ mod tests {
             "Empty Staged LLC".to_string(),
             EntityType::Llc,
             Jurisdiction::new("Delaware").unwrap(),
+            None,
+            None,
         )
         .unwrap();
 
-        let result = finalize_formation(&layout, workspace_id, entity.entity_id(), None, None);
+        let result = finalize_formation(&layout, workspace_id, entity.entity_id(), None, None, None, None);
 
         assert!(result.is_err());
         assert!(
@@ -2275,15 +2268,17 @@ mod tests {
             Some("Wyoming Registered Agent LLC".to_string()),
             Some("123 Capitol Ave, Cheyenne, WY 82001".to_string()),
             FormationProfileOverrides::default(),
+            None,
+            None,
         )
         .unwrap();
         let entity_id = entity.entity_id();
 
-        add_pending_member(&layout, workspace_id, entity_id, alice()).unwrap();
-        finalize_formation(&layout, workspace_id, entity_id, None, None).unwrap();
+        add_pending_member(&layout, workspace_id, entity_id, alice(), None, None).unwrap();
+        finalize_formation(&layout, workspace_id, entity_id, None, None, None, None).unwrap();
 
         // Should reject adding members after finalization
-        let result = add_pending_member(&layout, workspace_id, entity_id, bob());
+        let result = add_pending_member(&layout, workspace_id, entity_id, bob(), None, None);
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("Pending"));
     }
@@ -2300,11 +2295,13 @@ mod tests {
             "Override LLC".to_string(),
             EntityType::Llc,
             Jurisdiction::new("Wyoming").unwrap(),
+            None,
+            None,
         )
         .unwrap();
         let entity_id = entity.entity_id();
 
-        add_pending_member(&layout, workspace_id, entity_id, alice()).unwrap();
+        add_pending_member(&layout, workspace_id, entity_id, alice(), None, None).unwrap();
 
         let (formation, _) = finalize_formation_with_profile_overrides(
             &layout,
@@ -2317,6 +2314,8 @@ mod tests {
             None,
             None,
             FormationProfileOverrides::default(),
+            None,
+            None,
         )
         .expect("finalize_formation_with_profile_overrides should succeed");
 
@@ -2339,15 +2338,17 @@ mod tests {
                 format!("Jurisdiction {jurisdiction} LLC"),
                 EntityType::Llc,
                 Jurisdiction::new(jurisdiction).unwrap(),
+                None,
+                None,
             )
             .unwrap();
             let entity_id = entity.entity_id();
 
-            add_pending_member(&layout, workspace_id, entity_id, alice()).unwrap();
-            add_pending_member(&layout, workspace_id, entity_id, bob()).unwrap();
+            add_pending_member(&layout, workspace_id, entity_id, alice(), None, None).unwrap();
+            add_pending_member(&layout, workspace_id, entity_id, bob(), None, None).unwrap();
 
             let (formation, _) =
-                finalize_formation(&layout, workspace_id, entity_id, None, None).unwrap();
+                finalize_formation(&layout, workspace_id, entity_id, None, None, None, None).unwrap();
             assert_eq!(formation.entity.jurisdiction().as_str(), jurisdiction);
 
             let repo =
@@ -2413,6 +2414,8 @@ mod tests {
             "Board Bootstrap Corp".to_string(),
             EntityType::CCorp,
             Jurisdiction::new("US-DE").unwrap(),
+            None,
+            None,
         )
         .unwrap();
         let entity_id = entity.entity_id();
@@ -2424,7 +2427,7 @@ mod tests {
         founder.address = None;
         founder.share_count = Some(6_000_000);
         founder.shares_purchased = Some(6_000_000);
-        add_pending_member(&layout, workspace_id, entity_id, founder).unwrap();
+        add_pending_member(&layout, workspace_id, entity_id, founder, None, None).unwrap();
 
         let (formation, _) = finalize_formation_with_profile_overrides(
             &layout,
@@ -2446,6 +2449,8 @@ mod tests {
                 }),
                 ..FormationProfileOverrides::default()
             },
+            None,
+            None,
         )
         .unwrap();
 
@@ -2493,16 +2498,18 @@ mod tests {
             "Validation LLC".to_string(),
             EntityType::Llc,
             Jurisdiction::new("US-WY").unwrap(),
+            None,
+            None,
         )
         .unwrap();
         let entity_id = entity.entity_id();
 
-        add_pending_member(&layout, workspace_id, entity_id, alice()).unwrap();
+        add_pending_member(&layout, workspace_id, entity_id, alice(), None, None).unwrap();
 
         let mut duplicate_email = bob();
         duplicate_email.email = Some("ALICE@example.com".to_string());
         let duplicate_result =
-            add_pending_member(&layout, workspace_id, entity_id, duplicate_email);
+            add_pending_member(&layout, workspace_id, entity_id, duplicate_email, None, None);
         assert!(
             duplicate_result
                 .unwrap_err()
@@ -2513,7 +2520,7 @@ mod tests {
         let mut overallocated = bob();
         overallocated.email = Some("charlie@example.com".to_string());
         overallocated.ownership_pct = Some(50.0);
-        let ownership_result = add_pending_member(&layout, workspace_id, entity_id, overallocated);
+        let ownership_result = add_pending_member(&layout, workspace_id, entity_id, overallocated, None, None);
         assert!(
             ownership_result
                 .unwrap_err()
@@ -2534,6 +2541,8 @@ mod tests {
             "Converted LLC".to_string(),
             EntityType::Llc,
             Jurisdiction::new("US-WY").unwrap(),
+            None,
+            None,
         )
         .unwrap();
         let entity_id = entity.entity_id();

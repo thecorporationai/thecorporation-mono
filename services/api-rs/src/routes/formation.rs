@@ -686,6 +686,8 @@ async fn create_formation(
                 shares,
                 par_value.as_deref(),
                 profile_overrides,
+                valkey_client.as_ref(),
+                s3_backend.as_ref(),
             )
         }
     })
@@ -781,6 +783,8 @@ async fn create_formation_with_cap_table(
                 shares,
                 par_value.as_deref(),
                 profile_overrides,
+                valkey_client.as_ref(),
+                s3_backend.as_ref(),
             )?;
 
             // Step 2: Set up the cap table (contacts, legal entity, instrument, holders, positions)
@@ -793,6 +797,8 @@ async fn create_formation_with_cap_table(
                 &members,
                 shares,
                 par_value.as_deref(),
+                valkey_client.as_ref(),
+                s3_backend.as_ref(),
             )?;
 
             Ok::<_, crate::domain::formation::error::FormationError>((formation, cap_table))
@@ -3447,6 +3453,8 @@ async fn create_pending_formation(
                 registered_agent_name,
                 registered_agent_address,
                 profile_overrides,
+                valkey_client.as_ref(),
+                s3_backend.as_ref(),
             )
         }
     })
@@ -3504,7 +3512,9 @@ async fn add_founder(
 
     let members = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
-        move || service::add_pending_member(&layout, workspace_id, entity_id, member)
+        let valkey_client = state.valkey_client.clone();
+        let s3_backend = state.s3_backend.clone();
+        move || service::add_pending_member(&layout, workspace_id, entity_id, member, valkey_client.as_ref(), s3_backend.as_ref())
     })
     .await
     .map_err(|e| AppError::Internal(format!("task join error: {e}")))??;
@@ -3560,6 +3570,8 @@ async fn finalize_pending_formation(
 
     let result = tokio::task::spawn_blocking({
         let layout = state.layout.clone();
+        let valkey_client = state.valkey_client.clone();
+        let s3_backend = state.s3_backend.clone();
         let registered_agent_name = cleaned_optional_string(req.registered_agent_name);
         let registered_agent_address = cleaned_optional_string(req.registered_agent_address);
         let incorporator_name = cleaned_optional_string(req.incorporator_name);
@@ -3579,6 +3591,8 @@ async fn finalize_pending_formation(
                 incorporator_name,
                 incorporator_address,
                 profile_overrides,
+                valkey_client.as_ref(),
+                s3_backend.as_ref(),
             )
         }
     })
@@ -4248,6 +4262,8 @@ mod tests {
             Some("Wyoming Registered Agent LLC".to_owned()),
             Some("123 Capitol Ave, Cheyenne, WY 82001".to_owned()),
             FormationProfileOverrides::default(),
+            None,
+            None,
         )
         .expect("owner entity");
         service::add_pending_member(
@@ -4255,10 +4271,12 @@ mod tests {
             workspace_id,
             owner.entity_id(),
             founder("Alice Owner", "alice@example.com"),
+            None,
+            None,
         )
         .expect("owner founder");
         let (formation, _) =
-            service::finalize_formation(&layout, workspace_id, owner.entity_id(), None, None)
+            service::finalize_formation(&layout, workspace_id, owner.entity_id(), None, None, None, None)
                 .expect("owner formation");
         let document_id = formation.document_ids[0];
 
@@ -4271,6 +4289,8 @@ mod tests {
             Some("Wyoming Registered Agent LLC".to_owned()),
             Some("456 Frontier Mall Dr, Cheyenne, WY 82009".to_owned()),
             FormationProfileOverrides::default(),
+            None,
+            None,
         )
         .expect("other entity");
 
@@ -4312,6 +4332,8 @@ mod tests {
                 }),
                 ..FormationProfileOverrides::default()
             },
+            None,
+            None,
         )
         .expect("entity");
 
