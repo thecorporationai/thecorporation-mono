@@ -255,7 +255,16 @@ impl<C: ConnectionLike> CorpStore<C> {
             Ok(sha1) => Ok(sha1),
             Err(StoreError::RefNotFound(_)) if self.durable.is_some() => {
                 let backend = self.durable.as_ref().unwrap();
-                let ref_json = backend.get_ref(&self.ws, &self.ent, branch)?;
+                let ref_json = match backend.get_ref(&self.ws, &self.ent, branch) {
+                    Ok(data) => data,
+                    // S3 doesn't have it either — the ref genuinely doesn't exist
+                    Err(StoreError::NotFound(_)) | Err(StoreError::RefNotFound(_)) => {
+                        return Err(StoreError::RefNotFound(
+                            format!("{}/{}@{}", self.ws, self.ent, branch),
+                        ));
+                    }
+                    Err(e) => return Err(e),
+                };
                 let parsed: serde_json::Value = serde_json::from_slice(&ref_json)
                     .map_err(|e| StoreError::Internal(format!("corrupt S3 ref: {e}")))?;
                 let sha1 = parsed
