@@ -23,14 +23,17 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
-      - name: Build all crates
+      - name: Build all crates and binaries
         run: cargo build --workspace
 
       - name: Run unit and integration tests
         run: cargo test --workspace
 
+      - name: Build corp CLI binary (needed by CLI integration tests)
+        run: cargo build -p corp-cli -p corp-server
+
       - name: Run CLI integration tests
-        run: cargo test --test cli_formation_workflow
+        run: cargo test -p corp-server --test cli_formation_workflow
 
   test-ts:
     name: TypeScript tests
