@@ -1,2 +1,0 @@
-#\!/bin/sh
-echo "Stub binary — install the correct platform package or build from source." && exit 1

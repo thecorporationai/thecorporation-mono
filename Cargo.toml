@@ -1,0 +1,76 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/corp-core",
+    "crates/corp-storage",
+    "crates/corp-auth",
+    "crates/corp-server",
+    "crates/corp-cli",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.89"
+license = "Apache-2.0"
+
+[workspace.dependencies]
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Async
+tokio = { version = "1", features = ["full"] }
+
+# Web framework
+axum = { version = "0.8", features = ["macros"] }
+tower = "0.5"
+tower-http = { version = "0.6", features = ["cors", "trace"] }
+
+# IDs
+uuid = { version = "1", features = ["v4", "serde"] }
+
+# Time
+chrono = { version = "0.4", features = ["serde"] }
+
+# Crypto
+argon2 = "0.5"
+jsonwebtoken = "9"
+sha2 = "0.10"
+ed25519-dalek = { version = "2", features = ["rand_core"] }
+rand = "0.8"
+
+# Git
+gix = { version = "0.72", default-features = false, features = ["blocking-network-client"] }
+
+# Redis / KV
+redis = { version = "0.27", features = ["tokio-comp", "connection-manager"] }
+
+# S3
+aws-sdk-s3 = "1"
+aws-config = { version = "1", features = ["behavior-version-latest"] }
+
+# CLI
+clap = { version = "4", features = ["derive", "env"] }
+reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+
+# Error handling
+thiserror = "2"
+anyhow = "1"
+
+# Testing
+proptest = "1"
+
+# Internal crates
+corp-core = { path = "crates/corp-core" }
+corp-storage = { path = "crates/corp-storage" }
+corp-auth = { path = "crates/corp-auth" }
+
+[profile.release]
+lto = true
+strip = true
+codegen-units = 1

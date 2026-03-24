@@ -2,242 +2,187 @@ name: Release
 
 on:
   push:
-    tags: ["[0-9][0-9].[0-9]*"]
+    tags:
+      # CalVer tags: YY.M.MICRO (no v prefix)
+      - "[0-9][0-9].[0-9]*"
 
 permissions:
   contents: write
   id-token: write
 
 env:
-  RUST_TOOLCHAIN: "stable"
-  NODE_VERSION: "22"
   CARGO_TERM_COLOR: always
 
 jobs:
   test:
+    name: Test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: ${{ env.RUST_TOOLCHAIN }}
-      - name: Cache cargo
-        uses: actions/cache@v5
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            services/api-rs/target
-            services/agent-worker/target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('services/api-rs/Cargo.lock', 'services/agent-worker/Cargo.lock') }}
-      - name: Run api-rs tests
-        working-directory: services/api-rs
-        run: cargo test
-      - name: Run agent-worker tests
-        working-directory: services/agent-worker
-        run: cargo test
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test --workspace
 
   build-binaries:
+    name: Build (${{ matrix.target }})
     needs: test
+    runs-on: ${{ matrix.os }}
     strategy:
-      fail-fast: true
       matrix:
         include:
-          - runner: ubuntu-latest
-            target: x86_64-unknown-linux-gnu
-            platform: linux-x64-gnu
-            cargo-flags: ""
-          - runner: ubuntu-24.04-arm
-            target: aarch64-unknown-linux-gnu
-            platform: linux-arm64-gnu
-            cargo-flags: ""
-          - runner: macos-latest
-            target: x86_64-apple-darwin
-            platform: darwin-x64
-            cargo-flags: "--features vendored-openssl"
-          - runner: macos-latest
-            target: aarch64-apple-darwin
-            platform: darwin-arm64
-            cargo-flags: ""
-    runs-on: ${{ matrix.runner }}
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            npm_pkg: corp-linux-x64-gnu
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-latest
+            npm_pkg: corp-linux-arm64-gnu
+          - target: x86_64-apple-darwin
+            os: macos-13
+            npm_pkg: corp-darwin-x64
+          - target: aarch64-apple-darwin
+            os: macos-14
+            npm_pkg: corp-darwin-arm64
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+            npm_pkg: corp-win32-x64-msvc
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: ${{ env.RUST_TOOLCHAIN }}
           targets: ${{ matrix.target }}
-      - name: Cache cargo
-        uses: actions/cache@v5
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            services/api-rs/target
-            services/agent-worker/target
-          key: ${{ matrix.platform }}-cargo-${{ hashFiles('services/api-rs/Cargo.lock', 'services/agent-worker/Cargo.lock') }}
-      - name: Build api-rs binary
-        working-directory: services/api-rs
-        run: cargo build --release --target ${{ matrix.target }} ${{ matrix.cargo-flags }}
-      - name: Build agent-worker binary
-        working-directory: services/agent-worker
-        run: cargo build --release --target ${{ matrix.target }}
-      - name: Copy binaries to npm package
+      - name: Install cross-compilation tools (Linux ARM64)
+        if: matrix.target == 'aarch64-unknown-linux-gnu'
         run: |
-          mkdir -p packages/server/npm/${{ matrix.platform }}/bin
-          cp services/api-rs/target/${{ matrix.target }}/release/api-rs packages/server/npm/${{ matrix.platform }}/bin/api-rs
-          cp services/agent-worker/target/${{ matrix.target }}/release/agent-worker packages/server/npm/${{ matrix.platform }}/bin/agent-worker
-          chmod +x packages/server/npm/${{ matrix.platform }}/bin/*
-      - name: Upload artifact
-        uses: actions/upload-artifact@v5
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu
+      - uses: Swatinem/rust-cache@v2
         with:
-          name: binary-${{ matrix.platform }}
-          path: packages/server/npm/${{ matrix.platform }}
+          key: ${{ matrix.target }}
+      - name: Build release binaries
+        run: cargo build --release --target ${{ matrix.target }} -p corp-server -p corp-cli
+        env:
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
+      - name: Package binaries
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          mkdir -p staging/bin
+          if [[ "$TARGET" == *"windows"* ]]; then
+            cp "target/${TARGET}/release/corp-server.exe" staging/bin/
+            cp "target/${TARGET}/release/corp.exe" staging/bin/
+          else
+            cp "target/${TARGET}/release/corp-server" staging/bin/
+            cp "target/${TARGET}/release/corp" staging/bin/
+          fi
+      - name: Create npm platform package
+        shell: bash
+        env:
+          TAG_NAME: ${{ github.ref_name }}
+          NPM_PKG: ${{ matrix.npm_pkg }}
+        run: |
+          mkdir -p npm-pkg/bin
+          cp staging/bin/* npm-pkg/bin/
+          node -e "
+            const fs = require('fs');
+            const pkg = process.env.NPM_PKG;
+            const ver = process.env.TAG_NAME;
+            const parts = pkg.replace('corp-','').split('-');
+            const json = {
+              name: '@thecorporation/' + pkg,
+              version: ver,
+              description: 'Platform binaries for @thecorporation/corp',
+              os: [parts[0]],
+              cpu: [parts[1]],
+              files: ['bin/'],
+              license: 'Apache-2.0'
+            };
+            fs.writeFileSync('npm-pkg/package.json', JSON.stringify(json, null, 2));
+          "
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.npm_pkg }}
+          path: npm-pkg/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: binaries-${{ matrix.target }}
+          path: staging/bin/
 
-  publish:
+  publish-npm:
+    name: Publish npm
+    needs: build-binaries
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          registry-url: "https://registry.npmjs.org"
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts/
+      - name: Publish platform packages
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          for pkg in corp-linux-x64-gnu corp-linux-arm64-gnu corp-darwin-x64 corp-darwin-arm64 corp-win32-x64-msvc; do
+            if [ -d "artifacts/${pkg}" ]; then
+              echo "Publishing @thecorporation/${pkg}@${TAG_NAME}"
+              cd "artifacts/${pkg}"
+              npm publish --provenance --access public || true
+              cd ../..
+            fi
+          done
+      - name: Build and publish @thecorporation/corp
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          cd packages/corp-ts
+          npm install
+          npx tsup
+          npm version "${TAG_NAME}" --no-git-tag-version --allow-same-version
+          node -e "
+            const fs = require('fs');
+            const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+            const ver = process.env.TAG_NAME;
+            for (const dep of Object.keys(pkg.optionalDependencies || {})) {
+              pkg.optionalDependencies[dep] = ver;
+            }
+            fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2));
+          "
+          npm publish --provenance --access public
+
+  github-release:
+    name: GitHub Release
     needs: build-binaries
     runs-on: ubuntu-latest
     permissions:
       contents: write
-      id-token: write
     steps:
-      - uses: actions/checkout@v5
-
-      - name: Download all binary artifacts
-        uses: actions/download-artifact@v5
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
         with:
-          pattern: binary-*
-          path: artifacts
-
-      - name: Place binaries into npm package dirs
-        run: |
-          for platform in linux-x64-gnu linux-arm64-gnu darwin-x64 darwin-arm64; do
-            cp -r artifacts/binary-${platform}/* packages/server/npm/${platform}/
-          done
-
-      - uses: actions/setup-node@v5
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-
-      - name: Ensure npm supports trusted publishing
-        run: |
-          set -euo pipefail
-          npm install -g npm@^11.5.1
-          npm --version
-
-      - name: Clear npm auth config
-        run: rm -f "$HOME/.npmrc"
-
-      - name: Extract version from tag
-        id: version
-        run: |
-          set -euo pipefail
-
-          # CalVer tags (YY.M.MICRO) are already valid npm semver (e.g. 26.3.1).
-          VERSION="${GITHUB_REF_NAME}"
-
-          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$ ]]; then
-            echo "::error::Tag '$GITHUB_REF_NAME' is not valid CalVer semver. Use tags like 26.3.1 or 26.3.1-rc.1."
-            exit 1
-          fi
-
-          # Detect prerelease and set NPM_TAG accordingly.
-          if [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+- ]]; then
-            PRE="${VERSION#*-}"
-            NPM_TAG="${PRE%%[.0-9]*}"
-            NPM_TAG="${NPM_TAG:-next}"
-          else
-            NPM_TAG="latest"
-          fi
-
-          echo "VERSION=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "NPM_TAG=$NPM_TAG" >> "$GITHUB_OUTPUT"
-          echo "Using release version: $VERSION (from tag: $GITHUB_REF_NAME, npm dist-tag: $NPM_TAG)"
-
-      - name: Install dependencies and build TS packages
-        run: |
-          set -euo pipefail
-
-          # file: refs resolve to sibling packages in the repo.
-          # Build corp-tools first (dependency for others)
-          cd packages/corp-tools
-          npm install
-          npm run build
-          cd ../..
-
-          # Build server
-          cd packages/server
-          npm install
-          npm run build
-          cd ../..
-
-          # Build mcp-server
-          cd packages/mcp-server
-          npm install
-          npm run build
-          cd ../..
-
-          # Build cli-ts
-          cd packages/cli-ts
-          npm install
-          npm run build
-          cd ../..
-
-      - name: Rewrite versions for publishing
+          path: artifacts/
+      - name: Package release archives
         env:
-          VERSION: ${{ steps.version.outputs.VERSION }}
+          TAG_NAME: ${{ github.ref_name }}
         run: |
-          set -euo pipefail
-
-          mapfile -t PACKAGES < <(find packages -not -path '*/node_modules/*' -type f -name package.json | sort)
-
-          for pkg in "${PACKAGES[@]}"; do
-            jq --arg v "$VERSION" '
-              .version = $v |
-              def bump_section($section):
-                if has($section) then
-                  .[$section] |= with_entries(
-                    if ((.key | startswith("@thecorporation/")) and ((.value | type) == "string"))
-                    then .value = $v
-                    else .
-                    end
-                  )
-                else
-                  .
-                end;
-              bump_section("dependencies")
-              | bump_section("optionalDependencies")
-              | bump_section("peerDependencies")
-              | bump_section("devDependencies")
-            ' "$pkg" > "${pkg}.tmp" && mv "${pkg}.tmp" "$pkg"
+          mkdir -p release
+          for dir in artifacts/binaries-*; do
+            target=$(basename "$dir" | sed 's/binaries-//')
+            tar -czf "release/corp-${TAG_NAME}-${target}.tar.gz" -C "$dir" .
           done
-
-      - name: Publish to npm
-        env:
-          NPM_TAG: ${{ steps.version.outputs.NPM_TAG }}
-        run: |
-          set -euo pipefail
-
-          # 1. corp-tools (no deps on other @thecorporation packages)
-          npm publish ./packages/corp-tools --provenance --access public --tag "$NPM_TAG" --registry=https://registry.npmjs.org
-
-          # 2. Platform binary packages
-          for platform in linux-x64-gnu linux-arm64-gnu darwin-x64 darwin-arm64; do
-            npm publish ./packages/server/npm/${platform} --provenance --access public --tag "$NPM_TAG" --registry=https://registry.npmjs.org
-          done
-
-          # 3. server (depends on platform binary packages)
-          npm publish ./packages/server --provenance --access public --tag "$NPM_TAG" --registry=https://registry.npmjs.org
-
-          # 4. mcp-server (depends on corp-tools)
-          npm publish ./packages/mcp-server --provenance --access public --tag "$NPM_TAG" --registry=https://registry.npmjs.org
-
-          # 5. cli (depends on corp-tools, server)
-          npm publish ./packages/cli-ts --provenance --access public --tag "$NPM_TAG" --registry=https://registry.npmjs.org
-
-          # 6. agent (no @thecorporation deps — only peer dep on @mariozechner/pi-coding-agent)
-          npm publish ./packages/agent --provenance --access public --tag "$NPM_TAG" --registry=https://registry.npmjs.org
-
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          generate_release_notes: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          gh release create "${TAG_NAME}" \
+            --title "Release ${TAG_NAME}" \
+            --generate-notes \
+            release/*.tar.gz

@@ -1,0 +1,34 @@
+[package]
+name = "corp-auth"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Authentication and authorization: JWT, API keys, scoped permissions"
+
+[dependencies]
+corp-core = { workspace = true }
+
+serde = { workspace = true }
+serde_json = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+
+# Auth
+jsonwebtoken = { workspace = true }
+argon2 = { workspace = true }
+rand = { workspace = true }
+sha2 = { workspace = true }
+
+# Web
+axum = { workspace = true }
+tower = { workspace = true }
+
+# Async
+tokio = { workspace = true }
+async-trait = "0.1"
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["test-util"] }
