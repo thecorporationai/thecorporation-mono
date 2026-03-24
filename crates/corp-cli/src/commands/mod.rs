@@ -180,6 +180,9 @@ pub enum Command {
     },
     /// Show workspace status summary (active entity, pending actions)
     Status,
+    /// Show recommended next steps for the active entity
+    #[command(alias = "next-steps")]
+    Next,
     /// Show current CLI context (API URL, workspace, active entity)
     Context,
     /// Set the active entity for subsequent commands
@@ -207,6 +210,7 @@ pub async fn run(command: Command, ctx: Context) -> anyhow::Result<()> {
         Command::Services { cmd } => services::run(cmd, &ctx).await,
         Command::Admin { cmd } => admin::run(cmd, &ctx).await,
         Command::Status => run_status(&ctx).await,
+        Command::Next => run_next(&ctx).await,
         Command::Context => run_context(&ctx),
         Command::Use { entity_ref } => run_use(entity_ref, &ctx).await,
     }
@@ -217,6 +221,55 @@ pub async fn run(command: Command, ctx: Context) -> anyhow::Result<()> {
 async fn run_status(ctx: &Context) -> anyhow::Result<()> {
     let value = ctx.client.get("/v1/status").await?;
     output::print_value(&value, ctx.mode());
+    Ok(())
+}
+
+async fn run_next(ctx: &Context) -> anyhow::Result<()> {
+    let eid = ctx.require_entity()?;
+    let path = format!("/v1/entities/{eid}/next-steps");
+    let value = ctx.client.get(&path).await?;
+    let mode = ctx.mode();
+
+    if ctx.json {
+        output::print_value(&value, mode);
+    } else {
+        // Pretty-print the top recommendation and backlog
+        if let Some(top) = value.get("top") {
+            if let Some(title) = top.get("title").and_then(|v| v.as_str()) {
+                let urgency = top
+                    .get("urgency")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("info");
+                let cmd = top.get("command").and_then(|v| v.as_str()).unwrap_or("");
+                output::kv("Next", title, mode);
+                if let Some(desc) = top.get("description").and_then(|v| v.as_str()) {
+                    output::kv("  Why", desc, mode);
+                }
+                output::kv("  Run", cmd, mode);
+                output::kv("  Urgency", urgency, mode);
+            }
+        } else {
+            output::print_success("All caught up — no pending actions.", mode);
+        }
+
+        if let Some(backlog) = value.get("backlog").and_then(|v| v.as_array()) {
+            if !backlog.is_empty() {
+                println!();
+                output::kv("Backlog", &format!("{} more items", backlog.len()), mode);
+                for item in backlog.iter().take(5) {
+                    let title = item.get("title").and_then(|v| v.as_str()).unwrap_or("");
+                    let cmd = item.get("command").and_then(|v| v.as_str()).unwrap_or("");
+                    println!("  {} — {}", title, cmd);
+                }
+                if backlog.len() > 5 {
+                    println!(
+                        "  ... and {} more (use --json for full list)",
+                        backlog.len() - 5
+                    );
+                }
+            }
+        }
+    }
     Ok(())
 }
 

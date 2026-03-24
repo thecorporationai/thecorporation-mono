@@ -23,6 +23,7 @@ pub mod formation;
 pub mod governance;
 pub mod health;
 pub mod manifest;
+pub mod next_steps;
 pub mod openapi;
 pub mod services;
 pub mod treasury;
@@ -58,6 +59,7 @@ fn api_routes() -> Router<AppState> {
         .merge(work_items::routes())
         .merge(services::routes())
         .merge(admin::routes())
+        .merge(next_steps::routes())
         .merge(manifest::routes())
 }
 
