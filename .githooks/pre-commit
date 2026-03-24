@@ -1,0 +1,19 @@
+#!/bin/sh
+# Pre-commit hook: format check + type check
+# Install: git config core.hooksPath .githooks
+
+set -e
+
+echo "pre-commit: cargo fmt --check"
+cargo fmt --all -- --check || {
+    echo "ERROR: cargo fmt failed. Run 'cargo fmt --all' and re-commit."
+    exit 1
+}
+
+echo "pre-commit: cargo check"
+cargo check --workspace 2>&1 | grep "^error" && {
+    echo "ERROR: cargo check failed."
+    exit 1
+}
+
+echo "pre-commit: ok"
