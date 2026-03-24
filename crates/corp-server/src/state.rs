@@ -270,7 +270,31 @@ impl AppState {
 
             StorageBackend::Kv { redis_url, .. } => {
                 let manager = kv_connection_manager(redis_url).await?;
-                Ok(EntityBackend::Kv { pool: manager })
+
+                // Build the S3 durable backend if a bucket is configured.
+                #[cfg(feature = "s3")]
+                let s3 = {
+                    let s3_bucket = match &self.storage_backend {
+                        StorageBackend::Kv { s3_bucket, .. } => s3_bucket.clone(),
+                        _ => None,
+                    };
+                    if let Some(bucket) = s3_bucket {
+                        let prefix = format!("{}/{}", workspace_id, entity_id);
+                        match corp_storage::s3::S3Backend::new(bucket, prefix).await {
+                            Ok(backend) => Some(std::sync::Arc::new(backend)),
+                            Err(e) => {
+                                tracing::warn!(error = %e, "S3 init failed, running without durability");
+                                None
+                            }
+                        }
+                    } else {
+                        None
+                    }
+                };
+                #[cfg(not(feature = "s3"))]
+                let s3: Option<std::sync::Arc<corp_storage::s3::S3Backend>> = None;
+
+                Ok(EntityBackend::Kv { pool: manager, s3 })
             }
         }
     }

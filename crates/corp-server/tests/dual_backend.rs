@@ -91,6 +91,7 @@ impl TestCtx {
             workspace_id,
             token,
             data_dir,
+            storage_backend: StorageBackend::Git,
             _tempdir: dir,
         }
     }
@@ -128,6 +129,11 @@ impl TestCtx {
             workspace_id,
             token,
             data_dir,
+            storage_backend: StorageBackend::Kv {
+                redis_url: std::env::var("REDIS_URL").unwrap_or_default(),
+                #[cfg(feature = "s3")]
+                s3_bucket: None,
+            },
             _tempdir: dir,
         }
     }
