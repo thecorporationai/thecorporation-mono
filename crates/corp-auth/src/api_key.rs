@@ -83,8 +83,16 @@ fn base64_url_encode(bytes: &[u8]) -> String {
     let mut out = String::with_capacity((bytes.len() * 4).div_ceil(3));
     for chunk in bytes.chunks(3) {
         let b0 = chunk[0] as usize;
-        let b1 = if chunk.len() > 1 { chunk[1] as usize } else { 0 };
-        let b2 = if chunk.len() > 2 { chunk[2] as usize } else { 0 };
+        let b1 = if chunk.len() > 1 {
+            chunk[1] as usize
+        } else {
+            0
+        };
+        let b2 = if chunk.len() > 2 {
+            chunk[2] as usize
+        } else {
+            0
+        };
 
         out.push(ALPHABET[b0 >> 2] as char);
         out.push(ALPHABET[((b0 & 0x3) << 4) | (b1 >> 4)] as char);
