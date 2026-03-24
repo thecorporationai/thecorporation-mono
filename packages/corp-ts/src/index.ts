@@ -15,7 +15,7 @@
  * ```ts
  * import { CorpClient } from "@thecorporation/corp";
  *
- * const client = new CorpClient("http://localhost:8000", "corp_live_...");
+ * const client = new CorpClient("http://localhost:8000", "corp_...");
  *
  * // Create a Delaware C-Corp
  * const entity = await client.entities.create({

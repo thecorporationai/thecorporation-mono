@@ -8,7 +8,7 @@
  * ```ts
  * import { CorpClient } from "@thecorporation/corp/client";
  *
- * const client = new CorpClient("http://localhost:8000", "corp_live_...");
+ * const client = new CorpClient("http://localhost:8000", "corp_...");
  * const entities = await client.entities.list();
  * ```
  */

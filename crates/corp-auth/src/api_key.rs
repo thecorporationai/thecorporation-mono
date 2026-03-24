@@ -1,6 +1,6 @@
 //! API key generation and verification.
 //!
-//! Keys use an `sk_test_` prefix followed by 32 cryptographically random
+//! Keys use a `corp_` prefix followed by 32 cryptographically random
 //! bytes encoded as URL-safe base64.  Hashing uses Argon2id with default
 //! parameters; verification is performed through the Argon2 library's own
 //! constant-time comparison so there are no timing side channels.
@@ -12,7 +12,7 @@ use rand::rngs::OsRng;
 
 use crate::error::AuthError;
 
-const KEY_PREFIX: &str = "sk_test_";
+const KEY_PREFIX: &str = "corp_";
 const KEY_RANDOM_BYTES: usize = 32;
 
 /// Stateless helper for generating and verifying API keys.
@@ -31,7 +31,6 @@ impl ApiKeyManager {
         let mut bytes = [0u8; KEY_RANDOM_BYTES];
         OsRng.fill_bytes(&mut bytes);
 
-        // URL-safe base64, no padding — keeps the key URL-safe.
         let encoded = base64_url_encode(&bytes);
         let raw_key = format!("{KEY_PREFIX}{encoded}");
 
@@ -42,9 +41,6 @@ impl ApiKeyManager {
     }
 
     /// Hash a raw API key using Argon2id.
-    ///
-    /// Returns the PHC string (e.g. `$argon2id$v=19$...`) suitable for
-    /// database storage.
     pub fn hash(raw_key: &str) -> Result<String, AuthError> {
         let salt = SaltString::generate(&mut OsRng);
         let argon2 = Argon2::default();
@@ -58,7 +54,6 @@ impl ApiKeyManager {
     /// Verify `raw_key` against a stored PHC hash string.
     ///
     /// Returns `Ok(true)` if the key matches, `Ok(false)` if it does not.
-    /// Comparison is performed by the Argon2 library in constant time.
     pub fn verify(raw_key: &str, hash: &str) -> Result<bool, AuthError> {
         let parsed = PasswordHash::new(hash)
             .map_err(|e| AuthError::InternalError(format!("argon2 parse hash: {e}")))?;
@@ -70,12 +65,7 @@ impl ApiKeyManager {
         }
     }
 
-    /// Return the known prefix of a valid live key, or `None` if the key does
-    /// not start with the expected prefix.
-    ///
-    /// Currently this always returns `Some("sk_test_")` for conforming keys.
-    /// Future key formats (e.g. `sk_test_`) can encode workspace hints in the
-    /// prefix and would be parsed here.
+    /// Return the known prefix if the key starts with `corp_`, or `None`.
     pub fn parse_key_prefix(raw_key: &str) -> Option<&str> {
         if raw_key.starts_with(KEY_PREFIX) {
             Some(KEY_PREFIX)
@@ -87,25 +77,14 @@ impl ApiKeyManager {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-/// Encode `bytes` as URL-safe base64 **without** padding characters.
 fn base64_url_encode(bytes: &[u8]) -> String {
-    // We only need the alphabet and no std-dependency; implement the minimal
-    // version inline to avoid adding a new crate dependency.
     const ALPHABET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
 
     let mut out = String::with_capacity((bytes.len() * 4).div_ceil(3));
     for chunk in bytes.chunks(3) {
         let b0 = chunk[0] as usize;
-        let b1 = if chunk.len() > 1 {
-            chunk[1] as usize
-        } else {
-            0
-        };
-        let b2 = if chunk.len() > 2 {
-            chunk[2] as usize
-        } else {
-            0
-        };
+        let b1 = if chunk.len() > 1 { chunk[1] as usize } else { 0 };
+        let b2 = if chunk.len() > 2 { chunk[2] as usize } else { 0 };
 
         out.push(ALPHABET[b0 >> 2] as char);
         out.push(ALPHABET[((b0 & 0x3) << 4) | (b1 >> 4)] as char);
@@ -119,7 +98,7 @@ fn base64_url_encode(bytes: &[u8]) -> String {
     out
 }
 
-// ── Tests ─────────────────────────────────────────────────────────────────────
+// ── Tests ────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {
@@ -128,14 +107,14 @@ mod tests {
     #[test]
     fn generated_key_has_correct_prefix() {
         let (raw, _hash) = ApiKeyManager::generate();
-        assert!(raw.starts_with("sk_test_"), "key = {raw}");
+        assert!(raw.starts_with("corp_"), "key = {raw}");
     }
 
     #[test]
     fn generated_key_has_sufficient_length() {
         let (raw, _hash) = ApiKeyManager::generate();
-        // prefix (8) + 32 bytes as base64 ≈ 43 chars → total ≥ 50
-        assert!(raw.len() >= 50, "key too short: {raw}");
+        // prefix (5) + 32 bytes as base64 ≈ 43 chars → total ≥ 47
+        assert!(raw.len() >= 47, "key too short: {raw}");
     }
 
     #[test]
@@ -147,27 +126,27 @@ mod tests {
     #[test]
     fn verify_wrong_key_returns_false() {
         let (_raw, hash) = ApiKeyManager::generate();
-        let wrong = "sk_test_thisisnottheoriginalkey0000000000000";
+        let wrong = "corp_thisisnottheoriginalkey0000000000000000";
         assert!(!ApiKeyManager::verify(wrong, &hash).unwrap());
     }
 
     #[test]
     fn hash_then_verify_roundtrip() {
-        let key = "sk_test_test_roundtrip_key_value_here";
+        let key = "corp_test_roundtrip_key_value_here_1234567890";
         let hash = ApiKeyManager::hash(key).unwrap();
         assert!(ApiKeyManager::verify(key, &hash).unwrap());
-        assert!(!ApiKeyManager::verify("sk_test_different", &hash).unwrap());
+        assert!(!ApiKeyManager::verify("corp_different", &hash).unwrap());
     }
 
     #[test]
     fn parse_key_prefix_valid() {
         let (raw, _) = ApiKeyManager::generate();
-        assert_eq!(ApiKeyManager::parse_key_prefix(&raw), Some("sk_test_"));
+        assert_eq!(ApiKeyManager::parse_key_prefix(&raw), Some("corp_"));
     }
 
     #[test]
     fn parse_key_prefix_invalid() {
         assert_eq!(ApiKeyManager::parse_key_prefix("not_a_key"), None);
-        assert_eq!(ApiKeyManager::parse_key_prefix("sk_test_abc"), None);
+        assert_eq!(ApiKeyManager::parse_key_prefix("xyz_abc"), None);
     }
 }

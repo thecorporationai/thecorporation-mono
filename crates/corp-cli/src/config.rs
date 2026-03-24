@@ -244,8 +244,8 @@ mod tests {
 
     #[test]
     fn mask_secret_long() {
-        let s = mask_secret("sk_test_abcdef1234567890");
+        let s = mask_secret("corp_abcdef1234567890");
         assert!(s.ends_with('…'));
-        assert_eq!(&s[..8], "sk_test_");
+        assert!(s.starts_with("corp_"));
     }
 }

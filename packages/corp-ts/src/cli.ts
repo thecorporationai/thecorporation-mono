@@ -7,7 +7,7 @@
  * ```ts
  * import { Corp } from "@thecorporation/corp/cli";
  *
- * const corp = new Corp({ apiUrl: "http://localhost:8000", apiKey: "corp_live_..." });
+ * const corp = new Corp({ apiUrl: "http://localhost:8000", apiKey: "corp_..." });
  * const entity = await corp.form.create("Acme Corp", "c_corp", "DE");
  * await corp.form.advance(entity.entity_id);
  * ```
