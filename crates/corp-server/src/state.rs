@@ -110,10 +110,10 @@ impl AppState {
         };
 
         // Ensure the data directory exists for the git backend.
-        if matches!(storage_backend, StorageBackend::Git) {
-            if let Err(e) = tokio::fs::create_dir_all(&data_dir).await {
-                tracing::warn!(dir = %data_dir, error = %e, "could not create data dir");
-            }
+        if matches!(storage_backend, StorageBackend::Git)
+            && let Err(e) = tokio::fs::create_dir_all(&data_dir).await
+        {
+            tracing::warn!(dir = %data_dir, error = %e, "could not create data dir");
         }
 
         let jwt_config = Arc::new(JwtConfig::new(jwt_secret.as_bytes()));

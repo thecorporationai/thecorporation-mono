@@ -1060,15 +1060,14 @@ async fn cast_vote(
         .unwrap_or_default();
     for vid_str in &vote_ids {
         let vpath = format!("governance/meetings/{}/votes/{}.json", meeting_id, vid_str);
-        if let Ok(existing_vote) = store.read_json::<Vote>(&vpath, BRANCH).await {
-            if existing_vote.seat_id == req.seat_id
-                && existing_vote.agenda_item_id == req.agenda_item_id
-            {
-                return Err(AppError::BadRequest(format!(
-                    "seat {} has already voted on agenda item {}",
-                    req.seat_id, req.agenda_item_id
-                )));
-            }
+        if let Ok(existing_vote) = store.read_json::<Vote>(&vpath, BRANCH).await
+            && existing_vote.seat_id == req.seat_id
+            && existing_vote.agenda_item_id == req.agenda_item_id
+        {
+            return Err(AppError::BadRequest(format!(
+                "seat {} has already voted on agenda item {}",
+                req.seat_id, req.agenda_item_id
+            )));
         }
     }
 

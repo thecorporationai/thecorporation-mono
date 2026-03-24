@@ -52,6 +52,7 @@ pub struct Resolution {
 
 impl Resolution {
     /// Record a new resolution, computing `passed` from the vote tallies.
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         meeting_id: MeetingId,
         agenda_item_id: AgendaItemId,

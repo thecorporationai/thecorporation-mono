@@ -598,8 +598,7 @@ fn render_ast_node(node: &serde_json::Value, out: &mut String) {
                 .get("level")
                 .and_then(|v| v.as_u64())
                 .unwrap_or(2)
-                .min(6)
-                .max(1);
+                .clamp(1, 6);
             let text = node.get("text").and_then(|v| v.as_str()).unwrap_or("");
             out.push_str(&format!(
                 "<h{l}>{t}</h{l}>\n",
@@ -613,7 +612,7 @@ fn render_ast_node(node: &serde_json::Value, out: &mut String) {
             // Preserve explicit newlines in the source as line breaks.
             let rendered = text
                 .split('\n')
-                .map(|line| inline_markup(line))
+                .map(inline_markup)
                 .collect::<Vec<_>>()
                 .join("<br>\n");
             out.push_str(&format!("<p>{}</p>\n", rendered));
@@ -747,7 +746,7 @@ fn render_signature(sig: &Signature, out: &mut String) {
         ));
     }
 
-    out.push_str(&format!("  <div class=\"signature-line\"></div>\n"));
+    out.push_str("  <div class=\"signature-line\"></div>\n");
     out.push_str(&format!(
         "  <div class=\"signature-meta\">{}, {}</div>\n",
         escape_html(&sig.signer_name),

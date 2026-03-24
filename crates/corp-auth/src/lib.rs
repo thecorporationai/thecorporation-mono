@@ -4,12 +4,9 @@
 //!
 //! - [`error`]      — [`AuthError`] enum and its HTTP response mapping.
 //! - [`jwt`]        — HS256 JWT encoding and decoding via [`JwtConfig`].
-//! - [`api_key`]    — Argon2id-hashed API key generation and verification via
-//!                    [`ApiKeyManager`].
-//! - [`principal`]  — Resolved request identity ([`Principal`]) built from
-//!                    validated JWT claims.
-//! - [`extractors`] — Axum extractors, scoped newtype extractors, and
-//!                    [`extractors::RateLimiter`].
+//! - [`api_key`] — Argon2id-hashed API key generation and verification via [`ApiKeyManager`].
+//! - [`principal`] — Resolved request identity ([`Principal`]) built from validated JWT claims.
+//! - [`extractors`] — Axum extractors, scoped newtype extractors, and [`extractors::RateLimiter`].
 
 pub mod api_key;
 pub mod error;

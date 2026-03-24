@@ -100,7 +100,7 @@ fn find_blob(repo: &gix::Repository, tree_id: ObjectId, parts: &[&str]) -> Resul
     let name = parts[0];
 
     for entry in &decoded.entries {
-        let entry_name = String::from_utf8_lossy(&entry.filename);
+        let entry_name = String::from_utf8_lossy(entry.filename);
         if entry_name != name {
             continue;
         }
@@ -183,7 +183,7 @@ fn load_tree(
     let decoded = tree.decode().map_err(git_err)?;
 
     for entry in &decoded.entries {
-        let name = String::from_utf8_lossy(&entry.filename).into_owned();
+        let name = String::from_utf8_lossy(entry.filename).into_owned();
         match entry.mode.kind() {
             EntryKind::Blob | EntryKind::BlobExecutable => {
                 map.insert(name, TreeNode::Blob(entry.oid.into()));
@@ -235,7 +235,7 @@ fn write_tree(repo: &gix::Repository, map: &BTreeMap<String, TreeNode>) -> Resul
                 entries.push(gix::objs::tree::Entry {
                     mode: gix::objs::tree::EntryMode::from(EntryKind::Blob),
                     filename: name.as_str().into(),
-                    oid: (*oid).into(),
+                    oid: (*oid),
                 });
             }
             TreeNode::Dir(sub_map) => {
@@ -243,7 +243,7 @@ fn write_tree(repo: &gix::Repository, map: &BTreeMap<String, TreeNode>) -> Resul
                 entries.push(gix::objs::tree::Entry {
                     mode: gix::objs::tree::EntryMode::from(EntryKind::Tree),
                     filename: name.as_str().into(),
-                    oid: sub_oid.into(),
+                    oid: sub_oid,
                 });
             }
         }
@@ -383,7 +383,7 @@ pub fn list_directory(repo_path: &Path, branch: &str, dir_path: &str) -> Result<
     Ok(decoded
         .entries
         .iter()
-        .map(|e| String::from_utf8_lossy(&e.filename).into_owned())
+        .map(|e| String::from_utf8_lossy(e.filename).into_owned())
         .collect())
 }
 
@@ -400,7 +400,7 @@ fn navigate_to_subtree_id(
         let entry = decoded
             .entries
             .iter()
-            .find(|e| String::from_utf8_lossy(&e.filename) == *part)
+            .find(|e| String::from_utf8_lossy(e.filename) == *part)
             .ok_or_else(|| StorageError::NotFound(format!("directory component '{}'", part)))?;
 
         if entry.mode.kind() != EntryKind::Tree {

@@ -235,9 +235,7 @@ async fn remove_skill(
         .read::<Agent>(agent_id, "main")
         .await
         .map_err(AppError::Storage)?;
-    agent
-        .remove_skill(&name)
-        .map_err(|e| AppError::NotFound(e))?;
+    agent.remove_skill(&name).map_err(AppError::NotFound)?;
     store
         .write::<Agent>(&agent, agent_id, "main", "remove skill from agent")
         .await

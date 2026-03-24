@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use clap::Parser;
 
 use corp_server::routes::router;
@@ -57,7 +55,7 @@ async fn run_server() {
 /// response body to stdout.  Exit code 0 on 2xx, 1 otherwise.
 async fn run_call(method: String, path: String, body: Option<String>) {
     use axum::body::Body;
-    use axum::http::{Method, Request, StatusCode};
+    use axum::http::{Method, Request};
     use tower::ServiceExt;
 
     let state = AppState::from_env().await;

@@ -241,11 +241,7 @@ pub fn materialize_vesting_events(schedule: &VestingSchedule) -> Vec<VestingEven
     let total_months = schedule.total_months;
 
     // Number of monthly events (excluding the cliff event itself)
-    let monthly_count: u32 = if cliff < total_months {
-        total_months - cliff
-    } else {
-        0
-    };
+    let monthly_count: u32 = total_months.saturating_sub(cliff);
 
     // Total events: cliff_event (if cliff > 0) + monthly_count events
     let event_count = (if cliff > 0 { 1u32 } else { 0u32 }) + monthly_count;

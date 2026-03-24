@@ -4,14 +4,14 @@
 //! `corp-core` to perform all operations in-process against bare git repos.
 //! This means `corp form create --local` works without any running server.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use anyhow::{Context, Result};
 use chrono::Utc;
 use sha2::Digest;
 
-use corp_core::contacts::{CapTableAccess, Contact, ContactCategory, ContactStatus, ContactType};
+use corp_core::contacts::{Contact, ContactCategory, ContactType};
 use corp_core::formation::{
     Document, DocumentType, Entity, EntityType, Filing, FilingType, FormationStatus,
     IrsTaxClassification, Jurisdiction, Signature, TaxProfile,
@@ -168,10 +168,10 @@ impl LocalBackend {
         let ids = ws.list_entity_ids().await.unwrap_or_default();
         let mut entities = Vec::new();
         for id in ids {
-            if let Ok(store) = self.open_entity(id).await {
-                if let Ok(e) = store.read::<Entity>(id, "main").await {
-                    entities.push(serde_json::to_value(&e)?);
-                }
+            if let Ok(store) = self.open_entity(id).await
+                && let Ok(e) = store.read::<Entity>(id, "main").await
+            {
+                entities.push(serde_json::to_value(&e)?);
             }
         }
         Ok(serde_json::Value::Array(entities))
@@ -412,7 +412,7 @@ impl LocalBackend {
         &self,
         entity_id: EntityId,
         name: &str,
-        email: Option<&str>,
+        _email: Option<&str>,
         category: Option<&str>,
     ) -> Result<serde_json::Value> {
         let store = self.open_entity(entity_id).await?;

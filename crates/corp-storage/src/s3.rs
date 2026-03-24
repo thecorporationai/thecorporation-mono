@@ -301,9 +301,7 @@ impl S3Backend {
 
             max_seq = max_seq.max(*seq);
 
-            let tree = branch_trees
-                .entry(entry.branch.clone())
-                .or_insert_with(std::collections::HashMap::new);
+            let tree = branch_trees.entry(entry.branch.clone()).or_default();
 
             for (path, sha) in &entry.files {
                 if sha == "<deleted>" {

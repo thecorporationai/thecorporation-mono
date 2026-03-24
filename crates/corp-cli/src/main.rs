@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 mod client;
 mod commands;
 mod config;

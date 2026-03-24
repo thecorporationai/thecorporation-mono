@@ -607,12 +607,12 @@ async fn issue_safe(
             "investment_amount_cents must be greater than zero".into(),
         ));
     }
-    if let Some(cap) = body.valuation_cap_cents {
-        if cap <= 0 {
-            return Err(AppError::BadRequest(
-                "valuation_cap_cents must be greater than zero".into(),
-            ));
-        }
+    if let Some(cap) = body.valuation_cap_cents
+        && cap <= 0
+    {
+        return Err(AppError::BadRequest(
+            "valuation_cap_cents must be greater than zero".into(),
+        ));
     }
     let store = state
         .open_entity_store(principal.workspace_id, entity_id)

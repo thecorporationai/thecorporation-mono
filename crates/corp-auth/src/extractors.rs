@@ -226,9 +226,7 @@ impl RateLimiter {
             .map_err(|e| AuthError::InternalError(format!("rate limiter lock poisoned: {e}")))?;
 
         let now = Instant::now();
-        let cutoff = now
-            .checked_sub(self.window)
-            .unwrap_or_else(|| Instant::now());
+        let cutoff = now.checked_sub(self.window).unwrap_or_else(Instant::now);
 
         let timestamps = map.entry(key.to_owned()).or_default();
 

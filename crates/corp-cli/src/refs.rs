@@ -417,10 +417,10 @@ fn find_by_name(query: &str, kind: RefKind, candidates: &[Value]) -> Vec<String>
         .filter_map(|v| {
             let id = v.get(id_field)?.as_str()?;
             for field in label_fields {
-                if let Some(label) = v.get(*field).and_then(|l| l.as_str()) {
-                    if label.to_lowercase().contains(&query_lower) {
-                        return Some(id.to_owned());
-                    }
+                if let Some(label) = v.get(*field).and_then(|l| l.as_str())
+                    && label.to_lowercase().contains(&query_lower)
+                {
+                    return Some(id.to_owned());
                 }
             }
             None

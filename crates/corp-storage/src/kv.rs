@@ -175,14 +175,7 @@ pub async fn write_files(
 
         use redis::AsyncCommands;
         let _: () = con.set(&blob_key, data.as_slice()).await.map_err(kv_err)?;
-        // Only set an expiry when a non-zero TTL is configured. Calling EXPIRE
-        // with 0 would delete the key immediately.
-        if BLOB_TTL_SECS > 0 {
-            let _: bool = con
-                .expire(&blob_key, BLOB_TTL_SECS as i64)
-                .await
-                .map_err(kv_err)?;
-        }
+        // No TTL — blobs persist forever (BLOB_TTL_SECS = 0).
 
         blob_shas.push((path.clone(), sha));
     }

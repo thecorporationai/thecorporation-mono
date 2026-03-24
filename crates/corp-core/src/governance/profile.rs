@@ -117,6 +117,7 @@ pub struct GovernanceProfile {
 
 impl GovernanceProfile {
     /// Create a new profile. Validates all fields before constructing.
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         entity_id: EntityId,
         entity_type: String,

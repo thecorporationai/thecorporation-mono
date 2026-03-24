@@ -33,6 +33,7 @@ use redis::aio::ConnectionManager;
 ///
 /// Each variant carries only the configuration/connection data it needs.
 /// There is no `Rc`, no `RefCell`, and no bare connection handle.
+#[allow(clippy::large_enum_variant)]
 pub enum Backend {
     /// Bare git repository on the local filesystem.
     #[cfg(feature = "git")]
@@ -536,15 +537,15 @@ async fn sync_files_to_s3(
         timestamp: chrono::Utc::now().timestamp(),
     };
 
-    if let Ok(entry_json) = serde_json::to_vec(&entry) {
-        if let Err(e) = s3.put_commit(ws, ent, seq, &entry_json).await {
-            tracing::warn!(
-                ws,
-                ent,
-                seq,
-                error = %e,
-                "S3 put_commit failed (best-effort), skipping"
-            );
-        }
+    if let Ok(entry_json) = serde_json::to_vec(&entry)
+        && let Err(e) = s3.put_commit(ws, ent, seq, &entry_json).await
+    {
+        tracing::warn!(
+            ws,
+            ent,
+            seq,
+            error = %e,
+            "S3 put_commit failed (best-effort), skipping"
+        );
     }
 }

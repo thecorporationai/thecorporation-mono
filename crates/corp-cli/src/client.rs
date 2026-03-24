@@ -64,10 +64,10 @@ impl HttpClient {
     fn auth_headers(&self) -> HeaderMap {
         let mut headers = HeaderMap::new();
         headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
-        if let Some(key) = &self.api_key {
-            if let Ok(val) = HeaderValue::from_str(&format!("Bearer {key}")) {
-                headers.insert(AUTHORIZATION, val);
-            }
+        if let Some(key) = &self.api_key
+            && let Ok(val) = HeaderValue::from_str(&format!("Bearer {key}"))
+        {
+            headers.insert(AUTHORIZATION, val);
         }
         headers
     }
@@ -277,10 +277,10 @@ impl LocalClient {
             let stderr = String::from_utf8_lossy(&output.stderr);
             let stdout = String::from_utf8_lossy(&output.stdout);
             // Try to parse error from stdout (server prints JSON errors there).
-            if let Ok(v) = serde_json::from_str::<Value>(stdout.trim()) {
-                if let Some(msg) = v.get("error").and_then(|e| e.as_str()) {
-                    bail!("{msg}");
-                }
+            if let Ok(v) = serde_json::from_str::<Value>(stdout.trim())
+                && let Some(msg) = v.get("error").and_then(|e| e.as_str())
+            {
+                bail!("{msg}");
             }
             let msg = if !stderr.is_empty() {
                 stderr.to_string()

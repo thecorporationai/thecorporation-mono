@@ -76,6 +76,7 @@ impl ApiKeyRecord {
 ///
 /// Mirrors `EntityStore`'s `Backend` but is kept separate to allow workspace
 /// and entity stores to be configured independently.
+#[allow(clippy::large_enum_variant)]
 pub enum Backend {
     #[cfg(feature = "git")]
     Git { repo_path: Arc<PathBuf> },
