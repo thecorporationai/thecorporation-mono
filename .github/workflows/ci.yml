@@ -26,13 +26,10 @@ jobs:
       - name: Build all crates and binaries
         run: cargo build --workspace
 
-      - name: Run unit and integration tests
-        run: cargo test --workspace
+      - name: Run unit and integration tests (excluding CLI binary tests)
+        run: cargo test --workspace --exclude corp-server && cargo test -p corp-server --lib --test api_lifecycle --test dual_backend --test scenario_carta_scale
 
-      - name: Build corp CLI binary (needed by CLI integration tests)
-        run: cargo build -p corp-cli -p corp-server
-
-      - name: Run CLI integration tests
+      - name: Run CLI integration tests (needs corp + corp-server binaries)
         run: cargo test -p corp-server --test cli_formation_workflow
 
   test-ts:
