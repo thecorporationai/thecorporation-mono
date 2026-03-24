@@ -6,6 +6,10 @@ rust-version.workspace = true
 license.workspace = true
 description = "HTTP API server for corporate governance"
 
+[features]
+default = []
+s3 = ["corp-storage/s3"]
+
 [[bin]]
 name = "corp-server"
 path = "src/main.rs"
