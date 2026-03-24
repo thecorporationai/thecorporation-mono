@@ -49,8 +49,26 @@ impl S3Backend {
     /// `prefix` must not start or end with `/`; the empty string `""` stores
     /// objects at the bucket root.
     pub async fn new(bucket: String, prefix: String) -> Result<Self> {
-        let config = aws_config::load_defaults(BehaviorVersion::latest()).await;
-        let client = Client::new(&config);
+        let mut config_loader = aws_config::defaults(BehaviorVersion::latest());
+
+        // Support custom S3-compatible endpoints (RustFS, MinIO, etc.)
+        // via the AWS_ENDPOINT_URL or CORP_S3_ENDPOINT env vars.
+        if let Ok(endpoint) = std::env::var("AWS_ENDPOINT_URL")
+            .or_else(|_| std::env::var("CORP_S3_ENDPOINT"))
+        {
+            config_loader = config_loader.endpoint_url(&endpoint);
+        }
+
+        let config = config_loader.load().await;
+        let client = Client::from_conf(
+            aws_sdk_s3::Config::builder()
+                .behavior_version(BehaviorVersion::latest())
+                .region(config.region().cloned().unwrap_or_else(|| aws_sdk_s3::config::Region::new("us-east-1")))
+                .credentials_provider(config.credentials_provider().unwrap().clone())
+                .endpoint_url(config.endpoint_url().unwrap_or("https://s3.amazonaws.com"))
+                .force_path_style(true)  // Required for S3-compatible stores
+                .build(),
+        );
         Ok(Self { client, bucket, prefix })
     }
 

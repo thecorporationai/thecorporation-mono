@@ -200,7 +200,7 @@ impl ScenarioRunner {
             data_dir: dir.path().to_str().unwrap().to_owned(),
             jwt_config,
             api_key_resolver: Arc::new(NoopApiKeyResolver),
-            storage_backend: StorageBackend::Kv { redis_url },
+            storage_backend: StorageBackend::Kv { redis_url, s3_bucket: None },
         };
 
         let app = router(state);

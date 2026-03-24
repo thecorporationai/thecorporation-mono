@@ -50,7 +50,7 @@ fn kv_err(e: impl std::fmt::Display) -> StorageError {
     StorageError::KvError(e.to_string())
 }
 
-fn sha256_hex(data: &[u8]) -> String {
+pub(crate) fn sha256_hex(data: &[u8]) -> String {
     let mut h = Sha256::new();
     h.update(data);
     hex::encode(h.finalize())

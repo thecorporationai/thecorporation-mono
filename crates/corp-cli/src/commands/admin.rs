@@ -22,10 +22,10 @@ pub enum AdminCommand {
         workspace_id: String,
     },
 
-    /// List API keys for the current workspace (keys use the corp_live_ prefix)
+    /// List API keys for the current workspace (keys use the sk_live_ prefix)
     ApiKeys,
 
-    /// Create a new API key (keys use the corp_live_ prefix)
+    /// Create a new API key (keys use the sk_live_ prefix)
     CreateApiKey {
         /// Key display name (for identification in the dashboard)
         #[arg(long)]
@@ -45,7 +45,7 @@ pub enum AdminCommand {
 
     /// Revoke an API key (by key ID from `corp admin api-keys`)
     RevokeApiKey {
-        /// API key ID to revoke (from `corp admin api-keys`; keys use the corp_live_ prefix)
+        /// API key ID to revoke (from `corp admin api-keys`; keys use the sk_live_ prefix)
         key_id: String,
     },
 }

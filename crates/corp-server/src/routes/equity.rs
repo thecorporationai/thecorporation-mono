@@ -12,6 +12,7 @@ use chrono::NaiveDate;
 use serde::Deserialize;
 
 use corp_auth::{RequireEquityRead, RequireEquityWrite};
+use corp_core::contacts::Contact;
 use corp_core::equity::{
     CapTable, ControlLink, ControlType, EquityGrant, FundingRound, Holder, HolderType, Instrument,
     InstrumentKind, InvestorLedgerEntry, LegalEntity, LegalEntityRole, Position, RepurchaseRight,
@@ -529,6 +530,21 @@ async fn create_grant(
     let store = state
         .open_entity_store(principal.workspace_id, entity_id)
         .await?;
+    // Verify recipient contact exists
+    store
+        .read::<Contact>(body.recipient_contact_id, "main")
+        .await
+        .map_err(|e| {
+            use corp_storage::error::StorageError;
+            match e {
+                StorageError::NotFound(_) => AppError::BadRequest(format!(
+                    "recipient contact {} not found",
+                    body.recipient_contact_id
+                )),
+                other => AppError::Storage(other),
+            }
+        })?;
+
     let share_class = store.read::<ShareClass>(body.share_class_id, "main").await?;
     if body.shares > share_class.authorized_shares.raw() {
         return Err(AppError::BadRequest(format!(
@@ -598,6 +614,22 @@ async fn issue_safe(
     let store = state
         .open_entity_store(principal.workspace_id, entity_id)
         .await?;
+
+    // Verify investor contact exists
+    store
+        .read::<Contact>(body.investor_contact_id, "main")
+        .await
+        .map_err(|e| {
+            use corp_storage::error::StorageError;
+            match e {
+                StorageError::NotFound(_) => AppError::BadRequest(format!(
+                    "investor contact {} not found",
+                    body.investor_contact_id
+                )),
+                other => AppError::Storage(other),
+            }
+        })?;
+
     let safe_note = SafeNote::new(
         entity_id,
         body.cap_table_id,
@@ -840,6 +872,37 @@ async fn create_transfer(
     let store = state
         .open_entity_store(principal.workspace_id, entity_id)
         .await?;
+
+    // Verify from_holder exists
+    store
+        .read::<Holder>(body.from_holder_id, "main")
+        .await
+        .map_err(|e| {
+            use corp_storage::error::StorageError;
+            match e {
+                StorageError::NotFound(_) => AppError::BadRequest(format!(
+                    "from_holder {} not found",
+                    body.from_holder_id
+                )),
+                other => AppError::Storage(other),
+            }
+        })?;
+
+    // Verify to_holder exists
+    store
+        .read::<Holder>(body.to_holder_id, "main")
+        .await
+        .map_err(|e| {
+            use corp_storage::error::StorageError;
+            match e {
+                StorageError::NotFound(_) => AppError::BadRequest(format!(
+                    "to_holder {} not found",
+                    body.to_holder_id
+                )),
+                other => AppError::Storage(other),
+            }
+        })?;
+
     let transfer = ShareTransfer::new(
         entity_id,
         body.cap_table_id,

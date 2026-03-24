@@ -1,6 +1,6 @@
 //! API key generation and verification.
 //!
-//! Keys use an `corp_live_` prefix followed by 32 cryptographically random
+//! Keys use an `sk_test_` prefix followed by 32 cryptographically random
 //! bytes encoded as URL-safe base64.  Hashing uses Argon2id with default
 //! parameters; verification is performed through the Argon2 library's own
 //! constant-time comparison so there are no timing side channels.
@@ -12,7 +12,7 @@ use rand::RngCore;
 
 use crate::error::AuthError;
 
-const KEY_PREFIX: &str = "corp_live_";
+const KEY_PREFIX: &str = "sk_test_";
 const KEY_RANDOM_BYTES: usize = 32;
 
 /// Stateless helper for generating and verifying API keys.
@@ -73,8 +73,8 @@ impl ApiKeyManager {
     /// Return the known prefix of a valid live key, or `None` if the key does
     /// not start with the expected prefix.
     ///
-    /// Currently this always returns `Some("corp_live_")` for conforming keys.
-    /// Future key formats (e.g. `corp_test_`) can encode workspace hints in the
+    /// Currently this always returns `Some("sk_test_")` for conforming keys.
+    /// Future key formats (e.g. `sk_test_`) can encode workspace hints in the
     /// prefix and would be parsed here.
     pub fn parse_key_prefix(raw_key: &str) -> Option<&str> {
         if raw_key.starts_with(KEY_PREFIX) {
@@ -120,7 +120,7 @@ mod tests {
     #[test]
     fn generated_key_has_correct_prefix() {
         let (raw, _hash) = ApiKeyManager::generate();
-        assert!(raw.starts_with("corp_live_"), "key = {raw}");
+        assert!(raw.starts_with("sk_test_"), "key = {raw}");
     }
 
     #[test]
@@ -139,27 +139,27 @@ mod tests {
     #[test]
     fn verify_wrong_key_returns_false() {
         let (_raw, hash) = ApiKeyManager::generate();
-        let wrong = "corp_live_thisisnottheoriginalkey0000000000000";
+        let wrong = "sk_test_thisisnottheoriginalkey0000000000000";
         assert!(!ApiKeyManager::verify(wrong, &hash).unwrap());
     }
 
     #[test]
     fn hash_then_verify_roundtrip() {
-        let key = "corp_live_test_roundtrip_key_value_here";
+        let key = "sk_test_test_roundtrip_key_value_here";
         let hash = ApiKeyManager::hash(key).unwrap();
         assert!(ApiKeyManager::verify(key, &hash).unwrap());
-        assert!(!ApiKeyManager::verify("corp_live_different", &hash).unwrap());
+        assert!(!ApiKeyManager::verify("sk_test_different", &hash).unwrap());
     }
 
     #[test]
     fn parse_key_prefix_valid() {
         let (raw, _) = ApiKeyManager::generate();
-        assert_eq!(ApiKeyManager::parse_key_prefix(&raw), Some("corp_live_"));
+        assert_eq!(ApiKeyManager::parse_key_prefix(&raw), Some("sk_test_"));
     }
 
     #[test]
     fn parse_key_prefix_invalid() {
         assert_eq!(ApiKeyManager::parse_key_prefix("not_a_key"), None);
-        assert_eq!(ApiKeyManager::parse_key_prefix("corp_test_abc"), None);
+        assert_eq!(ApiKeyManager::parse_key_prefix("sk_test_abc"), None);
     }
 }

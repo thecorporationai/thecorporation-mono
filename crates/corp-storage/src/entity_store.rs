@@ -47,11 +47,10 @@ pub enum Backend {
         /// Arc-backed connection manager — safe to clone and share across
         /// threads/tasks.
         pool: ConnectionManager,
-        /// Optional S3 durable backend for write-through and read-fallback.
-        /// Set to `None` when S3 is not configured. When present, every blob
-        /// and commit entry is durably persisted to S3 after the KV write
-        /// succeeds, and KV read misses fall back to S3.
-        s3: Option<std::sync::Arc<crate::s3::S3Backend>>,
+        /// Optional S3 backend for durable blob/commit storage.
+        /// When present, every KV write is also persisted to S3 (best-effort).
+        #[cfg(feature = "s3")]
+        s3: Option<Arc<crate::s3::S3Backend>>,
     },
 }
 
@@ -126,15 +125,23 @@ impl EntityStore {
                     )));
                 }
                 crate::kv::init_entity(&mut con, &ws, &ent).await?;
+                let files = &[("init".to_owned(), initial_data_owned)];
                 crate::kv::write_files(
                     &mut con,
                     &ws,
                     &ent,
                     "main",
-                    &[("init".to_owned(), initial_data_owned)],
+                    files,
                     "initialise entity store",
                 )
                 .await?;
+
+                // Best-effort S3 durability: persist blobs and a commit
+                // entry so the KV state can be rebuilt from S3.
+                #[cfg(feature = "s3")]
+                if let Backend::Kv { s3: Some(s3), .. } = &backend {
+                    sync_files_to_s3(s3, &mut con, &ws, &ent, "main", files, "initialise entity store").await;
+                }
             }
 
             #[allow(unreachable_patterns)]
@@ -338,45 +345,11 @@ impl EntityStore {
             }
 
             #[cfg(feature = "kv")]
-            Backend::Kv { pool, s3, .. } => {
+            Backend::Kv { pool, .. } => {
                 let mut con = pool.clone();
                 let ws = self.workspace_id.to_string();
                 let ent = self.entity_id.to_string();
-
-                // Try KV first.
-                match crate::kv::read_blob(&mut con, &ws, &ent, branch, path).await {
-                    Ok(bytes) => Ok(bytes),
-                    Err(StorageError::NotFound(_)) => {
-                        // KV miss — try S3 fallback if configured.
-                        if let Some(s3) = s3 {
-                            let blob_sha: Option<String> = {
-                                use redis::AsyncCommands;
-                                con.hget(
-                                    format!("corp:{}:{}:tree:{}", ws, ent, branch),
-                                    path,
-                                ).await.ok()
-                            };
-                            if let Some(sha) = blob_sha {
-                                match s3.get_blob(&sha).await {
-                                    Ok(bytes) => {
-                                        // Re-cache in KV for next time.
-                                        let blob_key = format!("corp:{}:{}:blob:{}", ws, ent, sha);
-                                        let _: std::result::Result<(), _> = {
-                                            use redis::AsyncCommands;
-                                            con.set::<_, _, ()>(&blob_key, bytes.as_slice()).await
-                                        };
-                                        return Ok(bytes);
-                                    }
-                                    Err(e) => {
-                                        tracing::warn!(%ws, %ent, path, error = %e, "S3 fallback failed");
-                                    }
-                                }
-                            }
-                        }
-                        Err(StorageError::NotFound(format!("path '{}' on branch '{}'", path, branch)))
-                    }
-                    Err(e) => Err(e),
-                }
+                crate::kv::read_blob(&mut con, &ws, &ent, branch, path).await
             }
 
             #[allow(unreachable_patterns)]
@@ -406,48 +379,25 @@ impl EntityStore {
             }
 
             #[cfg(feature = "kv")]
-            Backend::Kv { pool, s3, .. } => {
+            Backend::Kv { pool, .. } => {
                 let mut con = pool.clone();
                 let ws = self.workspace_id.to_string();
                 let ent = self.entity_id.to_string();
-
-                // Write to KV (the hot path).
+                let files = &[(path.to_owned(), data)];
                 crate::kv::write_files(
                     &mut con,
                     &ws,
                     &ent,
                     branch,
-                    &[(path.to_owned(), data.clone())],
+                    files,
                     message,
                 )
                 .await?;
 
-                // Write-through to S3 if configured (durable backup).
-                if let Some(s3) = s3 {
-                    let sha = {
-                        use sha2::{Digest, Sha256};
-                        format!("{:x}", Sha256::digest(&data))
-                    };
-                    // Best-effort: log but don't fail the write if S3 is down.
-                    if let Err(e) = s3.put_blob(&sha, &data).await {
-                        tracing::warn!(%ws, %ent, path, error = %e, "S3 write-through failed for blob");
-                    }
-                    // Persist the commit entry too.
-                    let seq_key = format!("corp:{}:{}:seq", ws, ent);
-                    let seq: u64 = {
-                        use redis::AsyncCommands;
-                        con.get(&seq_key).await.unwrap_or(0)
-                    };
-                    let commit_key = format!("corp:{}:{}:commit:{}", ws, ent, seq);
-                    let commit_data: Option<Vec<u8>> = {
-                        use redis::AsyncCommands;
-                        con.get(&commit_key).await.ok()
-                    };
-                    if let Some(cd) = commit_data {
-                        if let Err(e) = s3.put_commit(&ws, &ent, seq, &cd).await {
-                            tracing::warn!(%ws, %ent, seq, error = %e, "S3 write-through failed for commit");
-                        }
-                    }
+                // Best-effort S3 durability.
+                #[cfg(feature = "s3")]
+                if let Backend::Kv { s3: Some(s3), .. } = &self.backend {
+                    sync_files_to_s3(s3, &mut con, &ws, &ent, branch, files, message).await;
                 }
 
                 Ok(())
@@ -523,5 +473,77 @@ impl EntityStore {
     /// The entity this store is scoped to.
     pub fn entity_id(&self) -> EntityId {
         self.entity_id
+    }
+}
+
+// ── S3 sync helper ──────────────────────────────────────────────────────────
+
+/// Best-effort sync of written files to S3 for durability.
+///
+/// Persists each file as a content-addressed blob and writes a commit entry
+/// so the KV state can be fully rebuilt from S3 alone.  The current sequence
+/// number is read from Redis (it was just incremented by `kv::write_files`).
+///
+/// All S3 errors are logged and swallowed: the KV store is the primary and
+/// S3 is the durable backup.
+#[cfg(all(feature = "kv", feature = "s3"))]
+async fn sync_files_to_s3(
+    s3: &crate::s3::S3Backend,
+    con: &mut redis::aio::ConnectionManager,
+    ws: &str,
+    ent: &str,
+    branch: &str,
+    files: &[(String, Vec<u8>)],
+    message: &str,
+) {
+    use std::collections::HashMap;
+
+    let mut file_shas: HashMap<String, String> = HashMap::with_capacity(files.len());
+
+    for (path, data) in files {
+        let sha = crate::kv::sha256_hex(data);
+        if let Err(e) = s3.put_blob(&sha, data).await {
+            tracing::warn!(
+                sha,
+                path,
+                ws,
+                ent,
+                error = %e,
+                "S3 put_blob failed (best-effort), skipping"
+            );
+        }
+        file_shas.insert(path.clone(), sha);
+    }
+
+    // Read the current sequence number that kv::write_files just set.
+    let seq: u64 = {
+        use redis::AsyncCommands;
+        match con
+            .get::<_, Option<u64>>(format!("corp:{}:{}:seq", ws, ent))
+            .await
+        {
+            Ok(Some(s)) => s,
+            _ => return, // cannot determine seq — skip commit entry
+        }
+    };
+
+    let entry = crate::kv::CommitEntry {
+        seq,
+        branch: branch.to_owned(),
+        files: file_shas,
+        message: message.to_owned(),
+        timestamp: chrono::Utc::now().timestamp(),
+    };
+
+    if let Ok(entry_json) = serde_json::to_vec(&entry) {
+        if let Err(e) = s3.put_commit(ws, ent, seq, &entry_json).await {
+            tracing::warn!(
+                ws,
+                ent,
+                seq,
+                error = %e,
+                "S3 put_commit failed (best-effort), skipping"
+            );
+        }
     }
 }

@@ -1,5 +1,5 @@
-target/
-node_modules/
-dist/
-*.lock
-.astro/
+/target
+**/*.rs.bk
+*.swp
+*.swo
+.DS_Store

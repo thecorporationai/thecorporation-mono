@@ -113,15 +113,17 @@ impl TestCtx {
 
         let token = mint_token(&jwt_config, workspace_id);
 
+        let storage_backend = StorageBackend::Kv {
+            redis_url,
+            #[cfg(feature = "s3")]
+            s3_bucket: None,
+        };
+
         let state = AppState {
             data_dir: data_dir.clone(),
             jwt_config,
             api_key_resolver: Arc::new(NoopApiKeyResolver),
-            storage_backend: StorageBackend::Kv {
-                redis_url,
-                #[cfg(feature = "s3")]
-                s3_bucket: None,
-            },
+            storage_backend: storage_backend.clone(),
         };
 
         Self {
@@ -129,11 +131,7 @@ impl TestCtx {
             workspace_id,
             token,
             data_dir,
-            storage_backend: StorageBackend::Kv {
-                redis_url: std::env::var("REDIS_URL").unwrap_or_default(),
-                #[cfg(feature = "s3")]
-                s3_bucket: None,
-            },
+            storage_backend,
             _tempdir: dir,
         }
     }
@@ -240,17 +238,32 @@ async fn ensure_workspace(ctx: &TestCtx) {
     use std::path::PathBuf;
     use corp_storage::workspace_store::{Backend as WsBackend, WorkspaceStore};
 
-    let ws_path = PathBuf::from(&ctx.data_dir)
-        .join(ctx.workspace_id.to_string())
-        .join("workspace");
+    match &ctx.storage_backend {
+        StorageBackend::Git => {
+            let ws_path = PathBuf::from(&ctx.data_dir)
+                .join(ctx.workspace_id.to_string())
+                .join("workspace");
 
-    std::fs::create_dir_all(&ws_path).expect("create workspace dir");
+            std::fs::create_dir_all(&ws_path).expect("create workspace dir");
 
-    let backend = WsBackend::Git {
-        repo_path: Arc::new(ws_path),
-    };
+            let backend = WsBackend::Git {
+                repo_path: Arc::new(ws_path),
+            };
 
-    let _ = WorkspaceStore::init(backend, ctx.workspace_id).await;
+            let _ = WorkspaceStore::init(backend, ctx.workspace_id).await;
+        }
+        StorageBackend::Kv { redis_url, .. } => {
+            let client = redis::Client::open(redis_url.as_str())
+                .expect("open redis client");
+            let manager = redis::aio::ConnectionManager::new(client)
+                .await
+                .expect("create redis connection manager");
+
+            let backend = WsBackend::Kv { pool: manager };
+
+            let _ = WorkspaceStore::init(backend, ctx.workspace_id).await;
+        }
+    }
 }
 
 // ── Scenario helpers ──────────────────────────────────────────────────────────

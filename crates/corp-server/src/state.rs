@@ -268,33 +268,30 @@ impl AppState {
                 })
             }
 
-            StorageBackend::Kv { redis_url, .. } => {
+            StorageBackend::Kv {
+                redis_url,
+                #[cfg(feature = "s3")]
+                s3_bucket,
+            } => {
                 let manager = kv_connection_manager(redis_url).await?;
 
-                // Build the S3 durable backend if a bucket is configured.
                 #[cfg(feature = "s3")]
-                let s3 = {
-                    let s3_bucket = match &self.storage_backend {
-                        StorageBackend::Kv { s3_bucket, .. } => s3_bucket.clone(),
-                        _ => None,
-                    };
-                    if let Some(bucket) = s3_bucket {
-                        let prefix = format!("{}/{}", workspace_id, entity_id);
-                        match corp_storage::s3::S3Backend::new(bucket, prefix).await {
-                            Ok(backend) => Some(std::sync::Arc::new(backend)),
-                            Err(e) => {
-                                tracing::warn!(error = %e, "S3 init failed, running without durability");
-                                None
-                            }
-                        }
-                    } else {
-                        None
-                    }
+                let s3 = if let Some(bucket) = s3_bucket {
+                    let prefix = format!("{}/{}", workspace_id, entity_id);
+                    Some(std::sync::Arc::new(
+                        corp_storage::s3::S3Backend::new(bucket.clone(), prefix)
+                            .await
+                            .map_err(AppError::Storage)?,
+                    ))
+                } else {
+                    None
                 };
-                #[cfg(not(feature = "s3"))]
-                let s3: Option<std::sync::Arc<corp_storage::s3::S3Backend>> = None;
 
-                Ok(EntityBackend::Kv { pool: manager, s3 })
+                Ok(EntityBackend::Kv {
+                    pool: manager,
+                    #[cfg(feature = "s3")]
+                    s3,
+                })
             }
         }
     }

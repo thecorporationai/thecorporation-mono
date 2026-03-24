@@ -9,3 +9,4 @@ pub mod contacts;
 pub mod agents;
 pub mod work_items;
 pub mod services;
+pub mod command_registry;

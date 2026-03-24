@@ -46,7 +46,7 @@ const TEST_JWT_SECRET: &[u8] = b"test-secret-do-not-use-in-production";
 /// A no-op API key resolver that always rejects API key auth.
 ///
 /// Integration tests use JWT tokens exclusively; the resolver is only
-/// invoked when the `Authorization` header carries an `corp_live_*` prefix or
+/// invoked when the `Authorization` header carries an `sk_live_*` prefix or
 /// when the `X-Api-Key` header is present.
 struct NoopApiKeyResolver;
 

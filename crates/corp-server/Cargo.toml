@@ -18,9 +18,13 @@ path = "src/main.rs"
 name = "corp_server"
 path = "src/lib.rs"
 
+[features]
+default = ["s3"]
+s3 = ["corp-storage/s3"]
+
 [dependencies]
 corp-core = { workspace = true }
-corp-storage = { workspace = true, features = ["git", "kv", "s3"] }
+corp-storage = { workspace = true, features = ["git", "kv"] }
 corp-auth = { workspace = true }
 
 serde = { workspace = true }

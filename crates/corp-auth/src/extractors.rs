@@ -2,8 +2,8 @@
 //!
 //! # Token resolution order
 //!
-//! 1. `Authorization: Bearer corp_live_…` → API key path.
-//! 2. `X-Api-Key: corp_live_…`           → API key path.
+//! 1. `Authorization: Bearer sk_live_…` → API key path.
+//! 2. `X-Api-Key: sk_live_…`           → API key path.
 //! 3. `Authorization: Bearer <jwt>`     → JWT path.
 //!
 //! # Scoped extractors
@@ -54,7 +54,7 @@ pub trait ApiKeyResolver: Send + Sync + 'static {
 // ── Principal extractor ────────────────────────────────────────────────────
 
 /// Bearer-token / API-key prefix used to identify live secret keys.
-const API_KEY_PREFIX: &str = "corp_live_";
+const API_KEY_PREFIX: &str = "sk_live_";
 
 impl<S> FromRequestParts<S> for Principal
 where
