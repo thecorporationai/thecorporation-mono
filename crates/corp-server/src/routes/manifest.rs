@@ -6,7 +6,7 @@
 
 use axum::routing::get;
 use axum::{Json, Router};
-use corp_core::command_registry::{build_manifest, CommandManifest};
+use corp_core::command_registry::{CommandManifest, build_manifest};
 
 use crate::state::AppState;
 

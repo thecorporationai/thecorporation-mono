@@ -2,8 +2,8 @@
 
 use serde_json::json;
 
-use crate::output;
 use super::Context;
+use crate::output;
 
 // ── WorkItemsCommand ──────────────────────────────────────────────────────────
 
@@ -109,7 +109,13 @@ pub async fn run(cmd: WorkItemsCommand, ctx: &Context) -> anyhow::Result<()> {
             output::print_value(&value, mode);
         }
 
-        WorkItemsCommand::Create { title, category, description, deadline, asap } => {
+        WorkItemsCommand::Create {
+            title,
+            category,
+            description,
+            deadline,
+            asap,
+        } => {
             let path = format!("/v1/entities/{entity_id}/work-items");
             let body = json!({
                 "title": title,
@@ -123,7 +129,11 @@ pub async fn run(cmd: WorkItemsCommand, ctx: &Context) -> anyhow::Result<()> {
             output::print_success("Work item created.", mode);
         }
 
-        WorkItemsCommand::Claim { item_ref, claimed_by, claim_ttl_seconds } => {
+        WorkItemsCommand::Claim {
+            item_ref,
+            claimed_by,
+            claim_ttl_seconds,
+        } => {
             let path = format!("/v1/entities/{entity_id}/work-items/{item_ref}/claim");
             let body = json!({
                 "claimed_by": claimed_by,
@@ -141,7 +151,11 @@ pub async fn run(cmd: WorkItemsCommand, ctx: &Context) -> anyhow::Result<()> {
             output::print_success("Work item released.", mode);
         }
 
-        WorkItemsCommand::Complete { item_ref, completed_by, result } => {
+        WorkItemsCommand::Complete {
+            item_ref,
+            completed_by,
+            result,
+        } => {
             let path = format!("/v1/entities/{entity_id}/work-items/{item_ref}/complete");
             let body = json!({
                 "completed_by": completed_by,

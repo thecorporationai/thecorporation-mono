@@ -3,7 +3,7 @@
 //! Uses HMAC-SHA256 (HS256) with configurable expiry.  All expiry validation
 //! is handled here so callers never receive an un-checked `Claims` value.
 
-use jsonwebtoken::{DecodingKey, EncodingKey, Header, Validation, Algorithm};
+use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, Validation};
 
 use corp_core::auth::Claims;
 
@@ -78,19 +78,15 @@ impl JwtConfig {
         // No audience / issuer checks at this layer — callers can add them.
         validation.set_required_spec_claims(&["exp", "sub"]);
 
-        jsonwebtoken::decode::<Claims>(
-            token,
-            &DecodingKey::from_secret(&self.secret),
-            &validation,
-        )
-        .map(|data| data.claims)
-        .map_err(|e| {
-            use jsonwebtoken::errors::ErrorKind;
-            match e.kind() {
-                ErrorKind::ExpiredSignature => AuthError::ExpiredToken,
-                _ => AuthError::InvalidToken,
-            }
-        })
+        jsonwebtoken::decode::<Claims>(token, &DecodingKey::from_secret(&self.secret), &validation)
+            .map(|data| data.claims)
+            .map_err(|e| {
+                use jsonwebtoken::errors::ErrorKind;
+                match e.kind() {
+                    ErrorKind::ExpiredSignature => AuthError::ExpiredToken,
+                    _ => AuthError::InvalidToken,
+                }
+            })
     }
 }
 

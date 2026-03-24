@@ -13,15 +13,15 @@
 //! chronological order without a sort step.
 
 use aws_config::BehaviorVersion;
-use aws_sdk_s3::primitives::ByteStream;
 use aws_sdk_s3::Client;
+use aws_sdk_s3::primitives::ByteStream;
 
 #[cfg(feature = "kv")]
 use redis::aio::ConnectionManager;
 
 use crate::error::StorageError;
 #[cfg(feature = "kv")]
-use crate::kv::{self, CommitEntry, BLOB_TTL_SECS};
+use crate::kv::{self, BLOB_TTL_SECS, CommitEntry};
 
 // ── Error mapping ─────────────────────────────────────────────────────────────
 
@@ -53,8 +53,8 @@ impl S3Backend {
 
         // Support custom S3-compatible endpoints (RustFS, MinIO, etc.)
         // via the AWS_ENDPOINT_URL or CORP_S3_ENDPOINT env vars.
-        if let Ok(endpoint) = std::env::var("AWS_ENDPOINT_URL")
-            .or_else(|_| std::env::var("CORP_S3_ENDPOINT"))
+        if let Ok(endpoint) =
+            std::env::var("AWS_ENDPOINT_URL").or_else(|_| std::env::var("CORP_S3_ENDPOINT"))
         {
             config_loader = config_loader.endpoint_url(&endpoint);
         }
@@ -63,13 +63,22 @@ impl S3Backend {
         let client = Client::from_conf(
             aws_sdk_s3::Config::builder()
                 .behavior_version(BehaviorVersion::latest())
-                .region(config.region().cloned().unwrap_or_else(|| aws_sdk_s3::config::Region::new("us-east-1")))
+                .region(
+                    config
+                        .region()
+                        .cloned()
+                        .unwrap_or_else(|| aws_sdk_s3::config::Region::new("us-east-1")),
+                )
                 .credentials_provider(config.credentials_provider().unwrap().clone())
                 .endpoint_url(config.endpoint_url().unwrap_or("https://s3.amazonaws.com"))
-                .force_path_style(true)  // Required for S3-compatible stores
+                .force_path_style(true) // Required for S3-compatible stores
                 .build(),
         );
-        Ok(Self { client, bucket, prefix })
+        Ok(Self {
+            client,
+            bucket,
+            prefix,
+        })
     }
 
     // ── Key helpers ───────────────────────────────────────────────────────────
@@ -288,8 +297,7 @@ impl S3Backend {
         let mut max_seq: u64 = 0;
 
         for (seq, data) in &commits {
-            let entry: CommitEntry =
-                serde_json::from_slice(data).map_err(StorageError::from)?;
+            let entry: CommitEntry = serde_json::from_slice(data).map_err(StorageError::from)?;
 
             max_seq = max_seq.max(*seq);
 
@@ -322,15 +330,15 @@ impl S3Backend {
         // Flush reconstructed trees into KV and re-cache blobs.
         for (branch, tree) in &branch_trees {
             // Collect all unique blob SHAs that are still alive in the tree.
-            let shas: std::collections::HashSet<&str> =
-                tree.values().map(|s| s.as_str()).collect();
+            let shas: std::collections::HashSet<&str> = tree.values().map(|s| s.as_str()).collect();
 
             // Re-cache blobs from S3.
             for sha in shas {
                 let blob_key = format!("corp:{}:{}:blob:{}", ws, ent, sha);
-                let already: bool = con.exists(&blob_key).await.map_err(|e| {
-                    StorageError::KvError(e.to_string())
-                })?;
+                let already: bool = con
+                    .exists(&blob_key)
+                    .await
+                    .map_err(|e| StorageError::KvError(e.to_string()))?;
 
                 if !already {
                     match self.get_blob(sha).await {
@@ -338,9 +346,9 @@ impl S3Backend {
                             let mut pipe = redis::pipe();
                             pipe.set(&blob_key, bytes.as_slice())
                                 .expire(&blob_key, BLOB_TTL_SECS as i64);
-                            pipe.query_async::<()>(con).await.map_err(|e| {
-                                StorageError::KvError(e.to_string())
-                            })?;
+                            pipe.query_async::<()>(con)
+                                .await
+                                .map_err(|e| StorageError::KvError(e.to_string()))?;
                         }
                         Err(StorageError::NotFound(_)) => {
                             // Blob may be referenced but not yet uploaded to S3 in this
@@ -359,9 +367,9 @@ impl S3Backend {
                 for (path, sha) in tree {
                     pipe.hset(&tree_key, path, sha);
                 }
-                pipe.query_async::<()>(con).await.map_err(|e| {
-                    StorageError::KvError(e.to_string())
-                })?;
+                pipe.query_async::<()>(con)
+                    .await
+                    .map_err(|e| StorageError::KvError(e.to_string()))?;
             }
         }
 

@@ -15,11 +15,11 @@ use axum::routing::{get, post};
 use axum::{Json, Router};
 use serde::Deserialize;
 
+use crate::error::AppError;
+use crate::state::AppState;
 use corp_auth::{RequireContactsRead, RequireContactsWrite};
 use corp_core::contacts::{CapTableAccess, Contact, ContactCategory, ContactType};
 use corp_core::ids::{ContactId, EntityId};
-use crate::error::AppError;
-use crate::state::AppState;
 
 // ── Router ────────────────────────────────────────────────────────────────────
 

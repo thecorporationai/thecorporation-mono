@@ -68,12 +68,7 @@ mod tests {
     use super::*;
 
     fn make_legal_entity(role: LegalEntityRole) -> LegalEntity {
-        LegalEntity::new(
-            WorkspaceId::new(),
-            Some(EntityId::new()),
-            "Acme Corp",
-            role,
-        )
+        LegalEntity::new(WorkspaceId::new(), Some(EntityId::new()), "Acme Corp", role)
     }
 
     #[test]

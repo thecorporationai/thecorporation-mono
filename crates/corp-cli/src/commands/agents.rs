@@ -2,13 +2,15 @@
 
 use serde_json::json;
 
-use crate::output;
 use super::Context;
+use crate::output;
 
 // ── AgentsCommand ─────────────────────────────────────────────────────────────
 
 #[derive(clap::Subcommand)]
-#[command(long_about = "Manage AI agents. Agents can be scoped to entities and given skills to automate tasks.")]
+#[command(
+    long_about = "Manage AI agents. Agents can be scoped to entities and given skills to automate tasks."
+)]
 pub enum AgentsCommand {
     /// List agents in the workspace
     List,
@@ -111,7 +113,12 @@ pub async fn run(cmd: AgentsCommand, ctx: &Context) -> anyhow::Result<()> {
             output::print_value(&value, mode);
         }
 
-        AgentsCommand::Create { name, prompt, model, entity_id } => {
+        AgentsCommand::Create {
+            name,
+            prompt,
+            model,
+            entity_id,
+        } => {
             let body = json!({
                 "name": name,
                 "system_prompt": prompt,
@@ -123,18 +130,37 @@ pub async fn run(cmd: AgentsCommand, ctx: &Context) -> anyhow::Result<()> {
             output::print_success("Agent created.", mode);
         }
 
-        AgentsCommand::Update { agent_ref, name, prompt, model } => {
+        AgentsCommand::Update {
+            agent_ref,
+            name,
+            prompt,
+            model,
+        } => {
             let path = format!("/v1/agents/{agent_ref}");
             let mut patch = serde_json::Map::new();
-            if let Some(n) = name { patch.insert("name".into(), json!(n)); }
-            if let Some(p) = prompt { patch.insert("system_prompt".into(), json!(p)); }
-            if let Some(m) = model { patch.insert("model".into(), json!(m)); }
-            let value = ctx.client.patch(&path, &serde_json::Value::Object(patch)).await?;
+            if let Some(n) = name {
+                patch.insert("name".into(), json!(n));
+            }
+            if let Some(p) = prompt {
+                patch.insert("system_prompt".into(), json!(p));
+            }
+            if let Some(m) = model {
+                patch.insert("model".into(), json!(m));
+            }
+            let value = ctx
+                .client
+                .patch(&path, &serde_json::Value::Object(patch))
+                .await?;
             output::print_value(&value, mode);
             output::print_success("Agent updated.", mode);
         }
 
-        AgentsCommand::AddSkill { agent_ref, name, description, instructions } => {
+        AgentsCommand::AddSkill {
+            agent_ref,
+            name,
+            description,
+            instructions,
+        } => {
             let path = format!("/v1/agents/{agent_ref}/skills");
             let body = json!({
                 "name": name,

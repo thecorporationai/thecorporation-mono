@@ -236,7 +236,10 @@ mod tests {
         .unwrap()
     }
 
-    fn make_profile_with_fye(month: u32, day: u32) -> Result<GovernanceProfile, GovernanceProfileError> {
+    fn make_profile_with_fye(
+        month: u32,
+        day: u32,
+    ) -> Result<GovernanceProfile, GovernanceProfileError> {
         GovernanceProfile::new(
             EntityId::new(),
             "Wyoming LLC".into(),
@@ -434,7 +437,10 @@ mod tests {
             None,
             None,
         );
-        assert_eq!(result.unwrap_err(), GovernanceProfileError::JurisdictionEmpty);
+        assert_eq!(
+            result.unwrap_err(),
+            GovernanceProfileError::JurisdictionEmpty
+        );
     }
 
     #[test]
@@ -622,8 +628,14 @@ mod tests {
     #[test]
     fn update_twice_increments_to_3() {
         let mut p = minimal_profile();
-        p.update(|profile| { profile.board_size = Some(3); }).unwrap();
-        p.update(|profile| { profile.board_size = Some(5); }).unwrap();
+        p.update(|profile| {
+            profile.board_size = Some(3);
+        })
+        .unwrap();
+        p.update(|profile| {
+            profile.board_size = Some(5);
+        })
+        .unwrap();
         assert_eq!(p.version, 3);
         assert_eq!(p.board_size, Some(5));
     }

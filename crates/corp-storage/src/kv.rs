@@ -23,8 +23,8 @@
 //! corp:{ws}:entities                → SET of entity IDs
 //! ```
 
-use redis::aio::ConnectionManager;
 use redis::AsyncCommands;
+use redis::aio::ConnectionManager;
 use sha2::{Digest, Sha256};
 
 use crate::error::StorageError;
@@ -137,15 +137,11 @@ pub async fn read_blob(
         .await
         .map_err(kv_err)?;
 
-    let sha = blob_sha.ok_or_else(|| {
-        StorageError::NotFound(format!("path '{}' on branch '{}'", path, branch))
-    })?;
+    let sha = blob_sha
+        .ok_or_else(|| StorageError::NotFound(format!("path '{}' on branch '{}'", path, branch)))?;
 
     // Fetch the blob bytes.
-    let bytes: Option<Vec<u8>> = con
-        .get(key_blob(ws, ent, &sha))
-        .await
-        .map_err(kv_err)?;
+    let bytes: Option<Vec<u8>> = con.get(key_blob(ws, ent, &sha)).await.map_err(kv_err)?;
 
     bytes.ok_or_else(|| StorageError::NotFound(format!("blob '{}' for path '{}'", sha, path)))
 }
@@ -182,7 +178,10 @@ pub async fn write_files(
         // Only set an expiry when a non-zero TTL is configured. Calling EXPIRE
         // with 0 would delete the key immediately.
         if BLOB_TTL_SECS > 0 {
-            let _: bool = con.expire(&blob_key, BLOB_TTL_SECS as i64).await.map_err(kv_err)?;
+            let _: bool = con
+                .expire(&blob_key, BLOB_TTL_SECS as i64)
+                .await
+                .map_err(kv_err)?;
         }
 
         blob_shas.push((path.clone(), sha));
@@ -231,8 +230,7 @@ pub async fn write_files(
         pipe.set(&ref_key, &commit_sha).ignore();
 
         // Execute.  Returns `None` on WATCH conflict, `Some(replies)` on success.
-        let result: Option<(u64,)> =
-            pipe.query_async(con).await.map_err(kv_err)?;
+        let result: Option<(u64,)> = pipe.query_async(con).await.map_err(kv_err)?;
 
         match result {
             None => {
@@ -255,8 +253,7 @@ pub async fn write_files(
                     message: message.to_owned(),
                     timestamp: now,
                 };
-                let entry_json =
-                    serde_json::to_string(&entry).map_err(StorageError::from)?;
+                let entry_json = serde_json::to_string(&entry).map_err(StorageError::from)?;
                 con.set::<_, _, ()>(key_commit(ws, ent, seq), &entry_json)
                     .await
                     .map_err(kv_err)?;
@@ -358,8 +355,7 @@ pub async fn delete_file(
         pipe.hdel(&tree_key, path).ignore();
         pipe.set(&ref_key, &commit_sha).ignore();
 
-        let result: Option<(u64,)> =
-            pipe.query_async(con).await.map_err(kv_err)?;
+        let result: Option<(u64,)> = pipe.query_async(con).await.map_err(kv_err)?;
 
         match result {
             None => {
@@ -382,8 +378,7 @@ pub async fn delete_file(
                     message: message.to_owned(),
                     timestamp: now,
                 };
-                let entry_json =
-                    serde_json::to_string(&entry).map_err(StorageError::from)?;
+                let entry_json = serde_json::to_string(&entry).map_err(StorageError::from)?;
                 con.set::<_, _, ()>(key_commit(ws, ent, seq), &entry_json)
                     .await
                     .map_err(kv_err)?;

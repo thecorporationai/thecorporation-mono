@@ -4,9 +4,9 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use crate::ids::{EntityId, IntentId, WorkspaceId};
-use crate::governance::capability::AuthorityTier;
 use super::types::IntentStatus;
+use crate::governance::capability::AuthorityTier;
+use crate::ids::{EntityId, IntentId, WorkspaceId};
 
 // ── Error ─────────────────────────────────────────────────────────────────────
 
@@ -255,7 +255,10 @@ mod tests {
     #[test]
     fn authorize_from_pending_is_error() {
         let mut intent = pending_intent();
-        assert!(matches!(intent.authorize(), Err(IntentError::NotEvaluated(_))));
+        assert!(matches!(
+            intent.authorize(),
+            Err(IntentError::NotEvaluated(_))
+        ));
     }
 
     #[test]
@@ -263,7 +266,10 @@ mod tests {
         let mut intent = pending_intent();
         intent.evaluate().unwrap();
         intent.authorize().unwrap();
-        assert!(matches!(intent.authorize(), Err(IntentError::NotEvaluated(_))));
+        assert!(matches!(
+            intent.authorize(),
+            Err(IntentError::NotEvaluated(_))
+        ));
     }
 
     // ── mark_executed() ──────────────────────────────────────────────────────
@@ -281,14 +287,20 @@ mod tests {
     #[test]
     fn mark_executed_from_pending_is_error() {
         let mut intent = pending_intent();
-        assert!(matches!(intent.mark_executed(), Err(IntentError::NotAuthorized(_))));
+        assert!(matches!(
+            intent.mark_executed(),
+            Err(IntentError::NotAuthorized(_))
+        ));
     }
 
     #[test]
     fn mark_executed_from_evaluated_is_error() {
         let mut intent = pending_intent();
         intent.evaluate().unwrap();
-        assert!(matches!(intent.mark_executed(), Err(IntentError::NotAuthorized(_))));
+        assert!(matches!(
+            intent.mark_executed(),
+            Err(IntentError::NotAuthorized(_))
+        ));
     }
 
     // ── mark_failed() ────────────────────────────────────────────────────────
@@ -325,14 +337,20 @@ mod tests {
         intent.evaluate().unwrap();
         intent.authorize().unwrap();
         intent.mark_executed().unwrap();
-        assert!(matches!(intent.mark_failed("late"), Err(IntentError::AlreadyTerminal(_))));
+        assert!(matches!(
+            intent.mark_failed("late"),
+            Err(IntentError::AlreadyTerminal(_))
+        ));
     }
 
     #[test]
     fn mark_failed_from_cancelled_is_error() {
         let mut intent = pending_intent();
         intent.cancel().unwrap();
-        assert!(matches!(intent.mark_failed("late"), Err(IntentError::AlreadyTerminal(_))));
+        assert!(matches!(
+            intent.mark_failed("late"),
+            Err(IntentError::AlreadyTerminal(_))
+        ));
     }
 
     // ── cancel() ─────────────────────────────────────────────────────────────
@@ -368,14 +386,20 @@ mod tests {
         intent.evaluate().unwrap();
         intent.authorize().unwrap();
         intent.mark_executed().unwrap();
-        assert!(matches!(intent.cancel(), Err(IntentError::AlreadyTerminal(_))));
+        assert!(matches!(
+            intent.cancel(),
+            Err(IntentError::AlreadyTerminal(_))
+        ));
     }
 
     #[test]
     fn cancel_from_failed_is_error() {
         let mut intent = pending_intent();
         intent.mark_failed("oops").unwrap();
-        assert!(matches!(intent.cancel(), Err(IntentError::AlreadyTerminal(_))));
+        assert!(matches!(
+            intent.cancel(),
+            Err(IntentError::AlreadyTerminal(_))
+        ));
     }
 
     // ── is_terminal() ────────────────────────────────────────────────────────
@@ -435,12 +459,30 @@ mod tests {
 
     #[test]
     fn intent_status_serde_values() {
-        assert_eq!(serde_json::to_string(&IntentStatus::Pending).unwrap(), r#""pending""#);
-        assert_eq!(serde_json::to_string(&IntentStatus::Evaluated).unwrap(), r#""evaluated""#);
-        assert_eq!(serde_json::to_string(&IntentStatus::Authorized).unwrap(), r#""authorized""#);
-        assert_eq!(serde_json::to_string(&IntentStatus::Executed).unwrap(), r#""executed""#);
-        assert_eq!(serde_json::to_string(&IntentStatus::Failed).unwrap(), r#""failed""#);
-        assert_eq!(serde_json::to_string(&IntentStatus::Cancelled).unwrap(), r#""cancelled""#);
+        assert_eq!(
+            serde_json::to_string(&IntentStatus::Pending).unwrap(),
+            r#""pending""#
+        );
+        assert_eq!(
+            serde_json::to_string(&IntentStatus::Evaluated).unwrap(),
+            r#""evaluated""#
+        );
+        assert_eq!(
+            serde_json::to_string(&IntentStatus::Authorized).unwrap(),
+            r#""authorized""#
+        );
+        assert_eq!(
+            serde_json::to_string(&IntentStatus::Executed).unwrap(),
+            r#""executed""#
+        );
+        assert_eq!(
+            serde_json::to_string(&IntentStatus::Failed).unwrap(),
+            r#""failed""#
+        );
+        assert_eq!(
+            serde_json::to_string(&IntentStatus::Cancelled).unwrap(),
+            r#""cancelled""#
+        );
     }
 
     #[test]

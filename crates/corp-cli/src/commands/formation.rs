@@ -2,9 +2,9 @@
 
 use serde_json::json;
 
+use super::Context;
 use crate::output;
 use crate::refs::RefKind;
-use super::Context;
 
 #[derive(clap::Subcommand)]
 #[command(long_about = "Entity formation workflow
@@ -22,7 +22,9 @@ Typical workflow:
   corp form advance <ID>          # → active")]
 pub enum FormCommand {
     /// Start a new entity formation. Creates the entity and begins the formation workflow.
-    #[command(after_help = "Examples:\n  corp form create --name \"Acme Corp\" --entity-type c_corp --jurisdiction DE\n  corp form create --name \"My LLC\" --entity-type llc --jurisdiction WY")]
+    #[command(
+        after_help = "Examples:\n  corp form create --name \"Acme Corp\" --entity-type c_corp --jurisdiction DE\n  corp form create --name \"My LLC\" --entity-type llc --jurisdiction WY"
+    )]
     Create {
         /// Legal name of the entity
         #[arg(long, help = "Legal name of the entity")]
@@ -31,7 +33,11 @@ pub enum FormCommand {
         #[arg(long, default_value = "c_corp", value_parser = ["c_corp", "llc"], help = "Entity type: c_corp or llc")]
         entity_type: String,
         /// US state code for jurisdiction of formation (e.g. DE, CA, WY)
-        #[arg(long, default_value = "DE", help = "US state code for jurisdiction of formation (e.g. DE, CA, WY)")]
+        #[arg(
+            long,
+            default_value = "DE",
+            help = "US state code for jurisdiction of formation (e.g. DE, CA, WY)"
+        )]
         jurisdiction: String,
     },
     /// Advance the formation state machine to the next stage. Preconditions vary by state.
@@ -73,7 +79,10 @@ pub enum FormCommand {
         #[arg(long, help = "Organizational title (e.g. CEO, Director, Incorporator)")]
         signer_role: String,
         /// Email address of the signer (used for duplicate detection)
-        #[arg(long, help = "Email address of the signer (used for duplicate detection)")]
+        #[arg(
+            long,
+            help = "Email address of the signer (used for duplicate detection)"
+        )]
         signer_email: String,
         /// Typed signature (e.g. the signer's name)
         #[arg(long, help = "Typed signature (e.g. the signer's name)")]
@@ -117,7 +126,11 @@ pub enum FormCommand {
 pub async fn run(cmd: FormCommand, ctx: &Context) -> anyhow::Result<()> {
     let mode = ctx.mode();
     match cmd {
-        FormCommand::Create { name, entity_type, jurisdiction } => {
+        FormCommand::Create {
+            name,
+            entity_type,
+            jurisdiction,
+        } => {
             let body = json!({ "legal_name": name, "entity_type": entity_type, "jurisdiction": jurisdiction });
             let value = ctx.client.post("/v1/entities", &body).await?;
             ctx.remember(RefKind::Entity, &value);
@@ -126,7 +139,10 @@ pub async fn run(cmd: FormCommand, ctx: &Context) -> anyhow::Result<()> {
         }
         FormCommand::Advance { entity_id } => {
             let entity_id = ctx.resolve_ref(&entity_id, RefKind::Entity, None)?;
-            let value = ctx.client.post(&format!("/v1/formations/{entity_id}/advance"), &json!({})).await?;
+            let value = ctx
+                .client
+                .post(&format!("/v1/formations/{entity_id}/advance"), &json!({}))
+                .await?;
             ctx.remember(RefKind::Entity, &value);
             output::print_value(&value, mode);
             output::print_success("Formation advanced.", mode);
@@ -137,56 +153,101 @@ pub async fn run(cmd: FormCommand, ctx: &Context) -> anyhow::Result<()> {
             if ctx.json {
                 output::print_value(&value, mode);
             } else {
-                let status = value.get("formation_status").and_then(|v| v.as_str()).unwrap_or("unknown");
-                let name = value.get("legal_name").and_then(|v| v.as_str()).unwrap_or(&entity_id);
+                let status = value
+                    .get("formation_status")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("unknown");
+                let name = value
+                    .get("legal_name")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or(&entity_id);
                 output::kv("Entity", name, mode);
                 output::kv("Formation status", status, mode);
             }
         }
         FormCommand::Documents { entity_id } => {
             let entity_id = ctx.resolve_ref(&entity_id, RefKind::Entity, None)?;
-            let value = ctx.client.get(&format!("/v1/formations/{entity_id}/documents")).await?;
+            let value = ctx
+                .client
+                .get(&format!("/v1/formations/{entity_id}/documents"))
+                .await?;
             output::print_value(&value, mode);
         }
-        FormCommand::Document { entity_id, document_id } => {
+        FormCommand::Document {
+            entity_id,
+            document_id,
+        } => {
             let entity_id = ctx.resolve_ref(&entity_id, RefKind::Entity, None)?;
             let document_id = ctx.resolve_ref(&document_id, RefKind::Document, None)?;
-            let value = ctx.client.get(&format!("/v1/formations/{entity_id}/documents/{document_id}")).await?;
+            let value = ctx
+                .client
+                .get(&format!(
+                    "/v1/formations/{entity_id}/documents/{document_id}"
+                ))
+                .await?;
             output::print_value(&value, mode);
         }
-        FormCommand::Sign { document_ref, signer_name, signer_role, signer_email, signature_text, consent_text } => {
+        FormCommand::Sign {
+            document_ref,
+            signer_name,
+            signer_role,
+            signer_email,
+            signature_text,
+            consent_text,
+        } => {
             let document_ref = ctx.resolve_ref(&document_ref, RefKind::Document, None)?;
             let body = json!({
                 "signer_name": signer_name, "signer_role": signer_role,
                 "signer_email": signer_email, "signature_text": signature_text,
                 "consent_text": consent_text,
             });
-            let value = ctx.client.post(&format!("/v1/documents/{document_ref}/sign"), &body).await?;
+            let value = ctx
+                .client
+                .post(&format!("/v1/documents/{document_ref}/sign"), &body)
+                .await?;
             ctx.remember(RefKind::Document, &value);
             output::print_value(&value, mode);
             output::print_success("Document signed.", mode);
         }
         FormCommand::Filing { entity_id } => {
             let entity_id = ctx.resolve_ref(&entity_id, RefKind::Entity, None)?;
-            let value = ctx.client.get(&format!("/v1/formations/{entity_id}/filing")).await?;
+            let value = ctx
+                .client
+                .get(&format!("/v1/formations/{entity_id}/filing"))
+                .await?;
             output::print_value(&value, mode);
         }
-        FormCommand::ConfirmFiling { entity_id, confirmation_number } => {
+        FormCommand::ConfirmFiling {
+            entity_id,
+            confirmation_number,
+        } => {
             let entity_id = ctx.resolve_ref(&entity_id, RefKind::Entity, None)?;
             let body = json!({ "confirmation_number": confirmation_number });
-            let value = ctx.client.post(&format!("/v1/formations/{entity_id}/filing/confirm"), &body).await?;
+            let value = ctx
+                .client
+                .post(&format!("/v1/formations/{entity_id}/filing/confirm"), &body)
+                .await?;
             output::print_value(&value, mode);
             output::print_success("Filing confirmed.", mode);
         }
         FormCommand::Tax { entity_id } => {
             let entity_id = ctx.resolve_ref(&entity_id, RefKind::Entity, None)?;
-            let value = ctx.client.get(&format!("/v1/formations/{entity_id}/tax")).await?;
+            let value = ctx
+                .client
+                .get(&format!("/v1/formations/{entity_id}/tax"))
+                .await?;
             output::print_value(&value, mode);
         }
         FormCommand::ConfirmEin { entity_id, ein } => {
             let entity_id = ctx.resolve_ref(&entity_id, RefKind::Entity, None)?;
             let body = json!({ "ein": ein });
-            let value = ctx.client.post(&format!("/v1/formations/{entity_id}/tax/confirm-ein"), &body).await?;
+            let value = ctx
+                .client
+                .post(
+                    &format!("/v1/formations/{entity_id}/tax/confirm-ein"),
+                    &body,
+                )
+                .await?;
             output::print_value(&value, mode);
             output::print_success("EIN recorded.", mode);
         }

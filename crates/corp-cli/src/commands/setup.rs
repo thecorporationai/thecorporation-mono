@@ -3,8 +3,8 @@
 
 use std::io::{self, Write};
 
-use crate::output;
 use super::Context;
+use crate::output;
 
 // ── ConfigCommand ─────────────────────────────────────────────────────────────
 
@@ -35,7 +35,10 @@ pub async fn run_setup(ctx: &Context) -> anyhow::Result<()> {
 
     let mut cfg = ctx.config.clone();
 
-    let current_url = cfg.api_url.as_deref().unwrap_or("https://api.thecorporation.com");
+    let current_url = cfg
+        .api_url
+        .as_deref()
+        .unwrap_or("https://api.thecorporation.com");
     let api_url = prompt(&format!("API URL [{}]: ", current_url))?;
     if !api_url.is_empty() {
         cfg.api_url = Some(api_url);
@@ -49,7 +52,14 @@ pub async fn run_setup(ctx: &Context) -> anyhow::Result<()> {
     }
 
     let current_ws = cfg.workspace_id.as_deref().unwrap_or("");
-    let workspace_id = prompt(&format!("Workspace ID [{}]: ", if current_ws.is_empty() { "<unset>" } else { current_ws }))?;
+    let workspace_id = prompt(&format!(
+        "Workspace ID [{}]: ",
+        if current_ws.is_empty() {
+            "<unset>"
+        } else {
+            current_ws
+        }
+    ))?;
     if !workspace_id.is_empty() {
         cfg.workspace_id = Some(workspace_id);
     }
@@ -80,24 +90,22 @@ pub async fn run_config(cmd: ConfigCommand, ctx: &Context) -> anyhow::Result<()>
             output::print_success(&format!("{key} = {value}"), mode);
         }
 
-        ConfigCommand::Get { key } => {
-            match cfg.get(&key) {
-                Some(val) => {
-                    if ctx.json {
-                        println!("{}", serde_json::json!({ &key: val }));
-                    } else {
-                        output::kv(&key, &val, mode);
-                    }
-                }
-                None => {
-                    if ctx.json {
-                        println!("null");
-                    } else {
-                        output::kv(&key, "<unset>", mode);
-                    }
+        ConfigCommand::Get { key } => match cfg.get(&key) {
+            Some(val) => {
+                if ctx.json {
+                    println!("{}", serde_json::json!({ &key: val }));
+                } else {
+                    output::kv(&key, &val, mode);
                 }
             }
-        }
+            None => {
+                if ctx.json {
+                    println!("null");
+                } else {
+                    output::kv(&key, "<unset>", mode);
+                }
+            }
+        },
 
         ConfigCommand::List => {
             let fields = cfg.display_fields();

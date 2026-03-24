@@ -3,8 +3,8 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use crate::ids::{CapTableId, EntityId, FundingRoundId};
 use super::types::FundingRoundStatus;
+use crate::ids::{CapTableId, EntityId, FundingRoundId};
 
 /// A fundraising round (e.g. Seed, Series A).
 ///
@@ -187,7 +187,10 @@ mod tests {
         let mut r = make_round();
         r.advance_status().unwrap();
         r.advance_status().unwrap();
-        assert_eq!(r.advance_status().unwrap_err(), FundingRoundError::UseCloseMethod);
+        assert_eq!(
+            r.advance_status().unwrap_err(),
+            FundingRoundError::UseCloseMethod
+        );
     }
 
     #[test]
@@ -196,7 +199,10 @@ mod tests {
         r.advance_status().unwrap();
         r.advance_status().unwrap();
         r.close().unwrap();
-        assert_eq!(r.advance_status().unwrap_err(), FundingRoundError::AlreadyClosed);
+        assert_eq!(
+            r.advance_status().unwrap_err(),
+            FundingRoundError::AlreadyClosed
+        );
     }
 
     // ── close() ───────────────────────────────────────────────────────────────

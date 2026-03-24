@@ -6,8 +6,8 @@
 
 use serde_json::json;
 
-use crate::output;
 use super::Context;
+use crate::output;
 
 // ── CapTableCommand ───────────────────────────────────────────────────────────
 
@@ -304,11 +304,8 @@ pub enum CapTableCommand {
     },
 
     // ── Vesting ───────────────────────────────────────────────────────────────
-
     /// List vesting schedules for an entity
-    Vesting {
-        entity_id: String,
-    },
+    Vesting { entity_id: String },
 
     /// Create a vesting schedule for a grant
     CreateVesting {
@@ -344,11 +341,8 @@ pub enum CapTableCommand {
     },
 
     // ── Instruments ───────────────────────────────────────────────────────────
-
     /// List instruments
-    Instruments {
-        entity_id: String,
-    },
+    Instruments { entity_id: String },
 
     /// Create an instrument definition
     CreateInstrument {
@@ -366,11 +360,8 @@ pub enum CapTableCommand {
     },
 
     // ── Positions ─────────────────────────────────────────────────────────────
-
     /// List positions (holdings)
-    Positions {
-        entity_id: String,
-    },
+    Positions { entity_id: String },
 
     /// Create a position (holding)
     CreatePosition {
@@ -415,7 +406,6 @@ pub enum CapTableCommand {
     },
 
     // ── Investor Ledger ───────────────────────────────────────────────────────
-
     /// List investor ledger entries
     InvestorLedger,
 
@@ -463,7 +453,6 @@ pub enum CapTableCommand {
     },
 
     // ── Legal Entities ────────────────────────────────────────────────────────
-
     /// List legal entities (corporate structure)
     LegalEntities,
 
@@ -483,7 +472,6 @@ pub enum CapTableCommand {
     },
 
     // ── Control Links ─────────────────────────────────────────────────────────
-
     /// List control links between legal entities
     ControlLinks,
 
@@ -511,7 +499,6 @@ pub enum CapTableCommand {
     },
 
     // ── Repurchase Rights ─────────────────────────────────────────────────────
-
     /// List repurchase rights
     RepurchaseRights,
 
@@ -710,7 +697,10 @@ pub async fn run(cmd: CapTableCommand, ctx: &Context) -> anyhow::Result<()> {
             output::print_success("Valuation submitted for approval.", mode);
         }
 
-        CapTableCommand::ApproveValuation { valuation_id, approved_by } => {
+        CapTableCommand::ApproveValuation {
+            valuation_id,
+            approved_by,
+        } => {
             let path = format!("/v1/entities/{entity_id}/valuations/{valuation_id}/approve");
             let body = json!({ "approved_by": approved_by });
             let value = ctx.post(&path, &body).await?;
@@ -806,7 +796,11 @@ pub async fn run(cmd: CapTableCommand, ctx: &Context) -> anyhow::Result<()> {
             output::print_value(&value, mode);
         }
 
-        CapTableCommand::CreateHolder { name, holder_type, contact_id } => {
+        CapTableCommand::CreateHolder {
+            name,
+            holder_type,
+            contact_id,
+        } => {
             let path = format!("/v1/entities/{entity_id}/holders");
             let body = json!({
                 "name": name,
@@ -819,7 +813,6 @@ pub async fn run(cmd: CapTableCommand, ctx: &Context) -> anyhow::Result<()> {
         }
 
         // ── Vesting ───────────────────────────────────────────────────────────
-
         CapTableCommand::Vesting { entity_id: eid } => {
             let path = format!("/v1/entities/{eid}/vesting-schedules");
             let value = ctx.get(&path).await?;
@@ -852,7 +845,8 @@ pub async fn run(cmd: CapTableCommand, ctx: &Context) -> anyhow::Result<()> {
         }
 
         CapTableCommand::MaterializeVesting { schedule_id } => {
-            let path = format!("/v1/entities/{entity_id}/vesting-schedules/{schedule_id}/materialize");
+            let path =
+                format!("/v1/entities/{entity_id}/vesting-schedules/{schedule_id}/materialize");
             let value = ctx.post(&path, &json!({})).await?;
             output::print_value(&value, mode);
             output::print_success("Vesting events materialized.", mode);
@@ -866,7 +860,6 @@ pub async fn run(cmd: CapTableCommand, ctx: &Context) -> anyhow::Result<()> {
         }
 
         // ── Instruments ───────────────────────────────────────────────────────
-
         CapTableCommand::Instruments { entity_id: eid } => {
             let path = format!("/v1/entities/{eid}/instruments");
             let value = ctx.get(&path).await?;
@@ -892,7 +885,6 @@ pub async fn run(cmd: CapTableCommand, ctx: &Context) -> anyhow::Result<()> {
         }
 
         // ── Positions ─────────────────────────────────────────────────────────
-
         CapTableCommand::Positions { entity_id: eid } => {
             let path = format!("/v1/entities/{eid}/positions");
             let value = ctx.get(&path).await?;
@@ -937,7 +929,6 @@ pub async fn run(cmd: CapTableCommand, ctx: &Context) -> anyhow::Result<()> {
         }
 
         // ── Investor Ledger ───────────────────────────────────────────────────
-
         CapTableCommand::InvestorLedger => {
             let path = format!("/v1/entities/{entity_id}/investor-ledger");
             let value = ctx.get(&path).await?;
@@ -975,7 +966,6 @@ pub async fn run(cmd: CapTableCommand, ctx: &Context) -> anyhow::Result<()> {
         }
 
         // ── Legal Entities ────────────────────────────────────────────────────
-
         CapTableCommand::LegalEntities => {
             let path = format!("/v1/entities/{entity_id}/legal-entities");
             let value = ctx.get(&path).await?;
@@ -999,7 +989,6 @@ pub async fn run(cmd: CapTableCommand, ctx: &Context) -> anyhow::Result<()> {
         }
 
         // ── Control Links ─────────────────────────────────────────────────────
-
         CapTableCommand::ControlLinks => {
             let path = format!("/v1/entities/{entity_id}/control-links");
             let value = ctx.get(&path).await?;
@@ -1027,7 +1016,6 @@ pub async fn run(cmd: CapTableCommand, ctx: &Context) -> anyhow::Result<()> {
         }
 
         // ── Repurchase Rights ─────────────────────────────────────────────────
-
         CapTableCommand::RepurchaseRights => {
             let path = format!("/v1/entities/{entity_id}/repurchase-rights");
             let value = ctx.get(&path).await?;

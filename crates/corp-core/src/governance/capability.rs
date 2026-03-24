@@ -216,7 +216,11 @@ mod tests {
 
     #[test]
     fn tier_level_roundtrip() {
-        for tier in [AuthorityTier::Tier1, AuthorityTier::Tier2, AuthorityTier::Tier3] {
+        for tier in [
+            AuthorityTier::Tier1,
+            AuthorityTier::Tier2,
+            AuthorityTier::Tier3,
+        ] {
             let level = tier.level();
             assert_eq!(AuthorityTier::from_level(level), Some(tier));
         }
@@ -241,7 +245,11 @@ mod tests {
 
     #[test]
     fn tier_serde_roundtrip() {
-        for tier in [AuthorityTier::Tier1, AuthorityTier::Tier2, AuthorityTier::Tier3] {
+        for tier in [
+            AuthorityTier::Tier1,
+            AuthorityTier::Tier2,
+            AuthorityTier::Tier3,
+        ] {
             let json = serde_json::to_string(&tier).unwrap();
             let back: AuthorityTier = serde_json::from_str(&json).unwrap();
             assert_eq!(tier, back);
@@ -595,7 +603,11 @@ mod tests {
             GovernanceCapability::RegisteredAgentRenewal,
         ];
         for cap in &caps {
-            assert_eq!(default_tier(cap), AuthorityTier::Tier1, "{cap:?} should be Tier1");
+            assert_eq!(
+                default_tier(cap),
+                AuthorityTier::Tier1,
+                "{cap:?} should be Tier1"
+            );
         }
         assert_eq!(caps.len(), 12);
     }
@@ -617,7 +629,11 @@ mod tests {
             GovernanceCapability::FranchiseTaxMethodChoice,
         ];
         for cap in &caps {
-            assert_eq!(default_tier(cap), AuthorityTier::Tier2, "{cap:?} should be Tier2");
+            assert_eq!(
+                default_tier(cap),
+                AuthorityTier::Tier2,
+                "{cap:?} should be Tier2"
+            );
         }
         assert_eq!(caps.len(), 12);
     }
@@ -639,7 +655,11 @@ mod tests {
             GovernanceCapability::AdmitNewMembers,
         ];
         for cap in &caps {
-            assert_eq!(default_tier(cap), AuthorityTier::Tier3, "{cap:?} should be Tier3");
+            assert_eq!(
+                default_tier(cap),
+                AuthorityTier::Tier3,
+                "{cap:?} should be Tier3"
+            );
         }
         assert_eq!(caps.len(), 12);
     }

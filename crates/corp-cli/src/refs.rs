@@ -15,7 +15,7 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -166,7 +166,9 @@ impl RefStore {
         let dir = std::env::var("CORP_CONFIG_DIR")
             .map(PathBuf::from)
             .unwrap_or_else(|_| {
-                dirs::home_dir().unwrap_or_else(|| PathBuf::from(".")).join(".corp")
+                dirs::home_dir()
+                    .unwrap_or_else(|| PathBuf::from("."))
+                    .join(".corp")
             });
         dir.join("refs.json")
     }
@@ -279,7 +281,10 @@ pub fn resolve(
                 refs.set_last(kind, &id, entity_id);
                 return Ok(id);
             }
-            None => bail!("no {} recorded for @last — run a command that creates one first", kind.label()),
+            None => bail!(
+                "no {} recorded for @last — run a command that creates one first",
+                kind.label()
+            ),
         }
     }
 
@@ -307,7 +312,12 @@ pub fn resolve(
                     trimmed,
                     matches.len(),
                     kind.label(),
-                    matches.iter().take(5).map(|s| short_id(s)).collect::<Vec<_>>().join(", ")
+                    matches
+                        .iter()
+                        .take(5)
+                        .map(|s| short_id(s))
+                        .collect::<Vec<_>>()
+                        .join(", ")
                 ),
             }
         }
@@ -331,7 +341,12 @@ pub fn resolve(
                 "ambiguous {} reference '{}' — matches: {}. Use a UUID or short ID instead.",
                 kind.label(),
                 trimmed,
-                matches.iter().take(5).map(|s| short_id(s)).collect::<Vec<_>>().join(", ")
+                matches
+                    .iter()
+                    .take(5)
+                    .map(|s| short_id(s))
+                    .collect::<Vec<_>>()
+                    .join(", ")
             ),
         }
     }
@@ -341,7 +356,12 @@ pub fn resolve(
 }
 
 /// Remember an ID from a command response. Call after every write command.
-pub fn remember_from_response(kind: RefKind, response: &Value, entity_id: Option<&str>, refs: &mut RefStore) {
+pub fn remember_from_response(
+    kind: RefKind,
+    response: &Value,
+    entity_id: Option<&str>,
+    refs: &mut RefStore,
+) {
     if let Some(id) = response.get(kind.id_field()).and_then(|v| v.as_str()) {
         refs.set_last(kind, id, entity_id);
         refs.save();
@@ -489,7 +509,14 @@ mod tests {
             serde_json::json!({"entity_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890", "legal_name": "Acme"}),
             serde_json::json!({"entity_id": "ffffffff-0000-0000-0000-000000000000", "legal_name": "Other"}),
         ];
-        let result = resolve("a1b2c3d4", RefKind::Entity, Some(&candidates), None, &mut refs).unwrap();
+        let result = resolve(
+            "a1b2c3d4",
+            RefKind::Entity,
+            Some(&candidates),
+            None,
+            &mut refs,
+        )
+        .unwrap();
         assert_eq!(result, "a1b2c3d4-e5f6-7890-abcd-ef1234567890");
     }
 

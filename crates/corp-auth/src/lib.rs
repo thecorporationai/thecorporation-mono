@@ -11,50 +11,50 @@
 //! - [`extractors`] — Axum extractors, scoped newtype extractors, and
 //!                    [`extractors::RateLimiter`].
 
-pub mod error;
-pub mod jwt;
 pub mod api_key;
-pub mod principal;
+pub mod error;
 pub mod extractors;
+pub mod jwt;
+pub mod principal;
 
 // ── Flat re-exports ────────────────────────────────────────────────────────
 
-pub use error::AuthError;
-pub use jwt::JwtConfig;
 pub use api_key::ApiKeyManager;
-pub use principal::Principal;
+pub use error::AuthError;
 pub use extractors::{
     ApiKeyResolver,
     RateLimiter,
+    // Platform
+    RequireAdmin,
+    // Agents
+    RequireAgentsRead,
+    RequireAgentsWrite,
+    // Contacts
+    RequireContactsRead,
+    RequireContactsWrite,
+    // Equity
+    RequireEquityRead,
+    RequireEquityWrite,
+    // Execution
+    RequireExecutionRead,
+    RequireExecutionWrite,
     // Formation
     RequireFormationCreate,
     RequireFormationRead,
     RequireFormationSign,
-    // Equity
-    RequireEquityRead,
-    RequireEquityWrite,
     // Governance
     RequireGovernanceRead,
-    RequireGovernanceWrite,
     RequireGovernanceVote,
-    // Treasury
-    RequireTreasuryRead,
-    RequireTreasuryWrite,
-    // Contacts
-    RequireContactsRead,
-    RequireContactsWrite,
-    // Execution
-    RequireExecutionRead,
-    RequireExecutionWrite,
-    // Agents
-    RequireAgentsRead,
-    RequireAgentsWrite,
-    // Work items
-    RequireWorkItemsRead,
-    RequireWorkItemsWrite,
+    RequireGovernanceWrite,
     // Services
     RequireServicesRead,
     RequireServicesWrite,
-    // Platform
-    RequireAdmin,
+    // Treasury
+    RequireTreasuryRead,
+    RequireTreasuryWrite,
+    // Work items
+    RequireWorkItemsRead,
+    RequireWorkItemsWrite,
 };
+pub use jwt::JwtConfig;
+pub use principal::Principal;

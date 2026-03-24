@@ -23,11 +23,11 @@ use axum::routing::{delete, get, post};
 use axum::{Json, Router};
 use serde::Deserialize;
 
+use crate::error::AppError;
+use crate::state::AppState;
 use corp_auth::{RequireAgentsRead, RequireAgentsWrite};
 use corp_core::agents::{Agent, AgentSkill};
 use corp_core::ids::{AgentId, EntityId};
-use crate::error::AppError;
-use crate::state::AppState;
 
 // ── Sentinel entity ID for workspace-scoped agent storage ─────────────────────
 //
@@ -38,7 +38,9 @@ use crate::state::AppState;
 const AGENTS_ENTITY_STR: &str = "00000000-0000-0000-0000-000000000001";
 
 fn agents_entity_id() -> EntityId {
-    AGENTS_ENTITY_STR.parse().expect("agents sentinel UUID is valid")
+    AGENTS_ENTITY_STR
+        .parse()
+        .expect("agents sentinel UUID is valid")
 }
 
 // ── Router ────────────────────────────────────────────────────────────────────
@@ -51,10 +53,7 @@ pub fn routes() -> Router<AppState> {
             get(get_agent).patch(update_agent).delete(delete_agent),
         )
         .route("/agents/{agent_id}/skills", post(add_skill))
-        .route(
-            "/agents/{agent_id}/skills/{name}",
-            delete(remove_skill),
-        )
+        .route("/agents/{agent_id}/skills/{name}", delete(remove_skill))
         .route("/agents/{agent_id}/pause", post(pause_agent))
         .route("/agents/{agent_id}/resume", post(resume_agent))
 }
@@ -140,18 +139,15 @@ async fn get_agent(
     Path(agent_id): Path<AgentId>,
 ) -> Result<Json<Agent>, AppError> {
     let store = open_agents_store(&state, principal.workspace_id).await?;
-    let agent = store
-        .read::<Agent>(agent_id, "main")
-        .await
-        .map_err(|e| {
-            use corp_storage::error::StorageError;
-            match e {
-                StorageError::NotFound(_) => {
-                    AppError::NotFound(format!("agent {} not found", agent_id))
-                }
-                other => AppError::Storage(other),
+    let agent = store.read::<Agent>(agent_id, "main").await.map_err(|e| {
+        use corp_storage::error::StorageError;
+        match e {
+            StorageError::NotFound(_) => {
+                AppError::NotFound(format!("agent {} not found", agent_id))
             }
-        })?;
+            other => AppError::Storage(other),
+        }
+    })?;
     Ok(Json(agent))
 }
 

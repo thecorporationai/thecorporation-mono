@@ -45,16 +45,16 @@ use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 
 use corp_auth::{RequireGovernanceRead, RequireGovernanceVote, RequireGovernanceWrite};
-use corp_core::governance::{
-    AgendaItem, GovernanceBody, GovernanceProfile, GovernanceSeat, Meeting, Resolution, Vote,
-};
 use corp_core::governance::types::{
     AgendaItemType, BodyStatus, BodyType, MeetingStatus, MeetingType, QuorumThreshold,
     ResolutionType, SeatRole, VoteValue, VotingMethod, VotingPower,
 };
+use corp_core::governance::{
+    AgendaItem, GovernanceBody, GovernanceProfile, GovernanceSeat, Meeting, Resolution, Vote,
+};
 use corp_core::ids::{
-    AgendaItemId, ContactId, EntityId, GovernanceBodyId, GovernanceSeatId, MeetingId,
-    ResolutionId, VoteId,
+    AgendaItemId, ContactId, EntityId, GovernanceBodyId, GovernanceSeatId, MeetingId, ResolutionId,
+    VoteId,
 };
 use corp_storage::entity_store::EntityStore;
 
@@ -337,7 +337,9 @@ async fn list_bodies(
     State(state): State<AppState>,
     Path(entity_id): Path<EntityId>,
 ) -> Result<Json<Vec<GovernanceBody>>, AppError> {
-    let store = state.open_entity_store(principal.workspace_id, entity_id).await?;
+    let store = state
+        .open_entity_store(principal.workspace_id, entity_id)
+        .await?;
     let bodies = store
         .read_all::<GovernanceBody>(BRANCH)
         .await
@@ -352,7 +354,9 @@ async fn create_body(
     Path(entity_id): Path<EntityId>,
     Json(req): Json<CreateBodyRequest>,
 ) -> Result<Json<GovernanceBody>, AppError> {
-    let store = state.open_entity_store(principal.workspace_id, entity_id).await?;
+    let store = state
+        .open_entity_store(principal.workspace_id, entity_id)
+        .await?;
 
     let body = GovernanceBody::new(
         entity_id,
@@ -382,7 +386,9 @@ async fn get_body(
     State(state): State<AppState>,
     Path((entity_id, body_id)): Path<(EntityId, GovernanceBodyId)>,
 ) -> Result<Json<GovernanceBody>, AppError> {
-    let store = state.open_entity_store(principal.workspace_id, entity_id).await?;
+    let store = state
+        .open_entity_store(principal.workspace_id, entity_id)
+        .await?;
     let body = store
         .read::<GovernanceBody>(body_id, BRANCH)
         .await
@@ -396,7 +402,9 @@ async fn deactivate_body(
     State(state): State<AppState>,
     Path((entity_id, body_id)): Path<(EntityId, GovernanceBodyId)>,
 ) -> Result<Json<GovernanceBody>, AppError> {
-    let store = state.open_entity_store(principal.workspace_id, entity_id).await?;
+    let store = state
+        .open_entity_store(principal.workspace_id, entity_id)
+        .await?;
 
     let mut body = store
         .read::<GovernanceBody>(body_id, BRANCH)
@@ -426,7 +434,9 @@ async fn list_seats(
     State(state): State<AppState>,
     Path(entity_id): Path<EntityId>,
 ) -> Result<Json<Vec<GovernanceSeat>>, AppError> {
-    let store = state.open_entity_store(principal.workspace_id, entity_id).await?;
+    let store = state
+        .open_entity_store(principal.workspace_id, entity_id)
+        .await?;
     let seats = store
         .read_all::<GovernanceSeat>(BRANCH)
         .await
@@ -441,10 +451,12 @@ async fn create_seat(
     Path(entity_id): Path<EntityId>,
     Json(req): Json<CreateSeatRequest>,
 ) -> Result<Json<GovernanceSeat>, AppError> {
-    let store = state.open_entity_store(principal.workspace_id, entity_id).await?;
+    let store = state
+        .open_entity_store(principal.workspace_id, entity_id)
+        .await?;
 
-    let voting_power = VotingPower::new(req.voting_power)
-        .map_err(|e| AppError::BadRequest(e.to_string()))?;
+    let voting_power =
+        VotingPower::new(req.voting_power).map_err(|e| AppError::BadRequest(e.to_string()))?;
 
     let seat = GovernanceSeat::new(
         req.body_id,
@@ -474,7 +486,9 @@ async fn get_seat(
     State(state): State<AppState>,
     Path((entity_id, seat_id)): Path<(EntityId, GovernanceSeatId)>,
 ) -> Result<Json<GovernanceSeat>, AppError> {
-    let store = state.open_entity_store(principal.workspace_id, entity_id).await?;
+    let store = state
+        .open_entity_store(principal.workspace_id, entity_id)
+        .await?;
     let seat = store
         .read::<GovernanceSeat>(seat_id, BRANCH)
         .await
@@ -488,7 +502,9 @@ async fn resign_seat(
     State(state): State<AppState>,
     Path((entity_id, seat_id)): Path<(EntityId, GovernanceSeatId)>,
 ) -> Result<Json<GovernanceSeat>, AppError> {
-    let store = state.open_entity_store(principal.workspace_id, entity_id).await?;
+    let store = state
+        .open_entity_store(principal.workspace_id, entity_id)
+        .await?;
 
     let mut seat = store
         .read::<GovernanceSeat>(seat_id, BRANCH)
@@ -519,7 +535,9 @@ async fn list_meetings(
     State(state): State<AppState>,
     Path(entity_id): Path<EntityId>,
 ) -> Result<Json<Vec<Meeting>>, AppError> {
-    let store = state.open_entity_store(principal.workspace_id, entity_id).await?;
+    let store = state
+        .open_entity_store(principal.workspace_id, entity_id)
+        .await?;
     let meetings = store
         .read_all::<Meeting>(BRANCH)
         .await
@@ -534,7 +552,9 @@ async fn create_meeting(
     Path(entity_id): Path<EntityId>,
     Json(req): Json<CreateMeetingRequest>,
 ) -> Result<Json<Meeting>, AppError> {
-    let store = state.open_entity_store(principal.workspace_id, entity_id).await?;
+    let store = state
+        .open_entity_store(principal.workspace_id, entity_id)
+        .await?;
 
     // Bug 3: Reject if the body has been deactivated.
     let body = store
@@ -576,7 +596,9 @@ async fn get_meeting(
     State(state): State<AppState>,
     Path((entity_id, meeting_id)): Path<(EntityId, MeetingId)>,
 ) -> Result<Json<Meeting>, AppError> {
-    let store = state.open_entity_store(principal.workspace_id, entity_id).await?;
+    let store = state
+        .open_entity_store(principal.workspace_id, entity_id)
+        .await?;
     let meeting = store
         .read::<Meeting>(meeting_id, BRANCH)
         .await
@@ -592,7 +614,9 @@ async fn send_notice(
     State(state): State<AppState>,
     Path((entity_id, meeting_id)): Path<(EntityId, MeetingId)>,
 ) -> Result<Json<Meeting>, AppError> {
-    let store = state.open_entity_store(principal.workspace_id, entity_id).await?;
+    let store = state
+        .open_entity_store(principal.workspace_id, entity_id)
+        .await?;
 
     let mut meeting = store
         .read::<Meeting>(meeting_id, BRANCH)
@@ -624,7 +648,9 @@ async fn convene_meeting(
     State(state): State<AppState>,
     Path((entity_id, meeting_id)): Path<(EntityId, MeetingId)>,
 ) -> Result<Json<Meeting>, AppError> {
-    let store = state.open_entity_store(principal.workspace_id, entity_id).await?;
+    let store = state
+        .open_entity_store(principal.workspace_id, entity_id)
+        .await?;
 
     let mut meeting = store
         .read::<Meeting>(meeting_id, BRANCH)
@@ -656,7 +682,9 @@ async fn adjourn_meeting(
     State(state): State<AppState>,
     Path((entity_id, meeting_id)): Path<(EntityId, MeetingId)>,
 ) -> Result<Json<Meeting>, AppError> {
-    let store = state.open_entity_store(principal.workspace_id, entity_id).await?;
+    let store = state
+        .open_entity_store(principal.workspace_id, entity_id)
+        .await?;
 
     let mut meeting = store
         .read::<Meeting>(meeting_id, BRANCH)
@@ -688,7 +716,9 @@ async fn cancel_meeting(
     State(state): State<AppState>,
     Path((entity_id, meeting_id)): Path<(EntityId, MeetingId)>,
 ) -> Result<Json<Meeting>, AppError> {
-    let store = state.open_entity_store(principal.workspace_id, entity_id).await?;
+    let store = state
+        .open_entity_store(principal.workspace_id, entity_id)
+        .await?;
 
     let mut meeting = store
         .read::<Meeting>(meeting_id, BRANCH)
@@ -720,7 +750,9 @@ async fn reopen_meeting(
     State(state): State<AppState>,
     Path((entity_id, meeting_id)): Path<(EntityId, MeetingId)>,
 ) -> Result<Json<Meeting>, AppError> {
-    let store = state.open_entity_store(principal.workspace_id, entity_id).await?;
+    let store = state
+        .open_entity_store(principal.workspace_id, entity_id)
+        .await?;
 
     let mut meeting = store
         .read::<Meeting>(meeting_id, BRANCH)
@@ -754,7 +786,9 @@ async fn record_attendance(
     Path((entity_id, meeting_id)): Path<(EntityId, MeetingId)>,
     Json(req): Json<RecordAttendanceRequest>,
 ) -> Result<Json<Meeting>, AppError> {
-    let store = state.open_entity_store(principal.workspace_id, entity_id).await?;
+    let store = state
+        .open_entity_store(principal.workspace_id, entity_id)
+        .await?;
 
     let mut meeting = store
         .read::<Meeting>(meeting_id, BRANCH)
@@ -805,7 +839,12 @@ async fn record_attendance(
         }
     };
 
-    meeting.record_attendance(req.seat_ids, present_count, total_eligible, body.quorum_rule);
+    meeting.record_attendance(
+        req.seat_ids,
+        present_count,
+        total_eligible,
+        body.quorum_rule,
+    );
 
     store
         .write::<Meeting>(
@@ -828,7 +867,9 @@ async fn list_agenda_items(
     State(state): State<AppState>,
     Path((entity_id, meeting_id)): Path<(EntityId, MeetingId)>,
 ) -> Result<Json<Vec<AgendaItem>>, AppError> {
-    let store = state.open_entity_store(principal.workspace_id, entity_id).await?;
+    let store = state
+        .open_entity_store(principal.workspace_id, entity_id)
+        .await?;
 
     // Ensure the meeting exists.
     let _meeting = store
@@ -857,7 +898,9 @@ async fn create_agenda_item(
     Path((entity_id, meeting_id)): Path<(EntityId, MeetingId)>,
     Json(req): Json<CreateAgendaItemRequest>,
 ) -> Result<Json<AgendaItem>, AppError> {
-    let store = state.open_entity_store(principal.workspace_id, entity_id).await?;
+    let store = state
+        .open_entity_store(principal.workspace_id, entity_id)
+        .await?;
 
     // Ensure the meeting exists and is in an acceptable state.
     let meeting = store
@@ -921,7 +964,9 @@ async fn list_votes(
     State(state): State<AppState>,
     Path((entity_id, meeting_id)): Path<(EntityId, MeetingId)>,
 ) -> Result<Json<Vec<Vote>>, AppError> {
-    let store = state.open_entity_store(principal.workspace_id, entity_id).await?;
+    let store = state
+        .open_entity_store(principal.workspace_id, entity_id)
+        .await?;
 
     // Ensure the meeting exists.
     let _meeting = store
@@ -932,10 +977,7 @@ async fn list_votes(
     let ids = read_index(&store, &vote_index_path(meeting_id)).await?;
     let mut votes = Vec::with_capacity(ids.len());
     for id_str in &ids {
-        let path = format!(
-            "governance/meetings/{}/votes/{}.json",
-            meeting_id, id_str
-        );
+        let path = format!("governance/meetings/{}/votes/{}.json", meeting_id, id_str);
         match store.read_json::<Vote>(&path, BRANCH).await {
             Ok(vote) => votes.push(vote),
             Err(e) => {
@@ -956,7 +998,9 @@ async fn cast_vote(
     Path((entity_id, meeting_id)): Path<(EntityId, MeetingId)>,
     Json(req): Json<CastVoteRequest>,
 ) -> Result<Json<Vote>, AppError> {
-    let store = state.open_entity_store(principal.workspace_id, entity_id).await?;
+    let store = state
+        .open_entity_store(principal.workspace_id, entity_id)
+        .await?;
 
     let meeting = store
         .read::<Meeting>(meeting_id, BRANCH)
@@ -1003,22 +1047,23 @@ async fn cast_vote(
 
     // Ensure the agenda item belongs to this meeting.
     let item_path = agenda_item_path(meeting_id, req.agenda_item_id);
-    let _item: AgendaItem = store
-        .read_json(&item_path, BRANCH)
-        .await
-        .map_err(|_| {
-            AppError::NotFound(format!(
-                "agenda item {} not found in meeting {}",
-                req.agenda_item_id, meeting_id
-            ))
-        })?;
+    let _item: AgendaItem = store.read_json(&item_path, BRANCH).await.map_err(|_| {
+        AppError::NotFound(format!(
+            "agenda item {} not found in meeting {}",
+            req.agenda_item_id, meeting_id
+        ))
+    })?;
 
     // Bug 1: Check for duplicate vote (same seat on same agenda item).
-    let vote_ids = read_index(&store, &vote_index_path(meeting_id)).await.unwrap_or_default();
+    let vote_ids = read_index(&store, &vote_index_path(meeting_id))
+        .await
+        .unwrap_or_default();
     for vid_str in &vote_ids {
         let vpath = format!("governance/meetings/{}/votes/{}.json", meeting_id, vid_str);
         if let Ok(existing_vote) = store.read_json::<Vote>(&vpath, BRANCH).await {
-            if existing_vote.seat_id == req.seat_id && existing_vote.agenda_item_id == req.agenda_item_id {
+            if existing_vote.seat_id == req.seat_id
+                && existing_vote.agenda_item_id == req.agenda_item_id
+            {
                 return Err(AppError::BadRequest(format!(
                     "seat {} has already voted on agenda item {}",
                     req.seat_id, req.agenda_item_id
@@ -1063,7 +1108,9 @@ async fn resolve_item(
     Path((entity_id, meeting_id, item_id)): Path<(EntityId, MeetingId, AgendaItemId)>,
     Json(req): Json<ResolveItemRequest>,
 ) -> Result<Json<Resolution>, AppError> {
-    let store = state.open_entity_store(principal.workspace_id, entity_id).await?;
+    let store = state
+        .open_entity_store(principal.workspace_id, entity_id)
+        .await?;
 
     let meeting = store
         .read::<Meeting>(meeting_id, BRANCH)
@@ -1088,10 +1135,7 @@ async fn resolve_item(
     let mut votes_abstain = 0u32;
 
     for id_str in &vote_ids {
-        let path = format!(
-            "governance/meetings/{}/votes/{}.json",
-            meeting_id, id_str
-        );
+        let path = format!("governance/meetings/{}/votes/{}.json", meeting_id, id_str);
         if let Ok(vote) = store.read_json::<Vote>(&path, BRANCH).await {
             if vote.agenda_item_id != item_id {
                 continue;
@@ -1141,15 +1185,12 @@ async fn resolve_item(
 
     // Mark the agenda item resolved.
     let item_path = agenda_item_path(meeting_id, item_id);
-    let mut item: AgendaItem = store
-        .read_json(&item_path, BRANCH)
-        .await
-        .map_err(|_| {
-            AppError::NotFound(format!(
-                "agenda item {} not found in meeting {}",
-                item_id, meeting_id
-            ))
-        })?;
+    let mut item: AgendaItem = store.read_json(&item_path, BRANCH).await.map_err(|_| {
+        AppError::NotFound(format!(
+            "agenda item {} not found in meeting {}",
+            item_id, meeting_id
+        ))
+    })?;
     item.resolve();
     store
         .write_json(
@@ -1173,7 +1214,9 @@ async fn list_resolutions(
     State(state): State<AppState>,
     Path((entity_id, meeting_id)): Path<(EntityId, MeetingId)>,
 ) -> Result<Json<Vec<Resolution>>, AppError> {
-    let store = state.open_entity_store(principal.workspace_id, entity_id).await?;
+    let store = state
+        .open_entity_store(principal.workspace_id, entity_id)
+        .await?;
 
     // Ensure the meeting exists.
     let _meeting = store
@@ -1208,19 +1251,19 @@ async fn get_profile(
     State(state): State<AppState>,
     Path(entity_id): Path<EntityId>,
 ) -> Result<Json<GovernanceProfile>, AppError> {
-    let store = state.open_entity_store(principal.workspace_id, entity_id).await?;
-    let profile: GovernanceProfile = store
-        .read_json(PROFILE_PATH, BRANCH)
-        .await
-        .map_err(|e| {
-            use corp_storage::error::StorageError;
-            match e {
-                StorageError::NotFound(_) => AppError::NotFound(
-                    format!("governance profile not found for entity {}", entity_id),
-                ),
-                other => AppError::Storage(other),
-            }
-        })?;
+    let store = state
+        .open_entity_store(principal.workspace_id, entity_id)
+        .await?;
+    let profile: GovernanceProfile = store.read_json(PROFILE_PATH, BRANCH).await.map_err(|e| {
+        use corp_storage::error::StorageError;
+        match e {
+            StorageError::NotFound(_) => AppError::NotFound(format!(
+                "governance profile not found for entity {}",
+                entity_id
+            )),
+            other => AppError::Storage(other),
+        }
+    })?;
     Ok(Json(profile))
 }
 
@@ -1235,54 +1278,58 @@ async fn update_profile(
     Path(entity_id): Path<EntityId>,
     Json(req): Json<UpdateProfileRequest>,
 ) -> Result<Json<GovernanceProfile>, AppError> {
-    let store = state.open_entity_store(principal.workspace_id, entity_id).await?;
+    let store = state
+        .open_entity_store(principal.workspace_id, entity_id)
+        .await?;
 
-    let profile =
-        match store.read_json::<GovernanceProfile>(PROFILE_PATH, BRANCH).await {
-            Ok(mut existing) => {
-                let r = req.clone();
-                existing
-                    .update(|p| {
-                        p.entity_type = r.entity_type.clone();
-                        p.legal_name = r.legal_name.clone();
-                        p.jurisdiction = r.jurisdiction.clone();
-                        p.effective_date = r.effective_date;
-                        p.registered_agent_name = r.registered_agent_name.clone();
-                        p.registered_agent_address = r.registered_agent_address.clone();
-                        p.board_size = r.board_size;
-                        p.principal_name = r.principal_name.clone();
-                        p.company_address = r.company_address.clone();
-                        p.founders = r.founders.clone();
-                        p.directors = r.directors.clone();
-                        p.officers = r.officers.clone();
-                        p.stock_details = r.stock_details.clone();
-                        p.fiscal_year_end = r.fiscal_year_end.clone();
-                    })
-                    .map_err(|e| AppError::BadRequest(e.to_string()))?;
-                existing
-            }
-            Err(_) => {
-                // No profile yet — create a fresh one.
-                GovernanceProfile::new(
-                    entity_id,
-                    req.entity_type,
-                    req.legal_name,
-                    req.jurisdiction,
-                    req.effective_date,
-                    req.registered_agent_name,
-                    req.registered_agent_address,
-                    req.board_size,
-                    req.principal_name,
-                    req.company_address,
-                    req.founders,
-                    req.directors,
-                    req.officers,
-                    req.stock_details,
-                    req.fiscal_year_end,
-                )
-                .map_err(|e| AppError::BadRequest(e.to_string()))?
-            }
-        };
+    let profile = match store
+        .read_json::<GovernanceProfile>(PROFILE_PATH, BRANCH)
+        .await
+    {
+        Ok(mut existing) => {
+            let r = req.clone();
+            existing
+                .update(|p| {
+                    p.entity_type = r.entity_type.clone();
+                    p.legal_name = r.legal_name.clone();
+                    p.jurisdiction = r.jurisdiction.clone();
+                    p.effective_date = r.effective_date;
+                    p.registered_agent_name = r.registered_agent_name.clone();
+                    p.registered_agent_address = r.registered_agent_address.clone();
+                    p.board_size = r.board_size;
+                    p.principal_name = r.principal_name.clone();
+                    p.company_address = r.company_address.clone();
+                    p.founders = r.founders.clone();
+                    p.directors = r.directors.clone();
+                    p.officers = r.officers.clone();
+                    p.stock_details = r.stock_details.clone();
+                    p.fiscal_year_end = r.fiscal_year_end.clone();
+                })
+                .map_err(|e| AppError::BadRequest(e.to_string()))?;
+            existing
+        }
+        Err(_) => {
+            // No profile yet — create a fresh one.
+            GovernanceProfile::new(
+                entity_id,
+                req.entity_type,
+                req.legal_name,
+                req.jurisdiction,
+                req.effective_date,
+                req.registered_agent_name,
+                req.registered_agent_address,
+                req.board_size,
+                req.principal_name,
+                req.company_address,
+                req.founders,
+                req.directors,
+                req.officers,
+                req.stock_details,
+                req.fiscal_year_end,
+            )
+            .map_err(|e| AppError::BadRequest(e.to_string()))?
+        }
+    };
 
     store
         .write_json(
@@ -1309,7 +1356,9 @@ async fn create_written_consent(
     Path(entity_id): Path<EntityId>,
     Json(req): Json<CreateWrittenConsentRequest>,
 ) -> Result<Json<WrittenConsentResponse>, AppError> {
-    let store = state.open_entity_store(principal.workspace_id, entity_id).await?;
+    let store = state
+        .open_entity_store(principal.workspace_id, entity_id)
+        .await?;
 
     let meeting = Meeting::new(
         req.body_id,
@@ -1383,7 +1432,9 @@ async fn quick_approve(
     Path(entity_id): Path<EntityId>,
     Json(req): Json<QuickApproveRequest>,
 ) -> Result<Json<QuickApproveResponse>, AppError> {
-    let store = state.open_entity_store(principal.workspace_id, entity_id).await?;
+    let store = state
+        .open_entity_store(principal.workspace_id, entity_id)
+        .await?;
 
     // Verify the body exists and is accessible.
     let body = store
@@ -1471,7 +1522,10 @@ async fn quick_approve(
                 &vpath,
                 &vote,
                 BRANCH,
-                &format!("quick-approve: vote {} from seat {}", vote.vote_id, seat.seat_id),
+                &format!(
+                    "quick-approve: vote {} from seat {}",
+                    vote.vote_id, seat.seat_id
+                ),
             )
             .await
             .map_err(AppError::Storage)?;
@@ -1518,7 +1572,10 @@ async fn quick_approve(
         &store,
         &resolution_index_path(meeting.meeting_id),
         &resolution.resolution_id.to_string(),
-        &format!("quick-approve: index resolution {}", resolution.resolution_id),
+        &format!(
+            "quick-approve: index resolution {}",
+            resolution.resolution_id
+        ),
     )
     .await?;
 
@@ -1530,7 +1587,10 @@ async fn quick_approve(
             &item_path,
             &resolved_item,
             BRANCH,
-            &format!("quick-approve: mark item {} resolved", resolved_item.item_id),
+            &format!(
+                "quick-approve: mark item {} resolved",
+                resolved_item.item_id
+            ),
         )
         .await
         .map_err(AppError::Storage)?;

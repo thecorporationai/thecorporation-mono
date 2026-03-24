@@ -176,8 +176,7 @@ impl Meeting {
         if self.status != MeetingStatus::Convened {
             return false;
         }
-        self.meeting_type == MeetingType::WrittenConsent
-            || self.quorum_met == QuorumStatus::Met
+        self.meeting_type == MeetingType::WrittenConsent || self.quorum_met == QuorumStatus::Met
     }
 
     /// Record the attending seats and evaluate quorum against `threshold`.
@@ -722,7 +721,11 @@ mod tests {
 
     #[test]
     fn quorum_status_serde_roundtrip() {
-        for variant in [QuorumStatus::Unknown, QuorumStatus::Met, QuorumStatus::NotMet] {
+        for variant in [
+            QuorumStatus::Unknown,
+            QuorumStatus::Met,
+            QuorumStatus::NotMet,
+        ] {
             let json = serde_json::to_string(&variant).unwrap();
             let back: QuorumStatus = serde_json::from_str(&json).unwrap();
             assert_eq!(variant, back);

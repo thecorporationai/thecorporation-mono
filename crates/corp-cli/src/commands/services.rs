@@ -2,8 +2,8 @@
 
 use serde_json::json;
 
-use crate::output;
 use super::Context;
+use crate::output;
 
 // ── ServicesCommand ───────────────────────────────────────────────────────────
 
@@ -85,27 +85,21 @@ pub async fn run(cmd: ServicesCommand, ctx: &Context) -> anyhow::Result<()> {
         }
 
         ServicesCommand::Checkout { request_ref } => {
-            let path = format!(
-                "/v1/entities/{entity_id}/service-requests/{request_ref}/checkout"
-            );
+            let path = format!("/v1/entities/{entity_id}/service-requests/{request_ref}/checkout");
             let value = ctx.post(&path, &json!({})).await?;
             output::print_value(&value, mode);
             output::print_success("Checkout started.", mode);
         }
 
         ServicesCommand::Pay { request_ref } => {
-            let path = format!(
-                "/v1/entities/{entity_id}/service-requests/{request_ref}/pay"
-            );
+            let path = format!("/v1/entities/{entity_id}/service-requests/{request_ref}/pay");
             let value = ctx.post(&path, &json!({})).await?;
             output::print_value(&value, mode);
             output::print_success("Service request marked paid.", mode);
         }
 
         ServicesCommand::Fulfill { request_ref, note } => {
-            let path = format!(
-                "/v1/entities/{entity_id}/service-requests/{request_ref}/fulfill"
-            );
+            let path = format!("/v1/entities/{entity_id}/service-requests/{request_ref}/fulfill");
             let body = json!({ "fulfillment_note": note });
             let value = ctx.post(&path, &body).await?;
             output::print_value(&value, mode);

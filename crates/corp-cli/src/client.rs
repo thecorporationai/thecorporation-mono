@@ -45,11 +45,19 @@ impl HttpClient {
             .build()
             .expect("failed to build reqwest client");
         let base_url = base_url.trim_end_matches('/').to_owned();
-        Self { base_url, api_key, http }
+        Self {
+            base_url,
+            api_key,
+            http,
+        }
     }
 
     fn url(&self, path: &str) -> String {
-        let path = if path.starts_with('/') { path.to_owned() } else { format!("/{path}") };
+        let path = if path.starts_with('/') {
+            path.to_owned()
+        } else {
+            format!("/{path}")
+        };
         format!("{}{}", self.base_url, path)
     }
 
@@ -75,8 +83,19 @@ impl HttpClient {
         let body_text = resp.text().await.unwrap_or_default();
         let message = serde_json::from_str::<Value>(&body_text)
             .ok()
-            .and_then(|v| v.get("error").or_else(|| v.get("message")).and_then(|m| m.as_str()).map(ToOwned::to_owned))
-            .unwrap_or_else(|| if body_text.is_empty() { status.to_string() } else { body_text });
+            .and_then(|v| {
+                v.get("error")
+                    .or_else(|| v.get("message"))
+                    .and_then(|m| m.as_str())
+                    .map(ToOwned::to_owned)
+            })
+            .unwrap_or_else(|| {
+                if body_text.is_empty() {
+                    status.to_string()
+                } else {
+                    body_text
+                }
+            });
         bail!("API error {status}: {message}")
     }
 }
@@ -84,27 +103,60 @@ impl HttpClient {
 #[async_trait]
 impl CorpClient for HttpClient {
     async fn get(&self, path: &str) -> anyhow::Result<Value> {
-        let resp = self.http.get(self.url(path)).headers(self.auth_headers()).send().await.with_context(|| format!("GET {path}"))?;
+        let resp = self
+            .http
+            .get(self.url(path))
+            .headers(self.auth_headers())
+            .send()
+            .await
+            .with_context(|| format!("GET {path}"))?;
         self.handle_response(resp).await
     }
 
     async fn post(&self, path: &str, body: &Value) -> anyhow::Result<Value> {
-        let resp = self.http.post(self.url(path)).headers(self.auth_headers()).json(body).send().await.with_context(|| format!("POST {path}"))?;
+        let resp = self
+            .http
+            .post(self.url(path))
+            .headers(self.auth_headers())
+            .json(body)
+            .send()
+            .await
+            .with_context(|| format!("POST {path}"))?;
         self.handle_response(resp).await
     }
 
     async fn put(&self, path: &str, body: &Value) -> anyhow::Result<Value> {
-        let resp = self.http.put(self.url(path)).headers(self.auth_headers()).json(body).send().await.with_context(|| format!("PUT {path}"))?;
+        let resp = self
+            .http
+            .put(self.url(path))
+            .headers(self.auth_headers())
+            .json(body)
+            .send()
+            .await
+            .with_context(|| format!("PUT {path}"))?;
         self.handle_response(resp).await
     }
 
     async fn patch(&self, path: &str, body: &Value) -> anyhow::Result<Value> {
-        let resp = self.http.patch(self.url(path)).headers(self.auth_headers()).json(body).send().await.with_context(|| format!("PATCH {path}"))?;
+        let resp = self
+            .http
+            .patch(self.url(path))
+            .headers(self.auth_headers())
+            .json(body)
+            .send()
+            .await
+            .with_context(|| format!("PATCH {path}"))?;
         self.handle_response(resp).await
     }
 
     async fn delete(&self, path: &str) -> anyhow::Result<Value> {
-        let resp = self.http.delete(self.url(path)).headers(self.auth_headers()).send().await.with_context(|| format!("DELETE {path}"))?;
+        let resp = self
+            .http
+            .delete(self.url(path))
+            .headers(self.auth_headers())
+            .send()
+            .await
+            .with_context(|| format!("DELETE {path}"))?;
         self.handle_response(resp).await
     }
 }
@@ -163,14 +215,13 @@ impl LocalClient {
         // and is unique per workspace (not derived from the path).
         let ws_id_path = std::path::Path::new(&data_dir).join(".workspace-id");
         let ws_id = if ws_id_path.exists() {
-            let raw = std::fs::read_to_string(&ws_id_path)
-                .context("reading .workspace-id")?;
-            raw.trim().parse::<corp_core::ids::WorkspaceId>()
+            let raw = std::fs::read_to_string(&ws_id_path).context("reading .workspace-id")?;
+            raw.trim()
+                .parse::<corp_core::ids::WorkspaceId>()
                 .map_err(|_| anyhow::anyhow!("corrupt .workspace-id: {}", raw.trim()))?
         } else {
             let id = corp_core::ids::WorkspaceId::new();
-            std::fs::write(&ws_id_path, id.to_string())
-                .context("writing .workspace-id")?;
+            std::fs::write(&ws_id_path, id.to_string()).context("writing .workspace-id")?;
             id
         };
 
@@ -207,9 +258,7 @@ impl LocalClient {
 
     fn call(&self, method: &str, path: &str, body: Option<&Value>) -> anyhow::Result<Value> {
         let mut cmd = Command::new(&self.server_bin);
-        cmd.arg("call")
-            .arg(method)
-            .arg(path);
+        cmd.arg("call").arg(method).arg(path);
 
         if let Some(b) = body {
             cmd.arg(serde_json::to_string(b)?);
@@ -220,7 +269,9 @@ impl LocalClient {
             cmd.env(k, v);
         }
 
-        let output = cmd.output().with_context(|| format!("running corp-server call {method} {path}"))?;
+        let output = cmd
+            .output()
+            .with_context(|| format!("running corp-server call {method} {path}"))?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
@@ -231,7 +282,11 @@ impl LocalClient {
                     bail!("{msg}");
                 }
             }
-            let msg = if !stderr.is_empty() { stderr.to_string() } else { stdout.to_string() };
+            let msg = if !stderr.is_empty() {
+                stderr.to_string()
+            } else {
+                stdout.to_string()
+            };
             bail!("corp-server call failed: {}", msg.trim());
         }
 
@@ -240,7 +295,8 @@ impl LocalClient {
         if trimmed.is_empty() {
             return Ok(Value::Object(Default::default()));
         }
-        serde_json::from_str(trimmed).with_context(|| format!("parsing response from corp-server call {method} {path}"))
+        serde_json::from_str(trimmed)
+            .with_context(|| format!("parsing response from corp-server call {method} {path}"))
     }
 }
 

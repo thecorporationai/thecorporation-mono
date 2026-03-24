@@ -2,11 +2,13 @@
 
 use serde_json::json;
 
-use crate::output;
 use super::Context;
+use crate::output;
 
 #[derive(clap::Subcommand)]
-#[command(long_about = "Manage corporate entities. Use `corp use <entity>` to set an active entity.")]
+#[command(
+    long_about = "Manage corporate entities. Use `corp use <entity>` to set an active entity."
+)]
 pub enum EntitiesCommand {
     /// List all entities in the workspace
     List,
@@ -16,7 +18,9 @@ pub enum EntitiesCommand {
         entity_ref: String,
     },
     /// Create a new corporate entity and begin formation
-    #[command(after_help = "Examples:\n  corp entities create --name \"Acme Corp\" --entity-type c_corp --jurisdiction DE\n  corp entities create --name \"My LLC\" --entity-type llc --jurisdiction WY")]
+    #[command(
+        after_help = "Examples:\n  corp entities create --name \"Acme Corp\" --entity-type c_corp --jurisdiction DE\n  corp entities create --name \"My LLC\" --entity-type llc --jurisdiction WY"
+    )]
     Create {
         /// Legal name of the entity (e.g. Anthropic PBC)
         #[arg(long)]
@@ -29,7 +33,9 @@ pub enum EntitiesCommand {
         jurisdiction: String,
     },
     /// Dissolve an entity (irreversible)
-    #[command(after_help = "Examples:\n  corp entities dissolve <entity_id>\n  corp entities dissolve <entity_id> --reason \"Business wound down\"")]
+    #[command(
+        after_help = "Examples:\n  corp entities dissolve <entity_id>\n  corp entities dissolve <entity_id> --reason \"Business wound down\""
+    )]
     Dissolve {
         /// Entity ID or name prefix
         entity_ref: String,
@@ -47,10 +53,17 @@ pub async fn run(cmd: EntitiesCommand, ctx: &Context) -> anyhow::Result<()> {
             output::print_value(&value, mode);
         }
         EntitiesCommand::Show { entity_ref } => {
-            let value = ctx.client.get(&format!("/v1/entities/{entity_ref}")).await?;
+            let value = ctx
+                .client
+                .get(&format!("/v1/entities/{entity_ref}"))
+                .await?;
             output::print_value(&value, mode);
         }
-        EntitiesCommand::Create { name, entity_type, jurisdiction } => {
+        EntitiesCommand::Create {
+            name,
+            entity_type,
+            jurisdiction,
+        } => {
             let body = json!({ "legal_name": name, "entity_type": entity_type, "jurisdiction": jurisdiction });
             let value = ctx.client.post("/v1/entities", &body).await?;
             output::print_value(&value, mode);
@@ -58,7 +71,10 @@ pub async fn run(cmd: EntitiesCommand, ctx: &Context) -> anyhow::Result<()> {
         }
         EntitiesCommand::Dissolve { entity_ref, reason } => {
             let body = json!({ "reason": reason });
-            let value = ctx.client.post(&format!("/v1/entities/{entity_ref}/dissolve"), &body).await?;
+            let value = ctx
+                .client
+                .post(&format!("/v1/entities/{entity_ref}/dissolve"), &body)
+                .await?;
             output::print_value(&value, mode);
             output::print_success("Entity dissolved.", mode);
         }

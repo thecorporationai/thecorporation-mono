@@ -40,9 +40,9 @@ pub use transfer::ShareTransfer;
 pub use types::{
     CapTableStatus, FundingRoundStatus, GrantStatus, GrantType, InvestorLedgerEntryType,
     Percentage, PositionStatus, PricePerShare, RecipientType, RepurchaseStatus, SafeStatus,
-    SafeType, ShareCount, StockType, TransferStatus, TransferType, ValuationMethodology,
-    ValuationStatus, ValuationType, ValuationCap, VestingEventStatus, VestingEventType,
+    SafeType, ShareCount, StockType, TransferStatus, TransferType, ValuationCap,
+    ValuationMethodology, ValuationStatus, ValuationType, VestingEventStatus, VestingEventType,
     VestingStatus, VotingRights,
 };
 pub use valuation::Valuation;
-pub use vesting::{materialize_vesting_events, VestingEvent, VestingSchedule};
+pub use vesting::{VestingEvent, VestingSchedule, materialize_vesting_events};

@@ -4,8 +4,8 @@ use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use crate::ids::{EntityId, InvoiceId};
 use super::types::{Currency, InvoiceStatus};
+use crate::ids::{EntityId, InvoiceId};
 
 // ── Error ─────────────────────────────────────────────────────────────────────
 
@@ -214,21 +214,30 @@ mod tests {
         let mut inv = make_invoice();
         inv.send().unwrap();
         inv.mark_paid().unwrap();
-        assert!(matches!(inv.void(), Err(InvoiceError::CannotVoid(InvoiceStatus::Paid))));
+        assert!(matches!(
+            inv.void(),
+            Err(InvoiceError::CannotVoid(InvoiceStatus::Paid))
+        ));
     }
 
     #[test]
     fn cannot_void_already_voided_invoice() {
         let mut inv = make_invoice();
         inv.void().unwrap();
-        assert!(matches!(inv.void(), Err(InvoiceError::CannotVoid(InvoiceStatus::Voided))));
+        assert!(matches!(
+            inv.void(),
+            Err(InvoiceError::CannotVoid(InvoiceStatus::Voided))
+        ));
     }
 
     #[test]
     fn cannot_mark_paid_from_draft() {
         let mut inv = make_invoice();
         let err = inv.mark_paid();
-        assert!(matches!(err, Err(InvoiceError::NotSent(InvoiceStatus::Draft))));
+        assert!(matches!(
+            err,
+            Err(InvoiceError::NotSent(InvoiceStatus::Draft))
+        ));
     }
 
     #[test]
@@ -236,7 +245,10 @@ mod tests {
         let mut inv = make_invoice();
         inv.void().unwrap();
         let err = inv.mark_paid();
-        assert!(matches!(err, Err(InvoiceError::NotSent(InvoiceStatus::Voided))));
+        assert!(matches!(
+            err,
+            Err(InvoiceError::NotSent(InvoiceStatus::Voided))
+        ));
     }
 
     #[test]

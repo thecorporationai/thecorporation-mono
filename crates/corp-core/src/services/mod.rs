@@ -62,11 +62,7 @@ pub struct ServiceRequest {
 
 impl ServiceRequest {
     /// Create a new service request in `Pending` status.
-    pub fn new(
-        entity_id: EntityId,
-        service_slug: impl Into<String>,
-        amount_cents: i64,
-    ) -> Self {
+    pub fn new(entity_id: EntityId, service_slug: impl Into<String>, amount_cents: i64) -> Self {
         Self {
             request_id: ServiceRequestId::new(),
             entity_id,
@@ -165,7 +161,8 @@ mod tests {
         r.begin_checkout().unwrap();
         r.mark_paid().unwrap();
         r.begin_fulfillment().unwrap();
-        r.fulfill(Some("Registered agent activated".into())).unwrap();
+        r.fulfill(Some("Registered agent activated".into()))
+            .unwrap();
         assert_eq!(r.status, ServiceRequestStatus::Fulfilled);
         assert!(r.fulfilled_at.is_some());
     }
@@ -183,7 +180,10 @@ mod tests {
     #[test]
     fn wrong_state_transition_fails() {
         let mut r = make_request();
-        assert!(matches!(r.mark_paid(), Err(ServiceRequestError::NotCheckout(_))));
+        assert!(matches!(
+            r.mark_paid(),
+            Err(ServiceRequestError::NotCheckout(_))
+        ));
     }
 
     // ── Additional coverage ───────────────────────────────────────────────────
@@ -216,7 +216,10 @@ mod tests {
     fn begin_checkout_from_checkout_is_error() {
         let mut r = make_request();
         r.begin_checkout().unwrap();
-        assert!(matches!(r.begin_checkout(), Err(ServiceRequestError::NotPending(_))));
+        assert!(matches!(
+            r.begin_checkout(),
+            Err(ServiceRequestError::NotPending(_))
+        ));
     }
 
     #[test]
@@ -224,7 +227,10 @@ mod tests {
         let mut r = make_request();
         r.begin_checkout().unwrap();
         r.mark_paid().unwrap();
-        assert!(matches!(r.begin_checkout(), Err(ServiceRequestError::NotPending(_))));
+        assert!(matches!(
+            r.begin_checkout(),
+            Err(ServiceRequestError::NotPending(_))
+        ));
     }
 
     #[test]
@@ -239,7 +245,10 @@ mod tests {
     #[test]
     fn mark_paid_from_pending_is_error() {
         let mut r = make_request();
-        assert!(matches!(r.mark_paid(), Err(ServiceRequestError::NotCheckout(_))));
+        assert!(matches!(
+            r.mark_paid(),
+            Err(ServiceRequestError::NotCheckout(_))
+        ));
     }
 
     #[test]
@@ -247,7 +256,10 @@ mod tests {
         let mut r = make_request();
         r.begin_checkout().unwrap();
         r.mark_paid().unwrap();
-        assert!(matches!(r.mark_paid(), Err(ServiceRequestError::NotCheckout(_))));
+        assert!(matches!(
+            r.mark_paid(),
+            Err(ServiceRequestError::NotCheckout(_))
+        ));
     }
 
     #[test]
@@ -262,14 +274,20 @@ mod tests {
     #[test]
     fn begin_fulfillment_from_pending_is_error() {
         let mut r = make_request();
-        assert!(matches!(r.begin_fulfillment(), Err(ServiceRequestError::NotPaid(_))));
+        assert!(matches!(
+            r.begin_fulfillment(),
+            Err(ServiceRequestError::NotPaid(_))
+        ));
     }
 
     #[test]
     fn begin_fulfillment_from_checkout_is_error() {
         let mut r = make_request();
         r.begin_checkout().unwrap();
-        assert!(matches!(r.begin_fulfillment(), Err(ServiceRequestError::NotPaid(_))));
+        assert!(matches!(
+            r.begin_fulfillment(),
+            Err(ServiceRequestError::NotPaid(_))
+        ));
     }
 
     #[test]
@@ -299,7 +317,10 @@ mod tests {
         let mut r = make_request();
         r.begin_checkout().unwrap();
         r.mark_paid().unwrap();
-        assert!(matches!(r.fulfill(None), Err(ServiceRequestError::NotFulfilling(_))));
+        assert!(matches!(
+            r.fulfill(None),
+            Err(ServiceRequestError::NotFulfilling(_))
+        ));
     }
 
     #[test]
@@ -316,7 +337,10 @@ mod tests {
     #[test]
     fn fail_from_pending_is_error() {
         let mut r = make_request();
-        assert!(matches!(r.fail(), Err(ServiceRequestError::NotFulfilling(_))));
+        assert!(matches!(
+            r.fail(),
+            Err(ServiceRequestError::NotFulfilling(_))
+        ));
     }
 
     #[test]
@@ -324,7 +348,10 @@ mod tests {
         let mut r = make_request();
         r.begin_checkout().unwrap();
         r.mark_paid().unwrap();
-        assert!(matches!(r.fail(), Err(ServiceRequestError::NotFulfilling(_))));
+        assert!(matches!(
+            r.fail(),
+            Err(ServiceRequestError::NotFulfilling(_))
+        ));
     }
 
     #[test]
@@ -334,7 +361,10 @@ mod tests {
         r.mark_paid().unwrap();
         r.begin_fulfillment().unwrap();
         r.fulfill(None).unwrap();
-        assert!(matches!(r.fail(), Err(ServiceRequestError::NotFulfilling(_))));
+        assert!(matches!(
+            r.fail(),
+            Err(ServiceRequestError::NotFulfilling(_))
+        ));
     }
 
     #[test]
@@ -400,12 +430,30 @@ mod tests {
             let de: ServiceRequestStatus = serde_json::from_str(&s).unwrap();
             assert_eq!(de, status);
         }
-        assert_eq!(serde_json::to_string(&ServiceRequestStatus::Pending).unwrap(), r#""pending""#);
-        assert_eq!(serde_json::to_string(&ServiceRequestStatus::Checkout).unwrap(), r#""checkout""#);
-        assert_eq!(serde_json::to_string(&ServiceRequestStatus::Paid).unwrap(), r#""paid""#);
-        assert_eq!(serde_json::to_string(&ServiceRequestStatus::Fulfilling).unwrap(), r#""fulfilling""#);
-        assert_eq!(serde_json::to_string(&ServiceRequestStatus::Fulfilled).unwrap(), r#""fulfilled""#);
-        assert_eq!(serde_json::to_string(&ServiceRequestStatus::Failed).unwrap(), r#""failed""#);
+        assert_eq!(
+            serde_json::to_string(&ServiceRequestStatus::Pending).unwrap(),
+            r#""pending""#
+        );
+        assert_eq!(
+            serde_json::to_string(&ServiceRequestStatus::Checkout).unwrap(),
+            r#""checkout""#
+        );
+        assert_eq!(
+            serde_json::to_string(&ServiceRequestStatus::Paid).unwrap(),
+            r#""paid""#
+        );
+        assert_eq!(
+            serde_json::to_string(&ServiceRequestStatus::Fulfilling).unwrap(),
+            r#""fulfilling""#
+        );
+        assert_eq!(
+            serde_json::to_string(&ServiceRequestStatus::Fulfilled).unwrap(),
+            r#""fulfilled""#
+        );
+        assert_eq!(
+            serde_json::to_string(&ServiceRequestStatus::Failed).unwrap(),
+            r#""failed""#
+        );
     }
 
     #[test]

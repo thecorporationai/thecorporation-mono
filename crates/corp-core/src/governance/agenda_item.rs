@@ -58,13 +58,7 @@ mod tests {
     use super::*;
 
     fn make_item(item_type: AgendaItemType) -> AgendaItem {
-        AgendaItem::new(
-            MeetingId::new(),
-            "Test Item".into(),
-            item_type,
-            None,
-            None,
-        )
+        AgendaItem::new(MeetingId::new(), "Test Item".into(), item_type, None, None)
     }
 
     #[test]

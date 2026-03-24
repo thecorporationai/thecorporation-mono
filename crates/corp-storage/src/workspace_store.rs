@@ -130,7 +130,8 @@ impl WorkspaceStore {
                 let ws = workspace_id.to_string();
                 // Register workspace in the global set.
                 use redis::AsyncCommands;
-                let _: i64 = con.sadd(crate::kv::key_workspaces_static(), &ws)
+                let _: i64 = con
+                    .sadd(crate::kv::key_workspaces_static(), &ws)
                     .await
                     .map_err(|e| StorageError::KvError(e.to_string()))?;
             }
@@ -143,7 +144,10 @@ impl WorkspaceStore {
             }
         }
 
-        Ok(Self { backend, workspace_id })
+        Ok(Self {
+            backend,
+            workspace_id,
+        })
     }
 
     /// Open an existing workspace store.
@@ -184,7 +188,10 @@ impl WorkspaceStore {
             }
         }
 
-        Ok(Self { backend, workspace_id })
+        Ok(Self {
+            backend,
+            workspace_id,
+        })
     }
 
     // ── API key operations ────────────────────────────────────────────────────
@@ -214,9 +221,7 @@ impl WorkspaceStore {
         let names = self.list_dir(API_KEYS_DIR, "main").await?;
         let mut ids = Vec::with_capacity(names.len());
         for name in names {
-            let stem = name
-                .strip_suffix(".json")
-                .unwrap_or(&name);
+            let stem = name.strip_suffix(".json").unwrap_or(&name);
             // Strip directory prefix if present (KV returns full paths).
             let bare = stem
                 .strip_prefix(API_KEYS_DIR)
@@ -290,8 +295,8 @@ impl WorkspaceStore {
         }
         ids.push(entity_id);
         let id_strings: Vec<String> = ids.iter().map(ToString::to_string).collect();
-        let bytes =
-            serde_json::to_vec(&id_strings).map_err(|e| StorageError::SerializationError(e.to_string()))?;
+        let bytes = serde_json::to_vec(&id_strings)
+            .map_err(|e| StorageError::SerializationError(e.to_string()))?;
         self.write_raw(ENTITIES_INDEX, bytes, "main", "register entity")
             .await
     }
@@ -381,11 +386,9 @@ impl WorkspaceStore {
                 let rp = Arc::clone(repo_path);
                 let d = dir.to_owned();
                 let b = branch.to_owned();
-                tokio::task::spawn_blocking(move || {
-                    crate::git::list_directory(&rp, &b, &d)
-                })
-                .await
-                .map_err(|e| StorageError::GitError(format!("spawn_blocking: {}", e)))?
+                tokio::task::spawn_blocking(move || crate::git::list_directory(&rp, &b, &d))
+                    .await
+                    .map_err(|e| StorageError::GitError(format!("spawn_blocking: {}", e)))?
             }
 
             #[cfg(feature = "kv")]

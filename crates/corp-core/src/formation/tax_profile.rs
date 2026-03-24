@@ -327,8 +327,7 @@ mod tests {
 
     #[test]
     fn classification_serializes_as_snake_case() {
-        let json =
-            serde_json::to_string(&IrsTaxClassification::DisregardedEntity).unwrap();
+        let json = serde_json::to_string(&IrsTaxClassification::DisregardedEntity).unwrap();
         assert_eq!(json, r#""disregarded_entity""#);
     }
 

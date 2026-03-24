@@ -216,7 +216,10 @@ mod tests {
     fn cancel_from_terminal_fails() {
         let mut item = make_item();
         item.cancel().unwrap();
-        assert!(matches!(item.cancel(), Err(WorkItemError::AlreadyTerminal(_))));
+        assert!(matches!(
+            item.cancel(),
+            Err(WorkItemError::AlreadyTerminal(_))
+        ));
     }
 
     // ── Additional coverage ───────────────────────────────────────────────────
@@ -263,7 +266,10 @@ mod tests {
     fn claim_already_claimed_is_error() {
         let mut item = make_item();
         item.claim("agent-1").unwrap();
-        assert!(matches!(item.claim("agent-2"), Err(WorkItemError::NotOpen(_))));
+        assert!(matches!(
+            item.claim("agent-2"),
+            Err(WorkItemError::NotOpen(_))
+        ));
     }
 
     #[test]
@@ -307,7 +313,10 @@ mod tests {
     #[test]
     fn release_claim_from_open_is_error() {
         let mut item = make_item();
-        assert!(matches!(item.release_claim(), Err(WorkItemError::NotOpen(_))));
+        assert!(matches!(
+            item.release_claim(),
+            Err(WorkItemError::NotOpen(_))
+        ));
     }
 
     #[test]
@@ -323,7 +332,10 @@ mod tests {
         let mut item = make_item();
         item.claim("agent-1").unwrap();
         item.complete("agent-1", None).unwrap();
-        assert!(matches!(item.cancel(), Err(WorkItemError::AlreadyTerminal(_))));
+        assert!(matches!(
+            item.cancel(),
+            Err(WorkItemError::AlreadyTerminal(_))
+        ));
     }
 
     #[test]
@@ -355,9 +367,7 @@ mod tests {
 
     #[test]
     fn claim_ttl_not_expired_when_just_set() {
-        let mut item = WorkItem::new(
-            EntityId::new(), "ttl-test", "desc", "cat", None, false,
-        );
+        let mut item = WorkItem::new(EntityId::new(), "ttl-test", "desc", "cat", None, false);
         item.claim("agent").unwrap();
         item.claim_ttl_seconds = Some(3600); // 1 hour TTL
         assert!(!item.is_claim_expired());
@@ -365,9 +375,7 @@ mod tests {
 
     #[test]
     fn claim_ttl_expired_when_past_deadline() {
-        let mut item = WorkItem::new(
-            EntityId::new(), "ttl-test", "desc", "cat", None, false,
-        );
+        let mut item = WorkItem::new(EntityId::new(), "ttl-test", "desc", "cat", None, false);
         item.claim("agent").unwrap();
         // Set claimed_at to the past (1 hour ago)
         item.claimed_at = Some(chrono::Utc::now() - chrono::Duration::hours(2));
@@ -401,10 +409,22 @@ mod tests {
             let de: WorkItemStatus = serde_json::from_str(&s).unwrap();
             assert_eq!(de, status);
         }
-        assert_eq!(serde_json::to_string(&WorkItemStatus::Open).unwrap(), r#""open""#);
-        assert_eq!(serde_json::to_string(&WorkItemStatus::Claimed).unwrap(), r#""claimed""#);
-        assert_eq!(serde_json::to_string(&WorkItemStatus::Completed).unwrap(), r#""completed""#);
-        assert_eq!(serde_json::to_string(&WorkItemStatus::Cancelled).unwrap(), r#""cancelled""#);
+        assert_eq!(
+            serde_json::to_string(&WorkItemStatus::Open).unwrap(),
+            r#""open""#
+        );
+        assert_eq!(
+            serde_json::to_string(&WorkItemStatus::Claimed).unwrap(),
+            r#""claimed""#
+        );
+        assert_eq!(
+            serde_json::to_string(&WorkItemStatus::Completed).unwrap(),
+            r#""completed""#
+        );
+        assert_eq!(
+            serde_json::to_string(&WorkItemStatus::Cancelled).unwrap(),
+            r#""cancelled""#
+        );
     }
 
     #[test]

@@ -3,8 +3,8 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use crate::ids::{CapTableId, EntityId, ShareClassId};
 use super::types::{ShareCount, StockType};
+use crate::ids::{CapTableId, EntityId, ShareClassId};
 
 /// A class of shares (e.g. "Common A", "Series Seed Preferred") within a cap
 /// table.
@@ -166,7 +166,10 @@ mod tests {
         let json = serde_json::to_string(&sc).unwrap();
         let de: ShareClass = serde_json::from_str(&json).unwrap();
         assert_eq!(de.stock_type, StockType::Preferred);
-        assert_eq!(de.liquidation_preference.as_deref(), Some("1x non-participating"));
+        assert_eq!(
+            de.liquidation_preference.as_deref(),
+            Some("1x non-participating")
+        );
     }
 
     #[test]

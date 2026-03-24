@@ -3,8 +3,8 @@
 use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 
-use crate::ids::{ContactId, EntityId, FundingRoundId, InvestorLedgerEntryId, SafeNoteId};
 use super::types::InvestorLedgerEntryType;
+use crate::ids::{ContactId, EntityId, FundingRoundId, InvestorLedgerEntryId, SafeNoteId};
 
 // ── InvestorLedgerEntry ───────────────────────────────────────────────────────
 
@@ -220,8 +220,7 @@ mod tests {
 
     #[test]
     fn entry_type_serde_priced_round_investment() {
-        let json =
-            serde_json::to_string(&InvestorLedgerEntryType::PricedRoundInvestment).unwrap();
+        let json = serde_json::to_string(&InvestorLedgerEntryType::PricedRoundInvestment).unwrap();
         assert_eq!(json, r#""priced_round_investment""#);
     }
 

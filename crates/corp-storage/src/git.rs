@@ -23,10 +23,10 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
+use gix::ObjectId;
 use gix::bstr::BString;
 use gix::objs::tree::EntryKind;
 use gix::refs::transaction::{Change, LogChange, PreviousValue, RefEdit};
-use gix::ObjectId;
 use smallvec::SmallVec;
 
 use crate::error::StorageError;
@@ -112,7 +112,7 @@ fn find_blob(repo: &gix::Repository, tree_id: ObjectId, parts: &[&str]) -> Resul
                     return Err(StorageError::InvalidData(format!(
                         "'{}' is not a file",
                         name
-                    )))
+                    )));
                 }
             }
             return Ok(repo.find_object(entry.oid).map_err(git_err)?.data.to_vec());
@@ -226,10 +226,7 @@ fn remove_node(map: &mut BTreeMap<String, TreeNode>, parts: &[&str]) -> bool {
     }
 }
 
-fn write_tree(
-    repo: &gix::Repository,
-    map: &BTreeMap<String, TreeNode>,
-) -> Result<ObjectId> {
+fn write_tree(repo: &gix::Repository, map: &BTreeMap<String, TreeNode>) -> Result<ObjectId> {
     let mut entries: Vec<gix::objs::tree::Entry> = Vec::new();
 
     for (name, node) in map {
@@ -278,22 +275,15 @@ fn write_tree(
 /// example, `"foo"` (tree) sorts after `"foo.json"` (blob) because
 /// `"foo/"` > `"foo.json"` byte-by-byte at the `.` vs `/` comparison
 /// (`.` = 0x2E, `/` = 0x2F).
-fn git_entry_cmp(
-    a: &[u8],
-    a_is_dir: bool,
-    b: &[u8],
-    b_is_dir: bool,
-) -> std::cmp::Ordering {
+fn git_entry_cmp(a: &[u8], a_is_dir: bool, b: &[u8], b_is_dir: bool) -> std::cmp::Ordering {
     // Build virtual byte sequences that append '/' for directories.
     let a_key: Vec<u8> = if a_is_dir {
-        a.iter().copied().chain(std::iter::once(b'/'))
-            .collect()
+        a.iter().copied().chain(std::iter::once(b'/')).collect()
     } else {
         a.to_vec()
     };
     let b_key: Vec<u8> = if b_is_dir {
-        b.iter().copied().chain(std::iter::once(b'/'))
-            .collect()
+        b.iter().copied().chain(std::iter::once(b'/')).collect()
     } else {
         b.to_vec()
     };
@@ -354,18 +344,15 @@ fn update_ref(
         deref: false,
     };
 
-    repo.edit_references(std::iter::once(edit)).map_err(git_err)?;
+    repo.edit_references(std::iter::once(edit))
+        .map_err(git_err)?;
     Ok(())
 }
 
 // ── Directory listing ─────────────────────────────────────────────────────────
 
 /// List the direct children of `dir_path` on `branch`.  Returns empty on miss.
-pub fn list_directory(
-    repo_path: &Path,
-    branch: &str,
-    dir_path: &str,
-) -> Result<Vec<String>> {
+pub fn list_directory(repo_path: &Path, branch: &str, dir_path: &str) -> Result<Vec<String>> {
     let repo = open_repo(repo_path)?;
     let ref_name = branch_ref(branch);
 
@@ -414,9 +401,7 @@ fn navigate_to_subtree_id(
             .entries
             .iter()
             .find(|e| String::from_utf8_lossy(&e.filename) == *part)
-            .ok_or_else(|| {
-                StorageError::NotFound(format!("directory component '{}'", part))
-            })?;
+            .ok_or_else(|| StorageError::NotFound(format!("directory component '{}'", part)))?;
 
         if entry.mode.kind() != EntryKind::Tree {
             return Err(StorageError::InvalidData(format!(
@@ -433,12 +418,7 @@ fn navigate_to_subtree_id(
 // ── Deletion ──────────────────────────────────────────────────────────────────
 
 /// Delete `file_path` from `branch`.
-pub fn delete_file(
-    repo_path: &Path,
-    branch: &str,
-    file_path: &str,
-    message: &str,
-) -> Result<()> {
+pub fn delete_file(repo_path: &Path, branch: &str, file_path: &str, message: &str) -> Result<()> {
     let repo = open_repo(repo_path)?;
     let ref_name = branch_ref(branch);
 

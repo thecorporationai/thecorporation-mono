@@ -2,8 +2,8 @@
 
 use serde_json::json;
 
-use crate::output;
 use super::Context;
+use crate::output;
 
 // ── GovernanceCommand ─────────────────────────────────────────────────────────
 
@@ -311,7 +311,12 @@ pub async fn run(cmd: GovernanceCommand, ctx: &Context) -> anyhow::Result<()> {
             output::print_value(&value, mode);
         }
 
-        GovernanceCommand::CreateBody { name, body_type, quorum, voting_method } => {
+        GovernanceCommand::CreateBody {
+            name,
+            body_type,
+            quorum,
+            voting_method,
+        } => {
             let path = format!("/v1/entities/{entity_id}/governance/bodies");
             let body = json!({
                 "name": name,
@@ -384,7 +389,11 @@ pub async fn run(cmd: GovernanceCommand, ctx: &Context) -> anyhow::Result<()> {
             output::print_value(&value, mode);
         }
 
-        GovernanceCommand::CreateMeeting { body_id, title, meeting_type } => {
+        GovernanceCommand::CreateMeeting {
+            body_id,
+            title,
+            meeting_type,
+        } => {
             let path = format!("/v1/entities/{entity_id}/governance/meetings");
             let req_body = json!({
                 "body_id": body_id,
@@ -397,54 +406,46 @@ pub async fn run(cmd: GovernanceCommand, ctx: &Context) -> anyhow::Result<()> {
         }
 
         GovernanceCommand::SendNotice { meeting_id } => {
-            let path = format!(
-                "/v1/entities/{entity_id}/governance/meetings/{meeting_id}/notice"
-            );
+            let path = format!("/v1/entities/{entity_id}/governance/meetings/{meeting_id}/notice");
             let value = ctx.post(&path, &json!({})).await?;
             output::print_value(&value, mode);
             output::print_success("Notice sent.", mode);
         }
 
         GovernanceCommand::Convene { meeting_id } => {
-            let path = format!(
-                "/v1/entities/{entity_id}/governance/meetings/{meeting_id}/convene"
-            );
+            let path = format!("/v1/entities/{entity_id}/governance/meetings/{meeting_id}/convene");
             let value = ctx.post(&path, &json!({})).await?;
             output::print_value(&value, mode);
             output::print_success("Meeting convened.", mode);
         }
 
         GovernanceCommand::Adjourn { meeting_id } => {
-            let path = format!(
-                "/v1/entities/{entity_id}/governance/meetings/{meeting_id}/adjourn"
-            );
+            let path = format!("/v1/entities/{entity_id}/governance/meetings/{meeting_id}/adjourn");
             let value = ctx.post(&path, &json!({})).await?;
             output::print_value(&value, mode);
             output::print_success("Meeting adjourned.", mode);
         }
 
         GovernanceCommand::CancelMeeting { meeting_id } => {
-            let path = format!(
-                "/v1/entities/{entity_id}/governance/meetings/{meeting_id}/cancel"
-            );
+            let path = format!("/v1/entities/{entity_id}/governance/meetings/{meeting_id}/cancel");
             let value = ctx.post(&path, &json!({})).await?;
             output::print_value(&value, mode);
             output::print_success("Meeting cancelled.", mode);
         }
 
         GovernanceCommand::Reopen { meeting_id } => {
-            let path = format!(
-                "/v1/entities/{entity_id}/governance/meetings/{meeting_id}/reopen"
-            );
+            let path = format!("/v1/entities/{entity_id}/governance/meetings/{meeting_id}/reopen");
             let value = ctx.post(&path, &json!({})).await?;
             output::print_value(&value, mode);
             output::print_success("Meeting reopened.", mode);
         }
 
-        GovernanceCommand::RecordAttendance { meeting_id, seat_ids } => {
-            let path = format!(
-                "/v1/entities/{entity_id}/governance/meetings/{meeting_id}/attendance"
-            );
+        GovernanceCommand::RecordAttendance {
+            meeting_id,
+            seat_ids,
+        } => {
+            let path =
+                format!("/v1/entities/{entity_id}/governance/meetings/{meeting_id}/attendance");
             let ids: Vec<&str> = seat_ids.split(',').map(str::trim).collect();
             let req_body = json!({ "seat_ids": ids });
             let value = ctx.post(&path, &req_body).await?;
@@ -453,9 +454,7 @@ pub async fn run(cmd: GovernanceCommand, ctx: &Context) -> anyhow::Result<()> {
         }
 
         GovernanceCommand::Items { meeting_id } => {
-            let path = format!(
-                "/v1/entities/{entity_id}/governance/meetings/{meeting_id}/items"
-            );
+            let path = format!("/v1/entities/{entity_id}/governance/meetings/{meeting_id}/items");
             let value = ctx.get(&path).await?;
             output::print_value(&value, mode);
         }
@@ -467,9 +466,7 @@ pub async fn run(cmd: GovernanceCommand, ctx: &Context) -> anyhow::Result<()> {
             description,
             resolution_text,
         } => {
-            let path = format!(
-                "/v1/entities/{entity_id}/governance/meetings/{meeting_id}/items"
-            );
+            let path = format!("/v1/entities/{entity_id}/governance/meetings/{meeting_id}/items");
             let req_body = json!({
                 "title": title,
                 "item_type": item_type,
@@ -482,17 +479,18 @@ pub async fn run(cmd: GovernanceCommand, ctx: &Context) -> anyhow::Result<()> {
         }
 
         GovernanceCommand::Votes { meeting_id } => {
-            let path = format!(
-                "/v1/entities/{entity_id}/governance/meetings/{meeting_id}/votes"
-            );
+            let path = format!("/v1/entities/{entity_id}/governance/meetings/{meeting_id}/votes");
             let value = ctx.get(&path).await?;
             output::print_value(&value, mode);
         }
 
-        GovernanceCommand::Vote { meeting_id, item_id, seat_id, value: vote_value } => {
-            let path = format!(
-                "/v1/entities/{entity_id}/governance/meetings/{meeting_id}/votes"
-            );
+        GovernanceCommand::Vote {
+            meeting_id,
+            item_id,
+            seat_id,
+            value: vote_value,
+        } => {
+            let path = format!("/v1/entities/{entity_id}/governance/meetings/{meeting_id}/votes");
             let req_body = json!({
                 "agenda_item_id": item_id,
                 "seat_id": seat_id,
@@ -503,7 +501,12 @@ pub async fn run(cmd: GovernanceCommand, ctx: &Context) -> anyhow::Result<()> {
             output::print_success("Vote recorded.", mode);
         }
 
-        GovernanceCommand::ResolveItem { meeting_id, item_id, resolution_type, resolution_text } => {
+        GovernanceCommand::ResolveItem {
+            meeting_id,
+            item_id,
+            resolution_type,
+            resolution_text,
+        } => {
             let path = format!(
                 "/v1/entities/{entity_id}/governance/meetings/{meeting_id}/items/{item_id}/resolve"
             );
@@ -516,10 +519,12 @@ pub async fn run(cmd: GovernanceCommand, ctx: &Context) -> anyhow::Result<()> {
             output::print_success("Item resolved.", mode);
         }
 
-        GovernanceCommand::WrittenConsent { body_id, title, resolution_text } => {
-            let path = format!(
-                "/v1/entities/{entity_id}/governance/written-consent"
-            );
+        GovernanceCommand::WrittenConsent {
+            body_id,
+            title,
+            resolution_text,
+        } => {
+            let path = format!("/v1/entities/{entity_id}/governance/written-consent");
             let req_body = json!({
                 "body_id": body_id,
                 "title": title,
@@ -530,10 +535,12 @@ pub async fn run(cmd: GovernanceCommand, ctx: &Context) -> anyhow::Result<()> {
             output::print_success("Written consent created.", mode);
         }
 
-        GovernanceCommand::QuickApprove { body_id, title, resolution_text } => {
-            let path = format!(
-                "/v1/entities/{entity_id}/governance/quick-approve"
-            );
+        GovernanceCommand::QuickApprove {
+            body_id,
+            title,
+            resolution_text,
+        } => {
+            let path = format!("/v1/entities/{entity_id}/governance/quick-approve");
             let req_body = json!({
                 "body_id": body_id,
                 "title": title,

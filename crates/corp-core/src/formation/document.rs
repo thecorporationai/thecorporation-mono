@@ -254,11 +254,7 @@ impl Document {
     /// Record an amendment: update content, hash, bump version, and move to
     /// `Amended` status.  Existing signatures are cleared because the content
     /// has changed.
-    pub fn amend(
-        &mut self,
-        new_content: serde_json::Value,
-        new_content_hash: impl Into<String>,
-    ) {
+    pub fn amend(&mut self, new_content: serde_json::Value, new_content_hash: impl Into<String>) {
         self.content = new_content;
         self.content_hash = new_content_hash.into();
         self.version += 1;

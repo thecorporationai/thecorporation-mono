@@ -3,8 +3,8 @@
 use chrono::{DateTime, Datelike, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 
-use crate::ids::{EntityId, EquityGrantId, VestingEventId, VestingScheduleId};
 use super::types::{ShareCount, VestingEventStatus, VestingEventType, VestingStatus};
+use crate::ids::{EntityId, EquityGrantId, VestingEventId, VestingScheduleId};
 
 // ── Error ─────────────────────────────────────────────────────────────────────
 
@@ -144,8 +144,12 @@ impl VestingEvent {
                 Ok(())
             }
             VestingEventStatus::Vested => Err(EquityError::AlreadyVested),
-            VestingEventStatus::Forfeited => Err(EquityError::NotScheduled { current: "forfeited" }),
-            VestingEventStatus::Cancelled => Err(EquityError::NotScheduled { current: "cancelled" }),
+            VestingEventStatus::Forfeited => Err(EquityError::NotScheduled {
+                current: "forfeited",
+            }),
+            VestingEventStatus::Cancelled => Err(EquityError::NotScheduled {
+                current: "cancelled",
+            }),
         }
     }
 
@@ -158,7 +162,9 @@ impl VestingEvent {
             }
             VestingEventStatus::Vested => Err(EquityError::NotScheduled { current: "vested" }),
             VestingEventStatus::Forfeited => Err(EquityError::AlreadyForfeited),
-            VestingEventStatus::Cancelled => Err(EquityError::NotScheduled { current: "cancelled" }),
+            VestingEventStatus::Cancelled => Err(EquityError::NotScheduled {
+                current: "cancelled",
+            }),
         }
     }
 
@@ -170,7 +176,9 @@ impl VestingEvent {
                 Ok(())
             }
             VestingEventStatus::Vested => Err(EquityError::NotScheduled { current: "vested" }),
-            VestingEventStatus::Forfeited => Err(EquityError::NotScheduled { current: "forfeited" }),
+            VestingEventStatus::Forfeited => Err(EquityError::NotScheduled {
+                current: "forfeited",
+            }),
             VestingEventStatus::Cancelled => Err(EquityError::AlreadyCancelled),
         }
     }
@@ -187,8 +195,7 @@ fn add_months(date: NaiveDate, months: u32) -> NaiveDate {
     // Clamp the day to the last valid day in the target month.
     let days_in_month = days_in_month(year, month);
     let day = date.day().min(days_in_month);
-    NaiveDate::from_ymd_opt(year, month, day)
-        .expect("clamped date must be valid")
+    NaiveDate::from_ymd_opt(year, month, day).expect("clamped date must be valid")
 }
 
 fn days_in_month(year: i32, month: u32) -> u32 {
@@ -310,11 +317,7 @@ pub fn materialize_vesting_events(schedule: &VestingSchedule) -> Vec<VestingEven
 mod tests {
     use super::*;
 
-    fn make_schedule(
-        total_shares: i64,
-        cliff_months: u32,
-        total_months: u32,
-    ) -> VestingSchedule {
+    fn make_schedule(total_shares: i64, cliff_months: u32, total_months: u32) -> VestingSchedule {
         VestingSchedule::new(
             EquityGrantId::new(),
             EntityId::new(),
@@ -343,7 +346,10 @@ mod tests {
         assert_eq!(events[0].event_type, VestingEventType::Cliff);
         // Cliff = 12/48 = 25% of 4_800_000 = 1_200_000
         assert_eq!(events[0].share_count.raw(), 1_200_000);
-        assert_eq!(events[0].vest_date, NaiveDate::from_ymd_opt(2027, 1, 1).unwrap());
+        assert_eq!(
+            events[0].vest_date,
+            NaiveDate::from_ymd_opt(2027, 1, 1).unwrap()
+        );
 
         // Monthly events
         for e in &events[1..] {
@@ -484,14 +490,20 @@ mod tests {
     fn vest_forfeited_returns_error() {
         let mut e = make_event();
         e.forfeit().unwrap();
-        assert!(matches!(e.vest().unwrap_err(), EquityError::NotScheduled { .. }));
+        assert!(matches!(
+            e.vest().unwrap_err(),
+            EquityError::NotScheduled { .. }
+        ));
     }
 
     #[test]
     fn vest_cancelled_returns_error() {
         let mut e = make_event();
         e.cancel().unwrap();
-        assert!(matches!(e.vest().unwrap_err(), EquityError::NotScheduled { .. }));
+        assert!(matches!(
+            e.vest().unwrap_err(),
+            EquityError::NotScheduled { .. }
+        ));
     }
 
     #[test]
@@ -505,7 +517,10 @@ mod tests {
     fn forfeit_vested_returns_error() {
         let mut e = make_event();
         e.vest().unwrap();
-        assert!(matches!(e.forfeit().unwrap_err(), EquityError::NotScheduled { .. }));
+        assert!(matches!(
+            e.forfeit().unwrap_err(),
+            EquityError::NotScheduled { .. }
+        ));
     }
 
     #[test]
@@ -519,7 +534,10 @@ mod tests {
     fn cancel_vested_returns_error() {
         let mut e = make_event();
         e.vest().unwrap();
-        assert!(matches!(e.cancel().unwrap_err(), EquityError::NotScheduled { .. }));
+        assert!(matches!(
+            e.cancel().unwrap_err(),
+            EquityError::NotScheduled { .. }
+        ));
     }
 
     // ── serde roundtrips ──────────────────────────────────────────────────────
@@ -547,15 +565,24 @@ mod tests {
     #[test]
     fn add_months_no_overflow() {
         let d = NaiveDate::from_ymd_opt(2026, 1, 1).unwrap();
-        assert_eq!(add_months(d, 1), NaiveDate::from_ymd_opt(2026, 2, 1).unwrap());
-        assert_eq!(add_months(d, 12), NaiveDate::from_ymd_opt(2027, 1, 1).unwrap());
+        assert_eq!(
+            add_months(d, 1),
+            NaiveDate::from_ymd_opt(2026, 2, 1).unwrap()
+        );
+        assert_eq!(
+            add_months(d, 12),
+            NaiveDate::from_ymd_opt(2027, 1, 1).unwrap()
+        );
     }
 
     #[test]
     fn add_months_clamps_day_for_short_months() {
         // Jan 31 + 1 month → Feb 28 (non-leap)
         let d = NaiveDate::from_ymd_opt(2026, 1, 31).unwrap();
-        assert_eq!(add_months(d, 1), NaiveDate::from_ymd_opt(2026, 2, 28).unwrap());
+        assert_eq!(
+            add_months(d, 1),
+            NaiveDate::from_ymd_opt(2026, 2, 28).unwrap()
+        );
     }
 
     #[test]
@@ -564,7 +591,10 @@ mod tests {
             let s = make_schedule(total, cliff, months);
             let events = materialize_vesting_events(&s);
             let sum: i64 = events.iter().map(|e| e.share_count.raw()).sum();
-            assert_eq!(sum, total, "mismatch for total={total} cliff={cliff} months={months}");
+            assert_eq!(
+                sum, total,
+                "mismatch for total={total} cliff={cliff} months={months}"
+            );
         }
     }
 }

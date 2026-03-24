@@ -1,15 +1,18 @@
-mod config;
 mod client;
-mod output;
 mod commands;
+mod config;
 mod local;
+mod output;
 pub mod refs;
 
 use clap::Parser;
 use client::{HttpClient, LocalClient};
 
 #[derive(Parser)]
-#[command(name = "corp", about = "Corporate governance at the speed of code — manage entities, equity, governance, treasury, and compliance", version,
+#[command(
+    name = "corp",
+    about = "Corporate governance at the speed of code — manage entities, equity, governance, treasury, and compliance",
+    version,
     long_about = "Corporate governance at the speed of code — manage entities, equity, governance, treasury, and compliance\n\nQuick start (local):\n  corp --local form create --name \"Anthropic PBC\" --entity-type c_corp --jurisdiction DE\n  corp --local use <ENTITY_ID>\n  corp --local form advance <ENTITY_ID>\n\nQuick start (remote):\n  corp setup\n  corp form create --name \"Anthropic PBC\""
 )]
 struct Cli {
@@ -54,7 +57,8 @@ async fn main() -> anyhow::Result<()> {
         // an external API key from config.
         Box::new(LocalClient::auto(data_dir)?)
     } else {
-        let url = cli.api_url
+        let url = cli
+            .api_url
             .or(cfg.api_url.clone())
             .unwrap_or_else(|| "http://localhost:8000".into());
         let key = cli.api_key.or(cfg.api_key.clone());

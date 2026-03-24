@@ -3,8 +3,8 @@
 use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 
-use crate::ids::{EntityId, EquityGrantId, RepurchaseRightId};
 use super::types::{RepurchaseStatus, ShareCount};
+use crate::ids::{EntityId, EquityGrantId, RepurchaseRightId};
 
 // ── RepurchaseRight ───────────────────────────────────────────────────────────
 

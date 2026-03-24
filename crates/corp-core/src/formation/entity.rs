@@ -55,12 +55,10 @@ pub struct Jurisdiction(String);
 impl Jurisdiction {
     /// The complete set of valid US state and territory codes.
     const VALID_CODES: &'static [&'static str] = &[
-        "AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "FL", "GA",
-        "HI", "ID", "IL", "IN", "IA", "KS", "KY", "LA", "ME", "MD",
-        "MA", "MI", "MN", "MS", "MO", "MT", "NE", "NV", "NH", "NJ",
-        "NM", "NY", "NC", "ND", "OH", "OK", "OR", "PA", "RI", "SC",
-        "SD", "TN", "TX", "UT", "VT", "VA", "WA", "WV", "WI", "WY",
-        "DC", "PR", "VI", "GU", "AS", "MP",
+        "AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "FL", "GA", "HI", "ID", "IL", "IN", "IA",
+        "KS", "KY", "LA", "ME", "MD", "MA", "MI", "MN", "MS", "MO", "MT", "NE", "NV", "NH", "NJ",
+        "NM", "NY", "NC", "ND", "OH", "OK", "OR", "PA", "RI", "SC", "SD", "TN", "TX", "UT", "VT",
+        "VA", "WA", "WV", "WI", "WY", "DC", "PR", "VI", "GU", "AS", "MP",
     ];
 
     /// Parse and validate a jurisdiction code.
@@ -284,11 +282,7 @@ impl Entity {
         Ok(())
     }
 
-    pub fn set_registered_agent(
-        &mut self,
-        name: impl Into<String>,
-        address: impl Into<String>,
-    ) {
+    pub fn set_registered_agent(&mut self, name: impl Into<String>, address: impl Into<String>) {
         self.registered_agent_name = Some(name.into());
         self.registered_agent_address = Some(address.into());
     }
@@ -401,12 +395,10 @@ mod tests {
     #[test]
     fn jurisdiction_all_50_states_dc_and_territories_valid() {
         let codes = [
-            "AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "FL", "GA",
-            "HI", "ID", "IL", "IN", "IA", "KS", "KY", "LA", "ME", "MD",
-            "MA", "MI", "MN", "MS", "MO", "MT", "NE", "NV", "NH", "NJ",
-            "NM", "NY", "NC", "ND", "OH", "OK", "OR", "PA", "RI", "SC",
-            "SD", "TN", "TX", "UT", "VT", "VA", "WA", "WV", "WI", "WY",
-            "DC", "PR", "VI", "GU", "AS", "MP",
+            "AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "FL", "GA", "HI", "ID", "IL", "IN",
+            "IA", "KS", "KY", "LA", "ME", "MD", "MA", "MI", "MN", "MS", "MO", "MT", "NE", "NV",
+            "NH", "NJ", "NM", "NY", "NC", "ND", "OH", "OK", "OR", "PA", "RI", "SC", "SD", "TN",
+            "TX", "UT", "VT", "VA", "WA", "WV", "WI", "WY", "DC", "PR", "VI", "GU", "AS", "MP",
         ];
         for s in &codes {
             assert!(Jurisdiction::new(*s).is_ok(), "Expected {} to be valid", s);
@@ -510,7 +502,9 @@ mod tests {
     #[test]
     fn advance_status_filing_submitted_to_filed() {
         let mut e = make_entity();
-        for _ in 0..3 { e.advance_status().unwrap(); }
+        for _ in 0..3 {
+            e.advance_status().unwrap();
+        }
         let next = e.advance_status().unwrap();
         assert_eq!(next, FormationStatus::Filed);
     }
@@ -518,7 +512,9 @@ mod tests {
     #[test]
     fn advance_status_filed_to_ein_applied() {
         let mut e = make_entity();
-        for _ in 0..4 { e.advance_status().unwrap(); }
+        for _ in 0..4 {
+            e.advance_status().unwrap();
+        }
         let next = e.advance_status().unwrap();
         assert_eq!(next, FormationStatus::EinApplied);
     }
@@ -526,7 +522,9 @@ mod tests {
     #[test]
     fn advance_status_ein_applied_to_active() {
         let mut e = make_entity();
-        for _ in 0..5 { e.advance_status().unwrap(); }
+        for _ in 0..5 {
+            e.advance_status().unwrap();
+        }
         let next = e.advance_status().unwrap();
         assert_eq!(next, FormationStatus::Active);
     }
@@ -534,7 +532,9 @@ mod tests {
     #[test]
     fn advance_from_terminal_active_fails() {
         let mut e = make_entity();
-        for _ in 0..6 { e.advance_status().unwrap(); }
+        for _ in 0..6 {
+            e.advance_status().unwrap();
+        }
         assert_eq!(e.formation_status, FormationStatus::Active);
         assert!(matches!(
             e.advance_status(),
@@ -586,7 +586,9 @@ mod tests {
     #[test]
     fn dissolve_from_documents_signed() {
         let mut e = make_entity();
-        for _ in 0..2 { e.advance_status().unwrap(); }
+        for _ in 0..2 {
+            e.advance_status().unwrap();
+        }
         let date = NaiveDate::from_ymd_opt(2026, 6, 15).unwrap();
         e.dissolve(date).unwrap();
         assert_eq!(e.formation_status, FormationStatus::Dissolved);
@@ -595,7 +597,9 @@ mod tests {
     #[test]
     fn dissolve_from_filing_submitted() {
         let mut e = make_entity();
-        for _ in 0..3 { e.advance_status().unwrap(); }
+        for _ in 0..3 {
+            e.advance_status().unwrap();
+        }
         let date = NaiveDate::from_ymd_opt(2026, 6, 15).unwrap();
         e.dissolve(date).unwrap();
         assert_eq!(e.formation_status, FormationStatus::Dissolved);
@@ -604,7 +608,9 @@ mod tests {
     #[test]
     fn dissolve_from_filed() {
         let mut e = make_entity();
-        for _ in 0..4 { e.advance_status().unwrap(); }
+        for _ in 0..4 {
+            e.advance_status().unwrap();
+        }
         let date = NaiveDate::from_ymd_opt(2026, 6, 15).unwrap();
         e.dissolve(date).unwrap();
         assert_eq!(e.formation_status, FormationStatus::Dissolved);
@@ -613,7 +619,9 @@ mod tests {
     #[test]
     fn dissolve_from_ein_applied() {
         let mut e = make_entity();
-        for _ in 0..5 { e.advance_status().unwrap(); }
+        for _ in 0..5 {
+            e.advance_status().unwrap();
+        }
         let date = NaiveDate::from_ymd_opt(2026, 6, 15).unwrap();
         e.dissolve(date).unwrap();
         assert_eq!(e.formation_status, FormationStatus::Dissolved);
@@ -622,7 +630,9 @@ mod tests {
     #[test]
     fn dissolve_from_active() {
         let mut e = make_entity();
-        for _ in 0..6 { e.advance_status().unwrap(); }
+        for _ in 0..6 {
+            e.advance_status().unwrap();
+        }
         let date = NaiveDate::from_ymd_opt(2026, 6, 15).unwrap();
         // dissolve() from Active is allowed (it's not Dissolved)
         e.dissolve(date).unwrap();
@@ -643,7 +653,10 @@ mod tests {
         let mut e = make_entity();
         let date = NaiveDate::from_ymd_opt(2026, 1, 1).unwrap();
         e.dissolve(date).unwrap();
-        assert!(matches!(e.dissolve(date), Err(EntityError::AlreadyDissolved)));
+        assert!(matches!(
+            e.dissolve(date),
+            Err(EntityError::AlreadyDissolved)
+        ));
     }
 
     // ── FormationStatus serde ─────────────────────────────────────────────────
@@ -831,11 +844,7 @@ mod tests {
         let ws = WorkspaceId::new();
         let j = Jurisdiction::new("DE").unwrap();
         assert!(Entity::new(ws, "", EntityType::CCorp, j.clone()).is_err());
-        assert!(
-            Entity::new(ws, "X".repeat(500), EntityType::CCorp, j.clone()).is_ok()
-        );
-        assert!(
-            Entity::new(ws, "X".repeat(501), EntityType::CCorp, j).is_err()
-        );
+        assert!(Entity::new(ws, "X".repeat(500), EntityType::CCorp, j.clone()).is_ok());
+        assert!(Entity::new(ws, "X".repeat(501), EntityType::CCorp, j).is_err());
     }
 }

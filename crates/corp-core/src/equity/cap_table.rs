@@ -3,8 +3,8 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use crate::ids::{CapTableId, EntityId};
 use super::types::CapTableStatus;
+use crate::ids::{CapTableId, EntityId};
 
 /// The cap table for a single legal entity. All equity instruments — share
 /// classes, grants, SAFEs, funding rounds — are scoped to a `CapTable`.

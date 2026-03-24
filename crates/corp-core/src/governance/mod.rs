@@ -28,7 +28,7 @@ pub use proof::{ProofReport, ProofViolation, verify_decision};
 pub use resolution::{Resolution, compute_resolution};
 pub use seat::GovernanceSeat;
 pub use types::{
-    AgendaItemType, BodyStatus, BodyType, MinutesStatus, MeetingStatus, MeetingType,
+    AgendaItemType, BodyStatus, BodyType, MeetingStatus, MeetingType, MinutesStatus,
     QuorumThreshold, ResolutionType, SeatRole, SeatStatus, VoteValue, VotingMethod, VotingPower,
     check_quorum,
 };

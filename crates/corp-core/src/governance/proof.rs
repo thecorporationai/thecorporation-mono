@@ -137,10 +137,12 @@ mod tests {
         let d = decision(AuthorityTier::Tier1, true, true, vec![]);
         let report = verify_decision(&d);
         assert!(!report.passed());
-        assert!(report
-            .violations
-            .iter()
-            .any(|v| v.rule == "tier_approval_relation"));
+        assert!(
+            report
+                .violations
+                .iter()
+                .any(|v| v.rule == "tier_approval_relation")
+        );
     }
 
     #[test]
@@ -169,8 +171,18 @@ mod tests {
         let report = verify_decision(&d);
         assert!(!report.passed());
         // Should have both violations
-        assert!(report.violations.iter().any(|v| v.rule == "tier_approval_relation"));
-        assert!(report.violations.iter().any(|v| v.rule == "conflict_fail_closed"));
+        assert!(
+            report
+                .violations
+                .iter()
+                .any(|v| v.rule == "tier_approval_relation")
+        );
+        assert!(
+            report
+                .violations
+                .iter()
+                .any(|v| v.rule == "conflict_fail_closed")
+        );
     }
 
     // ── Tier2 decisions ───────────────────────────────────────────────────────
@@ -186,10 +198,12 @@ mod tests {
         let d = decision(AuthorityTier::Tier2, true, false, vec![]);
         let report = verify_decision(&d);
         assert!(!report.passed());
-        assert!(report
-            .violations
-            .iter()
-            .any(|v| v.rule == "tier_approval_relation"));
+        assert!(
+            report
+                .violations
+                .iter()
+                .any(|v| v.rule == "tier_approval_relation")
+        );
     }
 
     #[test]
@@ -209,10 +223,12 @@ mod tests {
         );
         let report = verify_decision(&d);
         assert!(!report.passed());
-        assert!(report
-            .violations
-            .iter()
-            .any(|v| v.rule == "conflict_fail_closed"));
+        assert!(
+            report
+                .violations
+                .iter()
+                .any(|v| v.rule == "conflict_fail_closed")
+        );
     }
 
     #[test]
@@ -238,7 +254,12 @@ mod tests {
         );
         let report = verify_decision(&d);
         assert!(!report.passed());
-        assert!(report.violations.iter().any(|v| v.rule == "conflict_fail_closed"));
+        assert!(
+            report
+                .violations
+                .iter()
+                .any(|v| v.rule == "conflict_fail_closed")
+        );
     }
 
     // ── Tier3 decisions ───────────────────────────────────────────────────────
@@ -255,7 +276,12 @@ mod tests {
         let d = decision(AuthorityTier::Tier3, true, false, vec![]);
         let report = verify_decision(&d);
         assert!(!report.passed());
-        assert!(report.violations.iter().any(|v| v.rule == "tier_approval_relation"));
+        assert!(
+            report
+                .violations
+                .iter()
+                .any(|v| v.rule == "tier_approval_relation")
+        );
     }
 
     #[test]
@@ -275,7 +301,12 @@ mod tests {
         );
         let report = verify_decision(&d);
         assert!(!report.passed());
-        assert!(report.violations.iter().any(|v| v.rule == "conflict_fail_closed"));
+        assert!(
+            report
+                .violations
+                .iter()
+                .any(|v| v.rule == "conflict_fail_closed")
+        );
     }
 
     #[test]
@@ -295,7 +326,12 @@ mod tests {
     fn empty_blockers_no_fail_closed_violation() {
         let d = decision(AuthorityTier::Tier2, true, true, vec![]);
         let report = verify_decision(&d);
-        assert!(!report.violations.iter().any(|v| v.rule == "conflict_fail_closed"));
+        assert!(
+            !report
+                .violations
+                .iter()
+                .any(|v| v.rule == "conflict_fail_closed")
+        );
     }
 
     // ── violation message content ─────────────────────────────────────────────
@@ -304,7 +340,11 @@ mod tests {
     fn tier1_approval_violation_message_references_tier1() {
         let d = decision(AuthorityTier::Tier1, true, true, vec![]);
         let report = verify_decision(&d);
-        let v = report.violations.iter().find(|v| v.rule == "tier_approval_relation").unwrap();
+        let v = report
+            .violations
+            .iter()
+            .find(|v| v.rule == "tier_approval_relation")
+            .unwrap();
         assert!(!v.message.is_empty());
         assert!(v.message.contains("Tier1") || v.message.contains("autonomous"));
     }
@@ -313,7 +353,11 @@ mod tests {
     fn conflict_fail_closed_violation_message_mentions_blocked() {
         let d = decision(AuthorityTier::Tier2, true, true, vec!["blocker".into()]);
         let report = verify_decision(&d);
-        let v = report.violations.iter().find(|v| v.rule == "conflict_fail_closed").unwrap();
+        let v = report
+            .violations
+            .iter()
+            .find(|v| v.rule == "conflict_fail_closed")
+            .unwrap();
         assert!(!v.message.is_empty());
     }
 }

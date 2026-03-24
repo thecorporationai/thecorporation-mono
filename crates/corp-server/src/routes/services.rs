@@ -199,12 +199,7 @@ async fn fulfill_service_request(
         .fulfill(body.fulfillment_note)
         .map_err(|e| AppError::BadRequest(e.to_string()))?;
     store
-        .write::<ServiceRequest>(
-            &request,
-            request_id,
-            "main",
-            "fulfill service request",
-        )
+        .write::<ServiceRequest>(&request, request_id, "main", "fulfill service request")
         .await
         .map_err(AppError::Storage)?;
     Ok(Json(request))

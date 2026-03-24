@@ -4,8 +4,8 @@ use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use crate::ids::{AccountId, EntityId, JournalEntryId};
 use super::types::Side;
+use crate::ids::{AccountId, EntityId, JournalEntryId};
 
 // ── Error ─────────────────────────────────────────────────────────────────────
 
@@ -17,9 +17,7 @@ pub enum JournalEntryError {
     AlreadyVoided,
     #[error("journal entry is voided and cannot be posted")]
     PostingVoidedEntry,
-    #[error(
-        "debits ({debits}) do not equal credits ({credits}): entry does not balance"
-    )]
+    #[error("debits ({debits}) do not equal credits ({credits}): entry does not balance")]
     Unbalanced { debits: i64, credits: i64 },
 }
 
@@ -140,8 +138,18 @@ mod tests {
             NaiveDate::from_ymd_opt(2026, 1, 1).unwrap(),
             "Test entry",
             vec![
-                JournalLine { account_id: cash, amount_cents: 100, side: Side::Debit, memo: None },
-                JournalLine { account_id: rev, amount_cents: 100, side: Side::Credit, memo: None },
+                JournalLine {
+                    account_id: cash,
+                    amount_cents: 100,
+                    side: Side::Debit,
+                    memo: None,
+                },
+                JournalLine {
+                    account_id: rev,
+                    amount_cents: 100,
+                    side: Side::Credit,
+                    memo: None,
+                },
             ],
         )
     }
@@ -166,7 +174,10 @@ mod tests {
                 memo: None,
             }],
         );
-        assert!(matches!(je.post(), Err(JournalEntryError::Unbalanced { .. })));
+        assert!(matches!(
+            je.post(),
+            Err(JournalEntryError::Unbalanced { .. })
+        ));
     }
 
     #[test]
@@ -219,10 +230,30 @@ mod tests {
             NaiveDate::from_ymd_opt(2026, 3, 1).unwrap(),
             "Multi-line",
             vec![
-                JournalLine { account_id: cash, amount_cents: 200, side: Side::Debit, memo: None },
-                JournalLine { account_id: ap,   amount_cents: 100, side: Side::Debit, memo: None },
-                JournalLine { account_id: rev,  amount_cents: 200, side: Side::Credit, memo: Some("Service".into()) },
-                JournalLine { account_id: rev,  amount_cents: 100, side: Side::Credit, memo: None },
+                JournalLine {
+                    account_id: cash,
+                    amount_cents: 200,
+                    side: Side::Debit,
+                    memo: None,
+                },
+                JournalLine {
+                    account_id: ap,
+                    amount_cents: 100,
+                    side: Side::Debit,
+                    memo: None,
+                },
+                JournalLine {
+                    account_id: rev,
+                    amount_cents: 200,
+                    side: Side::Credit,
+                    memo: Some("Service".into()),
+                },
+                JournalLine {
+                    account_id: rev,
+                    amount_cents: 100,
+                    side: Side::Credit,
+                    memo: None,
+                },
             ],
         );
         assert!(je.post().is_ok());
@@ -231,30 +262,56 @@ mod tests {
     #[test]
     fn multi_line_unbalanced_entry_fails() {
         let cash = cash_id();
-        let rev  = revenue_id();
+        let rev = revenue_id();
         let mut je = JournalEntry::new(
             EntityId::new(),
             NaiveDate::from_ymd_opt(2026, 3, 1).unwrap(),
             "Unbalanced multi",
             vec![
-                JournalLine { account_id: cash, amount_cents: 500, side: Side::Debit,  memo: None },
-                JournalLine { account_id: rev,  amount_cents: 300, side: Side::Credit, memo: None },
+                JournalLine {
+                    account_id: cash,
+                    amount_cents: 500,
+                    side: Side::Debit,
+                    memo: None,
+                },
+                JournalLine {
+                    account_id: rev,
+                    amount_cents: 300,
+                    side: Side::Credit,
+                    memo: None,
+                },
             ],
         );
-        assert!(matches!(je.post(), Err(JournalEntryError::Unbalanced { debits: 500, credits: 300 })));
+        assert!(matches!(
+            je.post(),
+            Err(JournalEntryError::Unbalanced {
+                debits: 500,
+                credits: 300
+            })
+        ));
     }
 
     #[test]
     fn zero_amount_lines_balance() {
         let cash = cash_id();
-        let rev  = revenue_id();
+        let rev = revenue_id();
         let mut je = JournalEntry::new(
             EntityId::new(),
             NaiveDate::from_ymd_opt(2026, 3, 1).unwrap(),
             "Zero amounts",
             vec![
-                JournalLine { account_id: cash, amount_cents: 0, side: Side::Debit,  memo: None },
-                JournalLine { account_id: rev,  amount_cents: 0, side: Side::Credit, memo: None },
+                JournalLine {
+                    account_id: cash,
+                    amount_cents: 0,
+                    side: Side::Debit,
+                    memo: None,
+                },
+                JournalLine {
+                    account_id: rev,
+                    amount_cents: 0,
+                    side: Side::Credit,
+                    memo: None,
+                },
             ],
         );
         assert!(je.post().is_ok());
@@ -276,14 +333,24 @@ mod tests {
     #[test]
     fn new_with_memo_line() {
         let cash = cash_id();
-        let rev  = revenue_id();
+        let rev = revenue_id();
         let mut je = JournalEntry::new(
             EntityId::new(),
             NaiveDate::from_ymd_opt(2026, 1, 15).unwrap(),
             "With memo",
             vec![
-                JournalLine { account_id: cash, amount_cents: 100, side: Side::Debit,  memo: Some("Deposit".into()) },
-                JournalLine { account_id: rev,  amount_cents: 100, side: Side::Credit, memo: Some("Sale".into()) },
+                JournalLine {
+                    account_id: cash,
+                    amount_cents: 100,
+                    side: Side::Debit,
+                    memo: Some("Deposit".into()),
+                },
+                JournalLine {
+                    account_id: rev,
+                    amount_cents: 100,
+                    side: Side::Credit,
+                    memo: Some("Sale".into()),
+                },
             ],
         );
         assert!(je.post().is_ok());

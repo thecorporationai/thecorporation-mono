@@ -4,8 +4,8 @@ use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use crate::ids::{EntityId, PayrollRunId};
 use super::types::PayrollStatus;
+use crate::ids::{EntityId, PayrollRunId};
 
 // ── Error ─────────────────────────────────────────────────────────────────────
 
@@ -141,7 +141,10 @@ mod tests {
     fn cannot_approve_from_approved() {
         let mut run = make_run();
         run.approve().unwrap();
-        assert!(matches!(run.approve(), Err(PayrollError::NotDraft(PayrollStatus::Approved))));
+        assert!(matches!(
+            run.approve(),
+            Err(PayrollError::NotDraft(PayrollStatus::Approved))
+        ));
     }
 
     #[test]
@@ -149,13 +152,19 @@ mod tests {
         let mut run = make_run();
         run.approve().unwrap();
         run.process().unwrap();
-        assert!(matches!(run.approve(), Err(PayrollError::NotDraft(PayrollStatus::Processed))));
+        assert!(matches!(
+            run.approve(),
+            Err(PayrollError::NotDraft(PayrollStatus::Processed))
+        ));
     }
 
     #[test]
     fn cannot_process_from_draft() {
         let mut run = make_run();
-        assert!(matches!(run.process(), Err(PayrollError::NotApproved(PayrollStatus::Draft))));
+        assert!(matches!(
+            run.process(),
+            Err(PayrollError::NotApproved(PayrollStatus::Draft))
+        ));
     }
 
     #[test]
@@ -163,7 +172,10 @@ mod tests {
         let mut run = make_run();
         run.approve().unwrap();
         run.process().unwrap();
-        assert!(matches!(run.process(), Err(PayrollError::NotApproved(PayrollStatus::Processed))));
+        assert!(matches!(
+            run.process(),
+            Err(PayrollError::NotApproved(PayrollStatus::Processed))
+        ));
     }
 
     #[test]
@@ -176,7 +188,13 @@ mod tests {
     #[test]
     fn payroll_run_stores_period_dates() {
         let run = make_run();
-        assert_eq!(run.period_start, NaiveDate::from_ymd_opt(2026, 3, 1).unwrap());
-        assert_eq!(run.period_end, NaiveDate::from_ymd_opt(2026, 3, 31).unwrap());
+        assert_eq!(
+            run.period_start,
+            NaiveDate::from_ymd_opt(2026, 3, 1).unwrap()
+        );
+        assert_eq!(
+            run.period_end,
+            NaiveDate::from_ymd_opt(2026, 3, 31).unwrap()
+        );
     }
 }

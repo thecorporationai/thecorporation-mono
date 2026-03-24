@@ -27,8 +27,6 @@ use crate::state::AppState;
 
 // ── StoredEntity impl ─────────────────────────────────────────────────────────
 
-
-
 // ── Router ────────────────────────────────────────────────────────────────────
 
 pub fn routes() -> Router<AppState> {
@@ -134,18 +132,15 @@ async fn get_work_item(
     let store = state
         .open_entity_store(principal.workspace_id, entity_id)
         .await?;
-    let item = store
-        .read::<WorkItem>(item_id, "main")
-        .await
-        .map_err(|e| {
-            use corp_storage::error::StorageError;
-            match e {
-                StorageError::NotFound(_) => {
-                    AppError::NotFound(format!("work item {} not found", item_id))
-                }
-                other => AppError::Storage(other),
+    let item = store.read::<WorkItem>(item_id, "main").await.map_err(|e| {
+        use corp_storage::error::StorageError;
+        match e {
+            StorageError::NotFound(_) => {
+                AppError::NotFound(format!("work item {} not found", item_id))
             }
-        })?;
+            other => AppError::Storage(other),
+        }
+    })?;
     Ok(Json(item))
 }
 

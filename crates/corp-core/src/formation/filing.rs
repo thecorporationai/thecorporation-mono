@@ -293,10 +293,7 @@ mod tests {
     #[test]
     fn record_submission_sets_attestation_statement() {
         let mut f = make_filing();
-        f.record_submission(
-            None,
-            Some("All information is accurate.".into()),
-        );
+        f.record_submission(None, Some("All information is accurate.".into()));
         assert_eq!(
             f.attestation_statement.as_deref(),
             Some("All information is accurate.")
@@ -314,10 +311,7 @@ mod tests {
     #[test]
     fn record_submission_then_confirm_full_lifecycle() {
         let mut f = make_filing();
-        f.record_submission(
-            Some("Jane Founder".into()),
-            Some("I attest.".into()),
-        );
+        f.record_submission(Some("Jane Founder".into()), Some("I attest.".into()));
         f.confirm("DE-2026-999", Utc::now()).unwrap();
         assert!(f.is_filed());
         assert!(f.submitted_at.is_some());

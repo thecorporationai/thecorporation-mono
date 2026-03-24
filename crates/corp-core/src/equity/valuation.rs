@@ -3,8 +3,8 @@
 use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 
-use crate::ids::{CapTableId, EntityId, ValuationId};
 use super::types::{ValuationMethodology, ValuationStatus, ValuationType};
+use crate::ids::{CapTableId, EntityId, ValuationId};
 
 /// A point-in-time valuation of the company (e.g. a 409A appraisal).
 ///

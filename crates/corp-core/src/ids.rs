@@ -29,9 +29,7 @@ macro_rules! define_id {
 
     // Plain form: `define_id!(Foo)` emits the full newtype.
     ($name:ident) => {
-        #[derive(
-            Debug, Copy, Clone, Hash, Eq, PartialEq, Ord, PartialOrd,
-        )]
+        #[derive(Debug, Copy, Clone, Hash, Eq, PartialEq, Ord, PartialOrd)]
         pub struct $name(uuid::Uuid);
 
         impl $name {
@@ -75,18 +73,13 @@ macro_rules! define_id {
         }
 
         impl serde::Serialize for $name {
-            fn serialize<S: serde::Serializer>(
-                &self,
-                serializer: S,
-            ) -> Result<S::Ok, S::Error> {
+            fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
                 serializer.serialize_str(&self.0.to_string())
             }
         }
 
         impl<'de> serde::Deserialize<'de> for $name {
-            fn deserialize<D: serde::Deserializer<'de>>(
-                deserializer: D,
-            ) -> Result<Self, D::Error> {
+            fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
                 let s = <String as serde::Deserialize>::deserialize(deserializer)?;
                 s.parse().map_err(serde::de::Error::custom)
             }

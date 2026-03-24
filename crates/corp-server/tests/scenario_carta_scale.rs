@@ -23,7 +23,7 @@ use std::sync::Arc;
 
 use axum::body::Body;
 use axum::http::{Method, Request, StatusCode};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use tempfile::TempDir;
 use tower::ServiceExt;
 
@@ -85,7 +85,6 @@ struct ScenarioRunner {
     workspace_id: WorkspaceId,
 
     // ── Tracked IDs ───────────────────────────────────────────────────────────
-
     /// entity logical name → entity_id returned by the server.
     entities: HashMap<String, String>,
     /// entity logical name → cap_table_id.
@@ -200,7 +199,10 @@ impl ScenarioRunner {
             data_dir: dir.path().to_str().unwrap().to_owned(),
             jwt_config,
             api_key_resolver: Arc::new(NoopApiKeyResolver),
-            storage_backend: StorageBackend::Kv { redis_url, s3_bucket: None },
+            storage_backend: StorageBackend::Kv {
+                redis_url,
+                s3_bucket: None,
+            },
         };
 
         let app = router(state);
@@ -253,11 +255,7 @@ impl ScenarioRunner {
 
         let req = builder.body(Body::from(bytes)).expect("build request");
 
-        self.app
-            .clone()
-            .oneshot(req)
-            .await
-            .expect("service error")
+        self.app.clone().oneshot(req).await.expect("service error")
     }
 
     async fn get(&mut self, path: &str) -> (StatusCode, Value) {
@@ -378,7 +376,11 @@ impl ScenarioRunner {
         let (status, _) = self
             .post_empty(&format!("/v1/formations/{entity_id}/advance"))
             .await;
-        assert_eq!(status, StatusCode::OK, "advance {entity_name} to documents_generated");
+        assert_eq!(
+            status,
+            StatusCode::OK,
+            "advance {entity_name} to documents_generated"
+        );
 
         // 2. Sign all generated documents.
         let (status, docs) = self
@@ -400,20 +402,32 @@ impl ScenarioRunner {
                     }),
                 )
                 .await;
-            assert_eq!(status, StatusCode::OK, "sign doc {doc_id} for {entity_name}");
+            assert_eq!(
+                status,
+                StatusCode::OK,
+                "sign doc {doc_id} for {entity_name}"
+            );
         }
 
         // 3. Advance DocumentsGenerated → DocumentsSigned.
         let (status, _) = self
             .post_empty(&format!("/v1/formations/{entity_id}/advance"))
             .await;
-        assert_eq!(status, StatusCode::OK, "advance {entity_name} to documents_signed");
+        assert_eq!(
+            status,
+            StatusCode::OK,
+            "advance {entity_name} to documents_signed"
+        );
 
         // 4. Advance DocumentsSigned → FilingSubmitted.
         let (status, _) = self
             .post_empty(&format!("/v1/formations/{entity_id}/advance"))
             .await;
-        assert_eq!(status, StatusCode::OK, "advance {entity_name} to filing_submitted");
+        assert_eq!(
+            status,
+            StatusCode::OK,
+            "advance {entity_name} to filing_submitted"
+        );
 
         // 5. Confirm filing (must be in FilingSubmitted).
         self.confirm_filing(entity_name, filing_confirmation).await;
@@ -431,7 +445,11 @@ impl ScenarioRunner {
         let (status, _) = self
             .post_empty(&format!("/v1/formations/{entity_id}/advance"))
             .await;
-        assert_eq!(status, StatusCode::OK, "advance {entity_name} to ein_applied");
+        assert_eq!(
+            status,
+            StatusCode::OK,
+            "advance {entity_name} to ein_applied"
+        );
 
         // 9. Advance EinApplied → Active.
         let (status, _) = self
@@ -612,7 +630,10 @@ impl ScenarioRunner {
             StatusCode::OK,
             "issue_grant({recipient_display_name}) failed: {body}"
         );
-        let grant_id = body["grant_id"].as_str().expect("grant_id missing").to_owned();
+        let grant_id = body["grant_id"]
+            .as_str()
+            .expect("grant_id missing")
+            .to_owned();
         self.grants.push(grant_id);
         body
     }
@@ -723,11 +744,7 @@ impl ScenarioRunner {
                 "/v1/entities/{entity_id}/valuations/{valuation_id}/submit"
             ))
             .await;
-        assert_eq!(
-            status,
-            StatusCode::OK,
-            "submit_valuation failed: {body}"
-        );
+        assert_eq!(status, StatusCode::OK, "submit_valuation failed: {body}");
         body
     }
 
@@ -746,11 +763,7 @@ impl ScenarioRunner {
                 json!({ "approved_by": approved_by }),
             )
             .await;
-        assert_eq!(
-            status,
-            StatusCode::OK,
-            "approve_valuation failed: {body}"
-        );
+        assert_eq!(status, StatusCode::OK, "approve_valuation failed: {body}");
         body
     }
 
@@ -863,9 +876,7 @@ impl ScenarioRunner {
         let entity_id = self.entities[entity_name].clone();
         let (status, body) = self
             .post(
-                &format!(
-                    "/v1/entities/{entity_id}/governance/meetings/{meeting_id}/items"
-                ),
+                &format!("/v1/entities/{entity_id}/governance/meetings/{meeting_id}/items"),
                 json!({
                     "title": title,
                     "item_type": item_type,
@@ -1263,14 +1274,9 @@ impl ScenarioRunner {
 
     async fn assert_grant_count(&mut self, entity_name: &str, expected: usize) {
         let entity_id = self.entities[entity_name].clone();
-        let (status, body) = self
-            .get(&format!("/v1/entities/{entity_id}/grants"))
-            .await;
+        let (status, body) = self.get(&format!("/v1/entities/{entity_id}/grants")).await;
         assert_eq!(status, StatusCode::OK);
-        let count = body
-            .as_array()
-            .map(|a| a.len())
-            .unwrap_or(0);
+        let count = body.as_array().map(|a| a.len()).unwrap_or(0);
         assert_eq!(
             count, expected,
             "expected {expected} grants for {entity_name}, got {count}: {body}"
@@ -1279,9 +1285,7 @@ impl ScenarioRunner {
 
     async fn assert_safe_count(&mut self, entity_name: &str, expected: usize) {
         let entity_id = self.entities[entity_name].clone();
-        let (status, body) = self
-            .get(&format!("/v1/entities/{entity_id}/safes"))
-            .await;
+        let (status, body) = self.get(&format!("/v1/entities/{entity_id}/safes")).await;
         assert_eq!(status, StatusCode::OK);
         let count = body.as_array().map(|a| a.len()).unwrap_or(0);
         assert_eq!(
@@ -1305,9 +1309,7 @@ impl ScenarioRunner {
 
     async fn assert_holder_count(&mut self, entity_name: &str, expected: usize) {
         let entity_id = self.entities[entity_name].clone();
-        let (status, body) = self
-            .get(&format!("/v1/entities/{entity_id}/holders"))
-            .await;
+        let (status, body) = self.get(&format!("/v1/entities/{entity_id}/holders")).await;
         assert_eq!(status, StatusCode::OK);
         let count = body.as_array().map(|a| a.len()).unwrap_or(0);
         assert_eq!(
@@ -1331,9 +1333,7 @@ impl ScenarioRunner {
 
     async fn assert_round_count(&mut self, entity_name: &str, expected: usize) {
         let entity_id = self.entities[entity_name].clone();
-        let (status, body) = self
-            .get(&format!("/v1/entities/{entity_id}/rounds"))
-            .await;
+        let (status, body) = self.get(&format!("/v1/entities/{entity_id}/rounds")).await;
         assert_eq!(status, StatusCode::OK);
         let count = body.as_array().map(|a| a.len()).unwrap_or(0);
         assert_eq!(
@@ -1570,12 +1570,7 @@ async fn run_saas_startup_scenario(runner: &mut ScenarioRunner) {
 
     runner
         .create_share_class(
-            "corp",
-            "common",
-            "CS",
-            "common",
-            "0.00001",
-            10_000_000, // 10M authorized
+            "corp", "common", "CS", "common", "0.00001", 10_000_000, // 10M authorized
             None,
         )
         .await;
@@ -1790,7 +1785,13 @@ async fn run_saas_startup_scenario(runner: &mut ScenarioRunner) {
         )
         .await;
     runner
-        .create_account("corp", "equity_acct", "founder_capital", "Founder Capital", "usd")
+        .create_account(
+            "corp",
+            "equity_acct",
+            "founder_capital",
+            "Founder Capital",
+            "usd",
+        )
         .await;
     runner
         .create_account("corp", "revenue_acct", "revenue", "SaaS Revenue", "usd")
@@ -1813,7 +1814,7 @@ async fn run_saas_startup_scenario(runner: &mut ScenarioRunner) {
             "angel_investor",
             "Meridian Ventures LLC",
             "post_money",
-            50_000_000, // $500,000 in cents
+            50_000_000,          // $500,000 in cents
             Some(1_000_000_000), // $10M cap in cents
             None,
         )
@@ -1854,7 +1855,7 @@ async fn run_saas_startup_scenario(runner: &mut ScenarioRunner) {
             "angel_investor_2",
             "Sandra Lee",
             "mfn",
-            25_000_000, // $250,000
+            25_000_000,          // $250,000
             Some(1_200_000_000), // $12M cap
             None,
         )
@@ -1902,9 +1903,7 @@ async fn run_saas_startup_scenario(runner: &mut ScenarioRunner) {
         .await;
 
     runner.submit_valuation("corp", 0).await;
-    runner
-        .approve_valuation("corp", 0, "Alice Chen, CEO")
-        .await;
+    runner.approve_valuation("corp", 0, "Alice Chen, CEO").await;
 
     runner.assert_valuation_count("corp", 1).await;
 
@@ -1954,9 +1953,7 @@ async fn run_saas_startup_scenario(runner: &mut ScenarioRunner) {
     // Verify both SAFEs are converted.
     {
         let entity_id = runner.entities["corp"].clone();
-        let (status, safes) = runner
-            .get(&format!("/v1/entities/{entity_id}/safes"))
-            .await;
+        let (status, safes) = runner.get(&format!("/v1/entities/{entity_id}/safes")).await;
         assert_eq!(status, StatusCode::OK);
         let converted_count = safes
             .as_array()
@@ -2029,7 +2026,7 @@ async fn run_saas_startup_scenario(runner: &mut ScenarioRunner) {
     // Advance through TermSheet → Diligence → Closing, then close.
     runner.advance_round("corp", 0).await; // TermSheet → Diligence
     runner.advance_round("corp", 0).await; // Diligence → Closing
-    runner.close_round("corp", 0).await;  // Closing → Closed
+    runner.close_round("corp", 0).await; // Closing → Closed
 
     {
         let entity_id = runner.entities["corp"].clone();
@@ -2120,9 +2117,7 @@ async fn run_saas_startup_scenario(runner: &mut ScenarioRunner) {
         .await;
 
     runner.submit_valuation("corp", 1).await;
-    runner
-        .approve_valuation("corp", 1, "Alice Chen, CEO")
-        .await;
+    runner.approve_valuation("corp", 1, "Alice Chen, CEO").await;
 
     runner.assert_valuation_count("corp", 2).await;
 
@@ -2154,10 +2149,7 @@ async fn run_saas_startup_scenario(runner: &mut ScenarioRunner) {
             Some("RESOLVED: The Board ratifies all option grants issued under the 2026 Equity Incentive Plan."),
         )
         .await;
-    let option_item_id = option_item["item_id"]
-        .as_str()
-        .expect("item_id")
-        .to_owned();
+    let option_item_id = option_item["item_id"].as_str().expect("item_id").to_owned();
 
     let budget_item = runner
         .add_agenda_item(
@@ -2168,10 +2160,7 @@ async fn run_saas_startup_scenario(runner: &mut ScenarioRunner) {
             Some("RESOLVED: The Board approves the 2026-2027 operating budget of $4.2M."),
         )
         .await;
-    let budget_item_id = budget_item["item_id"]
-        .as_str()
-        .expect("item_id")
-        .to_owned();
+    let budget_item_id = budget_item["item_id"].as_str().expect("item_id").to_owned();
 
     let (convene_status, _) = runner
         .post_empty(&format!(
@@ -2340,9 +2329,7 @@ async fn run_saas_startup_scenario(runner: &mut ScenarioRunner) {
     // Entity is retrievable and has formation_status set.
     {
         let entity_id = runner.entities["corp"].clone();
-        let (status, entity) = runner
-            .get(&format!("/v1/entities/{entity_id}"))
-            .await;
+        let (status, entity) = runner.get(&format!("/v1/entities/{entity_id}")).await;
         assert_eq!(status, StatusCode::OK);
         assert!(
             entity["entity_id"].is_string(),
@@ -2364,12 +2351,7 @@ async fn run_vc_fund_scenario(runner: &mut ScenarioRunner) {
     // ── Step 1: Form GP LLC (Wyoming) ─────────────────────────────────────────
 
     runner
-        .create_entity(
-            "gp_llc",
-            "Beacon Capital Management LLC",
-            "llc",
-            "WY",
-        )
+        .create_entity("gp_llc", "Beacon Capital Management LLC", "llc", "WY")
         .await;
 
     // Run the full formation lifecycle for GP LLC.
@@ -2441,14 +2423,54 @@ async fn run_vc_fund_scenario(runner: &mut ScenarioRunner) {
 
     // 8 LP contacts (various sizes: $5M, $4M, $3M × 3, $2M × 3).
     let lp_data: &[(&str, &str, &str, &str)] = &[
-        ("lp_1", "Cornerstone Endowment Fund", "cef@cornerstone.org", "organization"),
-        ("lp_2", "Pacific Rim Ventures", "invest@pacificrim.vc", "organization"),
-        ("lp_3", "Helena Family Office", "invest@helenafamily.com", "organization"),
-        ("lp_4", "NextGen Pension Fund", "invest@nextgenpension.com", "organization"),
-        ("lp_5", "Redwood Foundation", "invest@redwoodfdn.org", "organization"),
-        ("lp_6", "Astra Capital Group", "invest@astracapital.com", "organization"),
-        ("lp_7", "Dr. James Osei", "josei@medicine.stanford.edu", "individual"),
-        ("lp_8", "Maria Santos LLC", "msantos@santosfamily.com", "organization"),
+        (
+            "lp_1",
+            "Cornerstone Endowment Fund",
+            "cef@cornerstone.org",
+            "organization",
+        ),
+        (
+            "lp_2",
+            "Pacific Rim Ventures",
+            "invest@pacificrim.vc",
+            "organization",
+        ),
+        (
+            "lp_3",
+            "Helena Family Office",
+            "invest@helenafamily.com",
+            "organization",
+        ),
+        (
+            "lp_4",
+            "NextGen Pension Fund",
+            "invest@nextgenpension.com",
+            "organization",
+        ),
+        (
+            "lp_5",
+            "Redwood Foundation",
+            "invest@redwoodfdn.org",
+            "organization",
+        ),
+        (
+            "lp_6",
+            "Astra Capital Group",
+            "invest@astracapital.com",
+            "organization",
+        ),
+        (
+            "lp_7",
+            "Dr. James Osei",
+            "josei@medicine.stanford.edu",
+            "individual",
+        ),
+        (
+            "lp_8",
+            "Maria Santos LLC",
+            "msantos@santosfamily.com",
+            "organization",
+        ),
     ];
 
     for &(key, name, email, contact_type) in lp_data {
@@ -2627,7 +2649,13 @@ async fn run_vc_fund_scenario(runner: &mut ScenarioRunner) {
         .create_account("gp_llc", "gp_cash", "cash", "GP Cash", "usd")
         .await;
     runner
-        .create_account("gp_llc", "mgmt_fee_revenue", "revenue", "Management Fee Revenue", "usd")
+        .create_account(
+            "gp_llc",
+            "mgmt_fee_revenue",
+            "revenue",
+            "Management Fee Revenue",
+            "usd",
+        )
         .await;
 
     // ── Step 9: First capital call (25% of commitments) ───────────────────────
@@ -2758,7 +2786,7 @@ async fn run_vc_fund_scenario(runner: &mut ScenarioRunner) {
             "portfolio_co_1",
             "WidgetAI Inc.",
             "post_money",
-            50_000_000, // $500K
+            50_000_000,        // $500K
             Some(800_000_000), // $8M cap
             None,
         )
@@ -2810,7 +2838,7 @@ async fn run_vc_fund_scenario(runner: &mut ScenarioRunner) {
             "portfolio_co_2",
             "DataFlow Systems Inc.",
             "post_money",
-            40_000_000, // $400K
+            40_000_000,        // $400K
             Some(600_000_000), // $6M cap
             None,
         )
@@ -2912,7 +2940,7 @@ async fn run_vc_fund_scenario(runner: &mut ScenarioRunner) {
             "portfolio_co_3",
             "NovaBio Therapeutics Inc.",
             "preferred_stock",
-            300,  // Fund's stake in NovaBio (300 units representing $300K at cost)
+            300, // Fund's stake in NovaBio (300 units representing $300K at cost)
             Some(100_000),
             None,
             None,
@@ -3176,9 +3204,7 @@ async fn run_vc_fund_scenario(runner: &mut ScenarioRunner) {
     // SAFEs: WidgetAI should be converted.
     {
         let entity_id = runner.entities["fund_lp"].clone();
-        let (status, safes) = runner
-            .get(&format!("/v1/entities/{entity_id}/safes"))
-            .await;
+        let (status, safes) = runner.get(&format!("/v1/entities/{entity_id}/safes")).await;
         assert_eq!(status, StatusCode::OK);
         let converted_count = safes
             .as_array()
@@ -3207,9 +3233,7 @@ async fn run_vc_fund_scenario(runner: &mut ScenarioRunner) {
     // Both entities are retrievable.
     for entity_name in ["gp_llc", "fund_lp"] {
         let entity_id = runner.entities[entity_name].clone();
-        let (status, entity) = runner
-            .get(&format!("/v1/entities/{entity_id}"))
-            .await;
+        let (status, entity) = runner.get(&format!("/v1/entities/{entity_id}")).await;
         assert_eq!(
             status,
             StatusCode::OK,

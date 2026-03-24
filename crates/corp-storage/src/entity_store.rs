@@ -17,7 +17,7 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use serde::{de::DeserializeOwned, Serialize};
+use serde::{Serialize, de::DeserializeOwned};
 
 use corp_core::ids::{EntityId, WorkspaceId};
 
@@ -140,7 +140,16 @@ impl EntityStore {
                 // entry so the KV state can be rebuilt from S3.
                 #[cfg(feature = "s3")]
                 if let Backend::Kv { s3: Some(s3), .. } = &backend {
-                    sync_files_to_s3(s3, &mut con, &ws, &ent, "main", files, "initialise entity store").await;
+                    sync_files_to_s3(
+                        s3,
+                        &mut con,
+                        &ws,
+                        &ent,
+                        "main",
+                        files,
+                        "initialise entity store",
+                    )
+                    .await;
                 }
             }
 
@@ -152,7 +161,11 @@ impl EntityStore {
             }
         }
 
-        Ok(Self { backend, workspace_id, entity_id })
+        Ok(Self {
+            backend,
+            workspace_id,
+            entity_id,
+        })
     }
 
     /// Open an existing entity store.
@@ -202,7 +215,11 @@ impl EntityStore {
             }
         }
 
-        Ok(Self { backend, workspace_id, entity_id })
+        Ok(Self {
+            backend,
+            workspace_id,
+            entity_id,
+        })
     }
 
     // ── Entity CRUD ───────────────────────────────────────────────────────────
@@ -309,11 +326,7 @@ impl EntityStore {
     }
 
     /// Read and deserialise a JSON value from an arbitrary path.
-    pub async fn read_json<T: DeserializeOwned>(
-        &self,
-        path: &str,
-        branch: &str,
-    ) -> Result<T> {
+    pub async fn read_json<T: DeserializeOwned>(&self, path: &str, branch: &str) -> Result<T> {
         let bytes = self.read_raw(path, branch).await?;
         serde_json::from_slice(&bytes).map_err(StorageError::from)
     }
@@ -384,15 +397,7 @@ impl EntityStore {
                 let ws = self.workspace_id.to_string();
                 let ent = self.entity_id.to_string();
                 let files = &[(path.to_owned(), data)];
-                crate::kv::write_files(
-                    &mut con,
-                    &ws,
-                    &ent,
-                    branch,
-                    files,
-                    message,
-                )
-                .await?;
+                crate::kv::write_files(&mut con, &ws, &ent, branch, files, message).await?;
 
                 // Best-effort S3 durability.
                 #[cfg(feature = "s3")]
@@ -416,11 +421,9 @@ impl EntityStore {
                 let p = path.to_owned();
                 let b = branch.to_owned();
                 let m = message.to_owned();
-                tokio::task::spawn_blocking(move || {
-                    crate::git::delete_file(&rp, &b, &p, &m)
-                })
-                .await
-                .map_err(|e| StorageError::GitError(format!("spawn_blocking: {}", e)))?
+                tokio::task::spawn_blocking(move || crate::git::delete_file(&rp, &b, &p, &m))
+                    .await
+                    .map_err(|e| StorageError::GitError(format!("spawn_blocking: {}", e)))?
             }
 
             #[cfg(feature = "kv")]
@@ -443,11 +446,9 @@ impl EntityStore {
                 let rp = Arc::clone(repo_path);
                 let d = dir.to_owned();
                 let b = branch.to_owned();
-                tokio::task::spawn_blocking(move || {
-                    crate::git::list_directory(&rp, &b, &d)
-                })
-                .await
-                .map_err(|e| StorageError::GitError(format!("spawn_blocking: {}", e)))?
+                tokio::task::spawn_blocking(move || crate::git::list_directory(&rp, &b, &d))
+                    .await
+                    .map_err(|e| StorageError::GitError(format!("spawn_blocking: {}", e)))?
             }
 
             #[cfg(feature = "kv")]

@@ -3,9 +3,9 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use crate::ids::{HolderId, InstrumentId, LegalEntityId, PositionId};
 use super::types::PositionStatus;
 use super::vesting::EquityError;
+use crate::ids::{HolderId, InstrumentId, LegalEntityId, PositionId};
 
 // ── Position ──────────────────────────────────────────────────────────────────
 

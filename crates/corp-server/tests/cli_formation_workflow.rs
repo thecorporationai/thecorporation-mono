@@ -178,12 +178,8 @@ impl TestServer {
         );
         // The --json flag makes the CLI print raw JSON. Parse the first
         // JSON object or array from stdout.
-        parse_first_json(&result.stdout).unwrap_or_else(|| {
-            panic!(
-                "no JSON in output of corp {:?}:\n{}",
-                args, result.stdout
-            )
-        })
+        parse_first_json(&result.stdout)
+            .unwrap_or_else(|| panic!("no JSON in output of corp {:?}:\n{}", args, result.stdout))
     }
 
     /// Run a corp command expecting failure.
@@ -206,7 +202,12 @@ impl TestServer {
             .send()
             .await
             .expect("HTTP GET");
-        assert!(resp.status().is_success(), "GET {} failed: {}", path, resp.status());
+        assert!(
+            resp.status().is_success(),
+            "GET {} failed: {}",
+            path,
+            resp.status()
+        );
         resp.json().await.expect("parse JSON")
     }
 
@@ -220,7 +221,12 @@ impl TestServer {
             .send()
             .await
             .expect("HTTP POST");
-        assert!(resp.status().is_success(), "POST {} failed: {}", path, resp.status());
+        assert!(
+            resp.status().is_success(),
+            "POST {} failed: {}",
+            path,
+            resp.status()
+        );
         resp.json().await.expect("parse JSON")
     }
 }
@@ -262,10 +268,14 @@ async fn cli_formation_workflow_ccorp() {
 
     // ── Step 1: Create a Delaware C-Corp ─────────────────────────────
     let entity = srv.corp_json(&[
-        "form", "create",
-        "--name", "Acme Corp",
-        "--entity-type", "c_corp",
-        "--jurisdiction", "DE",
+        "form",
+        "create",
+        "--name",
+        "Acme Corp",
+        "--entity-type",
+        "c_corp",
+        "--jurisdiction",
+        "DE",
     ]);
     let entity_id = extract_str(&entity, "entity_id");
     assert_eq!(extract_str(&entity, "formation_status"), "pending");
@@ -278,7 +288,10 @@ async fn cli_formation_workflow_ccorp() {
 
     // ── Step 3: Advance to DocumentsGenerated ────────────────────────
     let adv1 = srv.corp_json(&["form", "advance", entity_id]);
-    assert_eq!(extract_str(&adv1, "formation_status"), "documents_generated");
+    assert_eq!(
+        extract_str(&adv1, "formation_status"),
+        "documents_generated"
+    );
 
     // ── Step 4: List documents ───────────────────────────────────────
     let docs = srv.corp_json(&["form", "documents", entity_id]);
@@ -302,12 +315,19 @@ async fn cli_formation_workflow_ccorp() {
     // ── Step 5: Sign every document ──────────────────────────────────
     for (doc_id, _hash) in &doc_ids {
         let signed = srv.corp_json(&[
-            "form", "sign", doc_id,
-            "--signer-name", "Jane Doe",
-            "--signer-role", "Incorporator",
-            "--signer-email", "jane@acme.com",
-            "--signature-text", "/s/ Jane Doe",
-            "--consent-text", "I consent to signing this document electronically",
+            "form",
+            "sign",
+            doc_id,
+            "--signer-name",
+            "Jane Doe",
+            "--signer-role",
+            "Incorporator",
+            "--signer-email",
+            "jane@acme.com",
+            "--signature-text",
+            "/s/ Jane Doe",
+            "--consent-text",
+            "I consent to signing this document electronically",
         ]);
         assert_eq!(
             extract_str(&signed, "status"),
@@ -335,17 +355,21 @@ async fn cli_formation_workflow_ccorp() {
     // ── Step 5b: Verify duplicate sign is rejected ───────────────────
     if let Some((first_doc, _)) = doc_ids.first() {
         let dup = srv.corp(&[
-            "form", "sign", first_doc,
-            "--signer-name", "Jane Doe",
-            "--signer-role", "Incorporator",
-            "--signer-email", "jane@acme.com",
-            "--signature-text", "/s/ Jane Doe",
-            "--consent-text", "duplicate",
+            "form",
+            "sign",
+            first_doc,
+            "--signer-name",
+            "Jane Doe",
+            "--signer-role",
+            "Incorporator",
+            "--signer-email",
+            "jane@acme.com",
+            "--signature-text",
+            "/s/ Jane Doe",
+            "--consent-text",
+            "duplicate",
         ]);
-        assert!(
-            !dup.success,
-            "duplicate signature should be rejected"
-        );
+        assert!(!dup.success, "duplicate signature should be rejected");
     }
 
     // ── Step 6: Advance to DocumentsSigned ───────────────────────────
@@ -362,8 +386,11 @@ async fn cli_formation_workflow_ccorp() {
 
     // ── Step 9: Confirm the filing (entity must be in FilingSubmitted) ─
     let confirmed = srv.corp_json(&[
-        "form", "confirm-filing", entity_id,
-        "--confirmation-number", "DE-2026-987654",
+        "form",
+        "confirm-filing",
+        entity_id,
+        "--confirmation-number",
+        "DE-2026-987654",
     ]);
     assert_eq!(extract_str(&confirmed, "status"), "filed");
     assert_eq!(
@@ -378,16 +405,10 @@ async fn cli_formation_workflow_ccorp() {
     // ── Step 11: Check tax profile ───────────────────────────────────
     let tax = srv.corp_json(&["form", "tax", entity_id]);
     assert_eq!(extract_str(&tax, "ein_status"), "pending");
-    assert_eq!(
-        extract_str(&tax, "classification"),
-        "c_corporation",
-    );
+    assert_eq!(extract_str(&tax, "classification"), "c_corporation",);
 
     // ── Step 12: Confirm EIN (entity must be in Filed) ───────────────
-    let ein_result = srv.corp_json(&[
-        "form", "confirm-ein", entity_id,
-        "--ein", "12-3456789",
-    ]);
+    let ein_result = srv.corp_json(&["form", "confirm-ein", entity_id, "--ein", "12-3456789"]);
     assert_eq!(extract_str(&ein_result, "ein_status"), "active");
     assert_eq!(extract_str(&ein_result, "ein"), "12-3456789");
 
@@ -407,9 +428,7 @@ async fn cli_formation_workflow_ccorp() {
     assert_eq!(extract_str(&final_status, "formation_status"), "active");
 
     // ── Step 17: Verify via direct HTTP that all state is consistent ─
-    let entity_http = srv
-        .http_get(&format!("/v1/entities/{}", entity_id))
-        .await;
+    let entity_http = srv.http_get(&format!("/v1/entities/{}", entity_id)).await;
     assert_eq!(extract_str(&entity_http, "formation_status"), "active");
     assert_eq!(extract_str(&entity_http, "legal_name"), "Acme Corp");
 
@@ -444,10 +463,14 @@ async fn cli_formation_workflow_llc() {
 
     // Create Wyoming LLC.
     let entity = srv.corp_json(&[
-        "form", "create",
-        "--name", "Mountain Ventures LLC",
-        "--entity-type", "llc",
-        "--jurisdiction", "WY",
+        "form",
+        "create",
+        "--name",
+        "Mountain Ventures LLC",
+        "--entity-type",
+        "llc",
+        "--jurisdiction",
+        "WY",
     ]);
     let entity_id = extract_str(&entity, "entity_id");
     assert_eq!(extract_str(&entity, "entity_type"), "llc");
@@ -463,12 +486,19 @@ async fn cli_formation_workflow_llc() {
     for doc in doc_array {
         let doc_id = extract_str(doc, "document_id");
         let signed = srv.corp_json(&[
-            "form", "sign", doc_id,
-            "--signer-name", "Bob Smith",
-            "--signer-role", "Member",
-            "--signer-email", "bob@mountain.com",
-            "--signature-text", "/s/ Bob Smith",
-            "--consent-text", "I consent",
+            "form",
+            "sign",
+            doc_id,
+            "--signer-name",
+            "Bob Smith",
+            "--signer-role",
+            "Member",
+            "--signer-email",
+            "bob@mountain.com",
+            "--signature-text",
+            "/s/ Bob Smith",
+            "--consent-text",
+            "I consent",
         ]);
         assert_eq!(extract_str(&signed, "status"), "signed");
     }
@@ -482,18 +512,18 @@ async fn cli_formation_workflow_llc() {
 
     // Confirm filing (must happen while in FilingSubmitted).
     srv.corp_json(&[
-        "form", "confirm-filing", entity_id,
-        "--confirmation-number", "WY-2026-001234",
+        "form",
+        "confirm-filing",
+        entity_id,
+        "--confirmation-number",
+        "WY-2026-001234",
     ]);
 
     let adv = srv.corp_json(&["form", "advance", entity_id]);
     assert_eq!(extract_str(&adv, "formation_status"), "filed");
 
     // Confirm EIN (must happen while in Filed).
-    let tax = srv.corp_json(&[
-        "form", "confirm-ein", entity_id,
-        "--ein", "98-7654321",
-    ]);
+    let tax = srv.corp_json(&["form", "confirm-ein", entity_id, "--ein", "98-7654321"]);
     assert_eq!(extract_str(&tax, "ein_status"), "active");
     // LLC should be classified as disregarded entity.
     assert_eq!(extract_str(&tax, "classification"), "disregarded_entity");
@@ -517,10 +547,14 @@ async fn signing_link_integrity() {
 
     // Create entity and advance to get documents.
     let entity = srv.corp_json(&[
-        "form", "create",
-        "--name", "SignTest Inc",
-        "--entity-type", "c_corp",
-        "--jurisdiction", "DE",
+        "form",
+        "create",
+        "--name",
+        "SignTest Inc",
+        "--entity-type",
+        "c_corp",
+        "--jurisdiction",
+        "DE",
     ]);
     let entity_id = extract_str(&entity, "entity_id");
     srv.corp_json(&["form", "advance", entity_id]);
@@ -593,10 +627,14 @@ async fn multi_signer_signing_links() {
     let srv = TestServer::start().await;
 
     let entity = srv.corp_json(&[
-        "form", "create",
-        "--name", "DualSign Corp",
-        "--entity-type", "c_corp",
-        "--jurisdiction", "DE",
+        "form",
+        "create",
+        "--name",
+        "DualSign Corp",
+        "--entity-type",
+        "c_corp",
+        "--jurisdiction",
+        "DE",
     ]);
     let entity_id = extract_str(&entity, "entity_id");
     srv.corp_json(&["form", "advance", entity_id]);
@@ -607,12 +645,19 @@ async fn multi_signer_signing_links() {
 
     // First signer via CLI.
     let after_first = srv.corp_json(&[
-        "form", "sign", doc_id,
-        "--signer-name", "Alice Founder",
-        "--signer-role", "CEO",
-        "--signer-email", "alice@dualsign.com",
-        "--signature-text", "/s/ Alice Founder",
-        "--consent-text", "I consent",
+        "form",
+        "sign",
+        doc_id,
+        "--signer-name",
+        "Alice Founder",
+        "--signer-role",
+        "CEO",
+        "--signer-email",
+        "alice@dualsign.com",
+        "--signature-text",
+        "/s/ Alice Founder",
+        "--consent-text",
+        "I consent",
     ]);
     let sig_count = after_first
         .get("signatures")
@@ -654,16 +699,24 @@ async fn cli_entity_list() {
 
     // Create two entities.
     srv.corp_json(&[
-        "form", "create",
-        "--name", "First Corp",
-        "--entity-type", "c_corp",
-        "--jurisdiction", "DE",
+        "form",
+        "create",
+        "--name",
+        "First Corp",
+        "--entity-type",
+        "c_corp",
+        "--jurisdiction",
+        "DE",
     ]);
     srv.corp_json(&[
-        "form", "create",
-        "--name", "Second LLC",
-        "--entity-type", "llc",
-        "--jurisdiction", "WY",
+        "form",
+        "create",
+        "--name",
+        "Second LLC",
+        "--entity-type",
+        "llc",
+        "--jurisdiction",
+        "WY",
     ]);
 
     // List entities via CLI.
@@ -682,10 +735,14 @@ async fn cli_invalid_ein_rejected() {
     let srv = TestServer::start().await;
 
     let entity = srv.corp_json(&[
-        "form", "create",
-        "--name", "BadEin Corp",
-        "--entity-type", "c_corp",
-        "--jurisdiction", "DE",
+        "form",
+        "create",
+        "--name",
+        "BadEin Corp",
+        "--entity-type",
+        "c_corp",
+        "--jurisdiction",
+        "DE",
     ]);
     let eid = extract_str(&entity, "entity_id");
 
@@ -698,12 +755,19 @@ async fn cli_invalid_ein_rejected() {
     for doc in doc_array {
         let doc_id = extract_str(doc, "document_id");
         srv.corp_json(&[
-            "form", "sign", doc_id,
-            "--signer-name", "Jane Doe",
-            "--signer-role", "CEO",
-            "--signer-email", "jane@badein.com",
-            "--signature-text", "/s/ Jane Doe",
-            "--consent-text", "I consent",
+            "form",
+            "sign",
+            doc_id,
+            "--signer-name",
+            "Jane Doe",
+            "--signer-role",
+            "CEO",
+            "--signer-email",
+            "jane@badein.com",
+            "--signature-text",
+            "/s/ Jane Doe",
+            "--consent-text",
+            "I consent",
         ]);
     }
 
@@ -714,22 +778,19 @@ async fn cli_invalid_ein_rejected() {
 
     // Confirm filing (while in FilingSubmitted).
     srv.corp_json(&[
-        "form", "confirm-filing", eid,
-        "--confirmation-number", "DE-X",
+        "form",
+        "confirm-filing",
+        eid,
+        "--confirmation-number",
+        "DE-X",
     ]);
 
     // Advance to Filed.
     srv.corp_json(&["form", "advance", eid]);
 
     // Try invalid EIN (entity is in Filed state, which is correct).
-    let result = srv.corp(&[
-        "form", "confirm-ein", eid,
-        "--ein", "not-a-real-ein",
-    ]);
-    assert!(
-        !result.success,
-        "invalid EIN format should be rejected"
-    );
+    let result = srv.corp(&["form", "confirm-ein", eid, "--ein", "not-a-real-ein"]);
+    assert!(!result.success, "invalid EIN format should be rejected");
 }
 
 /// Entity dissolution via CLI.
@@ -738,19 +799,20 @@ async fn cli_entity_dissolution() {
     let srv = TestServer::start().await;
 
     let entity = srv.corp_json(&[
-        "form", "create",
-        "--name", "ShortLived Inc",
-        "--entity-type", "c_corp",
-        "--jurisdiction", "DE",
+        "form",
+        "create",
+        "--name",
+        "ShortLived Inc",
+        "--entity-type",
+        "c_corp",
+        "--jurisdiction",
+        "DE",
     ]);
     let eid = extract_str(&entity, "entity_id");
 
     // Dissolve from Pending.
     let dissolved = srv.corp_json(&["entities", "dissolve", eid]);
-    assert_eq!(
-        extract_str(&dissolved, "formation_status"),
-        "dissolved"
-    );
+    assert_eq!(extract_str(&dissolved, "formation_status"), "dissolved");
 
     // Cannot advance after dissolution.
     srv.corp_fail(&["form", "advance", eid]);

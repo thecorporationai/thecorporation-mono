@@ -3,8 +3,8 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use crate::ids::{EntityId, PaymentId};
 use super::types::PaymentMethod;
+use crate::ids::{EntityId, PaymentId};
 
 // ── Payment ───────────────────────────────────────────────────────────────────
 

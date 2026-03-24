@@ -97,6 +97,9 @@ mod tests {
             10_000,
         );
         assert!(r.mark_reconciled().is_ok());
-        assert_eq!(r.mark_reconciled(), Err(ReconciliationError::AlreadyReconciled));
+        assert_eq!(
+            r.mark_reconciled(),
+            Err(ReconciliationError::AlreadyReconciled)
+        );
     }
 }

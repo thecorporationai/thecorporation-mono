@@ -18,8 +18,8 @@
 //! 11. `WorkspaceStore::init`, `open`, and API key CRUD
 //! 12. Concurrent reads — multiple tasks reading the same store in parallel
 
-use std::sync::Arc;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use tempfile::TempDir;
 
@@ -79,14 +79,9 @@ async fn test_entity_store_init_and_open() {
     let ent_id = EntityId::new();
 
     // init creates the repo
-    let store = EntityStore::init(
-        git_entity_backend(&dir),
-        ws_id,
-        ent_id,
-        b"{}",
-    )
-    .await
-    .expect("init should succeed");
+    let store = EntityStore::init(git_entity_backend(&dir), ws_id, ent_id, b"{}")
+        .await
+        .expect("init should succeed");
 
     assert_eq!(store.workspace_id(), ws_id);
     assert_eq!(store.entity_id(), ent_id);
@@ -95,13 +90,9 @@ async fn test_entity_store_init_and_open() {
     assert!(dir.path().join("HEAD").exists());
 
     // open succeeds on an already-initialised repo
-    let _store2 = EntityStore::open(
-        git_entity_backend(&dir),
-        ws_id,
-        ent_id,
-    )
-    .await
-    .expect("open of existing repo should succeed");
+    let _store2 = EntityStore::open(git_entity_backend(&dir), ws_id, ent_id)
+        .await
+        .expect("open of existing repo should succeed");
 }
 
 #[tokio::test]
@@ -228,8 +219,14 @@ async fn test_read_all() {
     let id1 = c1.contact_id;
     let id2 = c2.contact_id;
 
-    store.write::<Contact>(&c1, id1, "main", "add c1").await.unwrap();
-    store.write::<Contact>(&c2, id2, "main", "add c2").await.unwrap();
+    store
+        .write::<Contact>(&c1, id1, "main", "add c1")
+        .await
+        .unwrap();
+    store
+        .write::<Contact>(&c2, id2, "main", "add c2")
+        .await
+        .unwrap();
 
     let all: Vec<Contact> = store.read_all::<Contact>("main").await.unwrap();
     assert_eq!(all.len(), 2);
@@ -316,7 +313,10 @@ async fn test_path_exists() {
     assert!(exists, "init path should exist after store init");
 
     // A path that was never written.
-    let missing = store.path_exists("contacts/nonexistent.json", "main").await.unwrap();
+    let missing = store
+        .path_exists("contacts/nonexistent.json", "main")
+        .await
+        .unwrap();
     assert!(!missing, "unwritten path should not exist");
 
     // Write a contact and check its path.
@@ -350,7 +350,10 @@ async fn test_write_and_read_raw_json() {
         label: String,
     }
 
-    let cfg = Config { version: 3, label: "prod".into() };
+    let cfg = Config {
+        version: 3,
+        label: "prod".into(),
+    };
 
     store
         .write_json("config/settings.json", &cfg, "main", "add config")
@@ -444,14 +447,12 @@ async fn test_multiple_workspaces_are_isolated() {
     let ent_a = EntityId::new();
     let ent_b = EntityId::new();
 
-    let store_a =
-        EntityStore::init(git_entity_backend(&dir_a), ws_a, ent_a, b"{}")
-            .await
-            .unwrap();
-    let store_b =
-        EntityStore::init(git_entity_backend(&dir_b), ws_b, ent_b, b"{}")
-            .await
-            .unwrap();
+    let store_a = EntityStore::init(git_entity_backend(&dir_a), ws_a, ent_a, b"{}")
+        .await
+        .unwrap();
+    let store_b = EntityStore::init(git_entity_backend(&dir_b), ws_b, ent_b, b"{}")
+        .await
+        .unwrap();
 
     // Write a contact only into workspace A.
     let ca = make_contact(ent_a, ws_a);
@@ -597,7 +598,10 @@ async fn test_api_key_soft_delete() {
 
     // The key still appears in list_api_key_ids.
     let ids = ws_store.list_api_key_ids().await.unwrap();
-    assert!(ids.contains(&key_id), "soft-deleted key should still be listed");
+    assert!(
+        ids.contains(&key_id),
+        "soft-deleted key should still be listed"
+    );
 }
 
 #[tokio::test]
@@ -651,10 +655,8 @@ async fn test_concurrent_reads() {
             let rp = Arc::clone(&repo_path);
             tokio::spawn(async move {
                 let backend = EntityBackend::Git { repo_path: rp };
-                let store =
-                    EntityStore::open(backend, ws_id, ent_id).await.unwrap();
-                let loaded: Contact =
-                    store.read::<Contact>(contact_id, "main").await.unwrap();
+                let store = EntityStore::open(backend, ws_id, ent_id).await.unwrap();
+                let loaded: Contact = store.read::<Contact>(contact_id, "main").await.unwrap();
                 assert_eq!(loaded.contact_id, contact_id);
             })
         })

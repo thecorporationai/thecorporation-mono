@@ -2,13 +2,15 @@
 
 use serde_json::json;
 
-use crate::output;
 use super::Context;
+use crate::output;
 
 // ── ContactsCommand ───────────────────────────────────────────────────────────
 
 #[derive(clap::Subcommand)]
-#[command(long_about = "Manage contacts: officers, board members, investors, employees, and service providers.")]
+#[command(
+    long_about = "Manage contacts: officers, board members, investors, employees, and service providers."
+)]
 pub enum ContactsCommand {
     /// List contacts for the active entity
     List,
@@ -30,10 +32,17 @@ pub enum ContactsCommand {
         #[arg(long, help = "Phone number")]
         phone: Option<String>,
 
-        #[arg(long, help = "individual or organization", default_value = "individual")]
+        #[arg(
+            long,
+            help = "individual or organization",
+            default_value = "individual"
+        )]
         contact_type: Option<String>,
 
-        #[arg(long, help = "employee, contractor, board_member, law_firm, valuation_firm, accounting_firm, investor, officer, founder, member, other")]
+        #[arg(
+            long,
+            help = "employee, contractor, board_member, law_firm, valuation_firm, accounting_firm, investor, officer, founder, member, other"
+        )]
         category: Option<String>,
     },
 
@@ -51,7 +60,10 @@ pub enum ContactsCommand {
         email: Option<String>,
 
         /// New category
-        #[arg(long, help = "employee, contractor, board_member, law_firm, valuation_firm, accounting_firm, investor, officer, founder, member, other")]
+        #[arg(
+            long,
+            help = "employee, contractor, board_member, law_firm, valuation_firm, accounting_firm, investor, officer, founder, member, other"
+        )]
         category: Option<String>,
 
         /// Phone number
@@ -79,7 +91,13 @@ pub async fn run(cmd: ContactsCommand, ctx: &Context) -> anyhow::Result<()> {
             output::print_value(&value, mode);
         }
 
-        ContactsCommand::Add { name, email, phone, contact_type, category } => {
+        ContactsCommand::Add {
+            name,
+            email,
+            phone,
+            contact_type,
+            category,
+        } => {
             let path = format!("/v1/entities/{entity_id}/contacts");
             let body = json!({
                 "name": name,
@@ -93,14 +111,31 @@ pub async fn run(cmd: ContactsCommand, ctx: &Context) -> anyhow::Result<()> {
             output::print_success("Contact added.", mode);
         }
 
-        ContactsCommand::Edit { contact_ref, name, email, category, phone } => {
+        ContactsCommand::Edit {
+            contact_ref,
+            name,
+            email,
+            category,
+            phone,
+        } => {
             let path = format!("/v1/entities/{entity_id}/contacts/{contact_ref}");
             let mut patch = serde_json::Map::new();
-            if let Some(n) = name { patch.insert("name".into(), json!(n)); }
-            if let Some(e) = email { patch.insert("email".into(), json!(e)); }
-            if let Some(c) = category { patch.insert("category".into(), json!(c)); }
-            if let Some(p) = phone { patch.insert("phone".into(), json!(p)); }
-            let value = ctx.client.patch(&path, &serde_json::Value::Object(patch)).await?;
+            if let Some(n) = name {
+                patch.insert("name".into(), json!(n));
+            }
+            if let Some(e) = email {
+                patch.insert("email".into(), json!(e));
+            }
+            if let Some(c) = category {
+                patch.insert("category".into(), json!(c));
+            }
+            if let Some(p) = phone {
+                patch.insert("phone".into(), json!(p));
+            }
+            let value = ctx
+                .client
+                .patch(&path, &serde_json::Value::Object(patch))
+                .await?;
             output::print_value(&value, mode);
             output::print_success("Contact updated.", mode);
         }

@@ -3,8 +3,8 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use crate::ids::{CapTableId, EntityId, HolderId, ShareClassId, TransferId};
 use super::types::{ShareCount, TransferStatus, TransferType};
+use crate::ids::{CapTableId, EntityId, HolderId, ShareClassId, TransferId};
 
 /// A transfer of shares from one holder to another.
 ///

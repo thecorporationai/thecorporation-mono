@@ -102,8 +102,7 @@ impl fmt::Display for Scope {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         // Delegate to the serde kebab-case representation for a canonical
         // human-readable form, stripping the surrounding quotes.
-        let s = serde_json::to_string(self)
-            .unwrap_or_else(|_| "\"unknown\"".to_owned());
+        let s = serde_json::to_string(self).unwrap_or_else(|_| "\"unknown\"".to_owned());
         write!(f, "{}", s.trim_matches('"'))
     }
 }
@@ -345,8 +344,7 @@ mod tests {
 
     #[test]
     fn from_vec_deduplicates() {
-        let ss =
-            ScopeSet::from_vec(vec![Scope::GitRead, Scope::GitRead, Scope::GitWrite]);
+        let ss = ScopeSet::from_vec(vec![Scope::GitRead, Scope::GitRead, Scope::GitWrite]);
         assert_eq!(ss.to_vec().len(), 2);
     }
 
@@ -539,39 +537,135 @@ mod tests {
 
     #[test]
     fn all_scope_variants_kebab_case_values() {
-        assert_eq!(serde_json::to_string(&Scope::FormationCreate).unwrap(), r#""formation-create""#);
-        assert_eq!(serde_json::to_string(&Scope::FormationRead).unwrap(), r#""formation-read""#);
-        assert_eq!(serde_json::to_string(&Scope::FormationSign).unwrap(), r#""formation-sign""#);
-        assert_eq!(serde_json::to_string(&Scope::EquityRead).unwrap(), r#""equity-read""#);
-        assert_eq!(serde_json::to_string(&Scope::EquityWrite).unwrap(), r#""equity-write""#);
-        assert_eq!(serde_json::to_string(&Scope::EquityTransfer).unwrap(), r#""equity-transfer""#);
-        assert_eq!(serde_json::to_string(&Scope::GovernanceRead).unwrap(), r#""governance-read""#);
-        assert_eq!(serde_json::to_string(&Scope::GovernanceWrite).unwrap(), r#""governance-write""#);
-        assert_eq!(serde_json::to_string(&Scope::GovernanceVote).unwrap(), r#""governance-vote""#);
-        assert_eq!(serde_json::to_string(&Scope::TreasuryRead).unwrap(), r#""treasury-read""#);
-        assert_eq!(serde_json::to_string(&Scope::TreasuryWrite).unwrap(), r#""treasury-write""#);
-        assert_eq!(serde_json::to_string(&Scope::TreasuryApprove).unwrap(), r#""treasury-approve""#);
-        assert_eq!(serde_json::to_string(&Scope::ContactsRead).unwrap(), r#""contacts-read""#);
-        assert_eq!(serde_json::to_string(&Scope::ContactsWrite).unwrap(), r#""contacts-write""#);
-        assert_eq!(serde_json::to_string(&Scope::ExecutionRead).unwrap(), r#""execution-read""#);
-        assert_eq!(serde_json::to_string(&Scope::ExecutionWrite).unwrap(), r#""execution-write""#);
-        assert_eq!(serde_json::to_string(&Scope::ServicesRead).unwrap(), r#""services-read""#);
-        assert_eq!(serde_json::to_string(&Scope::ServicesWrite).unwrap(), r#""services-write""#);
-        assert_eq!(serde_json::to_string(&Scope::AgentsRead).unwrap(), r#""agents-read""#);
-        assert_eq!(serde_json::to_string(&Scope::AgentsWrite).unwrap(), r#""agents-write""#);
-        assert_eq!(serde_json::to_string(&Scope::WorkItemsRead).unwrap(), r#""work-items-read""#);
-        assert_eq!(serde_json::to_string(&Scope::WorkItemsWrite).unwrap(), r#""work-items-write""#);
-        assert_eq!(serde_json::to_string(&Scope::ComplianceRead).unwrap(), r#""compliance-read""#);
-        assert_eq!(serde_json::to_string(&Scope::ComplianceWrite).unwrap(), r#""compliance-write""#);
-        assert_eq!(serde_json::to_string(&Scope::BranchCreate).unwrap(), r#""branch-create""#);
-        assert_eq!(serde_json::to_string(&Scope::BranchMerge).unwrap(), r#""branch-merge""#);
-        assert_eq!(serde_json::to_string(&Scope::BranchDelete).unwrap(), r#""branch-delete""#);
-        assert_eq!(serde_json::to_string(&Scope::GitRead).unwrap(), r#""git-read""#);
-        assert_eq!(serde_json::to_string(&Scope::GitWrite).unwrap(), r#""git-write""#);
+        assert_eq!(
+            serde_json::to_string(&Scope::FormationCreate).unwrap(),
+            r#""formation-create""#
+        );
+        assert_eq!(
+            serde_json::to_string(&Scope::FormationRead).unwrap(),
+            r#""formation-read""#
+        );
+        assert_eq!(
+            serde_json::to_string(&Scope::FormationSign).unwrap(),
+            r#""formation-sign""#
+        );
+        assert_eq!(
+            serde_json::to_string(&Scope::EquityRead).unwrap(),
+            r#""equity-read""#
+        );
+        assert_eq!(
+            serde_json::to_string(&Scope::EquityWrite).unwrap(),
+            r#""equity-write""#
+        );
+        assert_eq!(
+            serde_json::to_string(&Scope::EquityTransfer).unwrap(),
+            r#""equity-transfer""#
+        );
+        assert_eq!(
+            serde_json::to_string(&Scope::GovernanceRead).unwrap(),
+            r#""governance-read""#
+        );
+        assert_eq!(
+            serde_json::to_string(&Scope::GovernanceWrite).unwrap(),
+            r#""governance-write""#
+        );
+        assert_eq!(
+            serde_json::to_string(&Scope::GovernanceVote).unwrap(),
+            r#""governance-vote""#
+        );
+        assert_eq!(
+            serde_json::to_string(&Scope::TreasuryRead).unwrap(),
+            r#""treasury-read""#
+        );
+        assert_eq!(
+            serde_json::to_string(&Scope::TreasuryWrite).unwrap(),
+            r#""treasury-write""#
+        );
+        assert_eq!(
+            serde_json::to_string(&Scope::TreasuryApprove).unwrap(),
+            r#""treasury-approve""#
+        );
+        assert_eq!(
+            serde_json::to_string(&Scope::ContactsRead).unwrap(),
+            r#""contacts-read""#
+        );
+        assert_eq!(
+            serde_json::to_string(&Scope::ContactsWrite).unwrap(),
+            r#""contacts-write""#
+        );
+        assert_eq!(
+            serde_json::to_string(&Scope::ExecutionRead).unwrap(),
+            r#""execution-read""#
+        );
+        assert_eq!(
+            serde_json::to_string(&Scope::ExecutionWrite).unwrap(),
+            r#""execution-write""#
+        );
+        assert_eq!(
+            serde_json::to_string(&Scope::ServicesRead).unwrap(),
+            r#""services-read""#
+        );
+        assert_eq!(
+            serde_json::to_string(&Scope::ServicesWrite).unwrap(),
+            r#""services-write""#
+        );
+        assert_eq!(
+            serde_json::to_string(&Scope::AgentsRead).unwrap(),
+            r#""agents-read""#
+        );
+        assert_eq!(
+            serde_json::to_string(&Scope::AgentsWrite).unwrap(),
+            r#""agents-write""#
+        );
+        assert_eq!(
+            serde_json::to_string(&Scope::WorkItemsRead).unwrap(),
+            r#""work-items-read""#
+        );
+        assert_eq!(
+            serde_json::to_string(&Scope::WorkItemsWrite).unwrap(),
+            r#""work-items-write""#
+        );
+        assert_eq!(
+            serde_json::to_string(&Scope::ComplianceRead).unwrap(),
+            r#""compliance-read""#
+        );
+        assert_eq!(
+            serde_json::to_string(&Scope::ComplianceWrite).unwrap(),
+            r#""compliance-write""#
+        );
+        assert_eq!(
+            serde_json::to_string(&Scope::BranchCreate).unwrap(),
+            r#""branch-create""#
+        );
+        assert_eq!(
+            serde_json::to_string(&Scope::BranchMerge).unwrap(),
+            r#""branch-merge""#
+        );
+        assert_eq!(
+            serde_json::to_string(&Scope::BranchDelete).unwrap(),
+            r#""branch-delete""#
+        );
+        assert_eq!(
+            serde_json::to_string(&Scope::GitRead).unwrap(),
+            r#""git-read""#
+        );
+        assert_eq!(
+            serde_json::to_string(&Scope::GitWrite).unwrap(),
+            r#""git-write""#
+        );
         assert_eq!(serde_json::to_string(&Scope::Admin).unwrap(), r#""admin""#);
-        assert_eq!(serde_json::to_string(&Scope::InternalWorkerRead).unwrap(), r#""internal-worker-read""#);
-        assert_eq!(serde_json::to_string(&Scope::InternalWorkerWrite).unwrap(), r#""internal-worker-write""#);
-        assert_eq!(serde_json::to_string(&Scope::SecretsManage).unwrap(), r#""secrets-manage""#);
+        assert_eq!(
+            serde_json::to_string(&Scope::InternalWorkerRead).unwrap(),
+            r#""internal-worker-read""#
+        );
+        assert_eq!(
+            serde_json::to_string(&Scope::InternalWorkerWrite).unwrap(),
+            r#""internal-worker-write""#
+        );
+        assert_eq!(
+            serde_json::to_string(&Scope::SecretsManage).unwrap(),
+            r#""secrets-manage""#
+        );
         assert_eq!(serde_json::to_string(&Scope::All).unwrap(), r#""all""#);
     }
 
@@ -581,20 +675,40 @@ mod tests {
     fn scope_satisfies_against_all_wildcard() {
         // Every scope satisfies itself when checked against All
         let all_variants = [
-            Scope::FormationCreate, Scope::FormationRead, Scope::FormationSign,
-            Scope::EquityRead, Scope::EquityWrite, Scope::EquityTransfer,
-            Scope::GovernanceRead, Scope::GovernanceWrite, Scope::GovernanceVote,
-            Scope::TreasuryRead, Scope::TreasuryWrite, Scope::TreasuryApprove,
-            Scope::ContactsRead, Scope::ContactsWrite,
-            Scope::ExecutionRead, Scope::ExecutionWrite,
-            Scope::ServicesRead, Scope::ServicesWrite,
-            Scope::AgentsRead, Scope::AgentsWrite,
-            Scope::WorkItemsRead, Scope::WorkItemsWrite,
-            Scope::ComplianceRead, Scope::ComplianceWrite,
-            Scope::BranchCreate, Scope::BranchMerge, Scope::BranchDelete,
-            Scope::GitRead, Scope::GitWrite,
-            Scope::Admin, Scope::InternalWorkerRead, Scope::InternalWorkerWrite,
-            Scope::SecretsManage, Scope::All,
+            Scope::FormationCreate,
+            Scope::FormationRead,
+            Scope::FormationSign,
+            Scope::EquityRead,
+            Scope::EquityWrite,
+            Scope::EquityTransfer,
+            Scope::GovernanceRead,
+            Scope::GovernanceWrite,
+            Scope::GovernanceVote,
+            Scope::TreasuryRead,
+            Scope::TreasuryWrite,
+            Scope::TreasuryApprove,
+            Scope::ContactsRead,
+            Scope::ContactsWrite,
+            Scope::ExecutionRead,
+            Scope::ExecutionWrite,
+            Scope::ServicesRead,
+            Scope::ServicesWrite,
+            Scope::AgentsRead,
+            Scope::AgentsWrite,
+            Scope::WorkItemsRead,
+            Scope::WorkItemsWrite,
+            Scope::ComplianceRead,
+            Scope::ComplianceWrite,
+            Scope::BranchCreate,
+            Scope::BranchMerge,
+            Scope::BranchDelete,
+            Scope::GitRead,
+            Scope::GitWrite,
+            Scope::Admin,
+            Scope::InternalWorkerRead,
+            Scope::InternalWorkerWrite,
+            Scope::SecretsManage,
+            Scope::All,
         ];
         for v in &all_variants {
             assert!(Scope::All.satisfies(v), "All should satisfy {:?}", v);
@@ -639,8 +753,11 @@ mod tests {
     fn scope_set_all_satisfies_everything() {
         let ss = ScopeSet::all();
         let all_variants = [
-            Scope::FormationCreate, Scope::Admin, Scope::SecretsManage,
-            Scope::EquityTransfer, Scope::GovernanceVote,
+            Scope::FormationCreate,
+            Scope::Admin,
+            Scope::SecretsManage,
+            Scope::EquityTransfer,
+            Scope::GovernanceVote,
         ];
         for v in &all_variants {
             assert!(ss.has(v), "all() set should satisfy {:?}", v);
@@ -684,7 +801,11 @@ mod tests {
 
     #[test]
     fn all_principal_types_serde_roundtrip() {
-        for pt in [PrincipalType::User, PrincipalType::InternalWorker, PrincipalType::Agent] {
+        for pt in [
+            PrincipalType::User,
+            PrincipalType::InternalWorker,
+            PrincipalType::Agent,
+        ] {
             let s = serde_json::to_string(&pt).unwrap();
             let de: PrincipalType = serde_json::from_str(&s).unwrap();
             assert_eq!(de, pt);
@@ -730,9 +851,7 @@ mod tests {
 
     #[test]
     fn scope_set_json_roundtrip_all_scopes() {
-        let all_scopes: Vec<Scope> = vec![
-            Scope::Admin, Scope::GitRead, Scope::TreasuryApprove,
-        ];
+        let all_scopes: Vec<Scope> = vec![Scope::Admin, Scope::GitRead, Scope::TreasuryApprove];
         let ss = ScopeSet::from_vec(all_scopes);
         let json = serde_json::to_string(&ss).unwrap();
         let de: ScopeSet = serde_json::from_str(&json).unwrap();

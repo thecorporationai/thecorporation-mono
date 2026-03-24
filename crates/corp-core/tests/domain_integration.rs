@@ -41,8 +41,7 @@ use corp_core::{
         vote::Vote,
     },
     ids::{
-        CapTableId, ContactId, EntityId, GovernanceBodyId, GovernanceSeatId, HolderId,
-        WorkspaceId,
+        CapTableId, ContactId, EntityId, GovernanceBodyId, GovernanceSeatId, HolderId, WorkspaceId,
     },
     treasury::{
         invoice::{Invoice, InvoiceError},
@@ -155,7 +154,10 @@ fn formation_cannot_advance_from_terminal() {
     assert_eq!(entity.formation_status, FormationStatus::Active);
 
     let err = entity.advance_status().unwrap_err();
-    assert!(matches!(err, EntityError::AlreadyTerminal(FormationStatus::Active)));
+    assert!(matches!(
+        err,
+        EntityError::AlreadyTerminal(FormationStatus::Active)
+    ));
 }
 
 #[test]
@@ -169,7 +171,10 @@ fn formation_cannot_advance_from_rejected() {
     assert_eq!(entity.formation_status, FormationStatus::Dissolved);
 
     let err = entity.advance_status().unwrap_err();
-    assert!(matches!(err, EntityError::AlreadyTerminal(FormationStatus::Dissolved)));
+    assert!(matches!(
+        err,
+        EntityError::AlreadyTerminal(FormationStatus::Dissolved)
+    ));
 }
 
 #[test]
@@ -458,7 +463,10 @@ fn equity_issuance_and_transfer() {
 
     // Cannot cancel after execution.
     let err = transfer.cancel().unwrap_err();
-    assert!(matches!(err, corp_core::equity::transfer::TransferError::InvalidTransition { .. }));
+    assert!(matches!(
+        err,
+        corp_core::equity::transfer::TransferError::InvalidTransition { .. }
+    ));
 }
 
 // ── 8. SAFE lifecycle ─────────────────────────────────────────────────────────
@@ -474,9 +482,9 @@ fn safe_lifecycle_issue_and_convert() {
         ContactId::new(),
         "Seed Investor LLC",
         SafeType::PostMoney,
-        500_000_00, // $500,000 in cents
+        500_000_00,         // $500,000 in cents
         Some(5_000_000_00), // $5M valuation cap
-        Some(20), // 20% discount
+        Some(20),           // 20% discount
     );
     assert_eq!(safe.status, SafeStatus::Issued);
     assert!(safe.converted_at.is_none());
@@ -787,10 +795,7 @@ fn work_item_claim_and_complete() {
         .unwrap();
     assert_eq!(item.status, WorkItemStatus::Completed);
     assert!(item.completed_at.is_some());
-    assert_eq!(
-        item.result.as_deref(),
-        Some("83(b) filed on 2026-03-01")
-    );
+    assert_eq!(item.result.as_deref(), Some("83(b) filed on 2026-03-01"));
     assert!(item.is_terminal());
 }
 
@@ -838,14 +843,7 @@ fn work_item_not_expired_without_ttl() {
 #[test]
 fn work_item_cannot_claim_twice() {
     let entity_id = EntityId::new();
-    let mut item = WorkItem::new(
-        entity_id,
-        "Task",
-        "Description",
-        "general",
-        None,
-        false,
-    );
+    let mut item = WorkItem::new(entity_id, "Task", "Description", "general", None, false);
     item.claim("agent-1").unwrap();
     let err = item.claim("agent-2").unwrap_err();
     assert!(matches!(err, WorkItemError::NotOpen(_)));
@@ -931,7 +929,13 @@ fn journal_entry_unbalanced_is_rejected() {
 
     let err = entry.post().unwrap_err();
     assert!(
-        matches!(err, JournalEntryError::Unbalanced { debits: 500, credits: 400 }),
+        matches!(
+            err,
+            JournalEntryError::Unbalanced {
+                debits: 500,
+                credits: 400
+            }
+        ),
         "expected Unbalanced(500, 400), got {:?}",
         err
     );
@@ -1045,7 +1049,10 @@ fn invoice_full_lifecycle_draft_sent_paid() {
 
     // Cannot void a paid invoice.
     let err3 = invoice.void().unwrap_err();
-    assert!(matches!(err3, InvoiceError::CannotVoid(InvoiceStatus::Paid)));
+    assert!(matches!(
+        err3,
+        InvoiceError::CannotVoid(InvoiceStatus::Paid)
+    ));
 }
 
 #[test]
@@ -1127,7 +1134,10 @@ fn entity_dissolution_from_active() {
 
     // Cannot advance from Dissolved.
     let err = entity.advance_status().unwrap_err();
-    assert!(matches!(err, EntityError::AlreadyTerminal(FormationStatus::Dissolved)));
+    assert!(matches!(
+        err,
+        EntityError::AlreadyTerminal(FormationStatus::Dissolved)
+    ));
 
     // Cannot dissolve again.
     let err2 = entity.dissolve(effective).unwrap_err();

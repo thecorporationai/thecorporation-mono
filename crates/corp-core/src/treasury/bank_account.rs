@@ -4,8 +4,8 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use crate::ids::{BankAccountId, EntityId};
 use super::types::{BankAccountStatus, BankAccountType};
+use crate::ids::{BankAccountId, EntityId};
 
 // ── Error ─────────────────────────────────────────────────────────────────────
 
@@ -169,7 +169,12 @@ mod tests {
     fn activate_from_active_is_error() {
         let mut ba = make_checking();
         ba.activate().unwrap();
-        assert!(matches!(ba.activate(), Err(BankAccountError::NotPendingReview(BankAccountStatus::Active))));
+        assert!(matches!(
+            ba.activate(),
+            Err(BankAccountError::NotPendingReview(
+                BankAccountStatus::Active
+            ))
+        ));
     }
 
     #[test]
@@ -177,13 +182,23 @@ mod tests {
         let mut ba = make_checking();
         ba.activate().unwrap();
         ba.close().unwrap();
-        assert!(matches!(ba.activate(), Err(BankAccountError::NotPendingReview(BankAccountStatus::Closed))));
+        assert!(matches!(
+            ba.activate(),
+            Err(BankAccountError::NotPendingReview(
+                BankAccountStatus::Closed
+            ))
+        ));
     }
 
     #[test]
     fn close_from_pending_review_is_error() {
         let mut ba = make_checking();
-        assert!(matches!(ba.close(), Err(BankAccountError::NotActive(BankAccountStatus::PendingReview))));
+        assert!(matches!(
+            ba.close(),
+            Err(BankAccountError::NotActive(
+                BankAccountStatus::PendingReview
+            ))
+        ));
     }
 
     #[test]
@@ -191,7 +206,10 @@ mod tests {
         let mut ba = make_checking();
         ba.activate().unwrap();
         ba.close().unwrap();
-        assert!(matches!(ba.close(), Err(BankAccountError::NotActive(BankAccountStatus::Closed))));
+        assert!(matches!(
+            ba.close(),
+            Err(BankAccountError::NotActive(BankAccountStatus::Closed))
+        ));
     }
 
     #[test]

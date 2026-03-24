@@ -3,8 +3,8 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use crate::ids::{AccountId, EntityId};
 use super::types::{AccountType, Currency, GlAccountCode, Side};
+use crate::ids::{AccountId, EntityId};
 
 // ── Account ───────────────────────────────────────────────────────────────────
 
@@ -124,7 +124,12 @@ mod tests {
 
     #[test]
     fn new_stores_provided_name() {
-        let a = Account::new(EntityId::new(), GlAccountCode::Cash, "Main Checking", Currency::Usd);
+        let a = Account::new(
+            EntityId::new(),
+            GlAccountCode::Cash,
+            "Main Checking",
+            Currency::Usd,
+        );
         assert_eq!(a.account_name, "Main Checking");
     }
 

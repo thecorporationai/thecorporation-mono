@@ -2,8 +2,8 @@
 
 use serde_json::json;
 
-use crate::output;
 use super::Context;
+use crate::output;
 
 // ── ExecutionCommand ──────────────────────────────────────────────────────────
 
@@ -18,10 +18,11 @@ use super::Context;
 ///   corp execution authorize-intent <intent_id>
 ///   corp execution execute-intent <intent_id>
 #[derive(clap::Subcommand)]
-#[command(long_about = "Track governance execution: intents declare what should happen, obligations track what must be done, receipts record completions.\n\nIntent lifecycle: pending → evaluated → authorized → executed (or cancelled)\nObligation lifecycle: required → in_progress → fulfilled (or waived)")]
+#[command(
+    long_about = "Track governance execution: intents declare what should happen, obligations track what must be done, receipts record completions.\n\nIntent lifecycle: pending → evaluated → authorized → executed (or cancelled)\nObligation lifecycle: required → in_progress → fulfilled (or waived)"
+)]
 pub enum ExecutionCommand {
     // ── Intents ───────────────────────────────────────────────────────────────
-
     /// List intents for the active entity
     Intents,
 
@@ -81,7 +82,6 @@ pub enum ExecutionCommand {
     },
 
     // ── Obligations ───────────────────────────────────────────────────────────
-
     /// List obligations for the active entity
     Obligations,
 
@@ -151,7 +151,6 @@ pub enum ExecutionCommand {
     },
 
     // ── Receipts ──────────────────────────────────────────────────────────────
-
     /// List execution receipts
     Receipts,
 
@@ -196,7 +195,11 @@ pub async fn run(cmd: ExecutionCommand, ctx: &Context) -> anyhow::Result<()> {
             output::print_value(&value, mode);
         }
 
-        ExecutionCommand::CreateIntent { intent_type, description, authority_tier } => {
+        ExecutionCommand::CreateIntent {
+            intent_type,
+            description,
+            authority_tier,
+        } => {
             let path = format!("/v1/entities/{entity_id}/intents");
             let body = json!({
                 "intent_type": intent_type,
@@ -237,11 +240,19 @@ pub async fn run(cmd: ExecutionCommand, ctx: &Context) -> anyhow::Result<()> {
             output::print_success("Intent cancelled.", mode);
         }
 
-        ExecutionCommand::UpdateIntent { intent_id, description } => {
+        ExecutionCommand::UpdateIntent {
+            intent_id,
+            description,
+        } => {
             let path = format!("/v1/entities/{entity_id}/intents/{intent_id}");
             let mut patch = serde_json::Map::new();
-            if let Some(d) = description { patch.insert("description".into(), json!(d)); }
-            let value = ctx.client.patch(&path, &serde_json::Value::Object(patch)).await?;
+            if let Some(d) = description {
+                patch.insert("description".into(), json!(d));
+            }
+            let value = ctx
+                .client
+                .patch(&path, &serde_json::Value::Object(patch))
+                .await?;
             output::print_value(&value, mode);
             output::print_success("Intent updated.", mode);
         }
@@ -301,12 +312,23 @@ pub async fn run(cmd: ExecutionCommand, ctx: &Context) -> anyhow::Result<()> {
             output::print_success("Obligation waived.", mode);
         }
 
-        ExecutionCommand::UpdateObligation { obligation_id, description, assignee_id } => {
+        ExecutionCommand::UpdateObligation {
+            obligation_id,
+            description,
+            assignee_id,
+        } => {
             let path = format!("/v1/entities/{entity_id}/obligations/{obligation_id}");
             let mut patch = serde_json::Map::new();
-            if let Some(d) = description { patch.insert("description".into(), json!(d)); }
-            if let Some(a) = assignee_id { patch.insert("assignee_id".into(), json!(a)); }
-            let value = ctx.client.patch(&path, &serde_json::Value::Object(patch)).await?;
+            if let Some(d) = description {
+                patch.insert("description".into(), json!(d));
+            }
+            if let Some(a) = assignee_id {
+                patch.insert("assignee_id".into(), json!(a));
+            }
+            let value = ctx
+                .client
+                .patch(&path, &serde_json::Value::Object(patch))
+                .await?;
             output::print_value(&value, mode);
             output::print_success("Obligation updated.", mode);
         }
@@ -323,7 +345,11 @@ pub async fn run(cmd: ExecutionCommand, ctx: &Context) -> anyhow::Result<()> {
             output::print_value(&value, mode);
         }
 
-        ExecutionCommand::CreateReceipt { intent_id, idempotency_key, request_hash } => {
+        ExecutionCommand::CreateReceipt {
+            intent_id,
+            idempotency_key,
+            request_hash,
+        } => {
             let path = format!("/v1/entities/{entity_id}/receipts");
             let body = json!({
                 "intent_id": intent_id,

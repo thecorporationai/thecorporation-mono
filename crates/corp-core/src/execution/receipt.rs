@@ -4,8 +4,8 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use crate::ids::{IntentId, ReceiptId};
 use super::types::ReceiptStatus;
+use crate::ids::{IntentId, ReceiptId};
 
 // ── Error ─────────────────────────────────────────────────────────────────────
 
@@ -140,14 +140,20 @@ mod tests {
     fn mark_executed_twice_is_error() {
         let mut r = make_receipt();
         r.mark_executed("hash1").unwrap();
-        assert!(matches!(r.mark_executed("hash2"), Err(ReceiptError::NotPending(_))));
+        assert!(matches!(
+            r.mark_executed("hash2"),
+            Err(ReceiptError::NotPending(_))
+        ));
     }
 
     #[test]
     fn mark_executed_from_failed_is_error() {
         let mut r = make_receipt();
         r.mark_failed().unwrap();
-        assert!(matches!(r.mark_executed("hash"), Err(ReceiptError::NotPending(_))));
+        assert!(matches!(
+            r.mark_executed("hash"),
+            Err(ReceiptError::NotPending(_))
+        ));
     }
 
     // ── mark_failed() ────────────────────────────────────────────────────────
@@ -163,21 +169,31 @@ mod tests {
     fn mark_failed_twice_is_error() {
         let mut r = make_receipt();
         r.mark_failed().unwrap();
-        assert!(matches!(r.mark_failed(), Err(ReceiptError::AlreadySettled(_))));
+        assert!(matches!(
+            r.mark_failed(),
+            Err(ReceiptError::AlreadySettled(_))
+        ));
     }
 
     #[test]
     fn mark_failed_after_executed_is_error() {
         let mut r = make_receipt();
         r.mark_executed("some-hash").unwrap();
-        assert!(matches!(r.mark_failed(), Err(ReceiptError::AlreadySettled(_))));
+        assert!(matches!(
+            r.mark_failed(),
+            Err(ReceiptError::AlreadySettled(_))
+        ));
     }
 
     // ── ReceiptStatus serde roundtrips ────────────────────────────────────────
 
     #[test]
     fn receipt_status_serde_roundtrip() {
-        for status in [ReceiptStatus::Pending, ReceiptStatus::Executed, ReceiptStatus::Failed] {
+        for status in [
+            ReceiptStatus::Pending,
+            ReceiptStatus::Executed,
+            ReceiptStatus::Failed,
+        ] {
             let s = serde_json::to_string(&status).unwrap();
             let de: ReceiptStatus = serde_json::from_str(&s).unwrap();
             assert_eq!(de, status);
@@ -186,9 +202,18 @@ mod tests {
 
     #[test]
     fn receipt_status_serde_values() {
-        assert_eq!(serde_json::to_string(&ReceiptStatus::Pending).unwrap(), r#""pending""#);
-        assert_eq!(serde_json::to_string(&ReceiptStatus::Executed).unwrap(), r#""executed""#);
-        assert_eq!(serde_json::to_string(&ReceiptStatus::Failed).unwrap(), r#""failed""#);
+        assert_eq!(
+            serde_json::to_string(&ReceiptStatus::Pending).unwrap(),
+            r#""pending""#
+        );
+        assert_eq!(
+            serde_json::to_string(&ReceiptStatus::Executed).unwrap(),
+            r#""executed""#
+        );
+        assert_eq!(
+            serde_json::to_string(&ReceiptStatus::Failed).unwrap(),
+            r#""failed""#
+        );
     }
 
     #[test]

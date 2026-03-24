@@ -265,10 +265,7 @@ mod tests {
     fn deactivate_twice_fails() {
         let mut c = make_contact();
         c.deactivate().unwrap();
-        assert!(matches!(
-            c.deactivate(),
-            Err(ContactError::AlreadyInactive)
-        ));
+        assert!(matches!(c.deactivate(), Err(ContactError::AlreadyInactive)));
     }
 
     #[test]
@@ -384,27 +381,67 @@ mod tests {
 
     #[test]
     fn all_contact_category_serde_values() {
-        assert_eq!(serde_json::to_string(&ContactCategory::Employee).unwrap(), r#""employee""#);
-        assert_eq!(serde_json::to_string(&ContactCategory::Contractor).unwrap(), r#""contractor""#);
-        assert_eq!(serde_json::to_string(&ContactCategory::BoardMember).unwrap(), r#""board_member""#);
-        assert_eq!(serde_json::to_string(&ContactCategory::LawFirm).unwrap(), r#""law_firm""#);
-        assert_eq!(serde_json::to_string(&ContactCategory::ValuationFirm).unwrap(), r#""valuation_firm""#);
-        assert_eq!(serde_json::to_string(&ContactCategory::AccountingFirm).unwrap(), r#""accounting_firm""#);
-        assert_eq!(serde_json::to_string(&ContactCategory::Investor).unwrap(), r#""investor""#);
-        assert_eq!(serde_json::to_string(&ContactCategory::Officer).unwrap(), r#""officer""#);
-        assert_eq!(serde_json::to_string(&ContactCategory::Founder).unwrap(), r#""founder""#);
-        assert_eq!(serde_json::to_string(&ContactCategory::Member).unwrap(), r#""member""#);
-        assert_eq!(serde_json::to_string(&ContactCategory::Other).unwrap(), r#""other""#);
+        assert_eq!(
+            serde_json::to_string(&ContactCategory::Employee).unwrap(),
+            r#""employee""#
+        );
+        assert_eq!(
+            serde_json::to_string(&ContactCategory::Contractor).unwrap(),
+            r#""contractor""#
+        );
+        assert_eq!(
+            serde_json::to_string(&ContactCategory::BoardMember).unwrap(),
+            r#""board_member""#
+        );
+        assert_eq!(
+            serde_json::to_string(&ContactCategory::LawFirm).unwrap(),
+            r#""law_firm""#
+        );
+        assert_eq!(
+            serde_json::to_string(&ContactCategory::ValuationFirm).unwrap(),
+            r#""valuation_firm""#
+        );
+        assert_eq!(
+            serde_json::to_string(&ContactCategory::AccountingFirm).unwrap(),
+            r#""accounting_firm""#
+        );
+        assert_eq!(
+            serde_json::to_string(&ContactCategory::Investor).unwrap(),
+            r#""investor""#
+        );
+        assert_eq!(
+            serde_json::to_string(&ContactCategory::Officer).unwrap(),
+            r#""officer""#
+        );
+        assert_eq!(
+            serde_json::to_string(&ContactCategory::Founder).unwrap(),
+            r#""founder""#
+        );
+        assert_eq!(
+            serde_json::to_string(&ContactCategory::Member).unwrap(),
+            r#""member""#
+        );
+        assert_eq!(
+            serde_json::to_string(&ContactCategory::Other).unwrap(),
+            r#""other""#
+        );
     }
 
     #[test]
     fn all_cap_table_access_serde_roundtrip() {
-        for variant in [CapTableAccess::None, CapTableAccess::Summary, CapTableAccess::Detailed] {
+        for variant in [
+            CapTableAccess::None,
+            CapTableAccess::Summary,
+            CapTableAccess::Detailed,
+        ] {
             let s = serde_json::to_string(&variant).unwrap();
             let de: CapTableAccess = serde_json::from_str(&s).unwrap();
             assert_eq!(de, variant);
         }
-        assert_eq!(serde_json::to_string(&CapTableAccess::Summary).unwrap(), r#""summary""#);
+        assert_eq!(
+            serde_json::to_string(&CapTableAccess::Summary).unwrap(),
+            r#""summary""#
+        );
     }
 
     #[test]
@@ -414,8 +451,14 @@ mod tests {
             let de: ContactType = serde_json::from_str(&s).unwrap();
             assert_eq!(de, variant);
         }
-        assert_eq!(serde_json::to_string(&ContactType::Individual).unwrap(), r#""individual""#);
-        assert_eq!(serde_json::to_string(&ContactType::Organization).unwrap(), r#""organization""#);
+        assert_eq!(
+            serde_json::to_string(&ContactType::Individual).unwrap(),
+            r#""individual""#
+        );
+        assert_eq!(
+            serde_json::to_string(&ContactType::Organization).unwrap(),
+            r#""organization""#
+        );
     }
 
     #[test]

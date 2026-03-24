@@ -273,7 +273,10 @@ mod tests {
     fn set_system_prompt_updates_field() {
         let mut agent = make_agent();
         agent.set_system_prompt(Some("You are a corporate AI agent.".into()));
-        assert_eq!(agent.system_prompt.as_deref(), Some("You are a corporate AI agent."));
+        assert_eq!(
+            agent.system_prompt.as_deref(),
+            Some("You are a corporate AI agent.")
+        );
     }
 
     #[test]
@@ -297,8 +300,14 @@ mod tests {
 
     #[test]
     fn agent_status_serde_values() {
-        assert_eq!(serde_json::to_string(&AgentStatus::Active).unwrap(), r#""active""#);
-        assert_eq!(serde_json::to_string(&AgentStatus::Inactive).unwrap(), r#""inactive""#);
+        assert_eq!(
+            serde_json::to_string(&AgentStatus::Active).unwrap(),
+            r#""active""#
+        );
+        assert_eq!(
+            serde_json::to_string(&AgentStatus::Inactive).unwrap(),
+            r#""inactive""#
+        );
     }
 
     #[test]

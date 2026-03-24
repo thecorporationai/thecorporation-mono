@@ -5,7 +5,7 @@
 //! It deliberately carries no async methods — all I/O lives in the store, not
 //! in the entity type.
 
-use serde::{de::DeserializeOwned, Serialize};
+use serde::{Serialize, de::DeserializeOwned};
 
 /// Implemented by types that can be stored in an entity repository.
 ///
@@ -25,12 +25,7 @@ pub trait StoredEntity: DeserializeOwned + Serialize + Send + Sync {
     /// Must implement `Display` (for building the storage path), `FromStr`
     /// (for parsing paths back to IDs), `Copy`, and the send/sync marker
     /// traits required for async contexts.
-    type Id: std::fmt::Display
-        + std::str::FromStr
-        + Copy
-        + Send
-        + Sync
-        + 'static;
+    type Id: std::fmt::Display + std::str::FromStr + Copy + Send + Sync + 'static;
 
     /// Directory path within the entity repository (e.g. `"governance/bodies"`).
     ///

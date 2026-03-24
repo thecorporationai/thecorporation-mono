@@ -85,11 +85,9 @@ impl AppState {
     /// Panics if a required variable is absent.  Creates the data directory if
     /// it does not yet exist (git backend only).
     pub async fn from_env() -> Self {
-        let data_dir =
-            std::env::var("CORP_DATA_DIR").unwrap_or_else(|_| "./data".to_owned());
+        let data_dir = std::env::var("CORP_DATA_DIR").unwrap_or_else(|_| "./data".to_owned());
 
-        let jwt_secret =
-            std::env::var("CORP_JWT_SECRET").expect("CORP_JWT_SECRET must be set");
+        let jwt_secret = std::env::var("CORP_JWT_SECRET").expect("CORP_JWT_SECRET must be set");
 
         let backend_name =
             std::env::var("CORP_STORAGE_BACKEND").unwrap_or_else(|_| "git".to_owned());
@@ -122,11 +120,10 @@ impl AppState {
 
         // The StoredApiKeyResolver needs the same backend config so it can
         // open workspace stores on demand.
-        let api_key_resolver: Arc<dyn ApiKeyResolver> =
-            Arc::new(StoredApiKeyResolver {
-                data_dir: data_dir.clone(),
-                storage_backend: storage_backend.clone(),
-            });
+        let api_key_resolver: Arc<dyn ApiKeyResolver> = Arc::new(StoredApiKeyResolver {
+            data_dir: data_dir.clone(),
+            storage_backend: storage_backend.clone(),
+        });
 
         Self {
             data_dir,
@@ -399,8 +396,7 @@ impl ApiKeyResolver for StoredApiKeyResolver {
                 continue;
             }
 
-            let matches = ApiKeyManager::verify(raw_key, &record.key_hash)
-                .unwrap_or(false);
+            let matches = ApiKeyManager::verify(raw_key, &record.key_hash).unwrap_or(false);
 
             if matches {
                 // `Scope` has no `FromStr` impl; deserialize from a JSON
@@ -409,10 +405,7 @@ impl ApiKeyResolver for StoredApiKeyResolver {
                     .scopes
                     .iter()
                     .filter_map(|s| {
-                        serde_json::from_str::<corp_core::auth::Scope>(
-                            &format!("\"{}\"", s),
-                        )
-                        .ok()
+                        serde_json::from_str::<corp_core::auth::Scope>(&format!("\"{}\"", s)).ok()
                     })
                     .collect::<Vec<_>>();
 
@@ -469,9 +462,8 @@ impl StoredApiKeyResolver {
 pub(crate) async fn kv_connection_manager(
     redis_url: &str,
 ) -> Result<redis::aio::ConnectionManager, AppError> {
-    let client = redis::Client::open(redis_url).map_err(|e| {
-        AppError::Storage(StorageError::KvError(e.to_string()))
-    })?;
+    let client = redis::Client::open(redis_url)
+        .map_err(|e| AppError::Storage(StorageError::KvError(e.to_string())))?;
 
     redis::aio::ConnectionManager::new(client)
         .await

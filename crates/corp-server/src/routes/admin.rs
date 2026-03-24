@@ -144,9 +144,7 @@ async fn list_api_keys(
     RequireAdmin(principal): RequireAdmin,
     State(state): State<AppState>,
 ) -> Result<Json<Vec<ApiKeyRecord>>, AppError> {
-    let workspace_store = state
-        .open_workspace_store(principal.workspace_id)
-        .await?;
+    let workspace_store = state.open_workspace_store(principal.workspace_id).await?;
     let key_ids = workspace_store
         .list_api_key_ids()
         .await
@@ -173,9 +171,7 @@ async fn create_api_key(
     State(state): State<AppState>,
     Json(body): Json<CreateApiKeyRequest>,
 ) -> Result<Json<CreateApiKeyResponse>, AppError> {
-    let workspace_store = state
-        .open_workspace_store(principal.workspace_id)
-        .await?;
+    let workspace_store = state.open_workspace_store(principal.workspace_id).await?;
 
     let (raw_key, key_hash) = ApiKeyManager::generate();
 
@@ -209,22 +205,17 @@ async fn revoke_api_key(
     State(state): State<AppState>,
     Path(key_id): Path<ApiKeyId>,
 ) -> Result<Json<ApiKeyRecord>, AppError> {
-    let workspace_store = state
-        .open_workspace_store(principal.workspace_id)
-        .await?;
+    let workspace_store = state.open_workspace_store(principal.workspace_id).await?;
 
-    workspace_store
-        .delete_api_key(key_id)
-        .await
-        .map_err(|e| {
-            use corp_storage::error::StorageError;
-            match e {
-                StorageError::NotFound(_) => {
-                    AppError::NotFound(format!("api key {} not found", key_id))
-                }
-                other => AppError::Storage(other),
+    workspace_store.delete_api_key(key_id).await.map_err(|e| {
+        use corp_storage::error::StorageError;
+        match e {
+            StorageError::NotFound(_) => {
+                AppError::NotFound(format!("api key {} not found", key_id))
             }
-        })?;
+            other => AppError::Storage(other),
+        }
+    })?;
 
     // Return the updated (now deleted) record.
     let updated = workspace_store

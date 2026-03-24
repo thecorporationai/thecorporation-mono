@@ -29,7 +29,7 @@ use std::sync::Arc;
 
 use axum::body::Body;
 use axum::http::{Method, Request, StatusCode};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use tempfile::TempDir;
 use tower::ServiceExt;
 
@@ -94,9 +94,7 @@ impl TestCtx {
             iat: now,
             exp: now + 3600,
         };
-        let token = jwt_config
-            .encode(&claims)
-            .expect("encode test JWT");
+        let token = jwt_config.encode(&claims).expect("encode test JWT");
 
         let state = AppState {
             data_dir,
@@ -142,15 +140,9 @@ impl TestCtx {
             builder = builder.header("content-type", content_type);
         }
 
-        let req = builder
-            .body(Body::from(bytes))
-            .expect("build request");
+        let req = builder.body(Body::from(bytes)).expect("build request");
 
-        self.app
-            .clone()
-            .oneshot(req)
-            .await
-            .expect("service error")
+        self.app.clone().oneshot(req).await.expect("service error")
     }
 
     /// Convenience: GET request.
@@ -263,10 +255,7 @@ async fn test_list_entities_returns_200_array() {
     assert_eq!(resp.status(), StatusCode::OK);
 
     let body = body_json(resp).await;
-    assert!(
-        body.is_array(),
-        "response should be an array: {body}"
-    );
+    assert!(body.is_array(), "response should be an array: {body}");
 }
 
 // ── 4. Entity get ─────────────────────────────────────────────────────────────
@@ -360,8 +349,13 @@ async fn test_sign_document_returns_200() {
     );
 
     let signed_doc = body_json(sign_resp).await;
-    assert!(!signed_doc["signatures"].as_array().unwrap_or(&vec![]).is_empty(),
-        "signed document should have at least one signature: {signed_doc}");
+    assert!(
+        !signed_doc["signatures"]
+            .as_array()
+            .unwrap_or(&vec![])
+            .is_empty(),
+        "signed document should have at least one signature: {signed_doc}"
+    );
 }
 
 /// Advance an entity from Pending to DocumentsGenerated, sign all docs, then
@@ -374,7 +368,11 @@ async fn advance_to(ctx: &mut TestCtx, entity_id: &str, target_status: &str) {
     let resp = ctx
         .post_empty(&format!("/v1/formations/{entity_id}/advance"))
         .await;
-    assert_eq!(resp.status(), StatusCode::OK, "advance to documents_generated");
+    assert_eq!(
+        resp.status(),
+        StatusCode::OK,
+        "advance to documents_generated"
+    );
 
     // 2. Sign all generated documents.
     let docs_resp = ctx
@@ -412,11 +410,7 @@ async fn advance_to(ctx: &mut TestCtx, entity_id: &str, target_status: &str) {
         let resp = ctx
             .post_empty(&format!("/v1/formations/{entity_id}/advance"))
             .await;
-        assert_eq!(
-            resp.status(),
-            StatusCode::OK,
-            "advance to {expected}"
-        );
+        assert_eq!(resp.status(), StatusCode::OK, "advance to {expected}");
         let updated = body_json(resp).await;
         assert_eq!(
             updated["formation_status"].as_str().unwrap(),
@@ -540,8 +534,7 @@ async fn test_full_formation_lifecycle() {
         )
         .await;
     assert!(
-        filing_resp.status() == StatusCode::OK
-            || filing_resp.status() == StatusCode::BAD_REQUEST,
+        filing_resp.status() == StatusCode::OK || filing_resp.status() == StatusCode::BAD_REQUEST,
         "filing confirm returned unexpected status: {}",
         filing_resp.status()
     );
@@ -554,8 +547,7 @@ async fn test_full_formation_lifecycle() {
         )
         .await;
     assert!(
-        ein_resp.status() == StatusCode::OK
-            || ein_resp.status() == StatusCode::BAD_REQUEST,
+        ein_resp.status() == StatusCode::OK || ein_resp.status() == StatusCode::BAD_REQUEST,
         "EIN confirm returned unexpected status: {}",
         ein_resp.status()
     );
@@ -574,10 +566,7 @@ async fn test_create_cap_table_returns_200() {
     let entity_id = entity["entity_id"].as_str().unwrap();
 
     let resp = ctx
-        .post(
-            &format!("/v1/entities/{entity_id}/cap-table"),
-            json!({}),
-        )
+        .post(&format!("/v1/entities/{entity_id}/cap-table"), json!({}))
         .await;
     assert_eq!(resp.status(), StatusCode::OK);
 
@@ -736,9 +725,7 @@ async fn test_meeting_vote_flow() {
     // Add an agenda item.
     let item_resp = ctx
         .post(
-            &format!(
-                "/v1/entities/{entity_id}/governance/meetings/{meeting_id}/items"
-            ),
+            &format!("/v1/entities/{entity_id}/governance/meetings/{meeting_id}/items"),
             json!({
                 "title": "Approve budget",
                 "item_type": "resolution",
@@ -998,9 +985,7 @@ async fn test_get_filing_returns_200() {
     let entity = create_ccorp(&mut ctx).await;
     let entity_id = entity["entity_id"].as_str().unwrap();
 
-    let resp = ctx
-        .get(&format!("/v1/formations/{entity_id}/filing"))
-        .await;
+    let resp = ctx.get(&format!("/v1/formations/{entity_id}/filing")).await;
     assert_eq!(resp.status(), StatusCode::OK);
 
     let filing = body_json(resp).await;
@@ -1018,9 +1003,7 @@ async fn test_get_tax_profile_returns_200() {
     let entity = create_ccorp(&mut ctx).await;
     let entity_id = entity["entity_id"].as_str().unwrap();
 
-    let resp = ctx
-        .get(&format!("/v1/formations/{entity_id}/tax"))
-        .await;
+    let resp = ctx.get(&format!("/v1/formations/{entity_id}/tax")).await;
     assert_eq!(resp.status(), StatusCode::OK);
 
     let profile = body_json(resp).await;
@@ -1256,8 +1239,8 @@ async fn test_list_documents_after_advance() {
 /// `POST /v1/entities` (which only creates the entity store, not the
 /// workspace index entry).
 async fn ensure_workspace_direct(ctx: &TestCtx) {
-    use std::path::PathBuf;
     use corp_storage::workspace_store::{Backend as WsBackend, WorkspaceStore};
+    use std::path::PathBuf;
 
     // Derive the workspace path from what AppState would use.
     // AppState.data_dir is the tempdir root; workspace store lives at
@@ -1268,8 +1251,7 @@ async fn ensure_workspace_direct(ctx: &TestCtx) {
         .join("workspace");
 
     // `gix::init_bare` does not create intermediate directories, so we must.
-    std::fs::create_dir_all(&ws_path)
-        .expect("create workspace dir for test");
+    std::fs::create_dir_all(&ws_path).expect("create workspace dir for test");
 
     let backend = WsBackend::Git {
         repo_path: Arc::new(ws_path),
@@ -1290,4 +1272,3 @@ impl TestCtx {
         self._dir.path().to_str().unwrap().to_owned()
     }
 }
-

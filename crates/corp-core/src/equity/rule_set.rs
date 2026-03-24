@@ -3,8 +3,8 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use crate::ids::EquityRuleSetId;
 use super::instrument::InstrumentKind;
+use crate::ids::EquityRuleSetId;
 
 // ── AntiDilutionMethod ────────────────────────────────────────────────────────
 
@@ -126,15 +126,13 @@ mod tests {
 
     #[test]
     fn anti_dilution_serde_broad_based() {
-        let json =
-            serde_json::to_string(&AntiDilutionMethod::BroadBasedWeightedAverage).unwrap();
+        let json = serde_json::to_string(&AntiDilutionMethod::BroadBasedWeightedAverage).unwrap();
         assert_eq!(json, r#""broad_based_weighted_average""#);
     }
 
     #[test]
     fn anti_dilution_serde_narrow_based() {
-        let json =
-            serde_json::to_string(&AntiDilutionMethod::NarrowBasedWeightedAverage).unwrap();
+        let json = serde_json::to_string(&AntiDilutionMethod::NarrowBasedWeightedAverage).unwrap();
         assert_eq!(json, r#""narrow_based_weighted_average""#);
     }
 
@@ -146,11 +144,7 @@ mod tests {
 
     #[test]
     fn empty_conversion_precedence_is_valid() {
-        let rs = EquityRuleSet::new(
-            AntiDilutionMethod::None,
-            vec![],
-            serde_json::Value::Null,
-        );
+        let rs = EquityRuleSet::new(AntiDilutionMethod::None, vec![], serde_json::Value::Null);
         assert!(rs.conversion_precedence.is_empty());
     }
 }

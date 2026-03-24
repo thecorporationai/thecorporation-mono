@@ -412,12 +412,18 @@ mod tests {
     #[test]
     fn cents_checked() {
         assert_eq!(Cents::new(i64::MAX).checked_add(Cents::new(1)), None);
-        assert_eq!(Cents::new(10).checked_sub(Cents::new(3)), Some(Cents::new(7)));
+        assert_eq!(
+            Cents::new(10).checked_sub(Cents::new(3)),
+            Some(Cents::new(7))
+        );
     }
 
     #[test]
     fn cents_checked_add_normal() {
-        assert_eq!(Cents::new(100).checked_add(Cents::new(23)), Some(Cents::new(123)));
+        assert_eq!(
+            Cents::new(100).checked_add(Cents::new(23)),
+            Some(Cents::new(123))
+        );
     }
 
     #[test]
@@ -427,12 +433,18 @@ mod tests {
 
     #[test]
     fn cents_checked_sub_to_zero() {
-        assert_eq!(Cents::new(50).checked_sub(Cents::new(50)), Some(Cents::ZERO));
+        assert_eq!(
+            Cents::new(50).checked_sub(Cents::new(50)),
+            Some(Cents::ZERO)
+        );
     }
 
     #[test]
     fn cents_checked_add_zero() {
-        assert_eq!(Cents::new(42).checked_add(Cents::ZERO), Some(Cents::new(42)));
+        assert_eq!(
+            Cents::new(42).checked_add(Cents::ZERO),
+            Some(Cents::new(42))
+        );
     }
 
     // ── Cents ordering ────────────────────────────────────────────────────────
@@ -453,26 +465,92 @@ mod tests {
         assert_eq!(GlAccountCode::Cash.account_type(), AccountType::Asset);
         assert_eq!(GlAccountCode::Cash.normal_balance(), Side::Debit);
         assert_eq!(GlAccountCode::Revenue.normal_balance(), Side::Credit);
-        assert_eq!(GlAccountCode::AccountsPayable.account_type(), AccountType::Liability);
+        assert_eq!(
+            GlAccountCode::AccountsPayable.account_type(),
+            AccountType::Liability
+        );
     }
 
     #[test]
     fn gl_all_codes_and_labels() {
         let cases = [
-            (GlAccountCode::Cash, 1000, "Cash", AccountType::Asset, Side::Debit),
-            (GlAccountCode::AccountsReceivable, 1100, "Accounts Receivable", AccountType::Asset, Side::Debit),
-            (GlAccountCode::AccountsPayable, 2000, "Accounts Payable", AccountType::Liability, Side::Credit),
-            (GlAccountCode::AccruedExpenses, 2100, "Accrued Expenses", AccountType::Liability, Side::Credit),
-            (GlAccountCode::FounderCapital, 3000, "Founder Capital", AccountType::Equity, Side::Credit),
-            (GlAccountCode::Revenue, 4000, "Revenue", AccountType::Revenue, Side::Credit),
-            (GlAccountCode::OperatingExpenses, 5000, "Operating Expenses", AccountType::Expense, Side::Debit),
-            (GlAccountCode::Cogs, 5100, "Cost of Goods Sold", AccountType::Expense, Side::Debit),
+            (
+                GlAccountCode::Cash,
+                1000,
+                "Cash",
+                AccountType::Asset,
+                Side::Debit,
+            ),
+            (
+                GlAccountCode::AccountsReceivable,
+                1100,
+                "Accounts Receivable",
+                AccountType::Asset,
+                Side::Debit,
+            ),
+            (
+                GlAccountCode::AccountsPayable,
+                2000,
+                "Accounts Payable",
+                AccountType::Liability,
+                Side::Credit,
+            ),
+            (
+                GlAccountCode::AccruedExpenses,
+                2100,
+                "Accrued Expenses",
+                AccountType::Liability,
+                Side::Credit,
+            ),
+            (
+                GlAccountCode::FounderCapital,
+                3000,
+                "Founder Capital",
+                AccountType::Equity,
+                Side::Credit,
+            ),
+            (
+                GlAccountCode::Revenue,
+                4000,
+                "Revenue",
+                AccountType::Revenue,
+                Side::Credit,
+            ),
+            (
+                GlAccountCode::OperatingExpenses,
+                5000,
+                "Operating Expenses",
+                AccountType::Expense,
+                Side::Debit,
+            ),
+            (
+                GlAccountCode::Cogs,
+                5100,
+                "Cost of Goods Sold",
+                AccountType::Expense,
+                Side::Debit,
+            ),
         ];
         for (code, expected_num, expected_label, expected_type, expected_normal) in cases {
             assert_eq!(code.code(), expected_num, "code mismatch for {:?}", code);
-            assert_eq!(code.label(), expected_label, "label mismatch for {:?}", code);
-            assert_eq!(code.account_type(), expected_type, "account_type mismatch for {:?}", code);
-            assert_eq!(code.normal_balance(), expected_normal, "normal_balance mismatch for {:?}", code);
+            assert_eq!(
+                code.label(),
+                expected_label,
+                "label mismatch for {:?}",
+                code
+            );
+            assert_eq!(
+                code.account_type(),
+                expected_type,
+                "account_type mismatch for {:?}",
+                code
+            );
+            assert_eq!(
+                code.normal_balance(),
+                expected_normal,
+                "normal_balance mismatch for {:?}",
+                code
+            );
         }
     }
 
@@ -518,11 +596,26 @@ mod tests {
 
     #[test]
     fn account_type_serde_values() {
-        assert_eq!(serde_json::to_string(&AccountType::Asset).unwrap(), r#""asset""#);
-        assert_eq!(serde_json::to_string(&AccountType::Liability).unwrap(), r#""liability""#);
-        assert_eq!(serde_json::to_string(&AccountType::Equity).unwrap(), r#""equity""#);
-        assert_eq!(serde_json::to_string(&AccountType::Revenue).unwrap(), r#""revenue""#);
-        assert_eq!(serde_json::to_string(&AccountType::Expense).unwrap(), r#""expense""#);
+        assert_eq!(
+            serde_json::to_string(&AccountType::Asset).unwrap(),
+            r#""asset""#
+        );
+        assert_eq!(
+            serde_json::to_string(&AccountType::Liability).unwrap(),
+            r#""liability""#
+        );
+        assert_eq!(
+            serde_json::to_string(&AccountType::Equity).unwrap(),
+            r#""equity""#
+        );
+        assert_eq!(
+            serde_json::to_string(&AccountType::Revenue).unwrap(),
+            r#""revenue""#
+        );
+        assert_eq!(
+            serde_json::to_string(&AccountType::Expense).unwrap(),
+            r#""expense""#
+        );
     }
 
     #[test]
@@ -543,8 +636,14 @@ mod tests {
             let de: BankAccountType = serde_json::from_str(&s).unwrap();
             assert_eq!(de, variant);
         }
-        assert_eq!(serde_json::to_string(&BankAccountType::Checking).unwrap(), r#""checking""#);
-        assert_eq!(serde_json::to_string(&BankAccountType::Savings).unwrap(), r#""savings""#);
+        assert_eq!(
+            serde_json::to_string(&BankAccountType::Checking).unwrap(),
+            r#""checking""#
+        );
+        assert_eq!(
+            serde_json::to_string(&BankAccountType::Savings).unwrap(),
+            r#""savings""#
+        );
     }
 
     #[test]
@@ -562,8 +661,14 @@ mod tests {
             serde_json::to_string(&BankAccountStatus::PendingReview).unwrap(),
             r#""pending_review""#
         );
-        assert_eq!(serde_json::to_string(&BankAccountStatus::Active).unwrap(), r#""active""#);
-        assert_eq!(serde_json::to_string(&BankAccountStatus::Closed).unwrap(), r#""closed""#);
+        assert_eq!(
+            serde_json::to_string(&BankAccountStatus::Active).unwrap(),
+            r#""active""#
+        );
+        assert_eq!(
+            serde_json::to_string(&BankAccountStatus::Closed).unwrap(),
+            r#""closed""#
+        );
     }
 
     #[test]
@@ -579,8 +684,14 @@ mod tests {
             let de: PaymentMethod = serde_json::from_str(&s).unwrap();
             assert_eq!(de, variant);
         }
-        assert_eq!(serde_json::to_string(&PaymentMethod::BankTransfer).unwrap(), r#""bank_transfer""#);
-        assert_eq!(serde_json::to_string(&PaymentMethod::Ach).unwrap(), r#""ach""#);
+        assert_eq!(
+            serde_json::to_string(&PaymentMethod::BankTransfer).unwrap(),
+            r#""bank_transfer""#
+        );
+        assert_eq!(
+            serde_json::to_string(&PaymentMethod::Ach).unwrap(),
+            r#""ach""#
+        );
     }
 
     #[test]
@@ -595,8 +706,14 @@ mod tests {
             let de: InvoiceStatus = serde_json::from_str(&s).unwrap();
             assert_eq!(de, variant);
         }
-        assert_eq!(serde_json::to_string(&InvoiceStatus::Draft).unwrap(), r#""draft""#);
-        assert_eq!(serde_json::to_string(&InvoiceStatus::Voided).unwrap(), r#""voided""#);
+        assert_eq!(
+            serde_json::to_string(&InvoiceStatus::Draft).unwrap(),
+            r#""draft""#
+        );
+        assert_eq!(
+            serde_json::to_string(&InvoiceStatus::Voided).unwrap(),
+            r#""voided""#
+        );
     }
 
     #[test]
@@ -610,9 +727,18 @@ mod tests {
             let de: PayrollStatus = serde_json::from_str(&s).unwrap();
             assert_eq!(de, variant);
         }
-        assert_eq!(serde_json::to_string(&PayrollStatus::Draft).unwrap(), r#""draft""#);
-        assert_eq!(serde_json::to_string(&PayrollStatus::Approved).unwrap(), r#""approved""#);
-        assert_eq!(serde_json::to_string(&PayrollStatus::Processed).unwrap(), r#""processed""#);
+        assert_eq!(
+            serde_json::to_string(&PayrollStatus::Draft).unwrap(),
+            r#""draft""#
+        );
+        assert_eq!(
+            serde_json::to_string(&PayrollStatus::Approved).unwrap(),
+            r#""approved""#
+        );
+        assert_eq!(
+            serde_json::to_string(&PayrollStatus::Processed).unwrap(),
+            r#""processed""#
+        );
     }
 
     #[test]

@@ -3,8 +3,8 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use crate::ids::{CapTableId, ContactId, EntityId, SafeNoteId};
 use super::types::{SafeStatus, SafeType};
+use crate::ids::{CapTableId, ContactId, EntityId, SafeNoteId};
 
 /// A SAFE note issued to an investor.
 ///
@@ -114,7 +114,7 @@ mod tests {
             ContactId::new(),
             "Acme Ventures",
             safe_type,
-            500_000_00, // $500,000
+            500_000_00,         // $500,000
             Some(5_000_000_00), // $5M cap
             Some(20),
         )

@@ -28,12 +28,10 @@ use chrono::Utc;
 use serde::Deserialize;
 use sha2::Digest;
 
-use corp_auth::{
-    RequireFormationCreate, RequireFormationRead, RequireFormationSign,
-};
+use corp_auth::{RequireFormationCreate, RequireFormationRead, RequireFormationSign};
 use corp_core::formation::{
     Document, DocumentStatus, DocumentType, Entity, EntityType, Filing, FilingType,
-    FormationStatus, Jurisdiction, Signature, TaxProfile, IrsTaxClassification,
+    FormationStatus, IrsTaxClassification, Jurisdiction, Signature, TaxProfile,
 };
 use corp_core::ids::{DocumentId, EntityId};
 use corp_storage::entity_store::EntityStore;
@@ -132,10 +130,7 @@ pub fn routes() -> Router<AppState> {
         )
         // Tax
         .route("/formations/{entity_id}/tax", get(get_tax_profile))
-        .route(
-            "/formations/{entity_id}/tax/confirm-ein",
-            post(confirm_ein),
-        )
+        .route("/formations/{entity_id}/tax/confirm-ein", post(confirm_ein))
 }
 
 // ── Request / response types ──────────────────────────────────────────────────
@@ -197,18 +192,15 @@ async fn load_entity(
     entity_id: EntityId,
 ) -> Result<(EntityStore, Entity), AppError> {
     let store = state.open_entity_store(workspace_id, entity_id).await?;
-    let entity: Entity = store
-        .read::<Entity>(entity_id, "main")
-        .await
-        .map_err(|e| {
-            use corp_storage::error::StorageError;
-            match e {
-                StorageError::NotFound(_) => AppError::NotFound(
-                    format!("entity {} not found", entity_id),
-                ),
-                other => AppError::Storage(other),
+    let entity: Entity = store.read::<Entity>(entity_id, "main").await.map_err(|e| {
+        use corp_storage::error::StorageError;
+        match e {
+            StorageError::NotFound(_) => {
+                AppError::NotFound(format!("entity {} not found", entity_id))
             }
-        })?;
+            other => AppError::Storage(other),
+        }
+    })?;
     Ok((store, entity))
 }
 
@@ -281,8 +273,7 @@ async fn create_entity(
         EntityType::CCorp => IrsTaxClassification::CCorporation,
         EntityType::Llc => IrsTaxClassification::DisregardedEntity,
     };
-    let tax_profile =
-        TaxProfile::new(entity_id, principal.workspace_id, classification);
+    let tax_profile = TaxProfile::new(entity_id, principal.workspace_id, classification);
     store
         .write::<TaxProfile>(
             &tax_profile,
@@ -308,10 +299,7 @@ async fn list_entities(
     // List entity IDs registered for this workspace.
     // On a fresh data directory the workspace store may not exist yet —
     // treat that as an empty entity list rather than an error.
-    let workspace_store = match state
-        .open_workspace_store(principal.workspace_id)
-        .await
-    {
+    let workspace_store = match state.open_workspace_store(principal.workspace_id).await {
         Ok(ws) => ws,
         Err(AppError::NotFound(_)) => return Ok(Json(Vec::new())),
         Err(other) => return Err(other),
@@ -344,8 +332,7 @@ async fn get_entity(
     State(state): State<AppState>,
     Path(entity_id): Path<EntityId>,
 ) -> Result<Json<Entity>, AppError> {
-    let (_store, entity) =
-        load_entity(&state, principal.workspace_id, entity_id).await?;
+    let (_store, entity) = load_entity(&state, principal.workspace_id, entity_id).await?;
     Ok(Json(entity))
 }
 
@@ -358,8 +345,7 @@ async fn dissolve_entity(
     State(state): State<AppState>,
     Path(entity_id): Path<EntityId>,
 ) -> Result<Json<Entity>, AppError> {
-    let (store, mut entity) =
-        load_entity(&state, principal.workspace_id, entity_id).await?;
+    let (store, mut entity) = load_entity(&state, principal.workspace_id, entity_id).await?;
 
     let today = Utc::now().date_naive();
     entity
@@ -385,8 +371,7 @@ async fn advance_formation(
     State(state): State<AppState>,
     Path(entity_id): Path<EntityId>,
 ) -> Result<Json<Entity>, AppError> {
-    let (store, mut entity) =
-        load_entity(&state, principal.workspace_id, entity_id).await?;
+    let (store, mut entity) = load_entity(&state, principal.workspace_id, entity_id).await?;
 
     let previous_status = entity.formation_status;
 
@@ -414,12 +399,18 @@ async fn advance_formation(
     if previous_status == FormationStatus::Pending {
         let doc_types = match entity.entity_type {
             EntityType::CCorp => vec![
-                (DocumentType::CertificateOfIncorporation, "Certificate of Incorporation"),
+                (
+                    DocumentType::CertificateOfIncorporation,
+                    "Certificate of Incorporation",
+                ),
                 (DocumentType::Bylaws, "Bylaws"),
                 (DocumentType::IncorporatorAction, "Action of Incorporator"),
             ],
             EntityType::Llc => vec![
-                (DocumentType::ArticlesOfOrganization, "Articles of Organization"),
+                (
+                    DocumentType::ArticlesOfOrganization,
+                    "Articles of Organization",
+                ),
                 (DocumentType::OperatingAgreement, "Operating Agreement"),
             ],
         };
@@ -508,9 +499,9 @@ async fn get_document(
         .map_err(|e| {
             use corp_storage::error::StorageError;
             match e {
-                StorageError::NotFound(_) => AppError::NotFound(
-                    format!("document {} not found", document_id),
-                ),
+                StorageError::NotFound(_) => {
+                    AppError::NotFound(format!("document {} not found", document_id))
+                }
                 other => AppError::Storage(other),
             }
         })?;
@@ -542,9 +533,9 @@ async fn render_document_html(
         .map_err(|e| {
             use corp_storage::error::StorageError;
             match e {
-                StorageError::NotFound(_) => AppError::NotFound(
-                    format!("document {} not found", document_id),
-                ),
+                StorageError::NotFound(_) => {
+                    AppError::NotFound(format!("document {} not found", document_id))
+                }
                 other => AppError::Storage(other),
             }
         })?;
@@ -690,7 +681,10 @@ fn render_ast_node(node: &serde_json::Value, out: &mut String) {
         }
 
         "signature_block" => {
-            let role = node.get("role").and_then(|v| v.as_str()).unwrap_or("Signer");
+            let role = node
+                .get("role")
+                .and_then(|v| v.as_str())
+                .unwrap_or("Signer");
             out.push_str("<div class=\"signature-block\">\n");
             out.push_str("  <div class=\"signature-line\"></div>\n");
             out.push_str(&format!(
@@ -745,10 +739,7 @@ fn render_signature(sig: &Signature, out: &mut String) {
 
     // Render SVG if present.
     if let Some(ref svg) = sig.signature_svg {
-        out.push_str(&format!(
-            "  <div class=\"signature-svg\">{}</div>\n",
-            svg
-        ));
+        out.push_str(&format!("  <div class=\"signature-svg\">{}</div>\n", svg));
     } else {
         out.push_str(&format!(
             "  <div class=\"signature-text-display\">{}</div>\n",
@@ -756,9 +747,7 @@ fn render_signature(sig: &Signature, out: &mut String) {
         ));
     }
 
-    out.push_str(&format!(
-        "  <div class=\"signature-line\"></div>\n"
-    ));
+    out.push_str(&format!("  <div class=\"signature-line\"></div>\n"));
     out.push_str(&format!(
         "  <div class=\"signature-meta\">{}, {}</div>\n",
         escape_html(&sig.signer_name),
@@ -1045,15 +1034,17 @@ async fn sign_document(
         return Err(AppError::BadRequest("signer_name must not be empty".into()));
     }
     if body.signer_email.trim().is_empty() {
-        return Err(AppError::BadRequest("signer_email must not be empty".into()));
+        return Err(AppError::BadRequest(
+            "signer_email must not be empty".into(),
+        ));
     }
     if body.consent_text.trim().is_empty() {
-        return Err(AppError::BadRequest("consent_text must not be empty".into()));
+        return Err(AppError::BadRequest(
+            "consent_text must not be empty".into(),
+        ));
     }
     // Locate the entity that owns this document by scanning workspace entities.
-    let workspace_store = state
-        .open_workspace_store(principal.workspace_id)
-        .await?;
+    let workspace_store = state.open_workspace_store(principal.workspace_id).await?;
     let entity_ids = workspace_store
         .list_entity_ids()
         .await
@@ -1095,10 +1086,7 @@ async fn sign_document(
                         &document,
                         document_id,
                         "main",
-                        &format!(
-                            "sign document {} by {}",
-                            document_id, body.signer_email
-                        ),
+                        &format!("sign document {} by {}", document_id, body.signer_email),
                     )
                     .await
                     .map_err(AppError::Storage)?;
@@ -1137,9 +1125,11 @@ async fn get_filing(
         .await
         .map_err(AppError::Storage)?;
 
-    filings.into_iter().next().ok_or_else(|| {
-        AppError::NotFound(format!("no filing found for entity {}", entity_id))
-    }).map(Json)
+    filings
+        .into_iter()
+        .next()
+        .ok_or_else(|| AppError::NotFound(format!("no filing found for entity {}", entity_id)))
+        .map(Json)
 }
 
 /// `POST /formations/{entity_id}/filing/confirm` — confirm state acceptance of the filing.
@@ -1151,8 +1141,7 @@ async fn confirm_filing(
     Path(entity_id): Path<EntityId>,
     Json(body): Json<ConfirmFilingRequest>,
 ) -> Result<Json<Filing>, AppError> {
-    let (store, entity) =
-        load_entity(&state, principal.workspace_id, entity_id).await?;
+    let (store, entity) = load_entity(&state, principal.workspace_id, entity_id).await?;
 
     if entity.formation_status != FormationStatus::FilingSubmitted {
         return Err(AppError::BadRequest(format!(
@@ -1166,9 +1155,10 @@ async fn confirm_filing(
         .await
         .map_err(AppError::Storage)?;
 
-    let filing = filings.iter_mut().next().ok_or_else(|| {
-        AppError::NotFound(format!("no filing found for entity {}", entity_id))
-    })?;
+    let filing = filings
+        .iter_mut()
+        .next()
+        .ok_or_else(|| AppError::NotFound(format!("no filing found for entity {}", entity_id)))?;
 
     let confirmation = body
         .confirmation_number
@@ -1211,9 +1201,11 @@ async fn get_tax_profile(
         .await
         .map_err(AppError::Storage)?;
 
-    profiles.into_iter().next().ok_or_else(|| {
-        AppError::NotFound(format!("no tax profile found for entity {}", entity_id))
-    }).map(Json)
+    profiles
+        .into_iter()
+        .next()
+        .ok_or_else(|| AppError::NotFound(format!("no tax profile found for entity {}", entity_id)))
+        .map(Json)
 }
 
 /// `POST /formations/{entity_id}/tax/confirm-ein` — record an IRS-assigned EIN.
@@ -1225,8 +1217,7 @@ async fn confirm_ein(
     Path(entity_id): Path<EntityId>,
     Json(body): Json<ConfirmEinRequest>,
 ) -> Result<Json<TaxProfile>, AppError> {
-    let (store, entity) =
-        load_entity(&state, principal.workspace_id, entity_id).await?;
+    let (store, entity) = load_entity(&state, principal.workspace_id, entity_id).await?;
 
     if entity.formation_status != FormationStatus::Filed {
         return Err(AppError::BadRequest(format!(

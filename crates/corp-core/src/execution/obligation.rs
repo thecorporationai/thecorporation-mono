@@ -4,8 +4,8 @@ use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use crate::ids::{ContactId, EntityId, IntentId, ObligationId};
 use super::types::{AssigneeType, ObligationStatus};
+use crate::ids::{ContactId, EntityId, IntentId, ObligationId};
 
 // ── Error ─────────────────────────────────────────────────────────────────────
 
@@ -246,14 +246,20 @@ mod tests {
     fn fulfill_from_waived_is_error() {
         let mut ob = required_internal();
         ob.waive().unwrap();
-        assert!(matches!(ob.fulfill(), Err(ObligationError::CannotFulfill(_))));
+        assert!(matches!(
+            ob.fulfill(),
+            Err(ObligationError::CannotFulfill(_))
+        ));
     }
 
     #[test]
     fn fulfill_from_expired_is_error() {
         let mut ob = required_internal();
         ob.expire().unwrap();
-        assert!(matches!(ob.fulfill(), Err(ObligationError::CannotFulfill(_))));
+        assert!(matches!(
+            ob.fulfill(),
+            Err(ObligationError::CannotFulfill(_))
+        ));
     }
 
     // ── waive() ──────────────────────────────────────────────────────────────
@@ -278,7 +284,10 @@ mod tests {
     fn waive_from_fulfilled_is_error() {
         let mut ob = required_internal();
         ob.fulfill().unwrap();
-        assert!(matches!(ob.waive(), Err(ObligationError::AlreadyTerminal(_))));
+        assert!(matches!(
+            ob.waive(),
+            Err(ObligationError::AlreadyTerminal(_))
+        ));
     }
 
     // ── expire() ─────────────────────────────────────────────────────────────
@@ -303,14 +312,20 @@ mod tests {
     fn expire_from_waived_is_error() {
         let mut ob = required_internal();
         ob.waive().unwrap();
-        assert!(matches!(ob.expire(), Err(ObligationError::AlreadyTerminal(_))));
+        assert!(matches!(
+            ob.expire(),
+            Err(ObligationError::AlreadyTerminal(_))
+        ));
     }
 
     #[test]
     fn expire_from_fulfilled_is_error() {
         let mut ob = required_internal();
         ob.fulfill().unwrap();
-        assert!(matches!(ob.expire(), Err(ObligationError::AlreadyTerminal(_))));
+        assert!(matches!(
+            ob.expire(),
+            Err(ObligationError::AlreadyTerminal(_))
+        ));
     }
 
     // ── is_terminal() ────────────────────────────────────────────────────────
@@ -367,16 +382,35 @@ mod tests {
 
     #[test]
     fn obligation_status_serde_values() {
-        assert_eq!(serde_json::to_string(&ObligationStatus::Required).unwrap(), r#""required""#);
-        assert_eq!(serde_json::to_string(&ObligationStatus::InProgress).unwrap(), r#""in_progress""#);
-        assert_eq!(serde_json::to_string(&ObligationStatus::Fulfilled).unwrap(), r#""fulfilled""#);
-        assert_eq!(serde_json::to_string(&ObligationStatus::Waived).unwrap(), r#""waived""#);
-        assert_eq!(serde_json::to_string(&ObligationStatus::Expired).unwrap(), r#""expired""#);
+        assert_eq!(
+            serde_json::to_string(&ObligationStatus::Required).unwrap(),
+            r#""required""#
+        );
+        assert_eq!(
+            serde_json::to_string(&ObligationStatus::InProgress).unwrap(),
+            r#""in_progress""#
+        );
+        assert_eq!(
+            serde_json::to_string(&ObligationStatus::Fulfilled).unwrap(),
+            r#""fulfilled""#
+        );
+        assert_eq!(
+            serde_json::to_string(&ObligationStatus::Waived).unwrap(),
+            r#""waived""#
+        );
+        assert_eq!(
+            serde_json::to_string(&ObligationStatus::Expired).unwrap(),
+            r#""expired""#
+        );
     }
 
     #[test]
     fn assignee_type_serde_roundtrip() {
-        for variant in [AssigneeType::Internal, AssigneeType::ThirdParty, AssigneeType::Human] {
+        for variant in [
+            AssigneeType::Internal,
+            AssigneeType::ThirdParty,
+            AssigneeType::Human,
+        ] {
             let s = serde_json::to_string(&variant).unwrap();
             let de: AssigneeType = serde_json::from_str(&s).unwrap();
             assert_eq!(de, variant);

@@ -3,34 +3,41 @@
 
 use serde_json::json;
 
-use crate::output;
 use super::Context;
+use crate::output;
 
 // ── FinanceCommand ────────────────────────────────────────────────────────────
 
 /// Treasury and finance — invoices, payments, bank accounts, payroll, GL
 #[derive(clap::Subcommand)]
-#[command(long_about = "Treasury and finance: GL accounts, journal entries, invoices, payments, bank accounts, payroll, and reconciliation.\n\nAccount codes: cash, accounts_receivable, accounts_payable, accrued_expenses, founder_capital, revenue, operating_expenses, cogs\n\nAll monetary amounts are in cents (e.g. $50,000.00 = 5000000).\n\nInvoice lifecycle: draft → sent → paid\nBank account lifecycle: pending_review → active → closed\nPayroll lifecycle: draft → approved → processed\nJournal entry lifecycle: draft → posted (or voided)")]
+#[command(
+    long_about = "Treasury and finance: GL accounts, journal entries, invoices, payments, bank accounts, payroll, and reconciliation.\n\nAccount codes: cash, accounts_receivable, accounts_payable, accrued_expenses, founder_capital, revenue, operating_expenses, cogs\n\nAll monetary amounts are in cents (e.g. $50,000.00 = 5000000).\n\nInvoice lifecycle: draft → sent → paid\nBank account lifecycle: pending_review → active → closed\nPayroll lifecycle: draft → approved → processed\nJournal entry lifecycle: draft → posted (or voided)"
+)]
 pub enum FinanceCommand {
     // ── Accounts ──────────────────────────────────────────────────────────────
-
     /// List GL accounts
     Accounts,
 
     /// Create a GL account
     CreateAccount {
-        #[arg(long, help = "GL account code: cash, accounts_receivable, accounts_payable, accrued_expenses, founder_capital, revenue, operating_expenses, cogs")]
+        #[arg(
+            long,
+            help = "GL account code: cash, accounts_receivable, accounts_payable, accrued_expenses, founder_capital, revenue, operating_expenses, cogs"
+        )]
         account_code: String,
 
         #[arg(long, help = "Human-readable account name")]
         account_name: String,
 
-        #[arg(long, default_value = "usd", help = "ISO currency code (currently only: usd)")]
+        #[arg(
+            long,
+            default_value = "usd",
+            help = "ISO currency code (currently only: usd)"
+        )]
         currency: String,
     },
 
     // ── Journal entries ───────────────────────────────────────────────────────
-
     /// List journal entries
     JournalEntries,
 
@@ -46,7 +53,10 @@ pub enum FinanceCommand {
         #[arg(long, help = "Description of the journal entry")]
         description: String,
 
-        #[arg(long, help = "JSON array of lines, e.g. '[{\"account_id\":\"...\",\"amount_cents\":5000,\"side\":\"debit\"}]'")]
+        #[arg(
+            long,
+            help = "JSON array of lines, e.g. '[{\"account_id\":\"...\",\"amount_cents\":5000,\"side\":\"debit\"}]'"
+        )]
         lines: String,
     },
 
@@ -64,7 +74,6 @@ pub enum FinanceCommand {
     },
 
     // ── Invoices ──────────────────────────────────────────────────────────────
-
     /// List invoices
     Invoices,
 
@@ -83,7 +92,11 @@ pub enum FinanceCommand {
         #[arg(long, help = "Amount in cents (e.g. $500.00 = 50000)")]
         amount_cents: i64,
 
-        #[arg(long, default_value = "usd", help = "ISO currency code (currently only: usd)")]
+        #[arg(
+            long,
+            default_value = "usd",
+            help = "ISO currency code (currently only: usd)"
+        )]
         currency: String,
 
         /// Invoice description (line item summary)
@@ -108,7 +121,6 @@ pub enum FinanceCommand {
     },
 
     // ── Payments ──────────────────────────────────────────────────────────────
-
     /// List payments
     Payments,
 
@@ -120,7 +132,11 @@ pub enum FinanceCommand {
         #[arg(long, help = "Amount in cents (e.g. $500.00 = 50000)")]
         amount_cents: i64,
 
-        #[arg(long, default_value = "ach", help = "Payment method: ach, wire, check, card, or bank_transfer")]
+        #[arg(
+            long,
+            default_value = "ach",
+            help = "Payment method: ach, wire, check, card, or bank_transfer"
+        )]
         method: String,
 
         #[arg(long, help = "External reference (e.g. ACH trace ID, check number)")]
@@ -128,7 +144,6 @@ pub enum FinanceCommand {
     },
 
     // ── Bank accounts ─────────────────────────────────────────────────────────
-
     /// List bank accounts
     BankAccounts,
 
@@ -137,7 +152,11 @@ pub enum FinanceCommand {
         #[arg(long, help = "Bank name (e.g. Silicon Valley Bank, Mercury)")]
         institution: String,
 
-        #[arg(long, default_value = "checking", help = "Bank account type: checking or savings")]
+        #[arg(
+            long,
+            default_value = "checking",
+            help = "Bank account type: checking or savings"
+        )]
         account_type: String,
 
         /// Last 4 digits of account number
@@ -163,7 +182,6 @@ pub enum FinanceCommand {
     },
 
     // ── Payroll ───────────────────────────────────────────────────────────────
-
     /// List payroll runs
     Payroll,
 
@@ -198,7 +216,6 @@ pub enum FinanceCommand {
     },
 
     // ── Reconciliation ────────────────────────────────────────────────────────
-
     /// List reconciliations
     Reconciliations,
 
@@ -231,7 +248,11 @@ pub async fn run(cmd: FinanceCommand, ctx: &Context) -> anyhow::Result<()> {
             output::print_value(&value, mode);
         }
 
-        FinanceCommand::CreateAccount { account_code, account_name, currency } => {
+        FinanceCommand::CreateAccount {
+            account_code,
+            account_name,
+            currency,
+        } => {
             let path = format!("/v1/entities/{entity_id}/accounts");
             let body = json!({
                 "account_code": account_code,
@@ -249,7 +270,11 @@ pub async fn run(cmd: FinanceCommand, ctx: &Context) -> anyhow::Result<()> {
             output::print_value(&value, mode);
         }
 
-        FinanceCommand::CreateJournalEntry { description, date, lines } => {
+        FinanceCommand::CreateJournalEntry {
+            description,
+            date,
+            lines,
+        } => {
             let path = format!("/v1/entities/{entity_id}/journal-entries");
             let lines_parsed: serde_json::Value = serde_json::from_str(&lines)
                 .map_err(|e| anyhow::anyhow!("Invalid --lines JSON: {e}"))?;
@@ -325,7 +350,12 @@ pub async fn run(cmd: FinanceCommand, ctx: &Context) -> anyhow::Result<()> {
             output::print_value(&value, mode);
         }
 
-        FinanceCommand::CreatePayment { recipient_name, amount_cents, method, reference } => {
+        FinanceCommand::CreatePayment {
+            recipient_name,
+            amount_cents,
+            method,
+            reference,
+        } => {
             let path = format!("/v1/entities/{entity_id}/payments");
             let body = json!({
                 "recipient_name": recipient_name,

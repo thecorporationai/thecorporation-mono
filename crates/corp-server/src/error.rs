@@ -4,9 +4,9 @@
 //! turns every variant into a JSON body `{ "error": "<message>" }` with the
 //! appropriate HTTP status code.
 
+use axum::Json;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
-use axum::Json;
 use thiserror::Error;
 
 /// All errors that can be returned from a route handler.

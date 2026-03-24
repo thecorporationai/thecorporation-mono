@@ -106,7 +106,13 @@ fn ok_response(description: &str, schema: Value) -> Value {
     })
 }
 
-fn post_op(summary: &str, tag: &str, request_ref: &str, response_schema: Value, scopes: &[&str]) -> Value {
+fn post_op(
+    summary: &str,
+    tag: &str,
+    request_ref: &str,
+    response_schema: Value,
+    scopes: &[&str],
+) -> Value {
     json!({
         "summary": summary,
         "tags": [tag],

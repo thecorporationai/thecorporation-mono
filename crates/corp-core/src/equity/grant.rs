@@ -3,8 +3,8 @@
 use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 
-use crate::ids::{CapTableId, ContactId, EntityId, EquityGrantId, ShareClassId};
 use super::types::{GrantStatus, GrantType, ShareCount};
+use crate::ids::{CapTableId, ContactId, EntityId, EquityGrantId, ShareClassId};
 
 /// An equity grant issued to a recipient — covering common/preferred stock,
 /// ISOs, NSOs, RSAs, and membership units.

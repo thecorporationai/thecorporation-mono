@@ -2,8 +2,8 @@
 
 use serde_json::json;
 
-use crate::output;
 use super::Context;
+use crate::output;
 
 // ── AdminCommand ──────────────────────────────────────────────────────────────
 
@@ -78,7 +78,11 @@ pub async fn run(cmd: AdminCommand, ctx: &Context) -> anyhow::Result<()> {
             output::print_value(&value, mode);
         }
 
-        AdminCommand::CreateApiKey { name, scopes, entity_id } => {
+        AdminCommand::CreateApiKey {
+            name,
+            scopes,
+            entity_id,
+        } => {
             let scopes_list: Vec<&str> = scopes
                 .as_deref()
                 .map(|s| s.split(',').collect())

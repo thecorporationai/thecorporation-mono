@@ -410,7 +410,11 @@ mod tests {
 
     #[test]
     fn seat_status_serde_roundtrip() {
-        for variant in [SeatStatus::Active, SeatStatus::Resigned, SeatStatus::Expired] {
+        for variant in [
+            SeatStatus::Active,
+            SeatStatus::Resigned,
+            SeatStatus::Expired,
+        ] {
             let json = serde_json::to_string(&variant).unwrap();
             let back: SeatStatus = serde_json::from_str(&json).unwrap();
             assert_eq!(variant, back);

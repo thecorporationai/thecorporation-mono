@@ -23,7 +23,7 @@ use std::sync::Arc;
 
 use axum::body::Body;
 use axum::http::{Method, Request, StatusCode};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use tempfile::TempDir;
 use tower::ServiceExt;
 
@@ -101,8 +101,8 @@ impl TestCtx {
     /// Panics if `REDIS_URL` is not set — callers should guard with a
     /// `std::env::var("REDIS_URL")` check and return early before calling this.
     async fn with_kv() -> Self {
-        let redis_url = std::env::var("REDIS_URL")
-            .expect("REDIS_URL must be set to run kv backend tests");
+        let redis_url =
+            std::env::var("REDIS_URL").expect("REDIS_URL must be set to run kv backend tests");
 
         // Tempdir is still needed for the data_dir field (not used by kv).
         let dir = TempDir::new().expect("create tempdir");
@@ -161,9 +161,7 @@ impl TestCtx {
             builder = builder.header("content-type", content_type);
         }
 
-        let req = builder
-            .body(Body::from(bytes))
-            .expect("build request");
+        let req = builder.body(Body::from(bytes)).expect("build request");
 
         self.app.clone().oneshot(req).await.expect("service error")
     }
@@ -235,8 +233,8 @@ async fn body_json(resp: axum::response::Response) -> Value {
 /// (e.g. `GET /v1/entities`, `GET /v1/api-keys`).  Entity creation registers
 /// the entity in its own store but does not write the workspace-level index.
 async fn ensure_workspace(ctx: &TestCtx) {
-    use std::path::PathBuf;
     use corp_storage::workspace_store::{Backend as WsBackend, WorkspaceStore};
+    use std::path::PathBuf;
 
     match &ctx.storage_backend {
         StorageBackend::Git => {
@@ -253,8 +251,7 @@ async fn ensure_workspace(ctx: &TestCtx) {
             let _ = WorkspaceStore::init(backend, ctx.workspace_id).await;
         }
         StorageBackend::Kv { redis_url, .. } => {
-            let client = redis::Client::open(redis_url.as_str())
-                .expect("open redis client");
+            let client = redis::Client::open(redis_url.as_str()).expect("open redis client");
             let manager = redis::aio::ConnectionManager::new(client)
                 .await
                 .expect("create redis connection manager");
@@ -348,10 +345,16 @@ async fn advance_to(ctx: &mut TestCtx, entity_id: &str, target_status: &str) {
     let resp = ctx
         .post_empty(&format!("/v1/formations/{entity_id}/advance"))
         .await;
-    assert_eq!(resp.status(), StatusCode::OK, "advance to documents_generated");
+    assert_eq!(
+        resp.status(),
+        StatusCode::OK,
+        "advance to documents_generated"
+    );
 
     // Sign all generated documents.
-    let docs_resp = ctx.get(&format!("/v1/formations/{entity_id}/documents")).await;
+    let docs_resp = ctx
+        .get(&format!("/v1/formations/{entity_id}/documents"))
+        .await;
     assert_eq!(docs_resp.status(), StatusCode::OK);
     let docs = body_json(docs_resp).await;
     for doc in docs.as_array().expect("docs array") {
@@ -453,7 +456,10 @@ dual_backend_test!(health_check, |ctx| {
 
 dual_backend_test!(formation_create_entity, |ctx| {
     let entity = create_ccorp(&mut ctx).await;
-    assert!(entity["entity_id"].is_string(), "missing entity_id: {entity}");
+    assert!(
+        entity["entity_id"].is_string(),
+        "missing entity_id: {entity}"
+    );
     assert_eq!(entity["legal_name"], "Acme Corp");
     assert_eq!(entity["entity_type"], "c_corp");
     assert_eq!(entity["formation_status"], "pending");
@@ -488,7 +494,9 @@ dual_backend_test!(formation_advance, |ctx| {
     let entity = create_ccorp(&mut ctx).await;
     let id = entity["entity_id"].as_str().unwrap();
 
-    let resp = ctx.post_empty(&format!("/v1/formations/{id}/advance")).await;
+    let resp = ctx
+        .post_empty(&format!("/v1/formations/{id}/advance"))
+        .await;
     assert_eq!(resp.status(), StatusCode::OK);
     let advanced = body_json(resp).await;
     assert_ne!(
@@ -516,7 +524,8 @@ dual_backend_test!(formation_list_documents, |ctx| {
     let id = entity["entity_id"].as_str().unwrap();
 
     // Advance to generate documents.
-    ctx.post_empty(&format!("/v1/formations/{id}/advance")).await;
+    ctx.post_empty(&format!("/v1/formations/{id}/advance"))
+        .await;
 
     let resp = ctx.get(&format!("/v1/formations/{id}/documents")).await;
     assert_eq!(resp.status(), StatusCode::OK);
@@ -530,7 +539,8 @@ dual_backend_test!(formation_sign_document, |ctx| {
     let entity = create_ccorp(&mut ctx).await;
     let id = entity["entity_id"].as_str().unwrap();
 
-    ctx.post_empty(&format!("/v1/formations/{id}/advance")).await;
+    ctx.post_empty(&format!("/v1/formations/{id}/advance"))
+        .await;
 
     let docs_resp = ctx.get(&format!("/v1/formations/{id}/documents")).await;
     assert_eq!(docs_resp.status(), StatusCode::OK);
@@ -559,7 +569,10 @@ dual_backend_test!(formation_sign_document, |ctx| {
     assert_eq!(sign_resp.status(), StatusCode::OK);
     let signed = body_json(sign_resp).await;
     assert!(
-        !signed["signatures"].as_array().unwrap_or(&vec![]).is_empty(),
+        !signed["signatures"]
+            .as_array()
+            .unwrap_or(&vec![])
+            .is_empty(),
         "expected at least one signature: {signed}"
     );
 });
@@ -639,7 +652,9 @@ dual_backend_test!(formation_full_lifecycle, |ctx| {
     let mut advances = 0u32;
 
     loop {
-        let resp = ctx.post_empty(&format!("/v1/formations/{id}/advance")).await;
+        let resp = ctx
+            .post_empty(&format!("/v1/formations/{id}/advance"))
+            .await;
         if resp.status() != StatusCode::OK {
             break;
         }
@@ -656,7 +671,10 @@ dual_backend_test!(formation_full_lifecycle, |ctx| {
         }
     }
 
-    assert!(advances > 0, "must be able to advance at least once from pending");
+    assert!(
+        advances > 0,
+        "must be able to advance at least once from pending"
+    );
 
     // Entity should still be retrievable.
     let get_resp = ctx.get(&format!("/v1/entities/{id}")).await;
@@ -670,7 +688,9 @@ dual_backend_test!(equity_cap_table_crud, |ctx| {
     let eid = entity["entity_id"].as_str().unwrap();
 
     // Create cap table.
-    let resp = ctx.post(&format!("/v1/entities/{eid}/cap-table"), json!({})).await;
+    let resp = ctx
+        .post(&format!("/v1/entities/{eid}/cap-table"), json!({}))
+        .await;
     assert_eq!(resp.status(), StatusCode::OK);
     let ct = body_json(resp).await;
     assert!(ct["cap_table_id"].is_string(), "{ct}");
@@ -691,7 +711,9 @@ dual_backend_test!(equity_share_classes, |ctx| {
     let entity = create_ccorp(&mut ctx).await;
     let eid = entity["entity_id"].as_str().unwrap();
 
-    let ct_resp = ctx.post(&format!("/v1/entities/{eid}/cap-table"), json!({})).await;
+    let ct_resp = ctx
+        .post(&format!("/v1/entities/{eid}/cap-table"), json!({}))
+        .await;
     let ct_id = body_json(ct_resp).await["cap_table_id"]
         .as_str()
         .unwrap()
@@ -740,7 +762,9 @@ dual_backend_test!(equity_grants, |ctx| {
     let contact_id = contact["contact_id"].as_str().unwrap().to_owned();
 
     // Cap table + share class.
-    let ct_resp = ctx.post(&format!("/v1/entities/{eid}/cap-table"), json!({})).await;
+    let ct_resp = ctx
+        .post(&format!("/v1/entities/{eid}/cap-table"), json!({}))
+        .await;
     let ct_id = body_json(ct_resp).await["cap_table_id"]
         .as_str()
         .unwrap()
@@ -768,7 +792,11 @@ dual_backend_test!(equity_grants, |ctx| {
     let list_resp = ctx.get(&format!("/v1/entities/{eid}/grants")).await;
     assert_eq!(list_resp.status(), StatusCode::OK);
     assert!(
-        body_json(list_resp).await.as_array().map(|a| a.is_empty()).unwrap_or(false)
+        body_json(list_resp)
+            .await
+            .as_array()
+            .map(|a| a.is_empty())
+            .unwrap_or(false)
     );
 
     // Create grant.
@@ -797,7 +825,9 @@ dual_backend_test!(equity_grants, |ctx| {
     let grant_id = grant["grant_id"].as_str().unwrap().to_owned();
 
     // Get by ID.
-    let get_resp = ctx.get(&format!("/v1/entities/{eid}/grants/{grant_id}")).await;
+    let get_resp = ctx
+        .get(&format!("/v1/entities/{eid}/grants/{grant_id}"))
+        .await;
     assert_eq!(get_resp.status(), StatusCode::OK);
     let fetched = body_json(get_resp).await;
     assert_eq!(fetched["grant_id"], grant["grant_id"]);
@@ -818,7 +848,9 @@ dual_backend_test!(equity_safes, |ctx| {
     let contact = create_contact(&mut ctx, eid).await;
     let contact_id = contact["contact_id"].as_str().unwrap().to_owned();
 
-    let ct_resp = ctx.post(&format!("/v1/entities/{eid}/cap-table"), json!({})).await;
+    let ct_resp = ctx
+        .post(&format!("/v1/entities/{eid}/cap-table"), json!({}))
+        .await;
     let ct_id = body_json(ct_resp).await["cap_table_id"]
         .as_str()
         .unwrap()
@@ -828,7 +860,11 @@ dual_backend_test!(equity_safes, |ctx| {
     let list_resp = ctx.get(&format!("/v1/entities/{eid}/safes")).await;
     assert_eq!(list_resp.status(), StatusCode::OK);
     assert!(
-        body_json(list_resp).await.as_array().map(|a| a.is_empty()).unwrap_or(false)
+        body_json(list_resp)
+            .await
+            .as_array()
+            .map(|a| a.is_empty())
+            .unwrap_or(false)
     );
 
     // Issue SAFE.
@@ -861,7 +897,10 @@ dual_backend_test!(equity_safes, |ctx| {
 
     // Convert SAFE.
     let convert_resp = ctx
-        .post(&format!("/v1/entities/{eid}/safes/{safe_id}/convert"), json!({}))
+        .post(
+            &format!("/v1/entities/{eid}/safes/{safe_id}/convert"),
+            json!({}),
+        )
         .await;
     let convert_status = convert_resp.status();
     let convert_body = body_json(convert_resp).await;
@@ -877,7 +916,9 @@ dual_backend_test!(equity_valuations, |ctx| {
     let entity = create_ccorp(&mut ctx).await;
     let eid = entity["entity_id"].as_str().unwrap();
 
-    let ct_resp = ctx.post(&format!("/v1/entities/{eid}/cap-table"), json!({})).await;
+    let ct_resp = ctx
+        .post(&format!("/v1/entities/{eid}/cap-table"), json!({}))
+        .await;
     let ct_id = body_json(ct_resp).await["cap_table_id"]
         .as_str()
         .unwrap()
@@ -887,7 +928,11 @@ dual_backend_test!(equity_valuations, |ctx| {
     let list_resp = ctx.get(&format!("/v1/entities/{eid}/valuations")).await;
     assert_eq!(list_resp.status(), StatusCode::OK);
     assert!(
-        body_json(list_resp).await.as_array().map(|a| a.is_empty()).unwrap_or(false)
+        body_json(list_resp)
+            .await
+            .as_array()
+            .map(|a| a.is_empty())
+            .unwrap_or(false)
     );
 
     // Create.
@@ -943,7 +988,9 @@ dual_backend_test!(equity_transfers, |ctx| {
     let entity = create_ccorp(&mut ctx).await;
     let eid = entity["entity_id"].as_str().unwrap();
 
-    let ct_resp = ctx.post(&format!("/v1/entities/{eid}/cap-table"), json!({})).await;
+    let ct_resp = ctx
+        .post(&format!("/v1/entities/{eid}/cap-table"), json!({}))
+        .await;
     let ct_id = body_json(ct_resp).await["cap_table_id"]
         .as_str()
         .unwrap()
@@ -994,7 +1041,11 @@ dual_backend_test!(equity_transfers, |ctx| {
     let list_resp = ctx.get(&format!("/v1/entities/{eid}/transfers")).await;
     assert_eq!(list_resp.status(), StatusCode::OK);
     assert!(
-        body_json(list_resp).await.as_array().map(|a| a.is_empty()).unwrap_or(false)
+        body_json(list_resp)
+            .await
+            .as_array()
+            .map(|a| a.is_empty())
+            .unwrap_or(false)
     );
 
     // Create transfer.
@@ -1048,7 +1099,9 @@ dual_backend_test!(equity_rounds, |ctx| {
     let entity = create_ccorp(&mut ctx).await;
     let eid = entity["entity_id"].as_str().unwrap();
 
-    let ct_resp = ctx.post(&format!("/v1/entities/{eid}/cap-table"), json!({})).await;
+    let ct_resp = ctx
+        .post(&format!("/v1/entities/{eid}/cap-table"), json!({}))
+        .await;
     let ct_id = body_json(ct_resp).await["cap_table_id"]
         .as_str()
         .unwrap()
@@ -1058,7 +1111,11 @@ dual_backend_test!(equity_rounds, |ctx| {
     let list_resp = ctx.get(&format!("/v1/entities/{eid}/rounds")).await;
     assert_eq!(list_resp.status(), StatusCode::OK);
     assert!(
-        body_json(list_resp).await.as_array().map(|a| a.is_empty()).unwrap_or(false)
+        body_json(list_resp)
+            .await
+            .as_array()
+            .map(|a| a.is_empty())
+            .unwrap_or(false)
     );
 
     // Create round.
@@ -1108,7 +1165,11 @@ dual_backend_test!(equity_holders, |ctx| {
     let list_resp = ctx.get(&format!("/v1/entities/{eid}/holders")).await;
     assert_eq!(list_resp.status(), StatusCode::OK);
     assert!(
-        body_json(list_resp).await.as_array().map(|a| a.is_empty()).unwrap_or(false)
+        body_json(list_resp)
+            .await
+            .as_array()
+            .map(|a| a.is_empty())
+            .unwrap_or(false)
     );
 
     // Create.
@@ -1141,10 +1202,16 @@ dual_backend_test!(governance_bodies_crud, |ctx| {
     let eid = entity["entity_id"].as_str().unwrap();
 
     // List (empty).
-    let list_resp = ctx.get(&format!("/v1/entities/{eid}/governance/bodies")).await;
+    let list_resp = ctx
+        .get(&format!("/v1/entities/{eid}/governance/bodies"))
+        .await;
     assert_eq!(list_resp.status(), StatusCode::OK);
     assert!(
-        body_json(list_resp).await.as_array().map(|a| a.is_empty()).unwrap_or(false)
+        body_json(list_resp)
+            .await
+            .as_array()
+            .map(|a| a.is_empty())
+            .unwrap_or(false)
     );
 
     // Create.
@@ -1162,7 +1229,9 @@ dual_backend_test!(governance_bodies_crud, |ctx| {
     assert_eq!(fetched["body_id"], gov_body["body_id"]);
 
     // List (non-empty).
-    let list_resp2 = ctx.get(&format!("/v1/entities/{eid}/governance/bodies")).await;
+    let list_resp2 = ctx
+        .get(&format!("/v1/entities/{eid}/governance/bodies"))
+        .await;
     assert_eq!(list_resp2.status(), StatusCode::OK);
     let bodies = body_json(list_resp2).await;
     assert_eq!(bodies.as_array().map(|a| a.len()).unwrap_or(0), 1);
@@ -1194,10 +1263,16 @@ dual_backend_test!(governance_seats, |ctx| {
     let contact_id = contact["contact_id"].as_str().unwrap().to_owned();
 
     // List seats (empty).
-    let list_resp = ctx.get(&format!("/v1/entities/{eid}/governance/seats")).await;
+    let list_resp = ctx
+        .get(&format!("/v1/entities/{eid}/governance/seats"))
+        .await;
     assert_eq!(list_resp.status(), StatusCode::OK);
     assert!(
-        body_json(list_resp).await.as_array().map(|a| a.is_empty()).unwrap_or(false)
+        body_json(list_resp)
+            .await
+            .as_array()
+            .map(|a| a.is_empty())
+            .unwrap_or(false)
     );
 
     // Create seat.
@@ -1228,7 +1303,9 @@ dual_backend_test!(governance_seats, |ctx| {
     assert_eq!(get_resp.status(), StatusCode::OK);
 
     // List (non-empty).
-    let list_resp2 = ctx.get(&format!("/v1/entities/{eid}/governance/seats")).await;
+    let list_resp2 = ctx
+        .get(&format!("/v1/entities/{eid}/governance/seats"))
+        .await;
     assert_eq!(list_resp2.status(), StatusCode::OK);
     let seats = body_json(list_resp2).await;
     assert_eq!(seats.as_array().map(|a| a.len()).unwrap_or(0), 1);
@@ -1257,10 +1334,16 @@ dual_backend_test!(governance_meetings_lifecycle, |ctx| {
     let body_id = gov_body["body_id"].as_str().unwrap().to_owned();
 
     // List meetings (empty).
-    let list_resp = ctx.get(&format!("/v1/entities/{eid}/governance/meetings")).await;
+    let list_resp = ctx
+        .get(&format!("/v1/entities/{eid}/governance/meetings"))
+        .await;
     assert_eq!(list_resp.status(), StatusCode::OK);
     assert!(
-        body_json(list_resp).await.as_array().map(|a| a.is_empty()).unwrap_or(false)
+        body_json(list_resp)
+            .await
+            .as_array()
+            .map(|a| a.is_empty())
+            .unwrap_or(false)
     );
 
     // Create meeting.
@@ -1285,7 +1368,9 @@ dual_backend_test!(governance_meetings_lifecycle, |ctx| {
 
     // Get meeting.
     let get_resp = ctx
-        .get(&format!("/v1/entities/{eid}/governance/meetings/{meeting_id}"))
+        .get(&format!(
+            "/v1/entities/{eid}/governance/meetings/{meeting_id}"
+        ))
         .await;
     assert_eq!(get_resp.status(), StatusCode::OK);
     let fetched = body_json(get_resp).await;
@@ -1322,7 +1407,9 @@ dual_backend_test!(governance_meetings_lifecycle, |ctx| {
     assert_eq!(adjourned["status"], "adjourned", "{adjourned}");
 
     // List (non-empty).
-    let list_resp2 = ctx.get(&format!("/v1/entities/{eid}/governance/meetings")).await;
+    let list_resp2 = ctx
+        .get(&format!("/v1/entities/{eid}/governance/meetings"))
+        .await;
     assert_eq!(list_resp2.status(), StatusCode::OK);
     let meetings = body_json(list_resp2).await;
     assert_eq!(meetings.as_array().map(|a| a.len()).unwrap_or(0), 1);
@@ -1363,7 +1450,11 @@ dual_backend_test!(governance_agenda_items, |ctx| {
         .await;
     assert_eq!(list_resp.status(), StatusCode::OK);
     assert!(
-        body_json(list_resp).await.as_array().map(|a| a.is_empty()).unwrap_or(false)
+        body_json(list_resp)
+            .await
+            .as_array()
+            .map(|a| a.is_empty())
+            .unwrap_or(false)
     );
 
     // Add item.
@@ -1403,9 +1494,7 @@ dual_backend_test!(governance_agenda_items, |ctx| {
     // Resolve item.
     let resolve_resp = ctx
         .post(
-            &format!(
-                "/v1/entities/{eid}/governance/meetings/{meeting_id}/items/{item_id}/resolve"
-            ),
+            &format!("/v1/entities/{eid}/governance/meetings/{meeting_id}/items/{item_id}/resolve"),
             json!({
                 "resolution_type": "ordinary",
                 "resolution_text": "RESOLVED: Budget is approved."
@@ -1502,7 +1591,11 @@ dual_backend_test!(governance_votes, |ctx| {
         .await;
     assert_eq!(list_resp.status(), StatusCode::OK);
     assert!(
-        body_json(list_resp).await.as_array().map(|a| a.is_empty()).unwrap_or(false)
+        body_json(list_resp)
+            .await
+            .as_array()
+            .map(|a| a.is_empty())
+            .unwrap_or(false)
     );
 
     // Cast a vote.
@@ -1539,7 +1632,9 @@ dual_backend_test!(governance_profile, |ctx| {
     let eid = entity["entity_id"].as_str().unwrap();
 
     // GET profile (may return 404 or empty on fresh entity).
-    let get_resp = ctx.get(&format!("/v1/entities/{eid}/governance/profile")).await;
+    let get_resp = ctx
+        .get(&format!("/v1/entities/{eid}/governance/profile"))
+        .await;
     let get_status = get_resp.status();
     assert!(
         get_status == StatusCode::OK || get_status == StatusCode::NOT_FOUND,
@@ -1573,7 +1668,9 @@ dual_backend_test!(governance_profile, |ctx| {
     assert_eq!(profile["legal_name"], "Acme Corp");
 
     // GET after PUT.
-    let get_resp2 = ctx.get(&format!("/v1/entities/{eid}/governance/profile")).await;
+    let get_resp2 = ctx
+        .get(&format!("/v1/entities/{eid}/governance/profile"))
+        .await;
     assert_eq!(get_resp2.status(), StatusCode::OK);
     let fetched = body_json(get_resp2).await;
     assert_eq!(fetched["legal_name"], "Acme Corp");
@@ -1657,7 +1754,11 @@ dual_backend_test!(treasury_accounts, |ctx| {
     let list_resp = ctx.get(&format!("/v1/entities/{eid}/accounts")).await;
     assert_eq!(list_resp.status(), StatusCode::OK);
     assert!(
-        body_json(list_resp).await.as_array().map(|a| a.is_empty()).unwrap_or(false)
+        body_json(list_resp)
+            .await
+            .as_array()
+            .map(|a| a.is_empty())
+            .unwrap_or(false)
     );
 
     // Create.
@@ -1713,10 +1814,16 @@ dual_backend_test!(treasury_journal_entries, |ctx| {
         .to_owned();
 
     // List (empty).
-    let list_resp = ctx.get(&format!("/v1/entities/{eid}/journal-entries")).await;
+    let list_resp = ctx
+        .get(&format!("/v1/entities/{eid}/journal-entries"))
+        .await;
     assert_eq!(list_resp.status(), StatusCode::OK);
     assert!(
-        body_json(list_resp).await.as_array().map(|a| a.is_empty()).unwrap_or(false)
+        body_json(list_resp)
+            .await
+            .as_array()
+            .map(|a| a.is_empty())
+            .unwrap_or(false)
     );
 
     // Create journal entry (balanced: debit cash, credit equity).
@@ -1752,15 +1859,23 @@ dual_backend_test!(treasury_journal_entries, |ctx| {
 
     // Post entry.
     let post_resp = ctx
-        .post_empty(&format!("/v1/entities/{eid}/journal-entries/{entry_id}/post"))
+        .post_empty(&format!(
+            "/v1/entities/{eid}/journal-entries/{entry_id}/post"
+        ))
         .await;
     let post_status = post_resp.status();
     let post_body = body_json(post_resp).await;
-    assert_eq!(post_status, StatusCode::OK, "post journal entry: {post_body}");
+    assert_eq!(
+        post_status,
+        StatusCode::OK,
+        "post journal entry: {post_body}"
+    );
 
     // Void posted entry.
     let void_resp = ctx
-        .post_empty(&format!("/v1/entities/{eid}/journal-entries/{entry_id}/void"))
+        .post_empty(&format!(
+            "/v1/entities/{eid}/journal-entries/{entry_id}/void"
+        ))
         .await;
     let void_status = void_resp.status();
     let void_body = body_json(void_resp).await;
@@ -1770,7 +1885,9 @@ dual_backend_test!(treasury_journal_entries, |ctx| {
     );
 
     // List (non-empty).
-    let list_resp2 = ctx.get(&format!("/v1/entities/{eid}/journal-entries")).await;
+    let list_resp2 = ctx
+        .get(&format!("/v1/entities/{eid}/journal-entries"))
+        .await;
     assert_eq!(list_resp2.status(), StatusCode::OK);
     let entries = body_json(list_resp2).await;
     assert_eq!(entries.as_array().map(|a| a.len()).unwrap_or(0), 1);
@@ -1786,7 +1903,11 @@ dual_backend_test!(treasury_invoices, |ctx| {
     let list_resp = ctx.get(&format!("/v1/entities/{eid}/invoices")).await;
     assert_eq!(list_resp.status(), StatusCode::OK);
     assert!(
-        body_json(list_resp).await.as_array().map(|a| a.is_empty()).unwrap_or(false)
+        body_json(list_resp)
+            .await
+            .as_array()
+            .map(|a| a.is_empty())
+            .unwrap_or(false)
     );
 
     // Create invoice.
@@ -1849,7 +1970,11 @@ dual_backend_test!(treasury_payments, |ctx| {
     let list_resp = ctx.get(&format!("/v1/entities/{eid}/payments")).await;
     assert_eq!(list_resp.status(), StatusCode::OK);
     assert!(
-        body_json(list_resp).await.as_array().map(|a| a.is_empty()).unwrap_or(false)
+        body_json(list_resp)
+            .await
+            .as_array()
+            .map(|a| a.is_empty())
+            .unwrap_or(false)
     );
 
     // Create payment.
@@ -1887,7 +2012,11 @@ dual_backend_test!(treasury_bank_accounts, |ctx| {
     let list_resp = ctx.get(&format!("/v1/entities/{eid}/bank-accounts")).await;
     assert_eq!(list_resp.status(), StatusCode::OK);
     assert!(
-        body_json(list_resp).await.as_array().map(|a| a.is_empty()).unwrap_or(false)
+        body_json(list_resp)
+            .await
+            .as_array()
+            .map(|a| a.is_empty())
+            .unwrap_or(false)
     );
 
     // Create.
@@ -1911,7 +2040,9 @@ dual_backend_test!(treasury_bank_accounts, |ctx| {
 
     // Activate.
     let activate_resp = ctx
-        .post_empty(&format!("/v1/entities/{eid}/bank-accounts/{bank_id}/activate"))
+        .post_empty(&format!(
+            "/v1/entities/{eid}/bank-accounts/{bank_id}/activate"
+        ))
         .await;
     let activate_status = activate_resp.status();
     let activate_body = body_json(activate_resp).await;
@@ -1948,7 +2079,11 @@ dual_backend_test!(treasury_payroll, |ctx| {
     let list_resp = ctx.get(&format!("/v1/entities/{eid}/payroll-runs")).await;
     assert_eq!(list_resp.status(), StatusCode::OK);
     assert!(
-        body_json(list_resp).await.as_array().map(|a| a.is_empty()).unwrap_or(false)
+        body_json(list_resp)
+            .await
+            .as_array()
+            .map(|a| a.is_empty())
+            .unwrap_or(false)
     );
 
     // Create payroll run.
@@ -2019,10 +2154,16 @@ dual_backend_test!(treasury_reconciliation, |ctx| {
         .to_owned();
 
     // List reconciliations (empty).
-    let list_resp = ctx.get(&format!("/v1/entities/{eid}/reconciliations")).await;
+    let list_resp = ctx
+        .get(&format!("/v1/entities/{eid}/reconciliations"))
+        .await;
     assert_eq!(list_resp.status(), StatusCode::OK);
     assert!(
-        body_json(list_resp).await.as_array().map(|a| a.is_empty()).unwrap_or(false)
+        body_json(list_resp)
+            .await
+            .as_array()
+            .map(|a| a.is_empty())
+            .unwrap_or(false)
     );
 
     // Create.
@@ -2043,7 +2184,9 @@ dual_backend_test!(treasury_reconciliation, |ctx| {
     assert!(rec["reconciliation_id"].is_string(), "{rec}");
 
     // List (non-empty).
-    let list_resp2 = ctx.get(&format!("/v1/entities/{eid}/reconciliations")).await;
+    let list_resp2 = ctx
+        .get(&format!("/v1/entities/{eid}/reconciliations"))
+        .await;
     assert_eq!(list_resp2.status(), StatusCode::OK);
     let recs = body_json(list_resp2).await;
     assert_eq!(recs.as_array().map(|a| a.len()).unwrap_or(0), 1);
@@ -2059,7 +2202,11 @@ dual_backend_test!(execution_intents, |ctx| {
     let list_resp = ctx.get(&format!("/v1/entities/{eid}/intents")).await;
     assert_eq!(list_resp.status(), StatusCode::OK);
     assert!(
-        body_json(list_resp).await.as_array().map(|a| a.is_empty()).unwrap_or(false)
+        body_json(list_resp)
+            .await
+            .as_array()
+            .map(|a| a.is_empty())
+            .unwrap_or(false)
     );
 
     // Create intent.
@@ -2082,7 +2229,9 @@ dual_backend_test!(execution_intents, |ctx| {
     let intent_id = intent["intent_id"].as_str().unwrap().to_owned();
 
     // Get intent.
-    let get_resp = ctx.get(&format!("/v1/entities/{eid}/intents/{intent_id}")).await;
+    let get_resp = ctx
+        .get(&format!("/v1/entities/{eid}/intents/{intent_id}"))
+        .await;
     assert_eq!(get_resp.status(), StatusCode::OK);
 
     // Evaluate.
@@ -2165,7 +2314,11 @@ dual_backend_test!(execution_obligations, |ctx| {
     let list_resp = ctx.get(&format!("/v1/entities/{eid}/obligations")).await;
     assert_eq!(list_resp.status(), StatusCode::OK);
     assert!(
-        body_json(list_resp).await.as_array().map(|a| a.is_empty()).unwrap_or(false)
+        body_json(list_resp)
+            .await
+            .as_array()
+            .map(|a| a.is_empty())
+            .unwrap_or(false)
     );
 
     // Create obligation.
@@ -2190,7 +2343,9 @@ dual_backend_test!(execution_obligations, |ctx| {
     let ob_id = obligation["obligation_id"].as_str().unwrap().to_owned();
 
     // Get.
-    let get_resp = ctx.get(&format!("/v1/entities/{eid}/obligations/{ob_id}")).await;
+    let get_resp = ctx
+        .get(&format!("/v1/entities/{eid}/obligations/{ob_id}"))
+        .await;
     assert_eq!(get_resp.status(), StatusCode::OK);
 
     // Start.
@@ -2274,7 +2429,11 @@ dual_backend_test!(contacts_crud, |ctx| {
     let list_resp = ctx.get(&format!("/v1/entities/{eid}/contacts")).await;
     assert_eq!(list_resp.status(), StatusCode::OK);
     assert!(
-        body_json(list_resp).await.as_array().map(|a| a.is_empty()).unwrap_or(false)
+        body_json(list_resp)
+            .await
+            .as_array()
+            .map(|a| a.is_empty())
+            .unwrap_or(false)
     );
 
     // Create.
@@ -2337,7 +2496,11 @@ dual_backend_test!(agents_crud, |ctx| {
     let list_resp = ctx.get("/v1/agents").await;
     assert_eq!(list_resp.status(), StatusCode::OK);
     assert!(
-        body_json(list_resp).await.as_array().map(|a| a.is_empty()).unwrap_or(false)
+        body_json(list_resp)
+            .await
+            .as_array()
+            .map(|a| a.is_empty())
+            .unwrap_or(false)
     );
 
     // Create.
@@ -2396,7 +2559,9 @@ dual_backend_test!(agents_crud, |ctx| {
     assert_eq!(skill_status, StatusCode::OK, "add skill: {skill_body}");
 
     // Pause.
-    let pause_resp = ctx.post_empty(&format!("/v1/agents/{agent_id}/pause")).await;
+    let pause_resp = ctx
+        .post_empty(&format!("/v1/agents/{agent_id}/pause"))
+        .await;
     let pause_status = pause_resp.status();
     let pause_body = body_json(pause_resp).await;
     assert!(
@@ -2405,7 +2570,9 @@ dual_backend_test!(agents_crud, |ctx| {
     );
 
     // Resume.
-    let resume_resp = ctx.post_empty(&format!("/v1/agents/{agent_id}/resume")).await;
+    let resume_resp = ctx
+        .post_empty(&format!("/v1/agents/{agent_id}/resume"))
+        .await;
     let resume_status = resume_resp.status();
     let resume_body = body_json(resume_resp).await;
     assert!(
@@ -2427,7 +2594,11 @@ dual_backend_test!(agents_crud, |ctx| {
     let list_resp3 = ctx.get("/v1/agents").await;
     assert_eq!(list_resp3.status(), StatusCode::OK);
     assert!(
-        body_json(list_resp3).await.as_array().map(|a| a.is_empty()).unwrap_or(false),
+        body_json(list_resp3)
+            .await
+            .as_array()
+            .map(|a| a.is_empty())
+            .unwrap_or(false),
         "list should be empty after delete"
     );
 });
@@ -2442,7 +2613,11 @@ dual_backend_test!(work_items_lifecycle, |ctx| {
     let list_resp = ctx.get(&format!("/v1/entities/{eid}/work-items")).await;
     assert_eq!(list_resp.status(), StatusCode::OK);
     assert!(
-        body_json(list_resp).await.as_array().map(|a| a.is_empty()).unwrap_or(false)
+        body_json(list_resp)
+            .await
+            .as_array()
+            .map(|a| a.is_empty())
+            .unwrap_or(false)
     );
 
     // Create.
@@ -2466,7 +2641,9 @@ dual_backend_test!(work_items_lifecycle, |ctx| {
     let item_id = item["work_item_id"].as_str().unwrap().to_owned();
 
     // Get.
-    let get_resp = ctx.get(&format!("/v1/entities/{eid}/work-items/{item_id}")).await;
+    let get_resp = ctx
+        .get(&format!("/v1/entities/{eid}/work-items/{item_id}"))
+        .await;
     assert_eq!(get_resp.status(), StatusCode::OK);
 
     // Claim.
@@ -2566,10 +2743,16 @@ dual_backend_test!(services_lifecycle, |ctx| {
     let eid = entity["entity_id"].as_str().unwrap();
 
     // List (empty).
-    let list_resp = ctx.get(&format!("/v1/entities/{eid}/service-requests")).await;
+    let list_resp = ctx
+        .get(&format!("/v1/entities/{eid}/service-requests"))
+        .await;
     assert_eq!(list_resp.status(), StatusCode::OK);
     assert!(
-        body_json(list_resp).await.as_array().map(|a| a.is_empty()).unwrap_or(false)
+        body_json(list_resp)
+            .await
+            .as_array()
+            .map(|a| a.is_empty())
+            .unwrap_or(false)
     );
 
     // Create service request.
@@ -2638,7 +2821,9 @@ dual_backend_test!(services_lifecycle, |ctx| {
     );
 
     // List (non-empty).
-    let list_resp2 = ctx.get(&format!("/v1/entities/{eid}/service-requests")).await;
+    let list_resp2 = ctx
+        .get(&format!("/v1/entities/{eid}/service-requests"))
+        .await;
     assert_eq!(list_resp2.status(), StatusCode::OK);
     let requests = body_json(list_resp2).await;
     assert_eq!(requests.as_array().map(|a| a.len()).unwrap_or(0), 1);
@@ -2690,7 +2875,11 @@ dual_backend_test!(admin_api_keys, |ctx| {
     let list_resp = ctx.get("/v1/api-keys").await;
     assert_eq!(list_resp.status(), StatusCode::OK);
     assert!(
-        body_json(list_resp).await.as_array().map(|a| a.is_empty()).unwrap_or(false)
+        body_json(list_resp)
+            .await
+            .as_array()
+            .map(|a| a.is_empty())
+            .unwrap_or(false)
     );
 
     // Create API key.
@@ -2733,7 +2922,11 @@ dual_backend_test!(admin_api_keys, |ctx| {
     let list_resp3 = ctx.get("/v1/api-keys").await;
     assert_eq!(list_resp3.status(), StatusCode::OK);
     assert!(
-        body_json(list_resp3).await.as_array().map(|a| a.is_empty()).unwrap_or(false),
+        body_json(list_resp3)
+            .await
+            .as_array()
+            .map(|a| a.is_empty())
+            .unwrap_or(false),
         "list should be empty after revoke"
     );
 });

@@ -41,12 +41,11 @@ impl Context {
 
     /// Return the active entity ID from config, or an error if none is set.
     pub fn require_entity(&self) -> anyhow::Result<String> {
-        self.config
-            .active_entity_id
-            .clone()
-            .ok_or_else(|| anyhow::anyhow!(
+        self.config.active_entity_id.clone().ok_or_else(|| {
+            anyhow::anyhow!(
                 "no active entity — run `corp use <entity>` or `corp entities list` first"
-            ))
+            )
+        })
     }
 
     /// Resolve a reference (UUID, @last, short ID, name) to a canonical UUID.
@@ -60,7 +59,13 @@ impl Context {
         candidates: Option<&[serde_json::Value]>,
     ) -> anyhow::Result<String> {
         let entity_id = self.config.active_entity_id.as_deref();
-        refs::resolve(input, kind, candidates, entity_id, &mut self.refs.borrow_mut())
+        refs::resolve(
+            input,
+            kind,
+            candidates,
+            entity_id,
+            &mut self.refs.borrow_mut(),
+        )
     }
 
     /// Remember an ID from a command response (updates @last).
@@ -75,17 +80,29 @@ impl Context {
     }
 
     /// Delegate `POST` to the underlying client.
-    pub async fn post(&self, path: &str, body: &serde_json::Value) -> anyhow::Result<serde_json::Value> {
+    pub async fn post(
+        &self,
+        path: &str,
+        body: &serde_json::Value,
+    ) -> anyhow::Result<serde_json::Value> {
         self.client.post(path, body).await
     }
 
     /// Delegate `PUT` to the underlying client.
-    pub async fn put(&self, path: &str, body: &serde_json::Value) -> anyhow::Result<serde_json::Value> {
+    pub async fn put(
+        &self,
+        path: &str,
+        body: &serde_json::Value,
+    ) -> anyhow::Result<serde_json::Value> {
         self.client.put(path, body).await
     }
 
     /// Delegate `PATCH` to the underlying client.
-    pub async fn patch(&self, path: &str, body: &serde_json::Value) -> anyhow::Result<serde_json::Value> {
+    pub async fn patch(
+        &self,
+        path: &str,
+        body: &serde_json::Value,
+    ) -> anyhow::Result<serde_json::Value> {
         self.client.patch(path, body).await
     }
 
@@ -213,9 +230,21 @@ fn run_context(ctx: &Context) -> anyhow::Result<()> {
         });
         println!("{}", serde_json::to_string_pretty(&obj)?);
     } else {
-        output::kv("API URL", ctx.config.api_url.as_deref().unwrap_or("<default>"), mode);
-        output::kv("Workspace ID", ctx.config.workspace_id.as_deref().unwrap_or("<unset>"), mode);
-        output::kv("Active entity", ctx.config.active_entity_id.as_deref().unwrap_or("<none>"), mode);
+        output::kv(
+            "API URL",
+            ctx.config.api_url.as_deref().unwrap_or("<default>"),
+            mode,
+        );
+        output::kv(
+            "Workspace ID",
+            ctx.config.workspace_id.as_deref().unwrap_or("<unset>"),
+            mode,
+        );
+        output::kv(
+            "Active entity",
+            ctx.config.active_entity_id.as_deref().unwrap_or("<none>"),
+            mode,
+        );
     }
     Ok(())
 }

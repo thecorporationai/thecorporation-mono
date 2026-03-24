@@ -31,12 +31,12 @@ use axum::{Json, Router};
 use chrono::NaiveDate;
 use serde::Deserialize;
 
+use crate::error::AppError;
+use crate::state::AppState;
 use corp_auth::{RequireExecutionRead, RequireExecutionWrite};
 use corp_core::execution::{AssigneeType, Intent, Obligation, Receipt};
 use corp_core::governance::capability::AuthorityTier;
 use corp_core::ids::{ContactId, EntityId, IntentId, ObligationId, ReceiptId};
-use crate::error::AppError;
-use crate::state::AppState;
 
 // ── Router ────────────────────────────────────────────────────────────────────
 
@@ -176,7 +176,9 @@ async fn create_intent(
     Json(body): Json<CreateIntentRequest>,
 ) -> Result<Json<Intent>, AppError> {
     if body.description.trim().is_empty() {
-        return Err(AppError::BadRequest("intent description must not be empty".into()));
+        return Err(AppError::BadRequest(
+            "intent description must not be empty".into(),
+        ));
     }
     let store = state
         .open_entity_store(principal.workspace_id, entity_id)
@@ -204,18 +206,15 @@ async fn get_intent(
     let store = state
         .open_entity_store(principal.workspace_id, entity_id)
         .await?;
-    let intent = store
-        .read::<Intent>(intent_id, "main")
-        .await
-        .map_err(|e| {
-            use corp_storage::error::StorageError;
-            match e {
-                StorageError::NotFound(_) => {
-                    AppError::NotFound(format!("intent {} not found", intent_id))
-                }
-                other => AppError::Storage(other),
+    let intent = store.read::<Intent>(intent_id, "main").await.map_err(|e| {
+        use corp_storage::error::StorageError;
+        match e {
+            StorageError::NotFound(_) => {
+                AppError::NotFound(format!("intent {} not found", intent_id))
             }
-        })?;
+            other => AppError::Storage(other),
+        }
+    })?;
     Ok(Json(intent))
 }
 
@@ -380,7 +379,9 @@ async fn create_obligation(
     Json(body): Json<CreateObligationRequest>,
 ) -> Result<Json<Obligation>, AppError> {
     if body.description.trim().is_empty() {
-        return Err(AppError::BadRequest("intent description must not be empty".into()));
+        return Err(AppError::BadRequest(
+            "intent description must not be empty".into(),
+        ));
     }
     let store = state
         .open_entity_store(principal.workspace_id, entity_id)
@@ -420,9 +421,9 @@ async fn get_obligation(
         .map_err(|e| {
             use corp_storage::error::StorageError;
             match e {
-                StorageError::NotFound(_) => AppError::NotFound(
-                    format!("obligation {} not found", obligation_id),
-                ),
+                StorageError::NotFound(_) => {
+                    AppError::NotFound(format!("obligation {} not found", obligation_id))
+                }
                 other => AppError::Storage(other),
             }
         })?;
@@ -467,12 +468,7 @@ async fn fulfill_obligation(
         .fulfill()
         .map_err(|e| AppError::BadRequest(e.to_string()))?;
     store
-        .write::<Obligation>(
-            &obligation,
-            obligation_id,
-            "main",
-            "fulfill obligation",
-        )
+        .write::<Obligation>(&obligation, obligation_id, "main", "fulfill obligation")
         .await
         .map_err(AppError::Storage)?;
     Ok(Json(obligation))

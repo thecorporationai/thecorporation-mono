@@ -86,9 +86,7 @@ async fn run_call(method: String, path: String, body: Option<String>) {
         .or_else(|_| std::env::var("CORP_JWT_TOKEN"))
         .unwrap_or_default();
 
-    let mut builder = Request::builder()
-        .method(method)
-        .uri(&path);
+    let mut builder = Request::builder().method(method).uri(&path);
 
     if !body_bytes.is_empty() {
         builder = builder.header("content-type", "application/json");
@@ -97,12 +95,10 @@ async fn run_call(method: String, path: String, body: Option<String>) {
         builder = builder.header("authorization", format!("Bearer {jwt_or_key}"));
     }
 
-    let req = builder
-        .body(Body::from(body_bytes))
-        .unwrap_or_else(|e| {
-            eprintln!("bad request: {e}");
-            std::process::exit(2);
-        });
+    let req = builder.body(Body::from(body_bytes)).unwrap_or_else(|e| {
+        eprintln!("bad request: {e}");
+        std::process::exit(2);
+    });
 
     let resp = app.oneshot(req).await.unwrap_or_else(|e| {
         eprintln!("router error: {e}");

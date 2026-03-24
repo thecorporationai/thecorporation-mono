@@ -7,7 +7,7 @@ license.workspace = true
 description = "HTTP API server for corporate governance"
 
 [features]
-default = []
+default = ["s3"]
 s3 = ["corp-storage/s3"]
 
 [[bin]]
@@ -17,10 +17,6 @@ path = "src/main.rs"
 [lib]
 name = "corp_server"
 path = "src/lib.rs"
-
-[features]
-default = ["s3"]
-s3 = ["corp-storage/s3"]
 
 [dependencies]
 corp-core = { workspace = true }

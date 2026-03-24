@@ -4,9 +4,9 @@
 //! bank accounts, payroll runs, and reconciliations.
 
 use axum::{
+    Json, Router,
     extract::{Path, State},
     routing::{get, post},
-    Json, Router,
 };
 use chrono::{DateTime, NaiveDate, Utc};
 use serde::Deserialize;
@@ -15,10 +15,10 @@ use corp_auth::{RequireTreasuryRead, RequireTreasuryWrite};
 use corp_core::ids::{
     AccountId, BankAccountId, EntityId, InvoiceId, JournalEntryId, PayrollRunId, ReconciliationId,
 };
+use corp_core::treasury::types::{BankAccountType, Currency, GlAccountCode, PaymentMethod};
 use corp_core::treasury::{
     Account, BankAccount, Invoice, JournalEntry, JournalLine, Payment, PayrollRun, Reconciliation,
 };
-use corp_core::treasury::types::{BankAccountType, Currency, GlAccountCode, PaymentMethod};
 
 use crate::error::AppError;
 use crate::state::AppState;
@@ -202,7 +202,12 @@ async fn create_account(
     let store = state
         .open_entity_store(principal.workspace_id, entity_id)
         .await?;
-    let account = Account::new(entity_id, body.account_code, body.account_name, body.currency);
+    let account = Account::new(
+        entity_id,
+        body.account_code,
+        body.account_name,
+        body.currency,
+    );
     store
         .write::<Account>(&account, account.account_id, "main", "create account")
         .await?;
@@ -330,7 +335,9 @@ async fn create_invoice(
     Json(body): Json<CreateInvoiceRequest>,
 ) -> Result<Json<Invoice>, AppError> {
     if body.amount_cents <= 0 {
-        return Err(AppError::BadRequest("invoice amount_cents must be greater than zero".into()));
+        return Err(AppError::BadRequest(
+            "invoice amount_cents must be greater than zero".into(),
+        ));
     }
     let store = state
         .open_entity_store(principal.workspace_id, entity_id)
@@ -435,7 +442,9 @@ async fn create_payment(
     Json(body): Json<CreatePaymentRequest>,
 ) -> Result<Json<Payment>, AppError> {
     if body.amount_cents <= 0 {
-        return Err(AppError::BadRequest("payment amount_cents must be greater than zero".into()));
+        return Err(AppError::BadRequest(
+            "payment amount_cents must be greater than zero".into(),
+        ));
     }
     let store = state
         .open_entity_store(principal.workspace_id, entity_id)
@@ -563,7 +572,9 @@ async fn create_payroll_run(
         ));
     }
     if body.employee_count == 0 {
-        return Err(AppError::BadRequest("employee_count must be at least 1".into()));
+        return Err(AppError::BadRequest(
+            "employee_count must be at least 1".into(),
+        ));
     }
     let store = state
         .open_entity_store(principal.workspace_id, entity_id)
@@ -653,12 +664,7 @@ async fn create_reconciliation(
         body.book_balance_cents,
     );
     store
-        .write::<Reconciliation>(
-            &rec,
-            rec.reconciliation_id,
-            "main",
-            "create reconciliation",
-        )
+        .write::<Reconciliation>(&rec, rec.reconciliation_id, "main", "create reconciliation")
         .await?;
     Ok(Json(rec))
 }
@@ -675,7 +681,9 @@ async fn reconcile(
     let store = state
         .open_entity_store(principal.workspace_id, entity_id)
         .await?;
-    let mut rec = store.read::<Reconciliation>(reconciliation_id, "main").await?;
+    let mut rec = store
+        .read::<Reconciliation>(reconciliation_id, "main")
+        .await?;
     rec.mark_reconciled()
         .map_err(|e| AppError::BadRequest(e.to_string()))?;
     store

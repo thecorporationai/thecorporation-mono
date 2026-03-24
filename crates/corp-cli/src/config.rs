@@ -189,11 +189,15 @@ mod tests {
     #[test]
     fn effective_api_url_env_override_and_default() {
         // This test mutates env vars so it must be a single test to avoid races.
-        unsafe { std::env::set_var("CORP_API_URL", "http://localhost:9999"); }
+        unsafe {
+            std::env::set_var("CORP_API_URL", "http://localhost:9999");
+        }
         let cfg = Config::default();
         assert_eq!(cfg.effective_api_url(), "http://localhost:9999");
 
-        unsafe { std::env::remove_var("CORP_API_URL"); }
+        unsafe {
+            std::env::remove_var("CORP_API_URL");
+        }
         let cfg2 = Config::default();
         assert_eq!(cfg2.effective_api_url(), DEFAULT_API_URL);
     }
@@ -201,7 +205,9 @@ mod tests {
     #[test]
     fn save_and_load_roundtrip() {
         let dir = tempfile::tempdir().unwrap();
-        unsafe { std::env::set_var("CORP_CONFIG_DIR", dir.path().to_str().unwrap()); }
+        unsafe {
+            std::env::set_var("CORP_CONFIG_DIR", dir.path().to_str().unwrap());
+        }
 
         let mut cfg = Config::default();
         cfg.set("workspace_id", "ws-123").unwrap();
@@ -210,7 +216,9 @@ mod tests {
         let loaded = Config::load().unwrap();
         assert_eq!(loaded.workspace_id.as_deref(), Some("ws-123"));
 
-        unsafe { std::env::remove_var("CORP_CONFIG_DIR"); }
+        unsafe {
+            std::env::remove_var("CORP_CONFIG_DIR");
+        }
     }
 
     #[test]
@@ -224,7 +232,9 @@ mod tests {
         }
         let cfg = Config::load().unwrap();
         assert!(cfg.api_url.is_none());
-        unsafe { std::env::remove_var("CORP_CONFIG_DIR"); }
+        unsafe {
+            std::env::remove_var("CORP_CONFIG_DIR");
+        }
     }
 
     #[test]

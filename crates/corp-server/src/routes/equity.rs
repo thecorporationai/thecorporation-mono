@@ -4,32 +4,32 @@
 //! share transfers, funding rounds, and holders.
 
 use axum::{
+    Json, Router,
     extract::{Path, State},
     routing::{get, post},
-    Json, Router,
 };
 use chrono::NaiveDate;
 use serde::Deserialize;
 
+use crate::error::AppError;
+use crate::state::AppState;
 use corp_auth::{RequireEquityRead, RequireEquityWrite};
 use corp_core::contacts::Contact;
-use corp_core::equity::{
-    CapTable, ControlLink, ControlType, EquityGrant, FundingRound, Holder, HolderType, Instrument,
-    InstrumentKind, InvestorLedgerEntry, LegalEntity, LegalEntityRole, Position, RepurchaseRight,
-    SafeNote, ShareClass, ShareTransfer, Valuation, VestingEvent, VestingSchedule,
-};
 use corp_core::equity::types::{
     GrantType, InvestorLedgerEntryType, SafeType, ShareCount, StockType, TransferType,
     ValuationMethodology, ValuationType,
 };
 use corp_core::equity::vesting::materialize_vesting_events;
-use corp_core::ids::{
-    CapTableId, ContactId, EntityId, EquityGrantId, FundingRoundId, HolderId,
-    InstrumentId, LegalEntityId, PositionId, RepurchaseRightId, SafeNoteId,
-    ShareClassId, TransferId, ValuationId, VestingEventId, VestingScheduleId,
+use corp_core::equity::{
+    CapTable, ControlLink, ControlType, EquityGrant, FundingRound, Holder, HolderType, Instrument,
+    InstrumentKind, InvestorLedgerEntry, LegalEntity, LegalEntityRole, Position, RepurchaseRight,
+    SafeNote, ShareClass, ShareTransfer, Valuation, VestingEvent, VestingSchedule,
 };
-use crate::error::AppError;
-use crate::state::AppState;
+use corp_core::ids::{
+    CapTableId, ContactId, EntityId, EquityGrantId, FundingRoundId, HolderId, InstrumentId,
+    LegalEntityId, PositionId, RepurchaseRightId, SafeNoteId, ShareClassId, TransferId,
+    ValuationId, VestingEventId, VestingScheduleId,
+};
 
 // ── Request body types ────────────────────────────────────────────────────────
 
@@ -239,19 +239,13 @@ pub fn routes() -> Router<AppState> {
             "/entities/{entity_id}/grants",
             get(list_grants).post(create_grant),
         )
-        .route(
-            "/entities/{entity_id}/grants/{grant_id}",
-            get(get_grant),
-        )
+        .route("/entities/{entity_id}/grants/{grant_id}", get(get_grant))
         // SAFE notes
         .route(
             "/entities/{entity_id}/safes",
             get(list_safes).post(issue_safe),
         )
-        .route(
-            "/entities/{entity_id}/safes/{safe_id}",
-            get(get_safe),
-        )
+        .route("/entities/{entity_id}/safes/{safe_id}", get(get_safe))
         .route(
             "/entities/{entity_id}/safes/{safe_id}/convert",
             post(convert_safe),
@@ -315,10 +309,7 @@ pub fn routes() -> Router<AppState> {
             "/entities/{entity_id}/rounds",
             get(list_rounds).post(create_round),
         )
-        .route(
-            "/entities/{entity_id}/rounds/{round_id}",
-            get(get_round),
-        )
+        .route("/entities/{entity_id}/rounds/{round_id}", get(get_round))
         .route(
             "/entities/{entity_id}/rounds/{round_id}/advance",
             post(advance_round),
@@ -332,10 +323,7 @@ pub fn routes() -> Router<AppState> {
             "/entities/{entity_id}/holders",
             get(list_holders).post(create_holder),
         )
-        .route(
-            "/entities/{entity_id}/holders/{holder_id}",
-            get(get_holder),
-        )
+        .route("/entities/{entity_id}/holders/{holder_id}", get(get_holder))
         // Vesting
         .route(
             "/entities/{entity_id}/vesting-schedules",
@@ -456,7 +444,12 @@ async fn create_cap_table(
     }
     let cap_table = CapTable::new(entity_id);
     store
-        .write::<CapTable>(&cap_table, cap_table.cap_table_id, "main", "create cap table")
+        .write::<CapTable>(
+            &cap_table,
+            cap_table.cap_table_id,
+            "main",
+            "create cap table",
+        )
         .await?;
     Ok(Json(cap_table))
 }
@@ -525,7 +518,9 @@ async fn create_grant(
     Json(body): Json<CreateGrantRequest>,
 ) -> Result<Json<EquityGrant>, AppError> {
     if body.shares <= 0 {
-        return Err(AppError::BadRequest("shares must be greater than zero".into()));
+        return Err(AppError::BadRequest(
+            "shares must be greater than zero".into(),
+        ));
     }
     let store = state
         .open_entity_store(principal.workspace_id, entity_id)
@@ -545,11 +540,15 @@ async fn create_grant(
             }
         })?;
 
-    let share_class = store.read::<ShareClass>(body.share_class_id, "main").await?;
+    let share_class = store
+        .read::<ShareClass>(body.share_class_id, "main")
+        .await?;
     if body.shares > share_class.authorized_shares.raw() {
         return Err(AppError::BadRequest(format!(
             "cannot issue {} shares: exceeds authorized {} for class {}",
-            body.shares, share_class.authorized_shares.raw(), share_class.class_code
+            body.shares,
+            share_class.authorized_shares.raw(),
+            share_class.class_code
         )));
     }
     let grant = EquityGrant::new(
@@ -604,11 +603,15 @@ async fn issue_safe(
     Json(body): Json<IssueSafeRequest>,
 ) -> Result<Json<SafeNote>, AppError> {
     if body.investment_amount_cents <= 0 {
-        return Err(AppError::BadRequest("investment_amount_cents must be greater than zero".into()));
+        return Err(AppError::BadRequest(
+            "investment_amount_cents must be greater than zero".into(),
+        ));
     }
     if let Some(cap) = body.valuation_cap_cents {
         if cap <= 0 {
-            return Err(AppError::BadRequest("valuation_cap_cents must be greater than zero".into()));
+            return Err(AppError::BadRequest(
+                "valuation_cap_cents must be greater than zero".into(),
+            ));
         }
     }
     let store = state
@@ -641,7 +644,12 @@ async fn issue_safe(
         body.discount_percent,
     );
     store
-        .write::<SafeNote>(&safe_note, safe_note.safe_note_id, "main", "issue safe note")
+        .write::<SafeNote>(
+            &safe_note,
+            safe_note.safe_note_id,
+            "main",
+            "issue safe note",
+        )
         .await?;
     Ok(Json(safe_note))
 }
@@ -728,7 +736,9 @@ async fn create_valuation(
     Json(body): Json<CreateValuationRequest>,
 ) -> Result<Json<Valuation>, AppError> {
     if body.valuation_amount_cents <= 0 {
-        return Err(AppError::BadRequest("valuation_amount_cents must be greater than zero".into()));
+        return Err(AppError::BadRequest(
+            "valuation_amount_cents must be greater than zero".into(),
+        ));
     }
     let store = state
         .open_entity_store(principal.workspace_id, entity_id)
@@ -864,10 +874,14 @@ async fn create_transfer(
     Json(body): Json<CreateTransferRequest>,
 ) -> Result<Json<ShareTransfer>, AppError> {
     if body.shares <= 0 {
-        return Err(AppError::BadRequest("shares must be greater than zero".into()));
+        return Err(AppError::BadRequest(
+            "shares must be greater than zero".into(),
+        ));
     }
     if body.from_holder_id == body.to_holder_id {
-        return Err(AppError::BadRequest("cannot transfer shares to the same holder".into()));
+        return Err(AppError::BadRequest(
+            "cannot transfer shares to the same holder".into(),
+        ));
     }
     let store = state
         .open_entity_store(principal.workspace_id, entity_id)
@@ -880,10 +894,9 @@ async fn create_transfer(
         .map_err(|e| {
             use corp_storage::error::StorageError;
             match e {
-                StorageError::NotFound(_) => AppError::BadRequest(format!(
-                    "from_holder {} not found",
-                    body.from_holder_id
-                )),
+                StorageError::NotFound(_) => {
+                    AppError::BadRequest(format!("from_holder {} not found", body.from_holder_id))
+                }
                 other => AppError::Storage(other),
             }
         })?;
@@ -895,10 +908,9 @@ async fn create_transfer(
         .map_err(|e| {
             use corp_storage::error::StorageError;
             match e {
-                StorageError::NotFound(_) => AppError::BadRequest(format!(
-                    "to_holder {} not found",
-                    body.to_holder_id
-                )),
+                StorageError::NotFound(_) => {
+                    AppError::BadRequest(format!("to_holder {} not found", body.to_holder_id))
+                }
                 other => AppError::Storage(other),
             }
         })?;
@@ -1032,7 +1044,9 @@ async fn create_round(
     Json(body): Json<CreateRoundRequest>,
 ) -> Result<Json<FundingRound>, AppError> {
     if body.target_amount_cents <= 0 {
-        return Err(AppError::BadRequest("target_amount_cents must be greater than zero".into()));
+        return Err(AppError::BadRequest(
+            "target_amount_cents must be greater than zero".into(),
+        ));
     }
     let store = state
         .open_entity_store(principal.workspace_id, entity_id)
@@ -1156,7 +1170,9 @@ async fn create_vesting_schedule(
     Json(body): Json<CreateVestingScheduleRequest>,
 ) -> Result<Json<VestingSchedule>, AppError> {
     if body.total_shares <= 0 {
-        return Err(AppError::BadRequest("total_shares must be greater than zero".into()));
+        return Err(AppError::BadRequest(
+            "total_shares must be greater than zero".into(),
+        ));
     }
     let store = state
         .open_entity_store(principal.workspace_id, entity_id)
@@ -1393,7 +1409,11 @@ async fn apply_position_delta(
         .await?;
     let mut position = store.read::<Position>(position_id, "main").await?;
     position
-        .apply_delta(body.quantity_delta, body.principal_delta.unwrap_or(0), body.source_reference)
+        .apply_delta(
+            body.quantity_delta,
+            body.principal_delta.unwrap_or(0),
+            body.source_reference,
+        )
         .map_err(|e| AppError::BadRequest(e.to_string()))?;
     store
         .write::<Position>(&position, position_id, "main", "apply position delta")
@@ -1557,10 +1577,14 @@ async fn create_repurchase_right(
     Json(body): Json<CreateRepurchaseRightRequest>,
 ) -> Result<Json<RepurchaseRight>, AppError> {
     if body.share_count <= 0 {
-        return Err(AppError::BadRequest("share_count must be greater than zero".into()));
+        return Err(AppError::BadRequest(
+            "share_count must be greater than zero".into(),
+        ));
     }
     if body.price_per_share_cents < 0 {
-        return Err(AppError::BadRequest("price_per_share_cents must be non-negative".into()));
+        return Err(AppError::BadRequest(
+            "price_per_share_cents must be non-negative".into(),
+        ));
     }
     let store = state
         .open_entity_store(principal.workspace_id, entity_id)

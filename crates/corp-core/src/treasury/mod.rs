@@ -20,6 +20,6 @@ pub use payment::Payment;
 pub use payroll::PayrollRun;
 pub use reconciliation::Reconciliation;
 pub use types::{
-    AccountType, BankAccountStatus, BankAccountType, Cents, Currency, GlAccountCode,
-    InvoiceStatus, PaymentMethod, PayrollStatus, Side,
+    AccountType, BankAccountStatus, BankAccountType, Cents, Currency, GlAccountCode, InvoiceStatus,
+    PaymentMethod, PayrollStatus, Side,
 };
