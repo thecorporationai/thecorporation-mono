@@ -2,6 +2,15 @@
   "name": "@thecorporation/corp",
   "version": "0.1.0",
   "description": "TypeScript client and binary wrapper for TheCorporation corporate governance platform",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/thecorporationai/thecorporation-mono",
+    "directory": "packages/corp-ts"
+  },
+  "homepage": "https://github.com/thecorporationai/thecorporation-mono#readme",
+  "bugs": {
+    "url": "https://github.com/thecorporationai/thecorporation-mono/issues"
+  },
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
