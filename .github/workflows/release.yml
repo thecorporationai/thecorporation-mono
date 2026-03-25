@@ -140,6 +140,7 @@ jobs:
           path: artifacts/
       - name: Publish platform packages
         env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           TAG_NAME: ${{ github.ref_name }}
         run: |
           for pkg in corp-linux-x64-gnu corp-linux-arm64-gnu corp-darwin-x64 corp-darwin-arm64 corp-win32-x64-msvc; do
@@ -158,6 +159,7 @@ jobs:
           done
       - name: Build and publish @thecorporation/corp
         env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           TAG_NAME: ${{ github.ref_name }}
         run: |
           cd packages/corp-ts

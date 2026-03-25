@@ -252,21 +252,21 @@ async fn run_next(ctx: &Context) -> anyhow::Result<()> {
             output::print_success("All caught up — no pending actions.", mode);
         }
 
-        if let Some(backlog) = value.get("backlog").and_then(|v| v.as_array()) {
-            if !backlog.is_empty() {
-                println!();
-                output::kv("Backlog", &format!("{} more items", backlog.len()), mode);
-                for item in backlog.iter().take(5) {
-                    let title = item.get("title").and_then(|v| v.as_str()).unwrap_or("");
-                    let cmd = item.get("command").and_then(|v| v.as_str()).unwrap_or("");
-                    println!("  {} — {}", title, cmd);
-                }
-                if backlog.len() > 5 {
-                    println!(
-                        "  ... and {} more (use --json for full list)",
-                        backlog.len() - 5
-                    );
-                }
+        if let Some(backlog) = value.get("backlog").and_then(|v| v.as_array())
+            && !backlog.is_empty()
+        {
+            println!();
+            output::kv("Backlog", &format!("{} more items", backlog.len()), mode);
+            for item in backlog.iter().take(5) {
+                let title = item.get("title").and_then(|v| v.as_str()).unwrap_or("");
+                let cmd = item.get("command").and_then(|v| v.as_str()).unwrap_or("");
+                println!("  {} — {}", title, cmd);
+            }
+            if backlog.len() > 5 {
+                println!(
+                    "  ... and {} more (use --json for full list)",
+                    backlog.len() - 5
+                );
             }
         }
     }
