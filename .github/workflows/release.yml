@@ -40,10 +40,10 @@ jobs:
             os: ubuntu-latest
             npm_pkg: corp-linux-arm64-gnu
           - target: x86_64-apple-darwin
-            os: macos-13
+            os: macos-latest
             npm_pkg: corp-darwin-x64
           - target: aarch64-apple-darwin
-            os: macos-14
+            os: macos-latest
             npm_pkg: corp-darwin-arm64
           - target: x86_64-pc-windows-msvc
             os: windows-latest
