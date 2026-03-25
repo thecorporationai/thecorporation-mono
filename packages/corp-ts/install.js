@@ -8,7 +8,7 @@
  */
 
 import { platform, arch } from "node:os";
-import { existsSync } from "node:fs";
+import { chmodSync, existsSync } from "node:fs";
 import { resolve, join } from "node:path";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
@@ -27,6 +27,16 @@ const PLATFORM_PACKAGES = {
 const key = `${platform()}-${arch()}`;
 const pkg = PLATFORM_PACKAGES[key];
 
+function ensureExecutable(binPath) {
+  if (platform() === "win32") return;
+  try {
+    chmodSync(binPath, 0o755);
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error);
+    console.warn(`@thecorporation/corp: failed to mark ${binPath} executable: ${msg}`);
+  }
+}
+
 if (!pkg) {
   console.warn(`@thecorporation/corp: no prebuilt binary for ${key}`);
   console.warn("You can build from source: cargo build -p corp-server -p corp-cli --release");
@@ -38,7 +48,12 @@ try {
   const serverBin = platform() === "win32" ? "corp-server.exe" : "corp-server";
   const cliBin = platform() === "win32" ? "corp.exe" : "corp";
 
-  if (existsSync(join(pkgDir, "bin", serverBin)) && existsSync(join(pkgDir, "bin", cliBin))) {
+  const serverPath = join(pkgDir, "bin", serverBin);
+  const cliPath = join(pkgDir, "bin", cliBin);
+
+  if (existsSync(serverPath) && existsSync(cliPath)) {
+    ensureExecutable(serverPath);
+    ensureExecutable(cliPath);
     process.exit(0);
   }
   console.warn(`@thecorporation/corp: binary package ${pkg} installed but binaries missing`);

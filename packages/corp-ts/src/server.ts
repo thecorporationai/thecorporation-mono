@@ -13,7 +13,7 @@
  */
 
 import { platform, arch } from "node:os";
-import { existsSync } from "node:fs";
+import { chmodSync, existsSync } from "node:fs";
 import { resolve, join } from "node:path";
 import { spawn, type ChildProcess } from "node:child_process";
 import { createRequire } from "node:module";
@@ -36,6 +36,16 @@ const EXE = platform() === "win32" ? ".exe" : "";
 
 let cachedServerPath: string | undefined;
 let cachedCliPath: string | undefined;
+
+function ensureExecutable(binPath: string): string {
+  if (platform() === "win32") return binPath;
+  try {
+    chmodSync(binPath, 0o755);
+  } catch {
+    // Ignore chmod failures and let the subsequent spawn surface a useful error.
+  }
+  return binPath;
+}
 
 /**
  * Resolve the path to the `corp-server` binary.
@@ -64,8 +74,8 @@ export function getServerBinaryPath(): string {
       const pkgDir = resolve(require.resolve(`${pkg}/package.json`), "..");
       const binPath = join(pkgDir, "bin", `corp-server${EXE}`);
       if (existsSync(binPath)) {
-        cachedServerPath = binPath;
-        return binPath;
+        cachedServerPath = ensureExecutable(binPath);
+        return cachedServerPath;
       }
     } catch {
       // Package not installed
@@ -75,15 +85,15 @@ export function getServerBinaryPath(): string {
   // 3. Release build
   const releasePath = resolve("target/release", `corp-server${EXE}`);
   if (existsSync(releasePath)) {
-    cachedServerPath = releasePath;
-    return releasePath;
+    cachedServerPath = ensureExecutable(releasePath);
+    return cachedServerPath;
   }
 
   // 4. Debug build
   const debugPath = resolve("target/debug", `corp-server${EXE}`);
   if (existsSync(debugPath)) {
-    cachedServerPath = debugPath;
-    return debugPath;
+    cachedServerPath = ensureExecutable(debugPath);
+    return cachedServerPath;
   }
 
   throw new Error(
@@ -113,8 +123,8 @@ export function getCliBinaryPath(): string {
       const pkgDir = resolve(require.resolve(`${pkg}/package.json`), "..");
       const binPath = join(pkgDir, "bin", `corp${EXE}`);
       if (existsSync(binPath)) {
-        cachedCliPath = binPath;
-        return binPath;
+        cachedCliPath = ensureExecutable(binPath);
+        return cachedCliPath;
       }
     } catch {
       // Package not installed
@@ -123,14 +133,14 @@ export function getCliBinaryPath(): string {
 
   const releasePath = resolve("target/release", `corp${EXE}`);
   if (existsSync(releasePath)) {
-    cachedCliPath = releasePath;
-    return releasePath;
+    cachedCliPath = ensureExecutable(releasePath);
+    return cachedCliPath;
   }
 
   const debugPath = resolve("target/debug", `corp${EXE}`);
   if (existsSync(debugPath)) {
-    cachedCliPath = debugPath;
-    return debugPath;
+    cachedCliPath = ensureExecutable(debugPath);
+    return cachedCliPath;
   }
 
   throw new Error(

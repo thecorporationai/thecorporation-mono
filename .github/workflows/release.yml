@@ -88,6 +88,9 @@ jobs:
         run: |
           mkdir -p npm-pkg/bin
           cp staging/bin/* npm-pkg/bin/
+          if [[ "${{ matrix.target }}" != *"windows"* ]]; then
+            chmod 755 npm-pkg/bin/*
+          fi
           node -e "
             const fs = require('fs');
             const pkg = process.env.NPM_PKG;
@@ -153,6 +156,9 @@ jobs:
               echo "Publishing ${full_pkg}@${TAG_NAME}"
               (
                 cd "artifacts/${pkg}"
+                if [ "$pkg" != "corp-win32-x64-msvc" ]; then
+                  chmod 755 bin/*
+                fi
                 npm publish --access public
               )
             fi
