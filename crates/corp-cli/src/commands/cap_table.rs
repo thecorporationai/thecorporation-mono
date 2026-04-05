@@ -541,6 +541,30 @@ pub enum CapTableCommand {
         /// Repurchase right ID (from `corp cap-table repurchase-rights`)
         rr_id: String,
     },
+
+    // ── Option Exercise ──────────────────────────────────────────────────────
+    /// Exercise stock options (convert option grant to shares)
+    ///
+    /// Examples:
+    ///   corp cap-table exercise-option --grant-id <ID> \
+    ///     --holder-id <ID> --shares 50000
+    ExerciseOption {
+        /// Grant ID (from `corp cap-table grants`)
+        #[arg(long)]
+        grant_id: String,
+
+        /// Holder ID for the exercising party (from `corp cap-table holders`)
+        #[arg(long)]
+        holder_id: String,
+
+        /// Number of shares to exercise
+        #[arg(long)]
+        shares: i64,
+
+        /// Exercise date (YYYY-MM-DD; defaults to today)
+        #[arg(long)]
+        exercise_date: Option<String>,
+    },
 }
 
 // ── run ───────────────────────────────────────────────────────────────────────
@@ -1054,6 +1078,24 @@ pub async fn run(cmd: CapTableCommand, ctx: &Context) -> anyhow::Result<()> {
             let value = ctx.post(&path, &json!({})).await?;
             output::print_value(&value, mode);
             output::print_success("Repurchase right waived.", mode);
+        }
+
+        // ── Option Exercise ──────────────────────────────────────────────────
+        CapTableCommand::ExerciseOption {
+            grant_id,
+            holder_id,
+            shares,
+            exercise_date,
+        } => {
+            let path = format!("/v1/entities/{entity_id}/grants/{grant_id}/exercise");
+            let body = json!({
+                "holder_id": holder_id,
+                "shares_to_exercise": shares,
+                "exercise_date": exercise_date,
+            });
+            let value = ctx.post(&path, &body).await?;
+            output::print_value(&value, mode);
+            output::print_success("Options exercised.", mode);
         }
     }
 

@@ -22,9 +22,10 @@ use corp_core::equity::types::{
 };
 use corp_core::equity::vesting::materialize_vesting_events;
 use corp_core::equity::{
-    CapTable, ControlLink, ControlType, EquityGrant, FundingRound, Holder, HolderType, Instrument,
-    InstrumentKind, InstrumentStatus, InvestorLedgerEntry, LegalEntity, LegalEntityRole, Position,
-    RepurchaseRight, SafeNote, ShareTransfer, Valuation, VestingEvent, VestingSchedule,
+    CapTable, ControlLink, ControlType, EquityGrant, ExerciseType, FundingRound, Holder,
+    HolderType, Instrument, InstrumentKind, InstrumentStatus, InvestorLedgerEntry, LegalEntity,
+    LegalEntityRole, OptionExercise, Position, RepurchaseRight, SafeNote, ShareTransfer, Valuation,
+    VestingEvent, VestingSchedule,
 };
 use corp_core::ids::{
     CapTableId, ContactId, EntityId, EquityGrantId, FundingRoundId, HolderId, InstrumentId,
@@ -220,6 +221,14 @@ pub struct CreateRepurchaseRightRequest {
     pub expiration_date: Option<NaiveDate>,
 }
 
+/// Request body for `POST /entities/{entity_id}/grants/{grant_id}/exercise`.
+#[derive(Debug, Deserialize)]
+pub struct ExerciseOptionRequest {
+    pub holder_id: HolderId,
+    pub shares_to_exercise: i64,
+    pub exercise_date: Option<NaiveDate>,
+}
+
 // ── Router ────────────────────────────────────────────────────────────────────
 
 pub fn routes() -> Router<AppState> {
@@ -244,6 +253,10 @@ pub fn routes() -> Router<AppState> {
             get(list_grants).post(create_grant),
         )
         .route("/entities/{entity_id}/grants/{grant_id}", get(get_grant))
+        .route(
+            "/entities/{entity_id}/grants/{grant_id}/exercise",
+            post(exercise_option),
+        )
         // SAFE notes
         .route(
             "/entities/{entity_id}/safes",
@@ -685,6 +698,231 @@ async fn get_grant(
         .await?;
     let grant = store.read::<EquityGrant>(grant_id, "main").await?;
     Ok(Json(grant))
+}
+
+// ── Option exercise handler ──────────────────────────────────────────────────
+
+async fn exercise_option(
+    RequireEquityWrite(principal): RequireEquityWrite,
+    State(state): State<AppState>,
+    Path((entity_id, grant_id)): Path<(EntityId, EquityGrantId)>,
+    Json(body): Json<ExerciseOptionRequest>,
+) -> Result<Json<OptionExercise>, AppError> {
+    let store = state
+        .open_entity_store_for_write(principal.workspace_id, entity_id)
+        .await?;
+
+    // 1. Load the grant and validate it's option-like
+    let mut grant = store.read::<EquityGrant>(grant_id, "main").await?;
+    match grant.grant_type {
+        GrantType::StockOption | GrantType::Iso | GrantType::Nso => {}
+        _ => {
+            return Err(AppError::BadRequest(format!(
+                "grant type {:?} is not exercisable — only stock_option, iso, nso grants can be exercised",
+                grant.grant_type
+            )));
+        }
+    }
+
+    // 2. Validate strike price exists
+    let strike_price = grant.price_per_share.ok_or_else(|| {
+        AppError::BadRequest("grant has no price_per_share (strike price) set".into())
+    })?;
+
+    // 3. Validate grant status
+    match grant.status {
+        GrantStatus::Issued | GrantStatus::Vested => {}
+        _ => {
+            return Err(AppError::BadRequest(format!(
+                "grant status is {:?} — only issued or vested grants can be exercised",
+                grant.status
+            )));
+        }
+    }
+
+    // 4. Validate holder exists
+    let _holder = store
+        .read::<Holder>(body.holder_id, "main")
+        .await
+        .map_err(|e| {
+            use corp_storage::error::StorageError;
+            match e {
+                StorageError::NotFound(_) => {
+                    AppError::BadRequest(format!("holder {} not found", body.holder_id))
+                }
+                other => AppError::Storage(other),
+            }
+        })?;
+
+    // 5. Validate shares > 0
+    if body.shares_to_exercise <= 0 {
+        return Err(AppError::BadRequest(
+            "shares_to_exercise must be greater than zero".into(),
+        ));
+    }
+
+    // 6. Determine exercisable shares (vesting check)
+    let vesting_events: Vec<VestingEvent> = store
+        .read_all::<VestingEvent>("main")
+        .await
+        .unwrap_or_default();
+    let vested_shares: i64 = vesting_events
+        .iter()
+        .filter(|e| {
+            e.grant_id == grant_id && e.status == corp_core::equity::types::VestingEventStatus::Vested
+        })
+        .map(|e| e.share_count.raw())
+        .sum();
+
+    // Check for early exercise
+    let schedules: Vec<VestingSchedule> = store
+        .read_all::<VestingSchedule>("main")
+        .await
+        .unwrap_or_default();
+    let early_exercise_allowed = schedules
+        .iter()
+        .any(|s| s.grant_id == grant_id && s.early_exercise_allowed);
+
+    let exercisable = if early_exercise_allowed {
+        grant.shares.raw() // all shares, even unvested
+    } else if vested_shares > 0 {
+        vested_shares
+    } else if vesting_events.iter().all(|e| e.grant_id != grant_id) {
+        // No vesting events exist for this grant — treat all shares as exercisable
+        // (grant without a vesting schedule = fully vested at issuance)
+        grant.shares.raw()
+    } else {
+        vested_shares
+    };
+
+    // Sum previously exercised shares
+    let prior_exercises: Vec<OptionExercise> = store
+        .read_all::<OptionExercise>("main")
+        .await
+        .unwrap_or_default();
+    let previously_exercised: i64 = prior_exercises
+        .iter()
+        .filter(|e| e.grant_id == grant_id)
+        .map(|e| e.shares_exercised.raw())
+        .sum();
+
+    let available = exercisable - previously_exercised;
+    if body.shares_to_exercise > available {
+        return Err(AppError::BadRequest(format!(
+            "cannot exercise {} shares: {} exercisable - {} previously exercised = {} available",
+            body.shares_to_exercise, exercisable, previously_exercised, available
+        )));
+    }
+
+    // 7. Determine exercise type
+    let total_exercised_after = previously_exercised + body.shares_to_exercise;
+    let exercise_type = if early_exercise_allowed && vested_shares < total_exercised_after {
+        ExerciseType::Early
+    } else if total_exercised_after == grant.shares.raw() {
+        ExerciseType::Full
+    } else {
+        ExerciseType::Partial
+    };
+
+    let exercise_date = body
+        .exercise_date
+        .unwrap_or_else(|| chrono::Utc::now().date_naive());
+
+    // 8. Create the OptionExercise record
+    let exercise = OptionExercise::new(
+        entity_id,
+        grant_id,
+        body.holder_id,
+        ShareCount::new(body.shares_to_exercise),
+        strike_price,
+        exercise_date,
+        exercise_type.clone(),
+    );
+    store
+        .write::<OptionExercise>(
+            &exercise,
+            exercise.exercise_id,
+            "main",
+            "exercise option",
+        )
+        .await?;
+
+    // 9. Update grant status if fully exercised
+    if total_exercised_after >= grant.shares.raw() {
+        grant.status = GrantStatus::Exercised;
+        store
+            .write::<EquityGrant>(&grant, grant_id, "main", "mark grant exercised")
+            .await?;
+    }
+
+    // 10. Create or update position for the holder
+    let positions: Vec<Position> = store
+        .read_all::<Position>("main")
+        .await
+        .unwrap_or_default();
+    let existing_position = positions.iter().find(|p| {
+        p.holder_id == body.holder_id
+            && p.instrument_id == grant.instrument_id
+            && p.status == PositionStatus::Active
+    });
+
+    let principal_delta = body.shares_to_exercise * strike_price;
+
+    if let Some(pos) = existing_position {
+        let mut pos = pos.clone();
+        pos.apply_delta(
+            body.shares_to_exercise,
+            principal_delta,
+            Some(format!("exercise:{}", exercise.exercise_id)),
+        )
+        .map_err(|e| AppError::BadRequest(e.to_string()))?;
+        store
+            .write::<Position>(&pos, pos.position_id, "main", "update position for exercise")
+            .await?;
+    } else {
+        let position = Position::new(
+            entity_id,
+            body.holder_id,
+            grant.instrument_id,
+            body.shares_to_exercise,
+            principal_delta,
+            Some(format!("exercise:{}", exercise.exercise_id)),
+        )
+        .map_err(|e| AppError::BadRequest(e.to_string()))?;
+        store
+            .write::<Position>(
+                &position,
+                position.position_id,
+                "main",
+                "create position for exercise",
+            )
+            .await?;
+    }
+
+    // 11. If early exercise with unvested shares, create repurchase right
+    if exercise_type == ExerciseType::Early {
+        let unvested_exercised = body.shares_to_exercise - (vested_shares - previously_exercised).max(0);
+        if unvested_exercised > 0 {
+            let mut rr = RepurchaseRight::new(
+                entity_id,
+                grant_id,
+                ShareCount::new(unvested_exercised),
+                strike_price,
+                None,
+            );
+            rr.activate();
+            store
+                .write::<RepurchaseRight>(
+                    &rr,
+                    rr.repurchase_right_id,
+                    "main",
+                    "repurchase right for early exercise",
+                )
+                .await?;
+        }
+    }
+
+    Ok(Json(exercise))
 }
 
 // ── SAFE note handlers ────────────────────────────────────────────────────────

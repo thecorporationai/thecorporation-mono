@@ -135,6 +135,7 @@ define_id!(InvestorLedgerEntryId);
 define_id!(LegalEntityId);
 define_id!(ControlLinkId);
 define_id!(RepurchaseRightId);
+define_id!(OptionExerciseId);
 
 // ── Governance ───────────────────────────────────────────────────────────────
 

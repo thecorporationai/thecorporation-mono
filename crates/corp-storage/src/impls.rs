@@ -12,7 +12,7 @@ use corp_core::agents::Agent;
 use corp_core::contacts::Contact;
 use corp_core::equity::{
     CapTable, ControlLink, EquityGrant, EquityRuleSet, FundingRound, Holder, Instrument,
-    InvestorLedgerEntry, LegalEntity, Position, RepurchaseRight, SafeNote,
+    InvestorLedgerEntry, LegalEntity, OptionExercise, Position, RepurchaseRight, SafeNote,
     ShareTransfer, Valuation, VestingEvent, VestingSchedule,
 };
 use corp_core::execution::{Intent, Obligation, Receipt};
@@ -24,7 +24,8 @@ use corp_core::ids::{
     AccountId, AgendaItemId, AgentId, BankAccountId, CapTableId, ContactId, ControlLinkId,
     DocumentId, EntityId, EquityGrantId, EquityRuleSetId, FilingId, FundingRoundId,
     GovernanceBodyId, GovernanceSeatId, HolderId, InstrumentId, IntentId, InvestorLedgerEntryId,
-    InvoiceId, JournalEntryId, LegalEntityId, MeetingId, ObligationId, PaymentId, PayrollRunId,
+    InvoiceId, JournalEntryId, LegalEntityId, MeetingId, ObligationId, OptionExerciseId,
+    PaymentId, PayrollRunId,
     PositionId, ReceiptId, ReconciliationId, RepurchaseRightId, ResolutionId, SafeNoteId,
     ServiceRequestId, TaxProfileId, TransferId, ValuationId, VestingEventId,
     VestingScheduleId, VoteId, WorkItemId,
@@ -190,7 +191,14 @@ impl StoredEntity for RepurchaseRight {
     }
 }
 
-// ── Execution ─────────────────────────────────────────────────────────────────
+impl StoredEntity for OptionExercise {
+    type Id = OptionExerciseId;
+    fn storage_dir() -> &'static str {
+        "equity/option_exercises"
+    }
+}
+
+// ── Execution ────────��──────────────────────────────��─────────────────────────
 
 impl StoredEntity for Intent {
     type Id = IntentId;

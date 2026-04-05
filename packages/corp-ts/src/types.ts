@@ -37,6 +37,11 @@ export type AgentId = string;
 export type WorkItemId = string;
 export type ServiceRequestId = string;
 export type ApiKeyId = string;
+export type OptionExerciseId = string;
+export type PositionId = string;
+export type VestingScheduleId = string;
+export type VestingEventId = string;
+export type RepurchaseRightId = string;
 
 // ── Formation ────────────────────────────────────────────────────────────────
 
@@ -160,6 +165,21 @@ export interface EquityGrant {
   grant_type: string;
   shares: number;
   status: string;
+  created_at: string;
+}
+
+export type ExerciseType = "full" | "partial" | "early";
+
+export interface OptionExercise {
+  exercise_id: OptionExerciseId;
+  entity_id: EntityId;
+  grant_id: EquityGrantId;
+  holder_id: HolderId;
+  shares_exercised: number;
+  strike_price_cents: number;
+  total_cost_cents: number;
+  exercise_date: string;
+  exercise_type: ExerciseType;
   created_at: string;
 }
 

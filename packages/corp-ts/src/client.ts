@@ -65,6 +65,8 @@ import type {
   EquityGrantId,
   VestingScheduleId,
   VestingEventId,
+  OptionExercise,
+  OptionExerciseId,
 } from "./types.js";
 
 // ── Error ────────────────────────────────────────────────────────────────────
@@ -280,6 +282,14 @@ class EquityApi {
 
   createGrant(entityId: EntityId, opts: Record<string, unknown>): Promise<EquityGrant> {
     return this.c.post(`/v1/entities/${entityId}/grants`, opts);
+  }
+
+  exerciseOption(entityId: EntityId, grantId: EquityGrantId, opts: {
+    holder_id: HolderId;
+    shares_to_exercise: number;
+    exercise_date?: string;
+  }): Promise<OptionExercise> {
+    return this.c.post(`/v1/entities/${entityId}/grants/${grantId}/exercise`, opts);
   }
 
   listSafes(entityId: EntityId): Promise<SafeNote[]> {

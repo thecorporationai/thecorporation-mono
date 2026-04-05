@@ -4,6 +4,7 @@
 
 pub mod cap_table;
 pub mod control_link;
+pub mod exercise;
 pub mod grant;
 pub mod holder;
 pub mod instrument;
@@ -23,6 +24,7 @@ pub mod vesting;
 // `equity::cap_table::CapTable`.
 pub use cap_table::CapTable;
 pub use control_link::{ControlLink, ControlType};
+pub use exercise::{ExerciseType, OptionExercise};
 pub use grant::EquityGrant;
 pub use holder::{Holder, HolderType};
 pub use instrument::{Instrument, InstrumentKind, InstrumentStatus};
