@@ -828,26 +828,7 @@ async fn exercise_option(
         .exercise_date
         .unwrap_or_else(|| chrono::Utc::now().date_naive());
 
-    // 8. Create the OptionExercise record
-    let exercise = OptionExercise::new(
-        entity_id,
-        grant_id,
-        body.holder_id,
-        ShareCount::new(body.shares_to_exercise),
-        strike_price,
-        exercise_date,
-        exercise_type.clone(),
-    );
-    store
-        .write::<OptionExercise>(
-            &exercise,
-            exercise.exercise_id,
-            "main",
-            "exercise option",
-        )
-        .await?;
-
-    // 9. Update grant status if fully exercised
+    // 8. Update grant status if fully exercised
     if total_exercised_after >= grant.shares.raw() {
         grant.status = GrantStatus::Exercised;
         store
@@ -855,7 +836,7 @@ async fn exercise_option(
             .await?;
     }
 
-    // 10. Create or update position for the holder
+    // 9. Create or update position for the holder (before exercise record so we have position_id)
     let positions: Vec<Position> = store
         .read_all::<Position>("main")
         .await
@@ -867,18 +848,21 @@ async fn exercise_option(
     });
 
     let principal_delta = body.shares_to_exercise * strike_price;
+    let exercise_id = corp_core::ids::OptionExerciseId::new();
 
-    if let Some(pos) = existing_position {
+    let result_position_id = if let Some(pos) = existing_position {
+        let pid = pos.position_id;
         let mut pos = pos.clone();
         pos.apply_delta(
             body.shares_to_exercise,
             principal_delta,
-            Some(format!("exercise:{}", exercise.exercise_id)),
+            Some(format!("exercise:{}", exercise_id)),
         )
         .map_err(|e| AppError::BadRequest(e.to_string()))?;
         store
             .write::<Position>(&pos, pos.position_id, "main", "update position for exercise")
             .await?;
+        pid
     } else {
         let position = Position::new(
             entity_id,
@@ -886,9 +870,10 @@ async fn exercise_option(
             grant.instrument_id,
             body.shares_to_exercise,
             principal_delta,
-            Some(format!("exercise:{}", exercise.exercise_id)),
+            Some(format!("exercise:{}", exercise_id)),
         )
         .map_err(|e| AppError::BadRequest(e.to_string()))?;
+        let pid = position.position_id;
         store
             .write::<Position>(
                 &position,
@@ -897,7 +882,31 @@ async fn exercise_option(
                 "create position for exercise",
             )
             .await?;
-    }
+        pid
+    };
+
+    // 10. Create the OptionExercise record (with position_id)
+    let exercise = OptionExercise {
+        exercise_id,
+        entity_id,
+        grant_id,
+        holder_id: body.holder_id,
+        shares_exercised: ShareCount::new(body.shares_to_exercise),
+        strike_price_cents: strike_price,
+        total_cost_cents: body.shares_to_exercise * strike_price,
+        exercise_date,
+        exercise_type: exercise_type.clone(),
+        position_id: result_position_id,
+        created_at: chrono::Utc::now(),
+    };
+    store
+        .write::<OptionExercise>(
+            &exercise,
+            exercise.exercise_id,
+            "main",
+            "exercise option",
+        )
+        .await?;
 
     // 11. If early exercise with unvested shares, create repurchase right
     if exercise_type == ExerciseType::Early {

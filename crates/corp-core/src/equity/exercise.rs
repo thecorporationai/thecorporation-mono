@@ -4,7 +4,7 @@ use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 
 use super::types::ShareCount;
-use crate::ids::{EntityId, EquityGrantId, HolderId, OptionExerciseId};
+use crate::ids::{EntityId, EquityGrantId, HolderId, OptionExerciseId, PositionId};
 
 /// How the exercise was classified.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -36,6 +36,8 @@ pub struct OptionExercise {
     pub total_cost_cents: i64,
     pub exercise_date: NaiveDate,
     pub exercise_type: ExerciseType,
+    /// The position that was created or updated by this exercise.
+    pub position_id: PositionId,
     pub created_at: DateTime<Utc>,
 }
 
@@ -49,6 +51,7 @@ impl OptionExercise {
         strike_price_cents: i64,
         exercise_date: NaiveDate,
         exercise_type: ExerciseType,
+        position_id: PositionId,
     ) -> Self {
         let total_cost_cents = shares_exercised.raw() * strike_price_cents;
         Self {
@@ -61,6 +64,7 @@ impl OptionExercise {
             total_cost_cents,
             exercise_date,
             exercise_type,
+            position_id,
             created_at: Utc::now(),
         }
     }
@@ -81,6 +85,7 @@ mod tests {
             100, // $1.00 per share
             NaiveDate::from_ymd_opt(2026, 4, 5).unwrap(),
             ExerciseType::Full,
+            PositionId::new(),
         )
     }
 

@@ -181,6 +181,7 @@ export interface OptionExercise {
   total_cost_cents: number;
   exercise_date: string;
   exercise_type: ExerciseType;
+  position_id: PositionId;
   created_at: string;
 }
 
