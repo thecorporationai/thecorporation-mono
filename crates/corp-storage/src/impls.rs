@@ -12,7 +12,7 @@ use corp_core::agents::Agent;
 use corp_core::contacts::Contact;
 use corp_core::equity::{
     CapTable, ControlLink, EquityGrant, EquityRuleSet, FundingRound, Holder, Instrument,
-    InvestorLedgerEntry, LegalEntity, Position, RepurchaseRight, SafeNote, ShareClass,
+    InvestorLedgerEntry, LegalEntity, Position, RepurchaseRight, SafeNote,
     ShareTransfer, Valuation, VestingEvent, VestingSchedule,
 };
 use corp_core::execution::{Intent, Obligation, Receipt};
@@ -26,7 +26,7 @@ use corp_core::ids::{
     GovernanceBodyId, GovernanceSeatId, HolderId, InstrumentId, IntentId, InvestorLedgerEntryId,
     InvoiceId, JournalEntryId, LegalEntityId, MeetingId, ObligationId, PaymentId, PayrollRunId,
     PositionId, ReceiptId, ReconciliationId, RepurchaseRightId, ResolutionId, SafeNoteId,
-    ServiceRequestId, ShareClassId, TaxProfileId, TransferId, ValuationId, VestingEventId,
+    ServiceRequestId, TaxProfileId, TransferId, ValuationId, VestingEventId,
     VestingScheduleId, VoteId, WorkItemId,
 };
 use corp_core::services::ServiceRequest;
@@ -82,13 +82,6 @@ impl StoredEntity for CapTable {
     type Id = CapTableId;
     fn storage_dir() -> &'static str {
         "equity/cap_tables"
-    }
-}
-
-impl StoredEntity for ShareClass {
-    type Id = ShareClassId;
-    fn storage_dir() -> &'static str {
-        "equity/share_classes"
     }
 }
 

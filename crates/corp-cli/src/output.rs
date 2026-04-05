@@ -181,7 +181,7 @@ fn extract_id(value: &Value) -> Option<String> {
     const PRIMARY: &[&str] = &[
         "entity_id",
         "grant_id",
-        "share_class_id",
+        "instrument_id",
         "holder_id",
         "transfer_id",
         "safe_note_id",

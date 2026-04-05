@@ -474,8 +474,8 @@ fn cap_table_commands() -> Vec<CommandDef> {
                     default_value: None,
                 },
                 FieldDef {
-                    name: "share_class_id".into(),
-                    label: "Share class ID".into(),
+                    name: "instrument_id".into(),
+                    label: "Instrument ID".into(),
                     field_type: "text".into(),
                     required: true,
                     enum_values: None,
@@ -783,8 +783,8 @@ fn cap_table_commands() -> Vec<CommandDef> {
                     default_value: None,
                 },
                 FieldDef {
-                    name: "share_class_id".into(),
-                    label: "Share class ID".into(),
+                    name: "instrument_id".into(),
+                    label: "Instrument ID".into(),
                     field_type: "text".into(),
                     required: true,
                     enum_values: None,

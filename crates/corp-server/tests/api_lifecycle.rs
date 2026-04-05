@@ -458,8 +458,8 @@ async fn test_confirm_ein_returns_200() {
     let entity = create_ccorp(&mut ctx).await;
     let entity_id = entity["entity_id"].as_str().unwrap();
 
-    // Advance entity to Filed before confirming EIN.
-    advance_to(&mut ctx, entity_id, "filed").await;
+    // Advance entity to EinApplied before confirming EIN.
+    advance_to(&mut ctx, entity_id, "ein_applied").await;
 
     let resp = ctx
         .post(

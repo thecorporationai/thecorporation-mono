@@ -116,7 +116,6 @@ define_id!(ReconciliationId);
 // ── Equity ───────────────────────────────────────────────────────────────────
 
 define_id!(CapTableId);
-define_id!(ShareClassId);
 define_id!(EquityGrantId);
 define_id!(VestingScheduleId);
 define_id!(SafeNoteId);

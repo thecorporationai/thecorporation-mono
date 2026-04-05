@@ -277,29 +277,35 @@ fn schemas() -> Value {
                 "created_at": datetime_schema()
             }
         },
-        "ShareClass": {
+        "Instrument": {
             "type": "object",
             "properties": {
-                "share_class_id": id_schema(),
+                "instrument_id": id_schema(),
                 "entity_id": id_schema(),
                 "cap_table_id": id_schema(),
-                "class_code": string_schema(),
-                "stock_type": { "type": "string", "enum": ["common", "preferred"] },
-                "par_value": string_schema(),
-                "authorized_shares": int64_schema(),
-                "liquidation_preference": { "type": "string", "nullable": true }
+                "symbol": string_schema(),
+                "kind": { "type": "string", "enum": ["common_equity", "preferred_equity", "membership_unit", "option_grant", "safe", "convertible_note", "warrant"] },
+                "authorized_units": { "type": "integer", "format": "int64", "nullable": true },
+                "par_value": { "type": "string", "nullable": true },
+                "issue_price_cents": { "type": "integer", "format": "int64", "nullable": true },
+                "liquidation_preference": { "type": "string", "nullable": true },
+                "terms": { "type": "object" },
+                "status": { "type": "string", "enum": ["active", "closed", "cancelled"] },
+                "created_at": datetime_schema()
             }
         },
-        "CreateShareClassRequest": {
+        "CreateInstrumentRequest": {
             "type": "object",
-            "required": ["cap_table_id", "class_code", "stock_type", "par_value", "authorized_shares"],
+            "required": ["cap_table_id", "symbol", "kind"],
             "properties": {
                 "cap_table_id": id_schema(),
-                "class_code": string_schema(),
-                "stock_type": { "type": "string", "enum": ["common", "preferred"] },
-                "par_value": string_schema(),
-                "authorized_shares": int64_schema(),
-                "liquidation_preference": { "type": "string", "nullable": true }
+                "symbol": string_schema(),
+                "kind": { "type": "string", "enum": ["common_equity", "preferred_equity", "membership_unit", "option_grant", "safe", "convertible_note", "warrant"] },
+                "authorized_units": { "type": "integer", "format": "int64", "nullable": true },
+                "par_value": { "type": "string", "nullable": true },
+                "issue_price_cents": { "type": "integer", "format": "int64", "nullable": true },
+                "liquidation_preference": { "type": "string", "nullable": true },
+                "terms": { "type": "object", "nullable": true }
             }
         },
         "EquityGrant": {
@@ -308,7 +314,7 @@ fn schemas() -> Value {
                 "grant_id": id_schema(),
                 "entity_id": id_schema(),
                 "cap_table_id": id_schema(),
-                "share_class_id": id_schema(),
+                "instrument_id": id_schema(),
                 "recipient_contact_id": id_schema(),
                 "recipient_name": string_schema(),
                 "grant_type": { "type": "string", "enum": ["restricted_stock", "option", "rsu", "warrant", "other"] },
@@ -322,10 +328,10 @@ fn schemas() -> Value {
         },
         "CreateGrantRequest": {
             "type": "object",
-            "required": ["cap_table_id", "share_class_id", "recipient_contact_id", "recipient_name", "grant_type", "shares"],
+            "required": ["cap_table_id", "instrument_id", "recipient_contact_id", "recipient_name", "grant_type", "shares"],
             "properties": {
                 "cap_table_id": id_schema(),
-                "share_class_id": id_schema(),
+                "instrument_id": id_schema(),
                 "recipient_contact_id": id_schema(),
                 "recipient_name": string_schema(),
                 "grant_type": { "type": "string", "enum": ["restricted_stock", "option", "rsu", "warrant", "other"] },
@@ -408,7 +414,7 @@ fn schemas() -> Value {
                 "cap_table_id": id_schema(),
                 "from_holder_id": id_schema(),
                 "to_holder_id": id_schema(),
-                "share_class_id": id_schema(),
+                "instrument_id": id_schema(),
                 "shares": int64_schema(),
                 "transfer_type": string_schema(),
                 "price_per_share_cents": { "type": "integer", "nullable": true },
@@ -418,12 +424,12 @@ fn schemas() -> Value {
         },
         "CreateTransferRequest": {
             "type": "object",
-            "required": ["cap_table_id", "from_holder_id", "to_holder_id", "share_class_id", "shares", "transfer_type"],
+            "required": ["cap_table_id", "from_holder_id", "to_holder_id", "instrument_id", "shares", "transfer_type"],
             "properties": {
                 "cap_table_id": id_schema(),
                 "from_holder_id": id_schema(),
                 "to_holder_id": id_schema(),
-                "share_class_id": id_schema(),
+                "instrument_id": id_schema(),
                 "shares": int64_schema(),
                 "transfer_type": { "type": "string", "enum": ["secondary_sale", "gift", "estate", "other"] },
                 "price_per_share_cents": { "type": "integer", "nullable": true }
@@ -1181,10 +1187,10 @@ fn paths() -> Value {
             "get": get_op("Get the cap table aggregate(s) for an entity", "Equity", array_of(ref_schema("CapTable")), &["EquityRead"]),
             "post": post_empty_op("Initialise a cap table for an entity", "Equity", ref_schema("CapTable"), &["EquityWrite"])
         },
-        "/v1/entities/{entity_id}/share-classes": {
+        "/v1/entities/{entity_id}/instruments": {
             "parameters": [entity_id_param()],
-            "get": get_op("List share classes", "Equity", array_of(ref_schema("ShareClass")), &["EquityRead"]),
-            "post": post_op("Create a share class", "Equity", "CreateShareClassRequest", ref_schema("ShareClass"), &["EquityWrite"])
+            "get": get_op("List instruments", "Equity", array_of(ref_schema("Instrument")), &["EquityRead"]),
+            "post": post_op("Create an instrument", "Equity", "CreateInstrumentRequest", ref_schema("Instrument"), &["EquityWrite"])
         },
         "/v1/entities/{entity_id}/grants": {
             "parameters": [entity_id_param()],

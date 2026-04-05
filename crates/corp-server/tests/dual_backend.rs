@@ -627,8 +627,8 @@ dual_backend_test!(formation_confirm_ein, |ctx| {
     let entity = create_ccorp(&mut ctx).await;
     let id = entity["entity_id"].as_str().unwrap();
 
-    // Entity must be in Filed state to confirm EIN.
-    advance_to(&mut ctx, id, "filed").await;
+    // Entity must be in EinApplied state to confirm EIN.
+    advance_to(&mut ctx, id, "ein_applied").await;
 
     let resp = ctx
         .post(
@@ -705,9 +705,9 @@ dual_backend_test!(equity_cap_table_crud, |ctx| {
     assert_eq!(arr[0]["cap_table_id"], ct["cap_table_id"]);
 });
 
-// ── 15. Equity: share classes ─────────────────────────────────────────────────
+// ── 15. Equity: instruments ──────────────────────────────────────────────────
 
-dual_backend_test!(equity_share_classes, |ctx| {
+dual_backend_test!(equity_instruments, |ctx| {
     let entity = create_ccorp(&mut ctx).await;
     let eid = entity["entity_id"].as_str().unwrap();
 
@@ -720,7 +720,7 @@ dual_backend_test!(equity_share_classes, |ctx| {
         .to_owned();
 
     // List (empty).
-    let list_resp = ctx.get(&format!("/v1/entities/{eid}/share-classes")).await;
+    let list_resp = ctx.get(&format!("/v1/entities/{eid}/instruments")).await;
     assert_eq!(list_resp.status(), StatusCode::OK);
     let before = body_json(list_resp).await;
     assert!(before.as_array().map(|a| a.is_empty()).unwrap_or(false));
@@ -728,24 +728,26 @@ dual_backend_test!(equity_share_classes, |ctx| {
     // Create.
     let create_resp = ctx
         .post(
-            &format!("/v1/entities/{eid}/share-classes"),
+            &format!("/v1/entities/{eid}/instruments"),
             json!({
                 "cap_table_id": ct_id,
-                "class_code": "COMMON",
-                "stock_type": "common",
+                "symbol": "COMMON",
+                "kind": "common_equity",
+                "authorized_units": 10_000_000i64,
                 "par_value": "0.00001",
-                "authorized_shares": 10_000_000i64,
-                "liquidation_preference": null
+                "issue_price_cents": null,
+                "liquidation_preference": null,
+                "terms": null
             }),
         )
         .await;
     assert_eq!(create_resp.status(), StatusCode::OK);
-    let sc = body_json(create_resp).await;
-    assert!(sc["share_class_id"].is_string(), "{sc}");
-    assert_eq!(sc["class_code"], "COMMON");
+    let inst = body_json(create_resp).await;
+    assert!(inst["instrument_id"].is_string(), "{inst}");
+    assert_eq!(inst["symbol"], "COMMON");
 
     // List (non-empty).
-    let list_resp2 = ctx.get(&format!("/v1/entities/{eid}/share-classes")).await;
+    let list_resp2 = ctx.get(&format!("/v1/entities/{eid}/instruments")).await;
     assert_eq!(list_resp2.status(), StatusCode::OK);
     let after = body_json(list_resp2).await;
     assert_eq!(after.as_array().map(|a| a.len()).unwrap_or(0), 1);
@@ -761,7 +763,7 @@ dual_backend_test!(equity_grants, |ctx| {
     let contact = create_contact(&mut ctx, eid).await;
     let contact_id = contact["contact_id"].as_str().unwrap().to_owned();
 
-    // Cap table + share class.
+    // Cap table + instrument.
     let ct_resp = ctx
         .post(&format!("/v1/entities/{eid}/cap-table"), json!({}))
         .await;
@@ -770,20 +772,22 @@ dual_backend_test!(equity_grants, |ctx| {
         .unwrap()
         .to_owned();
 
-    let sc_resp = ctx
+    let inst_resp = ctx
         .post(
-            &format!("/v1/entities/{eid}/share-classes"),
+            &format!("/v1/entities/{eid}/instruments"),
             json!({
                 "cap_table_id": ct_id,
-                "class_code": "COMMON",
-                "stock_type": "common",
+                "symbol": "COMMON",
+                "kind": "common_equity",
+                "authorized_units": 10_000_000i64,
                 "par_value": "0.00001",
-                "authorized_shares": 10_000_000i64,
-                "liquidation_preference": null
+                "issue_price_cents": null,
+                "liquidation_preference": null,
+                "terms": null
             }),
         )
         .await;
-    let sc_id = body_json(sc_resp).await["share_class_id"]
+    let inst_id = body_json(inst_resp).await["instrument_id"]
         .as_str()
         .unwrap()
         .to_owned();
@@ -805,7 +809,7 @@ dual_backend_test!(equity_grants, |ctx| {
             &format!("/v1/entities/{eid}/grants"),
             json!({
                 "cap_table_id": ct_id,
-                "share_class_id": sc_id,
+                "instrument_id": inst_id,
                 "recipient_contact_id": contact_id,
                 "recipient_name": "Alice Founder",
                 "grant_type": "rsa",
@@ -895,19 +899,55 @@ dual_backend_test!(equity_safes, |ctx| {
     let safes = body_json(list_resp2).await;
     assert_eq!(safes.as_array().map(|a| a.len()).unwrap_or(0), 1);
 
-    // Convert SAFE.
+    // Create an instrument to convert into.
+    let inst_resp = ctx
+        .post(
+            &format!("/v1/entities/{eid}/instruments"),
+            json!({
+                "cap_table_id": ct_id,
+                "symbol": "PREF-SEED",
+                "kind": "preferred_equity",
+                "authorized_units": 5_000_000i64,
+                "par_value": "0.001",
+            }),
+        )
+        .await;
+    let inst_id = body_json(inst_resp).await["instrument_id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+
+    // Create a holder for the investor.
+    let holder_resp = ctx
+        .post(
+            &format!("/v1/entities/{eid}/holders"),
+            json!({ "contact_id": contact_id, "name": "Bob Investor", "holder_type": "individual" }),
+        )
+        .await;
+    let holder_id = body_json(holder_resp).await["holder_id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+
+    // Convert SAFE — now includes target instrument, shares, and holder.
     let convert_resp = ctx
         .post(
             &format!("/v1/entities/{eid}/safes/{safe_id}/convert"),
-            json!({}),
+            json!({
+                "instrument_id": inst_id,
+                "conversion_shares": 500_000i64,
+                "holder_id": holder_id
+            }),
         )
         .await;
     let convert_status = convert_resp.status();
     let convert_body = body_json(convert_resp).await;
-    assert!(
-        convert_status == StatusCode::OK || convert_status == StatusCode::BAD_REQUEST,
+    assert_eq!(
+        convert_status,
+        StatusCode::OK,
         "convert safe returned unexpected {convert_status}: {convert_body}"
     );
+    assert_eq!(convert_body["status"].as_str(), Some("converted"));
 });
 
 // ── 18. Equity: valuations ────────────────────────────────────────────────────
@@ -996,20 +1036,22 @@ dual_backend_test!(equity_transfers, |ctx| {
         .unwrap()
         .to_owned();
 
-    let sc_resp = ctx
+    let inst_resp = ctx
         .post(
-            &format!("/v1/entities/{eid}/share-classes"),
+            &format!("/v1/entities/{eid}/instruments"),
             json!({
                 "cap_table_id": ct_id,
-                "class_code": "COMMON",
-                "stock_type": "common",
+                "symbol": "COMMON",
+                "kind": "common_equity",
+                "authorized_units": 10_000_000i64,
                 "par_value": "0.00001",
-                "authorized_shares": 10_000_000i64,
-                "liquidation_preference": null
+                "issue_price_cents": null,
+                "liquidation_preference": null,
+                "terms": null
             }),
         )
         .await;
-    let sc_id = body_json(sc_resp).await["share_class_id"]
+    let inst_id = body_json(inst_resp).await["instrument_id"]
         .as_str()
         .unwrap()
         .to_owned();
@@ -1037,6 +1079,21 @@ dual_backend_test!(equity_transfers, |ctx| {
         .expect("h2 holder_id should be a string")
         .to_owned();
 
+    // Give holder 1 some shares (create a position) so transfers can be validated.
+    let pos_resp = ctx
+        .post(
+            &format!("/v1/entities/{eid}/positions"),
+            json!({
+                "holder_id": h1_id,
+                "instrument_id": inst_id,
+                "quantity_units": 5000i64,
+                "principal_cents": 0i64,
+                "source_reference": "initial_grant"
+            }),
+        )
+        .await;
+    assert_eq!(pos_resp.status(), StatusCode::OK, "create position for h1");
+
     // List transfers (empty).
     let list_resp = ctx.get(&format!("/v1/entities/{eid}/transfers")).await;
     assert_eq!(list_resp.status(), StatusCode::OK);
@@ -1056,7 +1113,7 @@ dual_backend_test!(equity_transfers, |ctx| {
                 "cap_table_id": ct_id,
                 "from_holder_id": h1_id,
                 "to_holder_id": h2_id,
-                "share_class_id": sc_id,
+                "instrument_id": inst_id,
                 "shares": 1000i64,
                 "transfer_type": "secondary_sale",
                 "price_per_share_cents": 100i64

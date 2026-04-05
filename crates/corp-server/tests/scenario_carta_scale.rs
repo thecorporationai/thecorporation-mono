@@ -105,8 +105,8 @@ struct ScenarioRunner {
     valuations: Vec<String>,
     /// All payroll run IDs.
     payroll_runs: Vec<String>,
-    /// Share class logical name → share_class_id.
-    share_classes: HashMap<String, String>,
+    /// Instrument logical name → instrument_id.
+    instruments: HashMap<String, String>,
     /// Holder logical name → holder_id.
     holders: HashMap<String, String>,
     /// GL account logical name → account_id.
@@ -160,7 +160,7 @@ impl ScenarioRunner {
             bank_accounts: Vec::new(),
             valuations: Vec::new(),
             payroll_runs: Vec::new(),
-            share_classes: HashMap::new(),
+            instruments: HashMap::new(),
             holders: HashMap::new(),
             accounts: HashMap::new(),
         }
@@ -222,7 +222,7 @@ impl ScenarioRunner {
             bank_accounts: Vec::new(),
             valuations: Vec::new(),
             payroll_runs: Vec::new(),
-            share_classes: HashMap::new(),
+            instruments: HashMap::new(),
             holders: HashMap::new(),
             accounts: HashMap::new(),
         }
@@ -438,10 +438,7 @@ impl ScenarioRunner {
             .await;
         assert_eq!(status, StatusCode::OK, "advance {entity_name} to filed");
 
-        // 7. Confirm EIN (must be in Filed).
-        self.confirm_ein(entity_name, ein).await;
-
-        // 8. Advance Filed → EinApplied.
+        // 7. Advance Filed → EinApplied.
         let (status, _) = self
             .post_empty(&format!("/v1/formations/{entity_id}/advance"))
             .await;
@@ -450,6 +447,9 @@ impl ScenarioRunner {
             StatusCode::OK,
             "advance {entity_name} to ein_applied"
         );
+
+        // 8. Confirm EIN (must be in EinApplied).
+        self.confirm_ein(entity_name, ein).await;
 
         // 9. Advance EinApplied → Active.
         let (status, _) = self
@@ -516,43 +516,45 @@ impl ScenarioRunner {
         body
     }
 
-    /// Create a share class and register it under `class_name`.
-    async fn create_share_class(
+    /// Create an instrument and register it under `instrument_name`.
+    async fn create_instrument(
         &mut self,
         entity_name: &str,
-        class_name: &str,
-        class_code: &str,
-        stock_type: &str,
+        instrument_name: &str,
+        symbol: &str,
+        kind: &str,
         par_value: &str,
-        authorized_shares: i64,
+        authorized_units: i64,
         liquidation_preference: Option<&str>,
     ) -> Value {
         let entity_id = self.entities[entity_name].clone();
         let cap_table_id = self.cap_tables[entity_name].clone();
         let (status, body) = self
             .post(
-                &format!("/v1/entities/{entity_id}/share-classes"),
+                &format!("/v1/entities/{entity_id}/instruments"),
                 json!({
                     "cap_table_id": cap_table_id,
-                    "class_code": class_code,
-                    "stock_type": stock_type,
+                    "symbol": symbol,
+                    "kind": kind,
+                    "authorized_units": authorized_units,
                     "par_value": par_value,
-                    "authorized_shares": authorized_shares,
-                    "liquidation_preference": liquidation_preference
+                    "issue_price_cents": null,
+                    "liquidation_preference": liquidation_preference,
+                    "terms": null
                 }),
             )
             .await;
         assert_eq!(
             status,
             StatusCode::OK,
-            "create_share_class({class_name}) failed: {body}"
+            "create_instrument({instrument_name}) failed: {body}"
         );
-        let share_class_id = body["share_class_id"]
+        let instrument_id = body["instrument_id"]
             .as_str()
-            .expect("share_class_id missing")
+            .expect("instrument_id missing")
             .to_owned();
-        self.share_classes
-            .insert(class_name.to_owned(), share_class_id);
+        self.instruments
+            .insert(instrument_name.to_owned(), instrument_id);
         body
     }
 
@@ -606,14 +608,14 @@ impl ScenarioRunner {
     ) -> Value {
         let entity_id = self.entities[entity_name].clone();
         let cap_table_id = self.cap_tables[entity_name].clone();
-        let share_class_id = self.share_classes[class_name].clone();
+        let instrument_id = self.instruments[class_name].clone();
         let recipient_contact_id = self.contacts[recipient_contact_name].clone();
         let (status, body) = self
             .post(
                 &format!("/v1/entities/{entity_id}/grants"),
                 json!({
                     "cap_table_id": cap_table_id,
-                    "share_class_id": share_class_id,
+                    "instrument_id": instrument_id,
                     "recipient_contact_id": recipient_contact_id,
                     "recipient_name": recipient_display_name,
                     "grant_type": grant_type,
@@ -680,13 +682,52 @@ impl ScenarioRunner {
     }
 
     /// Convert a SAFE note to equity.
-    async fn convert_safe(&mut self, entity_name: &str, safe_index: usize) -> Value {
+    ///
+    /// Creates a holder for the SAFE investor and converts into the specified
+    /// instrument with the given number of shares.
+    async fn convert_safe(
+        &mut self,
+        entity_name: &str,
+        safe_index: usize,
+        instrument_name: &str,
+        conversion_shares: i64,
+    ) -> Value {
         let entity_id = self.entities[entity_name].clone();
         let safe_id = self.safes[safe_index].clone();
+        let instrument_id = self.instruments[instrument_name].clone();
+
+        // Read the SAFE to get investor info, then create a holder.
+        let (_, safe) = self
+            .get(&format!("/v1/entities/{entity_id}/safes/{safe_id}"))
+            .await;
+        let investor_name = safe["investor_name"]
+            .as_str()
+            .unwrap_or("SAFE Investor")
+            .to_owned();
+        let investor_contact_id = safe["investor_contact_id"].as_str().map(|s| s.to_owned());
+        let (_, holder) = self
+            .post(
+                &format!("/v1/entities/{entity_id}/holders"),
+                json!({
+                    "contact_id": investor_contact_id,
+                    "name": investor_name,
+                    "holder_type": "individual"
+                }),
+            )
+            .await;
+        let holder_id = holder["holder_id"]
+            .as_str()
+            .expect("holder_id missing")
+            .to_owned();
+
         let (status, body) = self
             .post(
                 &format!("/v1/entities/{entity_id}/safes/{safe_id}/convert"),
-                json!({}),
+                json!({
+                    "instrument_id": instrument_id,
+                    "conversion_shares": conversion_shares,
+                    "holder_id": holder_id
+                }),
             )
             .await;
         assert_eq!(
@@ -1294,16 +1335,16 @@ impl ScenarioRunner {
         );
     }
 
-    async fn assert_share_class_count(&mut self, entity_name: &str, expected: usize) {
+    async fn assert_instrument_count(&mut self, entity_name: &str, expected: usize) {
         let entity_id = self.entities[entity_name].clone();
         let (status, body) = self
-            .get(&format!("/v1/entities/{entity_id}/share-classes"))
+            .get(&format!("/v1/entities/{entity_id}/instruments"))
             .await;
         assert_eq!(status, StatusCode::OK);
         let count = body.as_array().map(|a| a.len()).unwrap_or(0);
         assert_eq!(
             count, expected,
-            "expected {expected} share classes for {entity_name}, got {count}: {body}"
+            "expected {expected} instruments for {entity_name}, got {count}: {body}"
         );
     }
 
@@ -1564,18 +1605,18 @@ async fn run_saas_startup_scenario(runner: &mut ScenarioRunner) {
     // 14 contacts total (3 founders + law firm + val firm + 2 angels + lead + ind_director + 5 employees).
     runner.assert_contact_count("corp", 14).await;
 
-    // ── Step 3: Create cap table and Common stock class ───────────────────────
+    // ── Step 3: Create cap table and Common equity instrument ─────────────────
 
     runner.create_cap_table("corp").await;
 
     runner
-        .create_share_class(
-            "corp", "common", "CS", "common", "0.00001", 10_000_000, // 10M authorized
+        .create_instrument(
+            "corp", "common", "CS", "common_equity", "0.00001", 11_000_000, // 11M authorized (10M founder + 1M option pool)
             None,
         )
         .await;
 
-    runner.assert_share_class_count("corp", 1).await;
+    runner.assert_instrument_count("corp", 1).await;
 
     // ── Step 4: Create holders and issue founder shares ───────────────────────
 
@@ -1929,26 +1970,30 @@ async fn run_saas_startup_scenario(runner: &mut ScenarioRunner) {
 
     runner.assert_round_count("corp", 1).await;
 
-    // ── Step 13: Add Series A Preferred stock class ───────────────────────────
+    // ── Step 13: Add Series A Preferred instrument ────────────────────────────
 
     runner
-        .create_share_class(
+        .create_instrument(
             "corp",
             "series_a_preferred",
             "Series A Preferred",
-            "preferred",
+            "preferred_equity",
             "0.00001",
             5_000_000, // 5M authorized preferred
             Some("1x non-participating liquidation preference"),
         )
         .await;
 
-    runner.assert_share_class_count("corp", 2).await;
+    runner.assert_instrument_count("corp", 2).await;
 
     // ── Step 14: Convert SAFEs to equity ─────────────────────────────────────
 
-    runner.convert_safe("corp", 0).await;
-    runner.convert_safe("corp", 1).await;
+    runner
+        .convert_safe("corp", 0, "series_a_preferred", 500_000)
+        .await;
+    runner
+        .convert_safe("corp", 1, "series_a_preferred", 250_000)
+        .await;
 
     // Verify both SAFEs are converted.
     {
@@ -2050,7 +2095,7 @@ async fn run_saas_startup_scenario(runner: &mut ScenarioRunner) {
 
     // ── Step 18: Create stock option pool (1M shares) ─────────────────────────
 
-    // We re-use the existing common share class but track the option grants.
+    // We re-use the existing common instrument but track the option grants.
     // Board approval via quick-approve.
     runner
         .quick_approve(
@@ -2100,8 +2145,8 @@ async fn run_saas_startup_scenario(runner: &mut ScenarioRunner) {
         let _ = idx; // suppress unused warning
     }
 
-    // 3 founder grants + 1 Series A grant + 5 employee option grants = 9 total.
-    runner.assert_grant_count("corp", 9).await;
+    // 3 founder grants + 2 SAFE conversions + 1 Series A grant + 5 employee option grants = 11 total.
+    runner.assert_grant_count("corp", 11).await;
 
     // ── Step 20: Second 409A valuation ($5/share post-Series A) ──────────────
 
@@ -2299,14 +2344,14 @@ async fn run_saas_startup_scenario(runner: &mut ScenarioRunner) {
 
     // ── Step 24: Final cap table state verification ───────────────────────────
 
-    // Grants: 3 founder + 1 Series A + 5 employee = 9.
-    runner.assert_grant_count("corp", 9).await;
+    // Grants: 3 founder + 2 SAFE conversions + 1 Series A + 5 employee = 11.
+    runner.assert_grant_count("corp", 11).await;
 
-    // Share classes: Common + Series A Preferred = 2.
-    runner.assert_share_class_count("corp", 2).await;
+    // Instruments: Common + Series A Preferred = 2.
+    runner.assert_instrument_count("corp", 2).await;
 
-    // Holders: 3 founders + Summit Capital = 4.
-    runner.assert_holder_count("corp", 4).await;
+    // Holders: 3 founders + 2 SAFE investor holders + Summit Capital = 6.
+    runner.assert_holder_count("corp", 6).await;
 
     // SAFEs: 2 issued, both converted.
     runner.assert_safe_count("corp", 2).await;
@@ -2486,20 +2531,20 @@ async fn run_vc_fund_scenario(runner: &mut ScenarioRunner) {
 
     runner.create_cap_table("fund_lp").await;
 
-    // LP interest / membership unit share class.
+    // LP interest / membership unit instrument.
     runner
-        .create_share_class(
+        .create_instrument(
             "fund_lp",
             "lp_interests",
             "LP",
             "membership_unit",
             "1.00",
-            25_000, // 25,000 units (each unit = $1,000, so 25M total commitment)
+            25_500, // 25,500 units: 25,000 LP + 500 GP (each unit = $1,000)
             None,
         )
         .await;
 
-    runner.assert_share_class_count("fund_lp", 1).await;
+    runner.assert_instrument_count("fund_lp", 1).await;
 
     // ── Step 5: Create holders for all 8 LPs and issue LP interests ──────────
 
@@ -2913,11 +2958,11 @@ async fn run_vc_fund_scenario(runner: &mut ScenarioRunner) {
 
     // Priced equity round - record as a grant on the fund's own cap table.
     runner
-        .create_share_class(
+        .create_instrument(
             "fund_lp",
             "portfolio_equity",
             "PE",
-            "preferred",
+            "preferred_equity",
             "1.00",
             1_000, // 1,000 units representing fund's ownership stakes
             None,
@@ -2999,8 +3044,10 @@ async fn run_vc_fund_scenario(runner: &mut ScenarioRunner) {
     // Simulate exit proceeds from WidgetAI ($1.2M on $500K investment).
     // Waterfall: return of capital ($400K) → preferred return → carry.
 
-    // Convert the WidgetAI SAFE (exit event).
-    runner.convert_safe("fund_lp", 0).await;
+    // Convert the WidgetAI SAFE (exit event) into portfolio equity units.
+    runner
+        .convert_safe("fund_lp", 0, "portfolio_equity", 100)
+        .await;
 
     // Distribution journal entries.
     // 1. Return of capital to LPs: $500K.
@@ -3189,14 +3236,14 @@ async fn run_vc_fund_scenario(runner: &mut ScenarioRunner) {
 
     // ── Step 18: Final fund state verification ────────────────────────────────
 
-    // Fund LP: 9 grants (8 LP interests + GP commit) + 1 portfolio equity.
-    runner.assert_grant_count("fund_lp", 10).await;
+    // Fund LP: 9 grants (8 LP interests + GP commit) + 1 portfolio equity + 1 SAFE conversion.
+    runner.assert_grant_count("fund_lp", 11).await;
 
-    // Share classes: LP interests + portfolio equity.
-    runner.assert_share_class_count("fund_lp", 2).await;
+    // Instruments: LP interests + portfolio equity.
+    runner.assert_instrument_count("fund_lp", 2).await;
 
-    // Holders: 8 LPs + GP entity + NovaBio = 10.
-    runner.assert_holder_count("fund_lp", 10).await;
+    // Holders: 8 LPs + GP entity + NovaBio + WidgetAI (from SAFE conversion) = 11.
+    runner.assert_holder_count("fund_lp", 11).await;
 
     // SAFEs: 2 (WidgetAI converted + DataFlow active).
     runner.assert_safe_count("fund_lp", 2).await;

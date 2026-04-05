@@ -1,7 +1,8 @@
 //! Equity domain routes.
 //!
-//! Covers cap tables, share classes, equity grants, SAFE notes, valuations,
-//! share transfers, funding rounds, and holders.
+//! Covers cap tables, instruments, equity grants, SAFE notes, valuations,
+//! share transfers, funding rounds, holders, vesting, positions, investor
+//! ledger, legal entities, control links, and repurchase rights.
 
 use axum::{
     Json, Router,
@@ -16,48 +17,47 @@ use crate::state::AppState;
 use corp_auth::{RequireEquityRead, RequireEquityWrite};
 use corp_core::contacts::Contact;
 use corp_core::equity::types::{
-    GrantStatus, GrantType, InvestorLedgerEntryType, SafeType, ShareCount, StockType, TransferType,
-    ValuationMethodology, ValuationType,
+    GrantStatus, GrantType, InvestorLedgerEntryType, PositionStatus, SafeType, ShareCount,
+    TransferType, ValuationMethodology, ValuationType,
 };
 use corp_core::equity::vesting::materialize_vesting_events;
 use corp_core::equity::{
     CapTable, ControlLink, ControlType, EquityGrant, FundingRound, Holder, HolderType, Instrument,
     InstrumentKind, InvestorLedgerEntry, LegalEntity, LegalEntityRole, Position, RepurchaseRight,
-    SafeNote, ShareClass, ShareTransfer, Valuation, VestingEvent, VestingSchedule,
+    SafeNote, ShareTransfer, Valuation, VestingEvent, VestingSchedule,
 };
 use corp_core::ids::{
     CapTableId, ContactId, EntityId, EquityGrantId, FundingRoundId, HolderId, InstrumentId,
-    LegalEntityId, PositionId, RepurchaseRightId, SafeNoteId, ShareClassId, TransferId,
+    LegalEntityId, PositionId, RepurchaseRightId, SafeNoteId, TransferId,
     ValuationId, VestingEventId, VestingScheduleId,
 };
 
 // ── Request body types ────────────────────────────────────────────────────────
 
 /// Request body for `POST /entities/{entity_id}/cap-table`.
-/// The cap table is a singleton aggregate per entity; no additional fields
-/// are required to create one.
 #[derive(Debug, Deserialize)]
 pub struct CreateCapTableRequest {}
 
-/// Request body for `POST /entities/{entity_id}/share-classes`.
+/// Request body for `POST /entities/{entity_id}/instruments`.
 #[derive(Debug, Deserialize)]
-pub struct CreateShareClassRequest {
+pub struct CreateInstrumentRequest {
     pub cap_table_id: CapTableId,
-    pub class_code: String,
-    pub stock_type: StockType,
+    pub symbol: String,
+    pub kind: InstrumentKind,
+    pub authorized_units: Option<i64>,
     /// Par value formatted string, e.g. `"0.00001"`.
-    pub par_value: String,
-    /// Authorized share count.
-    pub authorized_shares: i64,
-    /// Liquidation preference description; only relevant for preferred stock.
+    pub par_value: Option<String>,
+    pub issue_price_cents: Option<i64>,
+    /// Liquidation preference description; only relevant for preferred equity.
     pub liquidation_preference: Option<String>,
+    pub terms: Option<serde_json::Value>,
 }
 
 /// Request body for `POST /entities/{entity_id}/grants`.
 #[derive(Debug, Deserialize)]
 pub struct CreateGrantRequest {
     pub cap_table_id: CapTableId,
-    pub share_class_id: ShareClassId,
+    pub instrument_id: InstrumentId,
     pub recipient_contact_id: ContactId,
     pub recipient_name: String,
     pub grant_type: GrantType,
@@ -68,6 +68,10 @@ pub struct CreateGrantRequest {
     pub vesting_start: Option<NaiveDate>,
     pub vesting_months: Option<u32>,
     pub cliff_months: Option<u32>,
+    /// Optional holder ID. If provided, a position is created for this holder.
+    /// If omitted, no position is created (useful for option grants that haven't
+    /// been exercised yet).
+    pub holder_id: Option<HolderId>,
 }
 
 /// Request body for `POST /entities/{entity_id}/safes`.
@@ -85,9 +89,15 @@ pub struct IssueSafeRequest {
 }
 
 /// Request body for `POST /entities/{entity_id}/safes/{safe_id}/convert`.
-/// Kept as a struct for future extensibility.
 #[derive(Debug, Deserialize)]
-pub struct ConvertSafeRequest {}
+pub struct ConvertSafeRequest {
+    /// The instrument to convert into (e.g. Series Seed Preferred).
+    pub instrument_id: InstrumentId,
+    /// Number of shares the investor receives from conversion.
+    pub conversion_shares: i64,
+    /// Holder record for the investor.
+    pub holder_id: HolderId,
+}
 
 /// Request body for `POST /entities/{entity_id}/valuations`.
 #[derive(Debug, Deserialize)]
@@ -113,7 +123,7 @@ pub struct CreateTransferRequest {
     pub cap_table_id: CapTableId,
     pub from_holder_id: HolderId,
     pub to_holder_id: HolderId,
-    pub share_class_id: ShareClassId,
+    pub instrument_id: InstrumentId,
     pub shares: i64,
     pub transfer_type: TransferType,
     pub price_per_share_cents: Option<i64>,
@@ -148,16 +158,6 @@ pub struct CreateVestingScheduleRequest {
     pub acceleration_single_trigger: bool,
     pub acceleration_double_trigger: bool,
     pub early_exercise_allowed: bool,
-}
-
-/// Request body for `POST /entities/{entity_id}/instruments`.
-#[derive(Debug, Deserialize)]
-pub struct CreateInstrumentRequest {
-    pub symbol: String,
-    pub kind: InstrumentKind,
-    pub authorized_units: Option<i64>,
-    pub issue_price_cents: Option<i64>,
-    pub terms: Option<serde_json::Value>,
 }
 
 /// Request body for `POST /entities/{entity_id}/positions`.
@@ -229,10 +229,14 @@ pub fn routes() -> Router<AppState> {
             "/entities/{entity_id}/cap-table",
             get(get_cap_table).post(create_cap_table),
         )
-        // Share classes
+        // Instruments (replaces share-classes)
         .route(
-            "/entities/{entity_id}/share-classes",
-            get(list_share_classes).post(create_share_class),
+            "/entities/{entity_id}/instruments",
+            get(list_instruments).post(create_instrument),
+        )
+        .route(
+            "/entities/{entity_id}/instruments/{instrument_id}",
+            get(get_instrument),
         )
         // Grants
         .route(
@@ -353,15 +357,6 @@ pub fn routes() -> Router<AppState> {
             "/entities/{entity_id}/vesting-events/{event_id}/forfeit",
             post(forfeit_event),
         )
-        // Instruments
-        .route(
-            "/entities/{entity_id}/instruments",
-            get(list_instruments).post(create_instrument),
-        )
-        .route(
-            "/entities/{entity_id}/instruments/{instrument_id}",
-            get(get_instrument),
-        )
         // Positions
         .route(
             "/entities/{entity_id}/positions",
@@ -436,8 +431,6 @@ async fn create_cap_table(
     let store = state
         .open_entity_store_for_write(principal.workspace_id, entity_id)
         .await?;
-    // Cap table is a singleton per entity; return the existing one if it
-    // already exists rather than creating a duplicate.
     let existing = store.read_all::<CapTable>("main").await?;
     if let Some(cap_table) = existing.into_iter().next() {
         return Ok(Json(cap_table));
@@ -454,47 +447,61 @@ async fn create_cap_table(
     Ok(Json(cap_table))
 }
 
-// ── Share class handlers ──────────────────────────────────────────────────────
+// ── Instrument handlers ──────────────────────────────────────────────────────
 
-async fn list_share_classes(
+async fn list_instruments(
     RequireEquityRead(principal): RequireEquityRead,
     State(state): State<AppState>,
     Path(entity_id): Path<EntityId>,
-) -> Result<Json<Vec<ShareClass>>, AppError> {
+) -> Result<Json<Vec<Instrument>>, AppError> {
     let store = state
         .open_entity_store(principal.workspace_id, entity_id)
         .await?;
-    let classes = store.read_all::<ShareClass>("main").await?;
-    Ok(Json(classes))
+    let instruments = store.read_all::<Instrument>("main").await?;
+    Ok(Json(instruments))
 }
 
-async fn create_share_class(
+async fn create_instrument(
     RequireEquityWrite(principal): RequireEquityWrite,
     State(state): State<AppState>,
     Path(entity_id): Path<EntityId>,
-    Json(body): Json<CreateShareClassRequest>,
-) -> Result<Json<ShareClass>, AppError> {
+    Json(body): Json<CreateInstrumentRequest>,
+) -> Result<Json<Instrument>, AppError> {
     let store = state
         .open_entity_store_for_write(principal.workspace_id, entity_id)
         .await?;
-    let share_class = ShareClass::new(
+    let instrument = Instrument::new(
         entity_id,
         body.cap_table_id,
-        body.class_code,
-        body.stock_type,
+        body.symbol,
+        body.kind,
+        body.authorized_units,
         body.par_value,
-        ShareCount::new(body.authorized_shares),
+        body.issue_price_cents,
         body.liquidation_preference,
+        body.terms.unwrap_or(serde_json::Value::Null),
     );
     store
-        .write::<ShareClass>(
-            &share_class,
-            share_class.share_class_id,
+        .write::<Instrument>(
+            &instrument,
+            instrument.instrument_id,
             "main",
-            "create share class",
+            "create instrument",
         )
         .await?;
-    Ok(Json(share_class))
+    Ok(Json(instrument))
+}
+
+async fn get_instrument(
+    RequireEquityRead(principal): RequireEquityRead,
+    State(state): State<AppState>,
+    Path((entity_id, instrument_id)): Path<(EntityId, InstrumentId)>,
+) -> Result<Json<Instrument>, AppError> {
+    let store = state
+        .open_entity_store(principal.workspace_id, entity_id)
+        .await?;
+    let instrument = store.read::<Instrument>(instrument_id, "main").await?;
+    Ok(Json(instrument))
 }
 
 // ── Grant handlers ────────────────────────────────────────────────────────────
@@ -540,43 +547,42 @@ async fn create_grant(
             }
         })?;
 
-    let share_class = store
-        .read::<ShareClass>(body.share_class_id, "main")
+    let instrument = store
+        .read::<Instrument>(body.instrument_id, "main")
         .await?;
 
-    // Cumulative over-issuance check: sum all active grants for this share class.
-    let existing_grants: Vec<EquityGrant> = store
-        .read_all::<EquityGrant>("main")
-        .await
-        .map_err(AppError::Storage)?;
-    let issued_shares: i64 = existing_grants
-        .iter()
-        .filter(|g| {
-            g.share_class_id == body.share_class_id
-                && g.status != GrantStatus::Cancelled
-                && g.status != GrantStatus::Forfeited
-        })
-        .map(|g| g.shares.raw())
-        .sum();
-    let total_after = issued_shares + body.shares;
-    if total_after > share_class.authorized_shares.raw() {
-        return Err(AppError::BadRequest(format!(
-            "cannot issue {} shares: {} already issued + {} requested = {} total, \
-             exceeds authorized {} for class {}",
-            body.shares,
-            issued_shares,
-            body.shares,
-            total_after,
-            share_class.authorized_shares.raw(),
-            share_class.class_code
-        )));
+    // Cumulative over-issuance check: sum all active grants for this instrument.
+    if let Some(authorized) = instrument.authorized_units {
+        let existing_grants: Vec<EquityGrant> = store
+            .read_all::<EquityGrant>("main")
+            .await
+            .map_err(AppError::Storage)?;
+        let issued_shares: i64 = existing_grants
+            .iter()
+            .filter(|g| {
+                g.instrument_id == body.instrument_id
+                    && g.status != GrantStatus::Cancelled
+                    && g.status != GrantStatus::Forfeited
+            })
+            .map(|g| g.shares.raw())
+            .sum();
+        let total_after = issued_shares + body.shares;
+        if total_after > authorized {
+            return Err(AppError::BadRequest(format!(
+                "cannot issue {} shares: {} already issued + {} requested = {} total, \
+                 exceeds authorized {} for instrument {}",
+                body.shares, issued_shares, body.shares, total_after, authorized,
+                instrument.symbol
+            )));
+        }
     }
+
     let grant = EquityGrant::new(
         entity_id,
         body.cap_table_id,
-        body.share_class_id,
+        body.instrument_id,
         body.recipient_contact_id,
-        body.recipient_name,
+        &body.recipient_name,
         body.grant_type,
         ShareCount::new(body.shares),
         body.price_per_share,
@@ -587,6 +593,33 @@ async fn create_grant(
     store
         .write::<EquityGrant>(&grant, grant.grant_id, "main", "create equity grant")
         .await?;
+
+    // If a holder_id is provided, create a position for the grant recipient.
+    // This connects the corporate action (grant) to the ledger (position).
+    if let Some(holder_id) = body.holder_id {
+        let principal_cents = body
+            .price_per_share
+            .map(|p| p * body.shares)
+            .unwrap_or(0);
+        let position = Position::new(
+            entity_id,
+            holder_id,
+            body.instrument_id,
+            body.shares,
+            principal_cents,
+            Some(format!("grant:{}", grant.grant_id)),
+        )
+        .map_err(|e| AppError::BadRequest(e.to_string()))?;
+        store
+            .write::<Position>(
+                &position,
+                position.position_id,
+                "main",
+                "create position for grant",
+            )
+            .await?;
+    }
+
     Ok(Json(grant))
 }
 
@@ -686,22 +719,102 @@ async fn get_safe(
     Ok(Json(safe_note))
 }
 
+/// Convert a SAFE note into equity.
+///
+/// This is a full orchestration endpoint that:
+/// 1. Transitions the SafeNote status to `Converted`
+/// 2. Creates an EquityGrant for the conversion shares
+/// 3. Creates a Position for the investor's new holdings
 async fn convert_safe(
     RequireEquityWrite(principal): RequireEquityWrite,
     State(state): State<AppState>,
     Path((entity_id, safe_id)): Path<(EntityId, SafeNoteId)>,
-    Json(_body): Json<ConvertSafeRequest>,
+    Json(body): Json<ConvertSafeRequest>,
 ) -> Result<Json<SafeNote>, AppError> {
+    if body.conversion_shares <= 0 {
+        return Err(AppError::BadRequest(
+            "conversion_shares must be greater than zero".into(),
+        ));
+    }
     let store = state
         .open_entity_store_for_write(principal.workspace_id, entity_id)
         .await?;
     let mut safe_note = store.read::<SafeNote>(safe_id, "main").await?;
+
+    // Verify target instrument exists
+    let instrument = store
+        .read::<Instrument>(body.instrument_id, "main")
+        .await?;
+
+    // Verify holder exists
+    store
+        .read::<Holder>(body.holder_id, "main")
+        .await
+        .map_err(|e| {
+            use corp_storage::error::StorageError;
+            match e {
+                StorageError::NotFound(_) => {
+                    AppError::BadRequest(format!("holder {} not found", body.holder_id))
+                }
+                other => AppError::Storage(other),
+            }
+        })?;
+
+    // 1. Transition SAFE status
     safe_note
         .convert()
         .map_err(|e| AppError::BadRequest(e.to_string()))?;
     store
         .write::<SafeNote>(&safe_note, safe_id, "main", "convert safe note")
         .await?;
+
+    // 2. Create equity grant for the conversion
+    let price_per_share = if body.conversion_shares > 0 {
+        Some(safe_note.investment_amount_cents / body.conversion_shares)
+    } else {
+        None
+    };
+    let grant = EquityGrant::new(
+        entity_id,
+        instrument.cap_table_id,
+        body.instrument_id,
+        safe_note.investor_contact_id,
+        &safe_note.investor_name,
+        GrantType::PreferredStock,
+        ShareCount::new(body.conversion_shares),
+        price_per_share,
+        None,
+        None,
+        None,
+    );
+    store
+        .write::<EquityGrant>(
+            &grant,
+            grant.grant_id,
+            "main",
+            "create grant from SAFE conversion",
+        )
+        .await?;
+
+    // 3. Create position for the investor
+    let position = Position::new(
+        entity_id,
+        body.holder_id,
+        body.instrument_id,
+        body.conversion_shares,
+        safe_note.investment_amount_cents,
+        Some(format!("safe_conversion:{}:{}", safe_id, grant.grant_id)),
+    )
+    .map_err(|e| AppError::BadRequest(e.to_string()))?;
+    store
+        .write::<Position>(
+            &position,
+            position.position_id,
+            "main",
+            "create position from SAFE conversion",
+        )
+        .await?;
+
     Ok(Json(safe_note))
 }
 
@@ -935,12 +1048,38 @@ async fn create_transfer(
             }
         })?;
 
+    // Verify instrument exists
+    store
+        .read::<Instrument>(body.instrument_id, "main")
+        .await?;
+
+    // Validate sender has enough shares (sum active positions)
+    let positions: Vec<Position> = store
+        .read_all::<Position>("main")
+        .await
+        .map_err(AppError::Storage)?;
+    let sender_balance: i64 = positions
+        .iter()
+        .filter(|p| {
+            p.holder_id == body.from_holder_id
+                && p.instrument_id == body.instrument_id
+                && p.status == PositionStatus::Active
+        })
+        .map(|p| p.quantity_units)
+        .sum();
+    if sender_balance < body.shares {
+        return Err(AppError::BadRequest(format!(
+            "from_holder {} has {} shares of instrument {}, cannot transfer {}",
+            body.from_holder_id, sender_balance, body.instrument_id, body.shares
+        )));
+    }
+
     let transfer = ShareTransfer::new(
         entity_id,
         body.cap_table_id,
         body.from_holder_id,
         body.to_holder_id,
-        body.share_class_id,
+        body.instrument_id,
         ShareCount::new(body.shares),
         body.transfer_type,
         body.price_per_share_cents,
@@ -951,14 +1090,6 @@ async fn create_transfer(
     Ok(Json(transfer))
 }
 
-/// `POST /entities/{entity_id}/transfers/{transfer_id}/approve`
-///
-/// Advances the transfer through its two-step board-approval pipeline.
-/// Calling this endpoint twice moves the transfer through both steps:
-///   1st call: `Draft` → `PendingBoardApproval`
-///   2nd call: `PendingBoardApproval` → `Approved`
-///
-/// Once `Approved`, use the `/execute` endpoint to finalise the transfer.
 async fn approve_transfer(
     RequireEquityWrite(principal): RequireEquityWrite,
     State(state): State<AppState>,
@@ -977,6 +1108,12 @@ async fn approve_transfer(
     Ok(Json(transfer))
 }
 
+/// Execute an approved transfer.
+///
+/// This is a full orchestration endpoint that:
+/// 1. Transitions the transfer status to `Executed`
+/// 2. Debits the sender's position (apply negative delta)
+/// 3. Credits the receiver's position (find existing or create new)
 async fn execute_transfer(
     RequireEquityWrite(principal): RequireEquityWrite,
     State(state): State<AppState>,
@@ -986,12 +1123,95 @@ async fn execute_transfer(
         .open_entity_store_for_write(principal.workspace_id, entity_id)
         .await?;
     let mut transfer = store.read::<ShareTransfer>(transfer_id, "main").await?;
+
+    // 1. Transition status
     transfer
         .execute()
         .map_err(|e| AppError::BadRequest(e.to_string()))?;
     store
         .write::<ShareTransfer>(&transfer, transfer_id, "main", "execute transfer")
         .await?;
+
+    let shares = transfer.shares.raw();
+    let principal_cents = transfer
+        .price_per_share_cents
+        .map(|p| p * shares)
+        .unwrap_or(0);
+    let source = Some(format!("transfer:{}", transfer_id));
+
+    // 2. Debit sender: find their active position for this instrument
+    let positions: Vec<Position> = store
+        .read_all::<Position>("main")
+        .await
+        .map_err(AppError::Storage)?;
+
+    let sender_position = positions
+        .iter()
+        .find(|p| {
+            p.holder_id == transfer.from_holder_id
+                && p.instrument_id == transfer.instrument_id
+                && p.status == PositionStatus::Active
+        })
+        .ok_or_else(|| {
+            AppError::BadRequest(format!(
+                "no active position found for sender {} on instrument {}",
+                transfer.from_holder_id, transfer.instrument_id
+            ))
+        })?;
+
+    let mut sender_pos = sender_position.clone();
+    sender_pos
+        .apply_delta(-shares, -principal_cents, source.clone())
+        .map_err(|e| AppError::BadRequest(e.to_string()))?;
+    store
+        .write::<Position>(
+            &sender_pos,
+            sender_pos.position_id,
+            "main",
+            "debit sender position",
+        )
+        .await?;
+
+    // 3. Credit receiver: find existing active position or create new one
+    let receiver_position = positions.iter().find(|p| {
+        p.holder_id == transfer.to_holder_id
+            && p.instrument_id == transfer.instrument_id
+            && p.status == PositionStatus::Active
+    });
+
+    if let Some(existing) = receiver_position {
+        let mut receiver_pos = existing.clone();
+        receiver_pos
+            .apply_delta(shares, principal_cents, source)
+            .map_err(|e| AppError::BadRequest(e.to_string()))?;
+        store
+            .write::<Position>(
+                &receiver_pos,
+                receiver_pos.position_id,
+                "main",
+                "credit receiver position",
+            )
+            .await?;
+    } else {
+        let new_pos = Position::new(
+            entity_id,
+            transfer.to_holder_id,
+            transfer.instrument_id,
+            shares,
+            principal_cents,
+            source,
+        )
+        .map_err(|e| AppError::BadRequest(e.to_string()))?;
+        store
+            .write::<Position>(
+                &new_pos,
+                new_pos.position_id,
+                "main",
+                "create receiver position",
+            )
+            .await?;
+    }
+
     Ok(Json(transfer))
 }
 
@@ -1102,13 +1322,6 @@ async fn close_round(
     Ok(Json(round))
 }
 
-/// `POST /entities/{entity_id}/rounds/{round_id}/advance`
-///
-/// Advances a funding round through its pre-close pipeline:
-/// `TermSheet` → `Diligence` → `Closing`.
-///
-/// Returns `400 Bad Request` if the round is already in `Closing` (use `/close`
-/// instead) or already `Closed`.
 async fn advance_round(
     RequireEquityWrite(principal): RequireEquityWrite,
     State(state): State<AppState>,
@@ -1314,60 +1527,6 @@ async fn forfeit_event(
     Ok(Json(event))
 }
 
-// ── Instrument handlers ───────────────────────────────────────────────────────
-
-async fn list_instruments(
-    RequireEquityRead(principal): RequireEquityRead,
-    State(state): State<AppState>,
-    Path(entity_id): Path<EntityId>,
-) -> Result<Json<Vec<Instrument>>, AppError> {
-    let store = state
-        .open_entity_store(principal.workspace_id, entity_id)
-        .await?;
-    let instruments = store.read_all::<Instrument>("main").await?;
-    Ok(Json(instruments))
-}
-
-async fn create_instrument(
-    RequireEquityWrite(principal): RequireEquityWrite,
-    State(state): State<AppState>,
-    Path(entity_id): Path<EntityId>,
-    Json(body): Json<CreateInstrumentRequest>,
-) -> Result<Json<Instrument>, AppError> {
-    let store = state
-        .open_entity_store_for_write(principal.workspace_id, entity_id)
-        .await?;
-    let instrument = Instrument::new(
-        LegalEntityId::from_uuid(entity_id.as_uuid()),
-        body.symbol,
-        body.kind,
-        body.authorized_units,
-        body.issue_price_cents,
-        body.terms.unwrap_or(serde_json::Value::Null),
-    );
-    store
-        .write::<Instrument>(
-            &instrument,
-            instrument.instrument_id,
-            "main",
-            "create instrument",
-        )
-        .await?;
-    Ok(Json(instrument))
-}
-
-async fn get_instrument(
-    RequireEquityRead(principal): RequireEquityRead,
-    State(state): State<AppState>,
-    Path((entity_id, instrument_id)): Path<(EntityId, InstrumentId)>,
-) -> Result<Json<Instrument>, AppError> {
-    let store = state
-        .open_entity_store(principal.workspace_id, entity_id)
-        .await?;
-    let instrument = store.read::<Instrument>(instrument_id, "main").await?;
-    Ok(Json(instrument))
-}
-
 // ── Position handlers ─────────────────────────────────────────────────────────
 
 async fn list_positions(
@@ -1392,7 +1551,7 @@ async fn create_position(
         .open_entity_store_for_write(principal.workspace_id, entity_id)
         .await?;
     let position = Position::new(
-        LegalEntityId::from_uuid(entity_id.as_uuid()),
+        entity_id,
         body.holder_id,
         body.instrument_id,
         body.quantity_units,

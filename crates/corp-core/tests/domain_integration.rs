@@ -10,11 +10,11 @@ use corp_core::{
     equity::{
         cap_table::CapTable,
         grant::EquityGrant,
+        instrument::{Instrument, InstrumentKind},
         safe_note::{SafeNote, SafeNoteError},
-        share_class::ShareClass,
         transfer::ShareTransfer,
         types::{
-            GrantType, SafeStatus, SafeType, ShareCount, StockType, TransferStatus, TransferType,
+            GrantType, SafeStatus, SafeType, ShareCount, TransferStatus, TransferType,
             ValuationMethodology, ValuationStatus, ValuationType,
         },
         valuation::{Valuation, ValuationError},
@@ -104,15 +104,17 @@ fn make_cap_table(entity_id: EntityId) -> CapTable {
     CapTable::new(entity_id)
 }
 
-fn make_share_class(entity_id: EntityId, cap_table_id: CapTableId) -> ShareClass {
-    ShareClass::new(
+fn make_instrument(entity_id: EntityId, cap_table_id: CapTableId) -> Instrument {
+    Instrument::new(
         entity_id,
         cap_table_id,
         "CS-A",
-        StockType::Common,
-        "0.00001",
-        ShareCount::new(10_000_000),
+        InstrumentKind::CommonEquity,
+        Some(10_000_000),
+        Some("0.00001".to_string()),
         None,
+        None,
+        serde_json::Value::Null,
     )
 }
 
@@ -412,15 +414,15 @@ fn equity_issuance_and_transfer() {
     let cap_table = make_cap_table(entity_id);
     assert_eq!(cap_table.entity_id, entity_id);
 
-    // Create share class.
-    let share_class = make_share_class(entity_id, cap_table.cap_table_id);
-    assert_eq!(share_class.authorized_shares, ShareCount::new(10_000_000));
+    // Create instrument.
+    let instrument = make_instrument(entity_id, cap_table.cap_table_id);
+    assert_eq!(instrument.authorized_units, Some(10_000_000));
 
     // Issue a grant to a founder.
     let grant = EquityGrant::new(
         entity_id,
         cap_table.cap_table_id,
-        share_class.share_class_id,
+        instrument.instrument_id,
         ContactId::new(),
         "Alice Founder",
         GrantType::CommonStock,
@@ -442,7 +444,7 @@ fn equity_issuance_and_transfer() {
         cap_table.cap_table_id,
         from_holder,
         to_holder,
-        share_class.share_class_id,
+        instrument.instrument_id,
         ShareCount::new(100_000),
         TransferType::SecondarySale,
         Some(500), // $5.00/share

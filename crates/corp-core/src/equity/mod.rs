@@ -1,7 +1,6 @@
-//! Equity domain: cap tables, share classes, grants, SAFEs, valuations,
-//! transfers, funding rounds, holders, vesting, instruments, positions,
-//! legal entities, control links, investor ledger, rule sets, and repurchase
-//! rights.
+//! Equity domain: cap tables, instruments, grants, SAFEs, valuations,
+//! transfers, funding rounds, holders, vesting, positions, legal entities,
+//! control links, investor ledger, rule sets, and repurchase rights.
 
 pub mod cap_table;
 pub mod control_link;
@@ -15,7 +14,6 @@ pub mod repurchase;
 pub mod round;
 pub mod rule_set;
 pub mod safe_note;
-pub mod share_class;
 pub mod transfer;
 pub mod types;
 pub mod valuation;
@@ -35,12 +33,11 @@ pub use repurchase::RepurchaseRight;
 pub use round::FundingRound;
 pub use rule_set::{AntiDilutionMethod, EquityRuleSet};
 pub use safe_note::SafeNote;
-pub use share_class::ShareClass;
 pub use transfer::ShareTransfer;
 pub use types::{
     CapTableStatus, FundingRoundStatus, GrantStatus, GrantType, InvestorLedgerEntryType,
     Percentage, PositionStatus, PricePerShare, RecipientType, RepurchaseStatus, SafeStatus,
-    SafeType, ShareCount, StockType, TransferStatus, TransferType, ValuationCap,
+    SafeType, ShareCount, TransferStatus, TransferType, ValuationCap,
     ValuationMethodology, ValuationStatus, ValuationType, VestingEventStatus, VestingEventType,
     VestingStatus, VotingRights,
 };

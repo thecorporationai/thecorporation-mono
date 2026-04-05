@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use super::types::PositionStatus;
 use super::vesting::EquityError;
-use crate::ids::{HolderId, InstrumentId, LegalEntityId, PositionId};
+use crate::ids::{EntityId, HolderId, InstrumentId, PositionId};
 
 // ── Position ──────────────────────────────────────────────────────────────────
 
@@ -19,7 +19,7 @@ use crate::ids::{HolderId, InstrumentId, LegalEntityId, PositionId};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Position {
     pub position_id: PositionId,
-    pub issuer_legal_entity_id: LegalEntityId,
+    pub entity_id: EntityId,
     pub holder_id: HolderId,
     pub instrument_id: InstrumentId,
     pub quantity_units: i64,
@@ -36,7 +36,7 @@ impl Position {
     /// `principal_cents` is negative.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        issuer_legal_entity_id: LegalEntityId,
+        entity_id: EntityId,
         holder_id: HolderId,
         instrument_id: InstrumentId,
         quantity_units: i64,
@@ -52,7 +52,7 @@ impl Position {
         let now = Utc::now();
         Ok(Self {
             position_id: PositionId::new(),
-            issuer_legal_entity_id,
+            entity_id,
             holder_id,
             instrument_id,
             quantity_units,
@@ -113,7 +113,7 @@ mod tests {
 
     fn make_position(qty: i64, principal: i64) -> Position {
         Position::new(
-            LegalEntityId::new(),
+            EntityId::new(),
             HolderId::new(),
             InstrumentId::new(),
             qty,
@@ -152,7 +152,7 @@ mod tests {
     #[test]
     fn new_position_negative_quantity_fails() {
         let err = Position::new(
-            LegalEntityId::new(),
+            EntityId::new(),
             HolderId::new(),
             InstrumentId::new(),
             -1,
@@ -166,7 +166,7 @@ mod tests {
     #[test]
     fn new_position_negative_principal_fails() {
         let err = Position::new(
-            LegalEntityId::new(),
+            EntityId::new(),
             HolderId::new(),
             InstrumentId::new(),
             100,

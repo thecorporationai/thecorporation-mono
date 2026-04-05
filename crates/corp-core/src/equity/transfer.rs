@@ -4,7 +4,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 use super::types::{ShareCount, TransferStatus, TransferType};
-use crate::ids::{CapTableId, EntityId, HolderId, ShareClassId, TransferId};
+use crate::ids::{CapTableId, EntityId, HolderId, InstrumentId, TransferId};
 
 /// A transfer of shares from one holder to another.
 ///
@@ -23,7 +23,7 @@ pub struct ShareTransfer {
     pub cap_table_id: CapTableId,
     pub from_holder_id: HolderId,
     pub to_holder_id: HolderId,
-    pub share_class_id: ShareClassId,
+    pub instrument_id: InstrumentId,
     pub shares: ShareCount,
     pub transfer_type: TransferType,
     /// Agreed price per share in whole cents, if applicable.
@@ -40,7 +40,7 @@ impl ShareTransfer {
         cap_table_id: CapTableId,
         from_holder_id: HolderId,
         to_holder_id: HolderId,
-        share_class_id: ShareClassId,
+        instrument_id: InstrumentId,
         shares: ShareCount,
         transfer_type: TransferType,
         price_per_share_cents: Option<i64>,
@@ -51,7 +51,7 @@ impl ShareTransfer {
             cap_table_id,
             from_holder_id,
             to_holder_id,
-            share_class_id,
+            instrument_id,
             shares,
             transfer_type,
             price_per_share_cents,
@@ -141,7 +141,7 @@ mod tests {
             CapTableId::new(),
             HolderId::new(),
             HolderId::new(),
-            ShareClassId::new(),
+            InstrumentId::new(),
             ShareCount::new(10_000),
             TransferType::SecondarySale,
             Some(5_00), // $5.00 per share
@@ -154,7 +154,7 @@ mod tests {
             CapTableId::new(),
             HolderId::new(),
             HolderId::new(),
-            ShareClassId::new(),
+            InstrumentId::new(),
             ShareCount::new(1_000),
             transfer_type,
             None,

@@ -2,7 +2,7 @@
 //!
 //! API paths all live under `/v1/entities/{entity_id}/` using the flat
 //! resource names that the server exposes:
-//!   cap-table, share-classes, grants, safes, valuations, transfers, holders, rounds
+//!   cap-table, instruments, grants, safes, valuations, transfers, holders, rounds
 
 use serde_json::json;
 
@@ -11,11 +11,11 @@ use crate::output;
 
 // ── CapTableCommand ───────────────────────────────────────────────────────────
 
-/// Manage equity: share classes, grants, SAFEs, valuations, holders, transfers, and funding rounds.
+/// Manage equity: instruments, grants, SAFEs, valuations, holders, transfers, and funding rounds.
 ///
 /// Quick start:
 ///   corp cap-table init
-///   corp cap-table create-share-class ...
+///   corp cap-table create-instrument ...
 ///   corp cap-table create-holder ...
 ///   corp cap-table issue ...
 #[derive(clap::Subcommand)]
@@ -29,36 +29,6 @@ pub enum CapTableCommand {
     /// Initialize a new cap table for the entity
     Init,
 
-    /// List share classes
-    ShareClasses,
-
-    /// Create a share class
-    CreateShareClass {
-        /// Cap table ID (from `corp cap-table show`)
-        #[arg(long)]
-        cap_table_id: String,
-
-        /// Short class code, e.g. CS-A or PREF-SEED
-        #[arg(long)]
-        class_code: String,
-
-        /// Stock type [possible values: common, preferred, membership_unit]
-        #[arg(long, default_value = "common")]
-        stock_type: String,
-
-        /// Par value per share (decimal string, e.g. "0.00001")
-        #[arg(long, default_value = "0.00001")]
-        par_value: String,
-
-        /// Authorized share count
-        #[arg(long)]
-        authorized_shares: i64,
-
-        /// Liquidation preference description (preferred only)
-        #[arg(long)]
-        liquidation_preference: Option<String>,
-    },
-
     /// List equity grants
     Grants,
 
@@ -71,10 +41,10 @@ pub enum CapTableCommand {
     /// Issue shares (create an equity grant)
     ///
     /// Examples:
-    ///   corp cap-table issue --cap-table-id <ID> --share-class-id <ID> \
+    ///   corp cap-table issue --cap-table-id <ID> --instrument-id <ID> \
     ///     --recipient-contact-id <ID> --recipient-name "Jane Doe" \
     ///     --grant-type common_stock --shares 1000000
-    ///   corp cap-table issue --cap-table-id <ID> --share-class-id <ID> \
+    ///   corp cap-table issue --cap-table-id <ID> --instrument-id <ID> \
     ///     --recipient-contact-id <ID> --recipient-name "Jane Doe" \
     ///     --grant-type iso --shares 500000 --price-per-share-cents 1
     Issue {
@@ -82,9 +52,9 @@ pub enum CapTableCommand {
         #[arg(long)]
         cap_table_id: String,
 
-        /// Share class ID (from `corp cap-table share-classes`)
+        /// Instrument ID (from `corp cap-table instruments`)
         #[arg(long)]
-        share_class_id: String,
+        instrument_id: String,
 
         /// Recipient contact ID (from `corp contacts list`)
         #[arg(long)]
@@ -222,9 +192,9 @@ pub enum CapTableCommand {
         #[arg(long)]
         to_holder_id: String,
 
-        /// Share class ID (from `corp cap-table share-classes`)
+        /// Instrument ID (from `corp cap-table instruments`)
         #[arg(long)]
-        share_class_id: String,
+        instrument_id: String,
 
         /// Number of shares to transfer
         #[arg(long)]
@@ -342,21 +312,37 @@ pub enum CapTableCommand {
 
     // ── Instruments ───────────────────────────────────────────────────────────
     /// List instruments
-    Instruments { entity_id: String },
+    Instruments,
 
-    /// Create an instrument definition
+    /// Create an instrument
     CreateInstrument {
+        /// Cap table ID (from `corp cap-table show`)
+        #[arg(long)]
+        cap_table_id: String,
+
+        /// Short symbol, e.g. CS-A or PREF-SEED
         #[arg(long)]
         symbol: String,
 
+        /// Instrument kind [possible values: common_equity, preferred_equity, membership_unit, option_grant, safe, convertible_note, warrant]
         #[arg(long, value_parser = ["common_equity", "preferred_equity", "membership_unit", "option_grant", "safe", "convertible_note", "warrant"])]
         kind: String,
 
+        /// Authorized unit count (optional)
         #[arg(long)]
         authorized_units: Option<i64>,
 
+        /// Par value per unit (decimal string, e.g. "0.00001"; optional)
+        #[arg(long)]
+        par_value: Option<String>,
+
+        /// Issue price in cents (optional)
         #[arg(long)]
         issue_price_cents: Option<i64>,
+
+        /// Liquidation preference description (preferred only; optional)
+        #[arg(long)]
+        liquidation_preference: Option<String>,
     },
 
     // ── Positions ─────────────────────────────────────────────────────────────
@@ -561,34 +547,6 @@ pub async fn run(cmd: CapTableCommand, ctx: &Context) -> anyhow::Result<()> {
             output::print_success("Cap table initialized.", mode);
         }
 
-        CapTableCommand::ShareClasses => {
-            let path = format!("/v1/entities/{entity_id}/share-classes");
-            let value = ctx.get(&path).await?;
-            output::print_value(&value, mode);
-        }
-
-        CapTableCommand::CreateShareClass {
-            cap_table_id,
-            class_code,
-            stock_type,
-            par_value,
-            authorized_shares,
-            liquidation_preference,
-        } => {
-            let path = format!("/v1/entities/{entity_id}/share-classes");
-            let body = json!({
-                "cap_table_id": cap_table_id,
-                "class_code": class_code,
-                "stock_type": stock_type,
-                "par_value": par_value,
-                "authorized_shares": authorized_shares,
-                "liquidation_preference": liquidation_preference,
-            });
-            let value = ctx.post(&path, &body).await?;
-            output::print_value(&value, mode);
-            output::print_success("Share class created.", mode);
-        }
-
         CapTableCommand::Grants => {
             let path = format!("/v1/entities/{entity_id}/grants");
             let value = ctx.get(&path).await?;
@@ -603,7 +561,7 @@ pub async fn run(cmd: CapTableCommand, ctx: &Context) -> anyhow::Result<()> {
 
         CapTableCommand::Issue {
             cap_table_id,
-            share_class_id,
+            instrument_id,
             recipient_contact_id,
             recipient_name,
             grant_type,
@@ -613,7 +571,7 @@ pub async fn run(cmd: CapTableCommand, ctx: &Context) -> anyhow::Result<()> {
             let path = format!("/v1/entities/{entity_id}/grants");
             let body = json!({
                 "cap_table_id": cap_table_id,
-                "share_class_id": share_class_id,
+                "instrument_id": instrument_id,
                 "recipient_contact_id": recipient_contact_id,
                 "recipient_name": recipient_name,
                 "grant_type": grant_type,
@@ -718,7 +676,7 @@ pub async fn run(cmd: CapTableCommand, ctx: &Context) -> anyhow::Result<()> {
             cap_table_id,
             from_holder_id,
             to_holder_id,
-            share_class_id,
+            instrument_id,
             shares,
             transfer_type,
             price_per_share_cents,
@@ -728,7 +686,7 @@ pub async fn run(cmd: CapTableCommand, ctx: &Context) -> anyhow::Result<()> {
                 "cap_table_id": cap_table_id,
                 "from_holder_id": from_holder_id,
                 "to_holder_id": to_holder_id,
-                "share_class_id": share_class_id,
+                "instrument_id": instrument_id,
                 "shares": shares,
                 "transfer_type": transfer_type,
                 "price_per_share_cents": price_per_share_cents,
@@ -860,24 +818,30 @@ pub async fn run(cmd: CapTableCommand, ctx: &Context) -> anyhow::Result<()> {
         }
 
         // ── Instruments ───────────────────────────────────────────────────────
-        CapTableCommand::Instruments { entity_id: eid } => {
-            let path = format!("/v1/entities/{eid}/instruments");
+        CapTableCommand::Instruments => {
+            let path = format!("/v1/entities/{entity_id}/instruments");
             let value = ctx.get(&path).await?;
             output::print_value(&value, mode);
         }
 
         CapTableCommand::CreateInstrument {
+            cap_table_id,
             symbol,
             kind,
             authorized_units,
+            par_value,
             issue_price_cents,
+            liquidation_preference,
         } => {
             let path = format!("/v1/entities/{entity_id}/instruments");
             let body = json!({
+                "cap_table_id": cap_table_id,
                 "symbol": symbol,
                 "kind": kind,
                 "authorized_units": authorized_units,
+                "par_value": par_value,
                 "issue_price_cents": issue_price_cents,
+                "liquidation_preference": liquidation_preference,
             });
             let value = ctx.post(&path, &body).await?;
             output::print_value(&value, mode);

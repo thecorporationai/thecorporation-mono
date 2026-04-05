@@ -4,7 +4,7 @@ use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 
 use super::types::{GrantStatus, GrantType, ShareCount};
-use crate::ids::{CapTableId, ContactId, EntityId, EquityGrantId, ShareClassId};
+use crate::ids::{CapTableId, ContactId, EntityId, EquityGrantId, InstrumentId};
 
 /// An equity grant issued to a recipient — covering common/preferred stock,
 /// ISOs, NSOs, RSAs, and membership units.
@@ -13,7 +13,7 @@ pub struct EquityGrant {
     pub grant_id: EquityGrantId,
     pub entity_id: EntityId,
     pub cap_table_id: CapTableId,
-    pub share_class_id: ShareClassId,
+    pub instrument_id: InstrumentId,
     /// Contact record for the grant recipient.
     pub recipient_contact_id: ContactId,
     pub recipient_name: String,
@@ -37,7 +37,7 @@ impl EquityGrant {
     pub fn new(
         entity_id: EntityId,
         cap_table_id: CapTableId,
-        share_class_id: ShareClassId,
+        instrument_id: InstrumentId,
         recipient_contact_id: ContactId,
         recipient_name: impl Into<String>,
         grant_type: GrantType,
@@ -51,7 +51,7 @@ impl EquityGrant {
             grant_id: EquityGrantId::new(),
             entity_id,
             cap_table_id,
-            share_class_id,
+            instrument_id,
             recipient_contact_id,
             recipient_name: recipient_name.into(),
             grant_type,
@@ -76,7 +76,7 @@ mod tests {
         EquityGrant::new(
             EntityId::new(),
             CapTableId::new(),
-            ShareClassId::new(),
+            InstrumentId::new(),
             ContactId::new(),
             "Jane Founder",
             grant_type,
@@ -97,7 +97,7 @@ mod tests {
         EquityGrant::new(
             EntityId::new(),
             CapTableId::new(),
-            ShareClassId::new(),
+            InstrumentId::new(),
             ContactId::new(),
             "Bob Employee",
             GrantType::Iso,
