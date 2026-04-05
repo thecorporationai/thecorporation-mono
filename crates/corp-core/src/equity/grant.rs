@@ -27,6 +27,10 @@ pub struct EquityGrant {
     pub vesting_months: Option<u32>,
     /// Cliff length in months (shares before this date do not vest).
     pub cliff_months: Option<u32>,
+    /// Cumulative vested shares — updated by the vest_event handler.
+    /// Defaults to zero for grants created before this field existed.
+    #[serde(default)]
+    pub vested_shares: ShareCount,
     pub status: GrantStatus,
     pub created_at: DateTime<Utc>,
 }
@@ -60,6 +64,7 @@ impl EquityGrant {
             vesting_start,
             vesting_months,
             cliff_months,
+            vested_shares: ShareCount::ZERO,
             status: GrantStatus::Issued,
             created_at: Utc::now(),
         }
@@ -214,5 +219,21 @@ mod tests {
         assert_eq!(de.grant_id, g.grant_id);
         assert_eq!(de.grant_type, GrantType::Iso);
         assert_eq!(de.status, GrantStatus::Issued);
+    }
+
+    #[test]
+    fn new_grant_vested_shares_is_zero() {
+        let g = make_grant(GrantType::Iso);
+        assert_eq!(g.vested_shares, ShareCount::ZERO);
+    }
+
+    #[test]
+    fn vested_shares_defaults_when_missing_in_json() {
+        // Simulate a legacy grant stored without vested_shares
+        let g = make_grant(GrantType::CommonStock);
+        let mut json: serde_json::Value = serde_json::to_value(&g).unwrap();
+        json.as_object_mut().unwrap().remove("vested_shares");
+        let de: EquityGrant = serde_json::from_value(json).unwrap();
+        assert_eq!(de.vested_shares, ShareCount::ZERO);
     }
 }

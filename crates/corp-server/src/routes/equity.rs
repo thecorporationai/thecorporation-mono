@@ -1829,6 +1829,19 @@ async fn vest_event(
     store
         .write::<VestingEvent>(&event, event_id, "main", "vest event")
         .await?;
+
+    // Update the grant's vested_shares aggregate
+    let mut grant = store
+        .read::<EquityGrant>(event.grant_id, "main")
+        .await?;
+    grant.vested_shares = grant
+        .vested_shares
+        .checked_add(event.share_count)
+        .unwrap_or(grant.vested_shares);
+    store
+        .write::<EquityGrant>(&grant, grant.grant_id, "main", "update vested_shares")
+        .await?;
+
     Ok(Json(event))
 }
 

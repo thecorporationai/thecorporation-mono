@@ -164,6 +164,7 @@ export interface EquityGrant {
   recipient_name: string;
   grant_type: string;
   shares: number;
+  vested_shares: number;
   status: string;
   created_at: string;
 }
