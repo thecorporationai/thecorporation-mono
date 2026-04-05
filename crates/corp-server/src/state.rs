@@ -419,11 +419,14 @@ impl ApiKeyResolver for StoredApiKeyResolver {
             .await
             .map_err(|_| AuthError::InvalidApiKey)?;
 
-        // Iterate all API key records and verify the Argon2 hash.
+        // Filter by key prefix (O(1) lookup), then verify Argon2 hash on candidates.
         let key_ids = store
             .list_api_key_ids()
             .await
             .map_err(|_| AuthError::InvalidApiKey)?;
+
+        let lookup_prefix =
+            corp_storage::workspace_store::compute_key_prefix(raw_key);
 
         for key_id in key_ids {
             let record = match store.read_api_key(key_id).await {
@@ -433,6 +436,14 @@ impl ApiKeyResolver for StoredApiKeyResolver {
 
             if record.deleted {
                 continue;
+            }
+
+            // Fast path: skip records whose prefix doesn't match.
+            // Keys without a stored prefix (legacy) fall through to Argon2.
+            if let Some(ref stored_prefix) = record.key_prefix {
+                if *stored_prefix != lookup_prefix {
+                    continue;
+                }
             }
 
             let matches = ApiKeyManager::verify(raw_key, &record.key_hash).unwrap_or(false);

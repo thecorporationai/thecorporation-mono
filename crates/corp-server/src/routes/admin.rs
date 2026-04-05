@@ -174,10 +174,12 @@ async fn create_api_key(
     let workspace_store = state.open_workspace_store(principal.workspace_id).await?;
 
     let (raw_key, key_hash) = ApiKeyManager::generate();
+    let key_prefix = Some(corp_storage::workspace_store::compute_key_prefix(&raw_key));
 
     let record = ApiKeyRecord::new(
         body.name.clone(),
         key_hash,
+        key_prefix,
         body.scopes.clone(),
         body.entity_id,
     );

@@ -36,6 +36,12 @@ pub struct ApiKeyRecord {
     /// Hash of the raw secret.  Never the plaintext.
     pub key_hash: String,
 
+    /// Non-secret prefix derived from the raw key (first 8 hex chars of SHA-256).
+    /// Used for O(1) candidate filtering before the expensive Argon2 verify.
+    /// `None` for keys created before this field was added.
+    #[serde(default)]
+    pub key_prefix: Option<String>,
+
     /// Capability scopes granted to this key (stored as kebab-case strings,
     /// matching `corp_core::auth::Scope`'s serde representation).
     pub scopes: Vec<String>,
@@ -50,11 +56,19 @@ pub struct ApiKeyRecord {
     pub deleted: bool,
 }
 
+/// Compute a non-secret prefix from a raw API key for fast lookup filtering.
+pub fn compute_key_prefix(raw_key: &str) -> String {
+    use sha2::{Digest, Sha256};
+    let hash = Sha256::digest(raw_key.as_bytes());
+    format!("{:x}", hash)[..8].to_owned()
+}
+
 impl ApiKeyRecord {
-    /// Construct a new, non-deleted API key record.
+    /// Construct a new, non-deleted API key record with a prefix for fast lookup.
     pub fn new(
         name: impl Into<String>,
         key_hash: impl Into<String>,
+        key_prefix: Option<String>,
         scopes: Vec<String>,
         entity_id: Option<EntityId>,
     ) -> Self {
@@ -62,6 +76,7 @@ impl ApiKeyRecord {
             key_id: ApiKeyId::new(),
             name: name.into(),
             key_hash: key_hash.into(),
+            key_prefix,
             scopes,
             entity_id,
             created_at: Utc::now(),

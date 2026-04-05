@@ -53,9 +53,19 @@ pub async fn run(cmd: EntitiesCommand, ctx: &Context) -> anyhow::Result<()> {
             output::print_value(&value, mode);
         }
         EntitiesCommand::Show { entity_ref } => {
+            // Resolve entity_ref: supports UUID, short ID prefix, or name match.
+            let entities_list = ctx.client.get("/v1/entities").await?;
+            let candidates = entities_list.as_array().map(|a| a.as_slice());
+            let resolved = crate::refs::resolve(
+                &entity_ref,
+                crate::refs::RefKind::Entity,
+                candidates,
+                None,
+                &mut ctx.refs.borrow_mut(),
+            )?;
             let value = ctx
                 .client
-                .get(&format!("/v1/entities/{entity_ref}"))
+                .get(&format!("/v1/entities/{resolved}"))
                 .await?;
             output::print_value(&value, mode);
         }
@@ -70,10 +80,20 @@ pub async fn run(cmd: EntitiesCommand, ctx: &Context) -> anyhow::Result<()> {
             output::print_success("Entity created.", mode);
         }
         EntitiesCommand::Dissolve { entity_ref, reason } => {
+            // Resolve entity_ref: supports UUID, short ID prefix, or name match.
+            let entities_list = ctx.client.get("/v1/entities").await?;
+            let candidates = entities_list.as_array().map(|a| a.as_slice());
+            let resolved = crate::refs::resolve(
+                &entity_ref,
+                crate::refs::RefKind::Entity,
+                candidates,
+                None,
+                &mut ctx.refs.borrow_mut(),
+            )?;
             let body = json!({ "reason": reason });
             let value = ctx
                 .client
-                .post(&format!("/v1/entities/{entity_ref}/dissolve"), &body)
+                .post(&format!("/v1/entities/{resolved}/dissolve"), &body)
                 .await?;
             output::print_value(&value, mode);
             output::print_success("Entity dissolved.", mode);

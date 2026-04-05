@@ -465,8 +465,8 @@ pub enum CapTableCommand {
         #[arg(long)]
         name: String,
 
-        /// Role [possible values: parent, subsidiary, affiliate, branch]
-        #[arg(long)]
+        /// Role [possible values: operating, control, investment, nonprofit, spv, other]
+        #[arg(long, value_parser = ["operating", "control", "investment", "nonprofit", "spv", "other"])]
         role: String,
 
         /// Entity ID to link (optional)
@@ -488,8 +488,8 @@ pub enum CapTableCommand {
         #[arg(long)]
         child_legal_entity_id: String,
 
-        /// Control type [possible values: majority_ownership, minority_ownership, management_control, contractual]
-        #[arg(long)]
+        /// Control type [possible values: voting, board, economic, contractual]
+        #[arg(long, value_parser = ["voting", "board", "economic", "contractual"])]
         control_type: String,
 
         /// Voting power in basis points (e.g. 5100 = 51%; optional)
