@@ -120,6 +120,7 @@ impl TestServer {
             jwt_config: jwt,
             api_key_resolver: Arc::new(NoopKeyResolver),
             storage_backend: StorageBackend::Git,
+            rate_limiter: corp_auth::RateLimiter::new(10_000, std::time::Duration::from_secs(60)),
         };
         let app = router(state);
 

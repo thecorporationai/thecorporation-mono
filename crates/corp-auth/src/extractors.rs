@@ -61,6 +61,7 @@ where
     S: Send + Sync,
     JwtConfig: FromRef<S>,
     Arc<dyn ApiKeyResolver>: FromRef<S>,
+    Option<RateLimiter>: FromRef<S>,
 {
     type Rejection = AuthError;
 
@@ -83,8 +84,20 @@ where
 
         let jwt_config = JwtConfig::from_ref(state);
         let resolver = Arc::<dyn ApiKeyResolver>::from_ref(state);
+        let rate_limiter = Option::<RateLimiter>::from_ref(state);
 
         async move {
+            // Rate-limit check keyed on auth header prefix.
+            if let Some(ref rl) = rate_limiter {
+                let rl_key = auth_header
+                    .as_deref()
+                    .or(x_api_key.as_deref())
+                    .unwrap_or("anonymous");
+                // Use a truncated key to avoid storing full secrets.
+                let rl_key: String = rl_key.chars().take(20).collect();
+                rl.check(&rl_key)?;
+            }
+
             // 1. Check X-Api-Key header first.
             if let Some(raw) = x_api_key {
                 return resolver.resolve(&raw).await;

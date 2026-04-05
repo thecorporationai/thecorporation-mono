@@ -101,6 +101,7 @@ impl TestCtx {
             jwt_config,
             api_key_resolver: Arc::new(NoopApiKeyResolver),
             storage_backend: StorageBackend::Git,
+            rate_limiter: corp_auth::RateLimiter::new(10_000, std::time::Duration::from_secs(60)),
         };
 
         let app = router(state);

@@ -421,14 +421,34 @@ async fn advance_formation(
         // Build the variable map for template substitution.
         let mut vars = std::collections::HashMap::new();
         vars.insert("legal_name".to_string(), entity.legal_name.clone());
+        vars.insert("entity_legal_name".to_string(), entity.legal_name.clone());
         vars.insert(
             "jurisdiction".to_string(),
             entity.jurisdiction.as_str().to_string(),
         );
-        vars.insert(
-            "effective_date".to_string(),
-            Utc::now().format("%Y-%m-%d").to_string(),
-        );
+        let today = Utc::now().format("%Y-%m-%d").to_string();
+        vars.insert("effective_date".to_string(), today.clone());
+
+        // Populate registered agent from entity data if available.
+        if let Some(ref ra_name) = entity.registered_agent_name {
+            vars.insert("registered_agent_name".to_string(), ra_name.clone());
+        }
+        if let Some(ref ra_addr) = entity.registered_agent_address {
+            vars.insert("registered_agent_address".to_string(), ra_addr.clone());
+        }
+
+        // Common defaults for C-Corp formation.
+        vars.insert("authorized_shares".to_string(), "10,000,000".to_string());
+        vars.insert("par_value".to_string(), "$0.00001".to_string());
+        vars.insert("board_size".to_string(), "1".to_string());
+        vars.insert("fiscal_year_end".to_string(), "December 31".to_string());
+        vars.insert("incorporator_name".to_string(), entity.legal_name.clone());
+        vars.insert("incorporator_address".to_string(), entity.jurisdiction.as_str().to_string());
+        vars.insert("principal_name".to_string(), entity.legal_name.clone());
+        vars.insert("directors_list".to_string(), "As designated by the Incorporator".to_string());
+        vars.insert("officers_list".to_string(), "As designated by the Board of Directors".to_string());
+        vars.insert("founders_table".to_string(), "See cap table for founder allocations".to_string());
+        vars.insert("company_address".to_string(), entity.jurisdiction.as_str().to_string());
 
         for (doc_type, title) in doc_types {
             // Use the full governance AST template when available, falling

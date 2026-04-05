@@ -76,6 +76,9 @@ pub struct AppState {
 
     /// Which storage backend to use when opening entity / workspace stores.
     pub storage_backend: StorageBackend,
+
+    /// In-process rate limiter keyed on client identifier (IP or API key prefix).
+    pub rate_limiter: corp_auth::RateLimiter,
 }
 
 impl AppState {
@@ -126,11 +129,17 @@ impl AppState {
             storage_backend: storage_backend.clone(),
         });
 
+        // 100 requests per minute per key — protects against brute-force
+        // and accidental hot loops without impacting normal usage.
+        let rate_limiter =
+            corp_auth::RateLimiter::new(100, std::time::Duration::from_secs(60));
+
         Self {
             data_dir,
             jwt_config,
             api_key_resolver,
             storage_backend,
+            rate_limiter,
         }
     }
 
@@ -363,6 +372,13 @@ impl FromRef<AppState> for Arc<JwtConfig> {
 impl FromRef<AppState> for Arc<dyn ApiKeyResolver> {
     fn from_ref(state: &AppState) -> Self {
         Arc::clone(&state.api_key_resolver)
+    }
+}
+
+/// Provides the rate limiter to the `Principal` extractor.
+impl FromRef<AppState> for Option<corp_auth::RateLimiter> {
+    fn from_ref(state: &AppState) -> Self {
+        Some(state.rate_limiter.clone())
     }
 }
 
