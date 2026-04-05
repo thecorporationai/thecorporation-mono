@@ -59,6 +59,7 @@ import type {
   ApiKeyId,
   HolderId,
   InstrumentId,
+  CapTableId,
   TransferId,
   FundingRoundId,
   EquityGrantId,
@@ -141,20 +142,38 @@ export class CorpClient {
 
   private async request<T>(method: string, path: string, body?: unknown): Promise<T> {
     const url = `${this.baseUrl}${path}`;
-    const opts: RequestInit = { method, headers: this.headers };
-    if (body !== undefined) {
-      opts.body = JSON.stringify(body);
+    const maxRetries = 3;
+
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      const opts: RequestInit = {
+        method,
+        headers: this.headers,
+        signal: AbortSignal.timeout(30_000),
+      };
+      if (body !== undefined) {
+        opts.body = JSON.stringify(body);
+      }
+
+      const resp = await fetch(url, opts);
+
+      // Retry on 409 (concurrency conflict) and 429 (rate limited)
+      if ((resp.status === 409 || resp.status === 429) && attempt < maxRetries - 1) {
+        const delay = Math.min(100 * Math.pow(2, attempt), 2000);
+        await new Promise((r) => setTimeout(r, delay));
+        continue;
+      }
+
+      if (!resp.ok) {
+        const text = await resp.text().catch(() => "");
+        throw new CorpApiError(resp.status, text, path);
+      }
+
+      if (resp.status === 204) return {} as T;
+      return resp.json() as Promise<T>;
     }
 
-    const resp = await fetch(url, opts);
-
-    if (!resp.ok) {
-      const text = await resp.text().catch(() => "");
-      throw new CorpApiError(resp.status, text, path);
-    }
-
-    if (resp.status === 204) return {} as T;
-    return resp.json() as Promise<T>;
+    // Should never reach here, but satisfy TypeScript
+    throw new CorpApiError(500, "max retries exceeded", path);
   }
 }
 
