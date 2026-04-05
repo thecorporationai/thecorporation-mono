@@ -1218,9 +1218,9 @@ async fn confirm_ein(
 ) -> Result<Json<TaxProfile>, AppError> {
     let (store, entity) = load_entity(&state, principal.workspace_id, entity_id).await?;
 
-    if entity.formation_status != FormationStatus::Filed {
+    if entity.formation_status != FormationStatus::EinApplied {
         return Err(AppError::BadRequest(format!(
-            "entity must be in filed state to confirm EIN, currently: {:?}",
+            "entity must be in ein_applied state to confirm EIN, currently: {:?}",
             entity.formation_status
         )));
     }

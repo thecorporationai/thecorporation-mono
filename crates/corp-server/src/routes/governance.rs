@@ -1128,10 +1128,25 @@ async fn resolve_item(
         .map_err(AppError::Storage)?;
 
     // Tally votes for this specific agenda item.
+    // For PerUnit bodies, weight each vote by the casting seat's voting_power.
     let vote_ids = read_index(&store, &vote_index_path(meeting_id)).await?;
     let mut votes_for = 0u32;
     let mut votes_against = 0u32;
     let mut votes_abstain = 0u32;
+
+    // Pre-load seats for per-unit weighting.
+    let seat_map: std::collections::HashMap<GovernanceSeatId, GovernanceSeat> =
+        if body.voting_method == VotingMethod::PerUnit {
+            store
+                .read_all::<GovernanceSeat>(BRANCH)
+                .await
+                .map_err(AppError::Storage)?
+                .into_iter()
+                .map(|s| (s.seat_id, s))
+                .collect()
+        } else {
+            std::collections::HashMap::new()
+        };
 
     for id_str in &vote_ids {
         let path = format!("governance/meetings/{}/votes/{}.json", meeting_id, id_str);
@@ -1139,10 +1154,17 @@ async fn resolve_item(
             if vote.agenda_item_id != item_id {
                 continue;
             }
+            let weight = match body.voting_method {
+                VotingMethod::PerCapita => 1,
+                VotingMethod::PerUnit => seat_map
+                    .get(&vote.seat_id)
+                    .map(|s| s.voting_power.value())
+                    .unwrap_or(1),
+            };
             match vote.value {
-                VoteValue::For => votes_for += 1,
-                VoteValue::Against => votes_against += 1,
-                VoteValue::Abstain => votes_abstain += 1,
+                VoteValue::For => votes_for += weight,
+                VoteValue::Against => votes_against += weight,
+                VoteValue::Abstain => votes_abstain += weight,
                 VoteValue::Recusal => {} // recusals excluded from all tallies
             }
         }
