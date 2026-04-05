@@ -24,6 +24,14 @@ import type {
   EquityGrant,
   SafeNote,
   Valuation,
+  Holder,
+  HolderType,
+  ShareTransfer,
+  TransferType,
+  Position,
+  FundingRound,
+  VestingSchedule,
+  VestingEvent,
   GovernanceBody,
   GovernanceSeat,
   Meeting,
@@ -49,6 +57,13 @@ import type {
   WorkItemId,
   ServiceRequestId,
   ApiKeyId,
+  HolderId,
+  InstrumentId,
+  TransferId,
+  FundingRoundId,
+  EquityGrantId,
+  VestingScheduleId,
+  VestingEventId,
 } from "./types.js";
 
 // ── Error ────────────────────────────────────────────────────────────────────
@@ -256,9 +271,19 @@ class EquityApi {
     return this.c.post(`/v1/entities/${entityId}/safes`, opts);
   }
 
-  convertSafe(entityId: EntityId, safeId: SafeNoteId): Promise<SafeNote> {
-    return this.c.post(`/v1/entities/${entityId}/safes/${safeId}/convert`, {});
+  convertSafe(entityId: EntityId, safeId: SafeNoteId, opts: {
+    instrument_id: InstrumentId;
+    conversion_shares: number;
+    holder_id: HolderId;
+  }): Promise<SafeNote> {
+    return this.c.post(`/v1/entities/${entityId}/safes/${safeId}/convert`, opts);
   }
+
+  cancelSafe(entityId: EntityId, safeId: SafeNoteId): Promise<SafeNote> {
+    return this.c.post(`/v1/entities/${entityId}/safes/${safeId}/cancel`, {});
+  }
+
+  // ── Valuations ──────────────────────────────────────────────────────────
 
   listValuations(entityId: EntityId): Promise<Valuation[]> {
     return this.c.get(`/v1/entities/${entityId}/valuations`);
@@ -274,6 +299,161 @@ class EquityApi {
 
   approveValuation(entityId: EntityId, valuationId: ValuationId, approvedBy?: string): Promise<Valuation> {
     return this.c.post(`/v1/entities/${entityId}/valuations/${valuationId}/approve`, { approved_by: approvedBy });
+  }
+
+  // ── Holders ─────────────────────────────────────────────────────────────
+
+  listHolders(entityId: EntityId): Promise<Holder[]> {
+    return this.c.get(`/v1/entities/${entityId}/holders`);
+  }
+
+  getHolder(entityId: EntityId, holderId: HolderId): Promise<Holder> {
+    return this.c.get(`/v1/entities/${entityId}/holders/${holderId}`);
+  }
+
+  createHolder(entityId: EntityId, opts: {
+    name: string;
+    holder_type: HolderType;
+    contact_id?: ContactId;
+  }): Promise<Holder> {
+    return this.c.post(`/v1/entities/${entityId}/holders`, opts);
+  }
+
+  // ── Transfers ───────────────────────────────────────────────────────────
+
+  listTransfers(entityId: EntityId): Promise<ShareTransfer[]> {
+    return this.c.get(`/v1/entities/${entityId}/transfers`);
+  }
+
+  getTransfer(entityId: EntityId, transferId: TransferId): Promise<ShareTransfer> {
+    return this.c.get(`/v1/entities/${entityId}/transfers/${transferId}`);
+  }
+
+  createTransfer(entityId: EntityId, opts: {
+    cap_table_id: CapTableId;
+    from_holder_id: HolderId;
+    to_holder_id: HolderId;
+    instrument_id: InstrumentId;
+    shares: number;
+    transfer_type: TransferType;
+    price_per_share_cents?: number;
+  }): Promise<ShareTransfer> {
+    return this.c.post(`/v1/entities/${entityId}/transfers`, opts);
+  }
+
+  approveTransfer(entityId: EntityId, transferId: TransferId): Promise<ShareTransfer> {
+    return this.c.post(`/v1/entities/${entityId}/transfers/${transferId}/approve`, {});
+  }
+
+  executeTransfer(entityId: EntityId, transferId: TransferId): Promise<ShareTransfer> {
+    return this.c.post(`/v1/entities/${entityId}/transfers/${transferId}/execute`, {});
+  }
+
+  denyTransfer(entityId: EntityId, transferId: TransferId): Promise<ShareTransfer> {
+    return this.c.post(`/v1/entities/${entityId}/transfers/${transferId}/deny`, {});
+  }
+
+  cancelTransfer(entityId: EntityId, transferId: TransferId): Promise<ShareTransfer> {
+    return this.c.post(`/v1/entities/${entityId}/transfers/${transferId}/cancel`, {});
+  }
+
+  // ── Positions ───────────────────────────────────────────────────────────
+
+  listPositions(entityId: EntityId): Promise<Position[]> {
+    return this.c.get(`/v1/entities/${entityId}/positions`);
+  }
+
+  getPosition(entityId: EntityId, positionId: string): Promise<Position> {
+    return this.c.get(`/v1/entities/${entityId}/positions/${positionId}`);
+  }
+
+  createPosition(entityId: EntityId, opts: {
+    holder_id: HolderId;
+    instrument_id: InstrumentId;
+    quantity_units: number;
+    principal_cents?: number;
+    source_reference?: string;
+  }): Promise<Position> {
+    return this.c.post(`/v1/entities/${entityId}/positions`, opts);
+  }
+
+  applyPositionDelta(entityId: EntityId, positionId: string, opts: {
+    quantity_delta: number;
+    principal_delta?: number;
+    source_reference?: string;
+  }): Promise<Position> {
+    return this.c.post(`/v1/entities/${entityId}/positions/${positionId}/delta`, opts);
+  }
+
+  // ── Funding Rounds ──────────────────────────────────────────────────────
+
+  listRounds(entityId: EntityId): Promise<FundingRound[]> {
+    return this.c.get(`/v1/entities/${entityId}/rounds`);
+  }
+
+  getRound(entityId: EntityId, roundId: FundingRoundId): Promise<FundingRound> {
+    return this.c.get(`/v1/entities/${entityId}/rounds/${roundId}`);
+  }
+
+  createRound(entityId: EntityId, opts: {
+    cap_table_id: CapTableId;
+    name: string;
+    target_amount_cents: number;
+    price_per_share_cents?: number;
+  }): Promise<FundingRound> {
+    return this.c.post(`/v1/entities/${entityId}/rounds`, opts);
+  }
+
+  advanceRound(entityId: EntityId, roundId: FundingRoundId): Promise<FundingRound> {
+    return this.c.post(`/v1/entities/${entityId}/rounds/${roundId}/advance`, {});
+  }
+
+  closeRound(entityId: EntityId, roundId: FundingRoundId): Promise<FundingRound> {
+    return this.c.post(`/v1/entities/${entityId}/rounds/${roundId}/close`, {});
+  }
+
+  // ── Vesting ─────────────────────────────────────────────────────────────
+
+  listVestingSchedules(entityId: EntityId): Promise<VestingSchedule[]> {
+    return this.c.get(`/v1/entities/${entityId}/vesting-schedules`);
+  }
+
+  getVestingSchedule(entityId: EntityId, scheduleId: VestingScheduleId): Promise<VestingSchedule> {
+    return this.c.get(`/v1/entities/${entityId}/vesting-schedules/${scheduleId}`);
+  }
+
+  createVestingSchedule(entityId: EntityId, opts: {
+    grant_id: EquityGrantId;
+    total_shares: number;
+    vesting_start_date: string;
+    template: string;
+    cliff_months: number;
+    total_months: number;
+    acceleration_single_trigger?: boolean;
+    acceleration_double_trigger?: boolean;
+    early_exercise_allowed?: boolean;
+  }): Promise<VestingSchedule> {
+    return this.c.post(`/v1/entities/${entityId}/vesting-schedules`, opts);
+  }
+
+  terminateVesting(entityId: EntityId, scheduleId: VestingScheduleId): Promise<VestingSchedule> {
+    return this.c.post(`/v1/entities/${entityId}/vesting-schedules/${scheduleId}/terminate`, {});
+  }
+
+  materializeEvents(entityId: EntityId, scheduleId: VestingScheduleId): Promise<VestingEvent[]> {
+    return this.c.post(`/v1/entities/${entityId}/vesting-schedules/${scheduleId}/materialize`, {});
+  }
+
+  listVestingEvents(entityId: EntityId): Promise<VestingEvent[]> {
+    return this.c.get(`/v1/entities/${entityId}/vesting-events`);
+  }
+
+  vestEvent(entityId: EntityId, eventId: VestingEventId): Promise<VestingEvent> {
+    return this.c.post(`/v1/entities/${entityId}/vesting-events/${eventId}/vest`, {});
+  }
+
+  forfeitEvent(entityId: EntityId, eventId: VestingEventId): Promise<VestingEvent> {
+    return this.c.post(`/v1/entities/${entityId}/vesting-events/${eventId}/forfeit`, {});
   }
 }
 

@@ -185,6 +185,86 @@ export interface Valuation {
   created_at: string;
 }
 
+export type HolderType = "individual" | "entity" | "trust";
+
+export interface Holder {
+  holder_id: HolderId;
+  entity_id: EntityId;
+  contact_id: ContactId | null;
+  name: string;
+  holder_type: HolderType;
+  created_at: string;
+}
+
+export type TransferStatus = "draft" | "pending_board_approval" | "approved" | "executed" | "denied" | "cancelled";
+export type TransferType = "secondary_sale" | "gift" | "trust_transfer" | "estate" | "other";
+
+export interface ShareTransfer {
+  transfer_id: TransferId;
+  entity_id: EntityId;
+  cap_table_id: CapTableId;
+  from_holder_id: HolderId;
+  to_holder_id: HolderId;
+  instrument_id: InstrumentId;
+  shares: number;
+  transfer_type: TransferType;
+  price_per_share_cents: number | null;
+  status: TransferStatus;
+  created_at: string;
+}
+
+export type PositionStatus = "active" | "closed";
+
+export interface Position {
+  position_id: string;
+  entity_id: EntityId;
+  holder_id: HolderId;
+  instrument_id: InstrumentId;
+  quantity_units: number;
+  principal_cents: number;
+  source_reference: string | null;
+  status: PositionStatus;
+  updated_at: string;
+  created_at: string;
+}
+
+export type FundingRoundStatus = "term_sheet" | "diligence" | "closing" | "closed";
+
+export interface FundingRound {
+  round_id: FundingRoundId;
+  entity_id: EntityId;
+  cap_table_id: CapTableId;
+  name: string;
+  target_amount_cents: number;
+  price_per_share_cents: number | null;
+  status: FundingRoundStatus;
+  created_at: string;
+}
+
+export type VestingScheduleId = string;
+export type VestingEventId = string;
+
+export interface VestingSchedule {
+  schedule_id: VestingScheduleId;
+  grant_id: EquityGrantId;
+  entity_id: EntityId;
+  total_shares: number;
+  vesting_start_date: string;
+  template: string;
+  cliff_months: number;
+  total_months: number;
+  status: string;
+  created_at: string;
+}
+
+export interface VestingEvent {
+  event_id: VestingEventId;
+  schedule_id: VestingScheduleId;
+  event_date: string;
+  shares: number;
+  status: string;
+}
+
 // ── Governance ───────────────────────────────────────────────────────────────
 
 export interface GovernanceBody {
