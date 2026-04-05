@@ -18,7 +18,7 @@ use serde::Deserialize;
 use crate::error::AppError;
 use crate::state::AppState;
 use corp_auth::{RequireContactsRead, RequireContactsWrite};
-use corp_core::contacts::{CapTableAccess, Contact, ContactCategory, ContactType};
+use corp_core::contacts::{CapTableAccess, Contact, ContactCategory, ContactStatus, ContactType};
 use corp_core::ids::{ContactId, EntityId};
 
 // ── Router ────────────────────────────────────────────────────────────────────
@@ -91,6 +91,22 @@ async fn create_contact(
     let store = state
         .open_entity_store(principal.workspace_id, entity_id)
         .await?;
+
+    // Reject duplicate emails among active contacts.
+    if let Some(ref email) = body.email {
+        if !email.is_empty() {
+            let existing: Vec<Contact> = store
+                .read_all::<Contact>("main")
+                .await
+                .map_err(AppError::Storage)?;
+            if existing.iter().any(|c| c.email.as_deref() == Some(email) && c.status == ContactStatus::Active) {
+                return Err(AppError::Conflict(format!(
+                    "a contact with email '{}' already exists",
+                    email
+                )));
+            }
+        }
+    }
 
     let mut contact = Contact::new(
         entity_id,
