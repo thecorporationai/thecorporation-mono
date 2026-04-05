@@ -82,12 +82,35 @@ async fn list_service_requests(
     Ok(Json(requests))
 }
 
+/// Known service slugs in the catalog.
+const KNOWN_SERVICE_SLUGS: &[&str] = &[
+    "registered-agent-de",
+    "registered-agent-ca",
+    "registered-agent-wy",
+    "registered-agent-nv",
+    "ein-application",
+    "annual-report-filing",
+    "foreign-qualification",
+    "certificate-good-standing",
+    "amendment-filing",
+    "dissolution-filing",
+    "trademark-search",
+    "trademark-filing",
+];
+
 async fn create_service_request(
     RequireServicesWrite(principal): RequireServicesWrite,
     State(state): State<AppState>,
     Path(entity_id): Path<EntityId>,
     Json(body): Json<CreateServiceRequestRequest>,
 ) -> Result<Json<ServiceRequest>, AppError> {
+    if !KNOWN_SERVICE_SLUGS.contains(&body.service_slug.as_str()) {
+        return Err(AppError::BadRequest(format!(
+            "unknown service slug '{}'. Valid services: {}",
+            body.service_slug,
+            KNOWN_SERVICE_SLUGS.join(", ")
+        )));
+    }
     let store = state
         .open_entity_store_for_write(principal.workspace_id, entity_id)
         .await?;

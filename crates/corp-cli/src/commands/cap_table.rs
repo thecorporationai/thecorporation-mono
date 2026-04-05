@@ -118,9 +118,26 @@ pub enum CapTableCommand {
     },
 
     /// Convert a SAFE note to equity
+    ///
+    /// Examples:
+    ///   corp cap-table convert-safe <SAFE_ID> \
+    ///     --instrument-id <INSTR_ID> --conversion-shares 500000 \
+    ///     --holder-id <HOLDER_ID>
     ConvertSafe {
         /// SAFE note ID (from `corp cap-table safes`)
         safe_id: String,
+
+        /// Target instrument to convert into (e.g. Series Seed Preferred)
+        #[arg(long)]
+        instrument_id: String,
+
+        /// Number of shares the investor receives
+        #[arg(long)]
+        conversion_shares: i64,
+
+        /// Holder record for the investor
+        #[arg(long)]
+        holder_id: String,
     },
 
     /// List valuations
@@ -613,9 +630,23 @@ pub async fn run(cmd: CapTableCommand, ctx: &Context) -> anyhow::Result<()> {
             output::print_success("SAFE note issued.", mode);
         }
 
-        CapTableCommand::ConvertSafe { safe_id } => {
+        CapTableCommand::ConvertSafe {
+            safe_id,
+            instrument_id,
+            conversion_shares,
+            holder_id,
+        } => {
             let path = format!("/v1/entities/{entity_id}/safes/{safe_id}/convert");
-            let value = ctx.post(&path, &json!({})).await?;
+            let value = ctx
+                .post(
+                    &path,
+                    &json!({
+                        "instrument_id": instrument_id,
+                        "conversion_shares": conversion_shares,
+                        "holder_id": holder_id
+                    }),
+                )
+                .await?;
             output::print_value(&value, mode);
             output::print_success("SAFE note converted.", mode);
         }
