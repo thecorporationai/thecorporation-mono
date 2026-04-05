@@ -216,6 +216,10 @@ async fn create_entity(
     State(state): State<AppState>,
     Json(body): Json<CreateEntityRequest>,
 ) -> Result<Json<Entity>, AppError> {
+    use crate::routes::validation::{validate_name, validate_jurisdiction};
+    validate_name("legal_name", &body.legal_name)?;
+    validate_jurisdiction(&body.jurisdiction)?;
+
     // Validate jurisdiction.
     let jurisdiction =
         Jurisdiction::new(&body.jurisdiction).map_err(|e| AppError::BadRequest(e.to_string()))?;

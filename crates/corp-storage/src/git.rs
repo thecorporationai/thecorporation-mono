@@ -344,8 +344,23 @@ fn update_ref(
         deref: false,
     };
 
-    repo.edit_references(std::iter::once(edit))
-        .map_err(git_err)?;
+    repo.edit_references(std::iter::once(edit)).map_err(|e| {
+        let msg = e.to_string();
+        // Detect CAS failure: gix reports "existing object id" mismatch
+        // when PreviousValue::MustExistAndMatch fails. Surface as a
+        // retryable 409 instead of an opaque 500.
+        if msg.contains("existing object")
+            || msg.contains("lock")
+            || msg.contains("did not match")
+        {
+            StorageError::ConcurrencyConflict(format!(
+                "concurrent write conflict on ref {}: {}",
+                ref_name, msg
+            ))
+        } else {
+            git_err(e)
+        }
+    })?;
     Ok(())
 }
 

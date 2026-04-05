@@ -88,6 +88,9 @@ async fn create_contact(
     Path(entity_id): Path<EntityId>,
     Json(body): Json<CreateContactRequest>,
 ) -> Result<Json<Contact>, AppError> {
+    use crate::routes::validation::validate_name;
+    validate_name("name", &body.name)?;
+
     let store = state
         .open_entity_store_for_write(principal.workspace_id, entity_id)
         .await?;

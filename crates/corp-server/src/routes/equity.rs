@@ -496,6 +496,9 @@ async fn create_instrument(
     Path(entity_id): Path<EntityId>,
     Json(body): Json<CreateInstrumentRequest>,
 ) -> Result<Json<Instrument>, AppError> {
+    use crate::routes::validation::validate_symbol;
+    validate_symbol("symbol", &body.symbol)?;
+
     let store = state
         .open_entity_store_for_write(principal.workspace_id, entity_id)
         .await?;
@@ -1439,6 +1442,9 @@ async fn create_holder(
     Path(entity_id): Path<EntityId>,
     Json(body): Json<CreateHolderRequest>,
 ) -> Result<Json<Holder>, AppError> {
+    use crate::routes::validation::validate_name;
+    validate_name("name", &body.name)?;
+
     let store = state
         .open_entity_store_for_write(principal.workspace_id, entity_id)
         .await?;

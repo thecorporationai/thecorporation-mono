@@ -28,6 +28,7 @@ pub mod next_steps;
 pub mod openapi;
 pub mod services;
 pub mod treasury;
+pub mod validation;
 pub mod work_items;
 
 /// Build and return the complete application router.
