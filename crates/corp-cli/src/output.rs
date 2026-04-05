@@ -171,13 +171,45 @@ fn print_ids(value: &Value) {
 
 /// Extract the primary ID field from a JSON object.
 ///
-/// Checks, in order: `id`, any field ending with `_id`.
+/// Checks, in order: `id`, well-known primary ID fields, then any `_id` fallback.
 fn extract_id(value: &Value) -> Option<String> {
     let obj = value.as_object()?;
     if let Some(v) = obj.get("id") {
         return Some(format_value(v));
     }
-    // Look for a field ending with `_id` — take the first one.
+    // Primary ID fields in priority order — domain-specific IDs before foreign keys.
+    const PRIMARY: &[&str] = &[
+        "entity_id",
+        "grant_id",
+        "share_class_id",
+        "holder_id",
+        "transfer_id",
+        "safe_note_id",
+        "valuation_id",
+        "position_id",
+        "instrument_id",
+        "funding_round_id",
+        "contact_id",
+        "meeting_id",
+        "body_id",
+        "seat_id",
+        "resolution_id",
+        "agenda_item_id",
+        "invoice_id",
+        "payment_id",
+        "bank_account_id",
+        "payroll_run_id",
+        "work_item_id",
+        "agent_id",
+        "workspace_id",
+        "cap_table_id",
+    ];
+    for field in PRIMARY {
+        if let Some(v) = obj.get(*field) {
+            return Some(format_value(v));
+        }
+    }
+    // Final fallback: first field ending with `_id`.
     obj.iter()
         .find(|(k, _)| k.ends_with("_id"))
         .map(|(_, v)| format_value(v))

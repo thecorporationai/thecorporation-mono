@@ -51,9 +51,14 @@ async fn main() -> anyhow::Result<()> {
     let cfg = config::Config::load()?;
 
     let is_local = cli.local || cli.data_dir.is_some();
+    let data_dir_str = if is_local {
+        Some(cli.data_dir.unwrap_or_else(|| "./corp-data".into()))
+    } else {
+        None
+    };
 
     let client: Box<dyn client::CorpClient> = if is_local {
-        let data_dir = cli.data_dir.unwrap_or_else(|| "./corp-data".into());
+        let data_dir = data_dir_str.clone().unwrap();
         // In local mode, auto() generates its own JWT — don't override with
         // an external API key from config.
         Box::new(LocalClient::auto(data_dir)?)
@@ -72,6 +77,7 @@ async fn main() -> anyhow::Result<()> {
         refs: std::cell::RefCell::new(refs::RefStore::load()),
         json: cli.json,
         quiet: cli.quiet,
+        data_dir: data_dir_str,
     };
 
     commands::run(cli.command, ctx).await

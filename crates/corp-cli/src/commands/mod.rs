@@ -31,6 +31,8 @@ pub struct Context {
     pub refs: std::cell::RefCell<RefStore>,
     pub json: bool,
     pub quiet: bool,
+    /// When set, active_entity_id is scoped to this directory.
+    pub data_dir: Option<String>,
 }
 
 impl Context {
@@ -39,13 +41,36 @@ impl Context {
         OutputMode::from_flags(self.json, self.quiet)
     }
 
-    /// Return the active entity ID from config, or an error if none is set.
+    /// Return the active entity ID, checking per-data-dir storage first.
     pub fn require_entity(&self) -> anyhow::Result<String> {
+        // Per-data-dir active entity takes precedence over global config.
+        if let Some(ref dir) = self.data_dir {
+            let path = std::path::Path::new(dir).join(".active-entity");
+            if let Ok(id) = std::fs::read_to_string(&path) {
+                let id = id.trim().to_owned();
+                if !id.is_empty() {
+                    return Ok(id);
+                }
+            }
+        }
         self.config.active_entity_id.clone().ok_or_else(|| {
             anyhow::anyhow!(
                 "no active entity — run `corp use <entity>` or `corp entities list` first"
             )
         })
+    }
+
+    /// Save the active entity ID, scoped to data-dir when in local mode.
+    pub fn save_active_entity(&self, id: &str) -> anyhow::Result<()> {
+        if let Some(ref dir) = self.data_dir {
+            let path = std::path::Path::new(dir).join(".active-entity");
+            std::fs::write(&path, id)?;
+        } else {
+            let mut cfg = self.config.clone();
+            cfg.active_entity_id = Some(id.to_owned());
+            cfg.save()?;
+        }
+        Ok(())
     }
 
     /// Resolve a reference (UUID, @last, short ID, name) to a canonical UUID.
@@ -275,11 +300,12 @@ async fn run_next(ctx: &Context) -> anyhow::Result<()> {
 
 fn run_context(ctx: &Context) -> anyhow::Result<()> {
     let mode = ctx.mode();
+    let active_entity = ctx.require_entity().ok();
     if ctx.json {
         let obj = serde_json::json!({
             "api_url": ctx.config.api_url,
             "workspace_id": ctx.config.workspace_id,
-            "active_entity_id": ctx.config.active_entity_id,
+            "active_entity_id": active_entity,
         });
         println!("{}", serde_json::to_string_pretty(&obj)?);
     } else {
@@ -295,7 +321,7 @@ fn run_context(ctx: &Context) -> anyhow::Result<()> {
         );
         output::kv(
             "Active entity",
-            ctx.config.active_entity_id.as_deref().unwrap_or("<none>"),
+            active_entity.as_deref().unwrap_or("<none>"),
             mode,
         );
     }
@@ -311,9 +337,7 @@ async fn run_use(entity_ref: String, ctx: &Context) -> anyhow::Result<()> {
         .and_then(|v| v.as_str())
         .unwrap_or(&entity_ref)
         .to_owned();
-    let mut cfg = ctx.config.clone();
-    cfg.active_entity_id = Some(id.clone());
-    cfg.save()?;
+    ctx.save_active_entity(&id)?;
     output::print_success(&format!("Active entity set to {id}"), ctx.mode());
     Ok(())
 }
