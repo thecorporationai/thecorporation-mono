@@ -89,7 +89,7 @@ async fn create_contact(
     Json(body): Json<CreateContactRequest>,
 ) -> Result<Json<Contact>, AppError> {
     let store = state
-        .open_entity_store(principal.workspace_id, entity_id)
+        .open_entity_store_for_write(principal.workspace_id, entity_id)
         .await?;
 
     // Reject duplicate emails among active contacts.
@@ -162,7 +162,7 @@ async fn update_contact(
     Json(body): Json<UpdateContactRequest>,
 ) -> Result<Json<Contact>, AppError> {
     let store = state
-        .open_entity_store(principal.workspace_id, entity_id)
+        .open_entity_store_for_write(principal.workspace_id, entity_id)
         .await?;
     let mut contact = store
         .read::<Contact>(contact_id, "main")
@@ -206,7 +206,7 @@ async fn deactivate_contact(
     Path((entity_id, contact_id)): Path<(EntityId, ContactId)>,
 ) -> Result<Json<Contact>, AppError> {
     let store = state
-        .open_entity_store(principal.workspace_id, entity_id)
+        .open_entity_store_for_write(principal.workspace_id, entity_id)
         .await?;
     let mut contact = store
         .read::<Contact>(contact_id, "main")

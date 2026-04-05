@@ -200,7 +200,7 @@ async fn create_account(
     Json(body): Json<CreateAccountRequest>,
 ) -> Result<Json<Account>, AppError> {
     let store = state
-        .open_entity_store(principal.workspace_id, entity_id)
+        .open_entity_store_for_write(principal.workspace_id, entity_id)
         .await?;
     let account = Account::new(
         entity_id,
@@ -224,7 +224,7 @@ async fn deactivate_account(
     Path((entity_id, account_id)): Path<(EntityId, AccountId)>,
 ) -> Result<Json<Account>, AppError> {
     let store = state
-        .open_entity_store(principal.workspace_id, entity_id)
+        .open_entity_store_for_write(principal.workspace_id, entity_id)
         .await?;
     let mut account = store.read::<Account>(account_id, "main").await?;
     account.deactivate();
@@ -262,7 +262,7 @@ async fn create_journal_entry(
         }
     }
     let store = state
-        .open_entity_store(principal.workspace_id, entity_id)
+        .open_entity_store_for_write(principal.workspace_id, entity_id)
         .await?;
     let entry = JournalEntry::new(entity_id, body.date, body.description, body.lines);
     store
@@ -281,7 +281,7 @@ async fn post_journal_entry(
     Path((entity_id, entry_id)): Path<(EntityId, JournalEntryId)>,
 ) -> Result<Json<JournalEntry>, AppError> {
     let store = state
-        .open_entity_store(principal.workspace_id, entity_id)
+        .open_entity_store_for_write(principal.workspace_id, entity_id)
         .await?;
     let mut entry = store.read::<JournalEntry>(entry_id, "main").await?;
     entry
@@ -302,7 +302,7 @@ async fn void_journal_entry(
     Path((entity_id, entry_id)): Path<(EntityId, JournalEntryId)>,
 ) -> Result<Json<JournalEntry>, AppError> {
     let store = state
-        .open_entity_store(principal.workspace_id, entity_id)
+        .open_entity_store_for_write(principal.workspace_id, entity_id)
         .await?;
     let mut entry = store.read::<JournalEntry>(entry_id, "main").await?;
     entry
@@ -340,7 +340,7 @@ async fn create_invoice(
         ));
     }
     let store = state
-        .open_entity_store(principal.workspace_id, entity_id)
+        .open_entity_store_for_write(principal.workspace_id, entity_id)
         .await?;
     let invoice = Invoice::new(
         entity_id,
@@ -366,7 +366,7 @@ async fn send_invoice(
     Path((entity_id, invoice_id)): Path<(EntityId, InvoiceId)>,
 ) -> Result<Json<Invoice>, AppError> {
     let store = state
-        .open_entity_store(principal.workspace_id, entity_id)
+        .open_entity_store_for_write(principal.workspace_id, entity_id)
         .await?;
     let mut invoice = store.read::<Invoice>(invoice_id, "main").await?;
     invoice
@@ -387,7 +387,7 @@ async fn pay_invoice(
     Path((entity_id, invoice_id)): Path<(EntityId, InvoiceId)>,
 ) -> Result<Json<Invoice>, AppError> {
     let store = state
-        .open_entity_store(principal.workspace_id, entity_id)
+        .open_entity_store_for_write(principal.workspace_id, entity_id)
         .await?;
     let mut invoice = store.read::<Invoice>(invoice_id, "main").await?;
     invoice
@@ -409,7 +409,7 @@ async fn void_invoice(
     Path((entity_id, invoice_id)): Path<(EntityId, InvoiceId)>,
 ) -> Result<Json<Invoice>, AppError> {
     let store = state
-        .open_entity_store(principal.workspace_id, entity_id)
+        .open_entity_store_for_write(principal.workspace_id, entity_id)
         .await?;
     let mut invoice = store.read::<Invoice>(invoice_id, "main").await?;
     invoice
@@ -447,7 +447,7 @@ async fn create_payment(
         ));
     }
     let store = state
-        .open_entity_store(principal.workspace_id, entity_id)
+        .open_entity_store_for_write(principal.workspace_id, entity_id)
         .await?;
     let payment = Payment::new(
         entity_id,
@@ -484,7 +484,7 @@ async fn create_bank_account(
     Json(body): Json<CreateBankAccountRequest>,
 ) -> Result<Json<BankAccount>, AppError> {
     let store = state
-        .open_entity_store(principal.workspace_id, entity_id)
+        .open_entity_store_for_write(principal.workspace_id, entity_id)
         .await?;
     let bank_account = BankAccount::new(
         entity_id,
@@ -513,7 +513,7 @@ async fn activate_bank_account(
     Path((entity_id, bank_id)): Path<(EntityId, BankAccountId)>,
 ) -> Result<Json<BankAccount>, AppError> {
     let store = state
-        .open_entity_store(principal.workspace_id, entity_id)
+        .open_entity_store_for_write(principal.workspace_id, entity_id)
         .await?;
     let mut bank_account = store.read::<BankAccount>(bank_id, "main").await?;
     bank_account
@@ -534,7 +534,7 @@ async fn close_bank_account(
     Path((entity_id, bank_id)): Path<(EntityId, BankAccountId)>,
 ) -> Result<Json<BankAccount>, AppError> {
     let store = state
-        .open_entity_store(principal.workspace_id, entity_id)
+        .open_entity_store_for_write(principal.workspace_id, entity_id)
         .await?;
     let mut bank_account = store.read::<BankAccount>(bank_id, "main").await?;
     bank_account
@@ -577,7 +577,7 @@ async fn create_payroll_run(
         ));
     }
     let store = state
-        .open_entity_store(principal.workspace_id, entity_id)
+        .open_entity_store_for_write(principal.workspace_id, entity_id)
         .await?;
     let run = PayrollRun::new(
         entity_id,
@@ -602,7 +602,7 @@ async fn approve_payroll_run(
     Path((entity_id, run_id)): Path<(EntityId, PayrollRunId)>,
 ) -> Result<Json<PayrollRun>, AppError> {
     let store = state
-        .open_entity_store(principal.workspace_id, entity_id)
+        .open_entity_store_for_write(principal.workspace_id, entity_id)
         .await?;
     let mut run = store.read::<PayrollRun>(run_id, "main").await?;
     run.approve()
@@ -622,7 +622,7 @@ async fn process_payroll_run(
     Path((entity_id, run_id)): Path<(EntityId, PayrollRunId)>,
 ) -> Result<Json<PayrollRun>, AppError> {
     let store = state
-        .open_entity_store(principal.workspace_id, entity_id)
+        .open_entity_store_for_write(principal.workspace_id, entity_id)
         .await?;
     let mut run = store.read::<PayrollRun>(run_id, "main").await?;
     run.process()
@@ -654,7 +654,7 @@ async fn create_reconciliation(
     Json(body): Json<CreateReconciliationRequest>,
 ) -> Result<Json<Reconciliation>, AppError> {
     let store = state
-        .open_entity_store(principal.workspace_id, entity_id)
+        .open_entity_store_for_write(principal.workspace_id, entity_id)
         .await?;
     let rec = Reconciliation::new(
         entity_id,
@@ -679,7 +679,7 @@ async fn reconcile(
     Path((entity_id, reconciliation_id)): Path<(EntityId, ReconciliationId)>,
 ) -> Result<Json<Reconciliation>, AppError> {
     let store = state
-        .open_entity_store(principal.workspace_id, entity_id)
+        .open_entity_store_for_write(principal.workspace_id, entity_id)
         .await?;
     let mut rec = store
         .read::<Reconciliation>(reconciliation_id, "main")

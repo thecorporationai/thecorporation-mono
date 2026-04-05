@@ -30,6 +30,7 @@ use axum::extract::FromRef;
 
 use corp_auth::{ApiKeyManager, ApiKeyResolver, AuthError, JwtConfig, Principal};
 use corp_core::auth::{PrincipalType, ScopeSet};
+use corp_core::formation::entity::{Entity, FormationStatus};
 use corp_core::ids::{EntityId, WorkspaceId};
 use corp_storage::entity_store::{Backend as EntityBackend, EntityStore};
 use corp_storage::error::StorageError;
@@ -148,6 +149,28 @@ impl AppState {
                 StorageError::NotFound(m) => AppError::NotFound(m),
                 other => AppError::Storage(other),
             })
+    }
+
+    /// Open an entity store for a write operation, rejecting dissolved entities.
+    ///
+    /// Same as [`open_entity_store`] but additionally loads the `Entity` record
+    /// and returns `400 Bad Request` if the entity has been dissolved. Use this
+    /// at the top of all write handlers to enforce the lifecycle invariant.
+    pub async fn open_entity_store_for_write(
+        &self,
+        workspace_id: WorkspaceId,
+        entity_id: EntityId,
+    ) -> Result<EntityStore, AppError> {
+        let store = self.open_entity_store(workspace_id, entity_id).await?;
+        // Check entity lifecycle — dissolved entities reject all writes.
+        if let Ok(entity) = store.read::<Entity>(entity_id, "main").await {
+            if entity.formation_status == FormationStatus::Dissolved {
+                return Err(AppError::BadRequest(
+                    "entity is dissolved; no further modifications allowed".into(),
+                ));
+            }
+        }
+        Ok(store)
     }
 
     /// Open a workspace store for the given workspace.

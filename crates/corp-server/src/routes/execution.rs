@@ -181,7 +181,7 @@ async fn create_intent(
         ));
     }
     let store = state
-        .open_entity_store(principal.workspace_id, entity_id)
+        .open_entity_store_for_write(principal.workspace_id, entity_id)
         .await?;
     let intent = Intent::new(
         entity_id,
@@ -224,7 +224,7 @@ async fn evaluate_intent(
     Path((entity_id, intent_id)): Path<(EntityId, IntentId)>,
 ) -> Result<Json<Intent>, AppError> {
     let store = state
-        .open_entity_store(principal.workspace_id, entity_id)
+        .open_entity_store_for_write(principal.workspace_id, entity_id)
         .await?;
     let mut intent = store
         .read::<Intent>(intent_id, "main")
@@ -246,7 +246,7 @@ async fn authorize_intent(
     Path((entity_id, intent_id)): Path<(EntityId, IntentId)>,
 ) -> Result<Json<Intent>, AppError> {
     let store = state
-        .open_entity_store(principal.workspace_id, entity_id)
+        .open_entity_store_for_write(principal.workspace_id, entity_id)
         .await?;
     let mut intent = store
         .read::<Intent>(intent_id, "main")
@@ -268,7 +268,7 @@ async fn execute_intent(
     Path((entity_id, intent_id)): Path<(EntityId, IntentId)>,
 ) -> Result<Json<Intent>, AppError> {
     let store = state
-        .open_entity_store(principal.workspace_id, entity_id)
+        .open_entity_store_for_write(principal.workspace_id, entity_id)
         .await?;
     let mut intent = store
         .read::<Intent>(intent_id, "main")
@@ -290,7 +290,7 @@ async fn cancel_intent(
     Path((entity_id, intent_id)): Path<(EntityId, IntentId)>,
 ) -> Result<Json<Intent>, AppError> {
     let store = state
-        .open_entity_store(principal.workspace_id, entity_id)
+        .open_entity_store_for_write(principal.workspace_id, entity_id)
         .await?;
     let mut intent = store
         .read::<Intent>(intent_id, "main")
@@ -313,7 +313,7 @@ async fn update_intent(
     Json(body): Json<UpdateIntentRequest>,
 ) -> Result<Json<Intent>, AppError> {
     let store = state
-        .open_entity_store(principal.workspace_id, entity_id)
+        .open_entity_store_for_write(principal.workspace_id, entity_id)
         .await?;
     let mut intent = store
         .read::<Intent>(intent_id, "main")
@@ -339,7 +339,7 @@ async fn fail_intent(
     Json(body): Json<FailIntentRequest>,
 ) -> Result<Json<Intent>, AppError> {
     let store = state
-        .open_entity_store(principal.workspace_id, entity_id)
+        .open_entity_store_for_write(principal.workspace_id, entity_id)
         .await?;
     let mut intent = store
         .read::<Intent>(intent_id, "main")
@@ -384,7 +384,7 @@ async fn create_obligation(
         ));
     }
     let store = state
-        .open_entity_store(principal.workspace_id, entity_id)
+        .open_entity_store_for_write(principal.workspace_id, entity_id)
         .await?;
     let obligation = Obligation::new(
         entity_id,
@@ -436,7 +436,7 @@ async fn start_obligation(
     Path((entity_id, obligation_id)): Path<(EntityId, ObligationId)>,
 ) -> Result<Json<Obligation>, AppError> {
     let store = state
-        .open_entity_store(principal.workspace_id, entity_id)
+        .open_entity_store_for_write(principal.workspace_id, entity_id)
         .await?;
     let mut obligation = store
         .read::<Obligation>(obligation_id, "main")
@@ -458,7 +458,7 @@ async fn fulfill_obligation(
     Path((entity_id, obligation_id)): Path<(EntityId, ObligationId)>,
 ) -> Result<Json<Obligation>, AppError> {
     let store = state
-        .open_entity_store(principal.workspace_id, entity_id)
+        .open_entity_store_for_write(principal.workspace_id, entity_id)
         .await?;
     let mut obligation = store
         .read::<Obligation>(obligation_id, "main")
@@ -480,7 +480,7 @@ async fn waive_obligation(
     Path((entity_id, obligation_id)): Path<(EntityId, ObligationId)>,
 ) -> Result<Json<Obligation>, AppError> {
     let store = state
-        .open_entity_store(principal.workspace_id, entity_id)
+        .open_entity_store_for_write(principal.workspace_id, entity_id)
         .await?;
     let mut obligation = store
         .read::<Obligation>(obligation_id, "main")
@@ -503,7 +503,7 @@ async fn update_obligation(
     Json(body): Json<UpdateObligationRequest>,
 ) -> Result<Json<Obligation>, AppError> {
     let store = state
-        .open_entity_store(principal.workspace_id, entity_id)
+        .open_entity_store_for_write(principal.workspace_id, entity_id)
         .await?;
     let mut obligation = store
         .read::<Obligation>(obligation_id, "main")
@@ -528,7 +528,7 @@ async fn expire_obligation(
     Path((entity_id, obligation_id)): Path<(EntityId, ObligationId)>,
 ) -> Result<Json<Obligation>, AppError> {
     let store = state
-        .open_entity_store(principal.workspace_id, entity_id)
+        .open_entity_store_for_write(principal.workspace_id, entity_id)
         .await?;
     let mut obligation = store
         .read::<Obligation>(obligation_id, "main")
@@ -568,7 +568,7 @@ async fn create_receipt(
     Json(body): Json<CreateReceiptRequest>,
 ) -> Result<Json<Receipt>, AppError> {
     let store = state
-        .open_entity_store(principal.workspace_id, entity_id)
+        .open_entity_store_for_write(principal.workspace_id, entity_id)
         .await?;
     let receipt = Receipt::new(body.intent_id, body.idempotency_key, body.request_hash);
     store

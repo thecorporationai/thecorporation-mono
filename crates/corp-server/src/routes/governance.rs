@@ -355,7 +355,7 @@ async fn create_body(
     Json(req): Json<CreateBodyRequest>,
 ) -> Result<Json<GovernanceBody>, AppError> {
     let store = state
-        .open_entity_store(principal.workspace_id, entity_id)
+        .open_entity_store_for_write(principal.workspace_id, entity_id)
         .await?;
 
     let body = GovernanceBody::new(
@@ -403,7 +403,7 @@ async fn deactivate_body(
     Path((entity_id, body_id)): Path<(EntityId, GovernanceBodyId)>,
 ) -> Result<Json<GovernanceBody>, AppError> {
     let store = state
-        .open_entity_store(principal.workspace_id, entity_id)
+        .open_entity_store_for_write(principal.workspace_id, entity_id)
         .await?;
 
     let mut body = store
@@ -452,7 +452,7 @@ async fn create_seat(
     Json(req): Json<CreateSeatRequest>,
 ) -> Result<Json<GovernanceSeat>, AppError> {
     let store = state
-        .open_entity_store(principal.workspace_id, entity_id)
+        .open_entity_store_for_write(principal.workspace_id, entity_id)
         .await?;
 
     let voting_power =
@@ -503,7 +503,7 @@ async fn resign_seat(
     Path((entity_id, seat_id)): Path<(EntityId, GovernanceSeatId)>,
 ) -> Result<Json<GovernanceSeat>, AppError> {
     let store = state
-        .open_entity_store(principal.workspace_id, entity_id)
+        .open_entity_store_for_write(principal.workspace_id, entity_id)
         .await?;
 
     let mut seat = store
@@ -553,7 +553,7 @@ async fn create_meeting(
     Json(req): Json<CreateMeetingRequest>,
 ) -> Result<Json<Meeting>, AppError> {
     let store = state
-        .open_entity_store(principal.workspace_id, entity_id)
+        .open_entity_store_for_write(principal.workspace_id, entity_id)
         .await?;
 
     // Bug 3: Reject if the body has been deactivated.
@@ -615,7 +615,7 @@ async fn send_notice(
     Path((entity_id, meeting_id)): Path<(EntityId, MeetingId)>,
 ) -> Result<Json<Meeting>, AppError> {
     let store = state
-        .open_entity_store(principal.workspace_id, entity_id)
+        .open_entity_store_for_write(principal.workspace_id, entity_id)
         .await?;
 
     let mut meeting = store
@@ -649,7 +649,7 @@ async fn convene_meeting(
     Path((entity_id, meeting_id)): Path<(EntityId, MeetingId)>,
 ) -> Result<Json<Meeting>, AppError> {
     let store = state
-        .open_entity_store(principal.workspace_id, entity_id)
+        .open_entity_store_for_write(principal.workspace_id, entity_id)
         .await?;
 
     let mut meeting = store
@@ -683,7 +683,7 @@ async fn adjourn_meeting(
     Path((entity_id, meeting_id)): Path<(EntityId, MeetingId)>,
 ) -> Result<Json<Meeting>, AppError> {
     let store = state
-        .open_entity_store(principal.workspace_id, entity_id)
+        .open_entity_store_for_write(principal.workspace_id, entity_id)
         .await?;
 
     let mut meeting = store
@@ -717,7 +717,7 @@ async fn cancel_meeting(
     Path((entity_id, meeting_id)): Path<(EntityId, MeetingId)>,
 ) -> Result<Json<Meeting>, AppError> {
     let store = state
-        .open_entity_store(principal.workspace_id, entity_id)
+        .open_entity_store_for_write(principal.workspace_id, entity_id)
         .await?;
 
     let mut meeting = store
@@ -751,7 +751,7 @@ async fn reopen_meeting(
     Path((entity_id, meeting_id)): Path<(EntityId, MeetingId)>,
 ) -> Result<Json<Meeting>, AppError> {
     let store = state
-        .open_entity_store(principal.workspace_id, entity_id)
+        .open_entity_store_for_write(principal.workspace_id, entity_id)
         .await?;
 
     let mut meeting = store
@@ -787,7 +787,7 @@ async fn record_attendance(
     Json(req): Json<RecordAttendanceRequest>,
 ) -> Result<Json<Meeting>, AppError> {
     let store = state
-        .open_entity_store(principal.workspace_id, entity_id)
+        .open_entity_store_for_write(principal.workspace_id, entity_id)
         .await?;
 
     let mut meeting = store
@@ -899,7 +899,7 @@ async fn create_agenda_item(
     Json(req): Json<CreateAgendaItemRequest>,
 ) -> Result<Json<AgendaItem>, AppError> {
     let store = state
-        .open_entity_store(principal.workspace_id, entity_id)
+        .open_entity_store_for_write(principal.workspace_id, entity_id)
         .await?;
 
     // Ensure the meeting exists and is in an acceptable state.
@@ -999,7 +999,7 @@ async fn cast_vote(
     Json(req): Json<CastVoteRequest>,
 ) -> Result<Json<Vote>, AppError> {
     let store = state
-        .open_entity_store(principal.workspace_id, entity_id)
+        .open_entity_store_for_write(principal.workspace_id, entity_id)
         .await?;
 
     let meeting = store
@@ -1108,7 +1108,7 @@ async fn resolve_item(
     Json(req): Json<ResolveItemRequest>,
 ) -> Result<Json<Resolution>, AppError> {
     let store = state
-        .open_entity_store(principal.workspace_id, entity_id)
+        .open_entity_store_for_write(principal.workspace_id, entity_id)
         .await?;
 
     let meeting = store
@@ -1300,7 +1300,7 @@ async fn update_profile(
     Json(req): Json<UpdateProfileRequest>,
 ) -> Result<Json<GovernanceProfile>, AppError> {
     let store = state
-        .open_entity_store(principal.workspace_id, entity_id)
+        .open_entity_store_for_write(principal.workspace_id, entity_id)
         .await?;
 
     let profile = match store
@@ -1378,7 +1378,7 @@ async fn create_written_consent(
     Json(req): Json<CreateWrittenConsentRequest>,
 ) -> Result<Json<WrittenConsentResponse>, AppError> {
     let store = state
-        .open_entity_store(principal.workspace_id, entity_id)
+        .open_entity_store_for_write(principal.workspace_id, entity_id)
         .await?;
 
     let meeting = Meeting::new(
@@ -1454,7 +1454,7 @@ async fn quick_approve(
     Json(req): Json<QuickApproveRequest>,
 ) -> Result<Json<QuickApproveResponse>, AppError> {
     let store = state
-        .open_entity_store(principal.workspace_id, entity_id)
+        .open_entity_store_for_write(principal.workspace_id, entity_id)
         .await?;
 
     // Verify the body exists and is accessible.

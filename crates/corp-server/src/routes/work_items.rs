@@ -107,7 +107,7 @@ async fn create_work_item(
     Json(body): Json<CreateWorkItemRequest>,
 ) -> Result<Json<WorkItem>, AppError> {
     let store = state
-        .open_entity_store(principal.workspace_id, entity_id)
+        .open_entity_store_for_write(principal.workspace_id, entity_id)
         .await?;
     let item = WorkItem::new(
         entity_id,
@@ -154,7 +154,7 @@ async fn claim_work_item(
         return Err(AppError::BadRequest("claimed_by must not be empty".into()));
     }
     let store = state
-        .open_entity_store(principal.workspace_id, entity_id)
+        .open_entity_store_for_write(principal.workspace_id, entity_id)
         .await?;
     let mut item = store
         .read::<WorkItem>(item_id, "main")
@@ -176,7 +176,7 @@ async fn release_work_item(
     Path((entity_id, item_id)): Path<(EntityId, WorkItemId)>,
 ) -> Result<Json<WorkItem>, AppError> {
     let store = state
-        .open_entity_store(principal.workspace_id, entity_id)
+        .open_entity_store_for_write(principal.workspace_id, entity_id)
         .await?;
     let mut item = store
         .read::<WorkItem>(item_id, "main")
@@ -198,7 +198,7 @@ async fn complete_work_item(
     Json(body): Json<CompleteWorkItemRequest>,
 ) -> Result<Json<WorkItem>, AppError> {
     let store = state
-        .open_entity_store(principal.workspace_id, entity_id)
+        .open_entity_store_for_write(principal.workspace_id, entity_id)
         .await?;
     let mut item = store
         .read::<WorkItem>(item_id, "main")
@@ -219,7 +219,7 @@ async fn cancel_work_item(
     Path((entity_id, item_id)): Path<(EntityId, WorkItemId)>,
 ) -> Result<Json<WorkItem>, AppError> {
     let store = state
-        .open_entity_store(principal.workspace_id, entity_id)
+        .open_entity_store_for_write(principal.workspace_id, entity_id)
         .await?;
     let mut item = store
         .read::<WorkItem>(item_id, "main")

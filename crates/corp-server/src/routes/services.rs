@@ -89,7 +89,7 @@ async fn create_service_request(
     Json(body): Json<CreateServiceRequestRequest>,
 ) -> Result<Json<ServiceRequest>, AppError> {
     let store = state
-        .open_entity_store(principal.workspace_id, entity_id)
+        .open_entity_store_for_write(principal.workspace_id, entity_id)
         .await?;
     let request = ServiceRequest::new(entity_id, body.service_slug, body.amount_cents);
     store
@@ -133,7 +133,7 @@ async fn begin_checkout(
     Path((entity_id, request_id)): Path<(EntityId, ServiceRequestId)>,
 ) -> Result<Json<ServiceRequest>, AppError> {
     let store = state
-        .open_entity_store(principal.workspace_id, entity_id)
+        .open_entity_store_for_write(principal.workspace_id, entity_id)
         .await?;
     let mut request = store
         .read::<ServiceRequest>(request_id, "main")
@@ -155,7 +155,7 @@ async fn mark_paid(
     Path((entity_id, request_id)): Path<(EntityId, ServiceRequestId)>,
 ) -> Result<Json<ServiceRequest>, AppError> {
     let store = state
-        .open_entity_store(principal.workspace_id, entity_id)
+        .open_entity_store_for_write(principal.workspace_id, entity_id)
         .await?;
     let mut request = store
         .read::<ServiceRequest>(request_id, "main")
@@ -178,7 +178,7 @@ async fn fulfill_service_request(
     Json(body): Json<FulfillServiceRequestRequest>,
 ) -> Result<Json<ServiceRequest>, AppError> {
     let store = state
-        .open_entity_store(principal.workspace_id, entity_id)
+        .open_entity_store_for_write(principal.workspace_id, entity_id)
         .await?;
     let mut request = store
         .read::<ServiceRequest>(request_id, "main")

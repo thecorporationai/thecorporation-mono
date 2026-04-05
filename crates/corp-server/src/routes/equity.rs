@@ -434,7 +434,7 @@ async fn create_cap_table(
     Json(_body): Json<CreateCapTableRequest>,
 ) -> Result<Json<CapTable>, AppError> {
     let store = state
-        .open_entity_store(principal.workspace_id, entity_id)
+        .open_entity_store_for_write(principal.workspace_id, entity_id)
         .await?;
     // Cap table is a singleton per entity; return the existing one if it
     // already exists rather than creating a duplicate.
@@ -475,7 +475,7 @@ async fn create_share_class(
     Json(body): Json<CreateShareClassRequest>,
 ) -> Result<Json<ShareClass>, AppError> {
     let store = state
-        .open_entity_store(principal.workspace_id, entity_id)
+        .open_entity_store_for_write(principal.workspace_id, entity_id)
         .await?;
     let share_class = ShareClass::new(
         entity_id,
@@ -523,7 +523,7 @@ async fn create_grant(
         ));
     }
     let store = state
-        .open_entity_store(principal.workspace_id, entity_id)
+        .open_entity_store_for_write(principal.workspace_id, entity_id)
         .await?;
     // Verify recipient contact exists
     store
@@ -635,7 +635,7 @@ async fn issue_safe(
         ));
     }
     let store = state
-        .open_entity_store(principal.workspace_id, entity_id)
+        .open_entity_store_for_write(principal.workspace_id, entity_id)
         .await?;
 
     // Verify investor contact exists
@@ -693,7 +693,7 @@ async fn convert_safe(
     Json(_body): Json<ConvertSafeRequest>,
 ) -> Result<Json<SafeNote>, AppError> {
     let store = state
-        .open_entity_store(principal.workspace_id, entity_id)
+        .open_entity_store_for_write(principal.workspace_id, entity_id)
         .await?;
     let mut safe_note = store.read::<SafeNote>(safe_id, "main").await?;
     safe_note
@@ -711,7 +711,7 @@ async fn cancel_safe(
     Path((entity_id, safe_id)): Path<(EntityId, SafeNoteId)>,
 ) -> Result<Json<SafeNote>, AppError> {
     let store = state
-        .open_entity_store(principal.workspace_id, entity_id)
+        .open_entity_store_for_write(principal.workspace_id, entity_id)
         .await?;
     let mut safe_note = store.read::<SafeNote>(safe_id, "main").await?;
     safe_note
@@ -761,7 +761,7 @@ async fn create_valuation(
         ));
     }
     let store = state
-        .open_entity_store(principal.workspace_id, entity_id)
+        .open_entity_store_for_write(principal.workspace_id, entity_id)
         .await?;
     let valuation = Valuation::new(
         entity_id,
@@ -789,7 +789,7 @@ async fn submit_valuation(
     Path((entity_id, valuation_id)): Path<(EntityId, ValuationId)>,
 ) -> Result<Json<Valuation>, AppError> {
     let store = state
-        .open_entity_store(principal.workspace_id, entity_id)
+        .open_entity_store_for_write(principal.workspace_id, entity_id)
         .await?;
     let mut valuation = store.read::<Valuation>(valuation_id, "main").await?;
     valuation
@@ -813,7 +813,7 @@ async fn approve_valuation(
     Json(body): Json<ApproveValuationRequest>,
 ) -> Result<Json<Valuation>, AppError> {
     let store = state
-        .open_entity_store(principal.workspace_id, entity_id)
+        .open_entity_store_for_write(principal.workspace_id, entity_id)
         .await?;
     let mut valuation = store.read::<Valuation>(valuation_id, "main").await?;
     valuation
@@ -831,7 +831,7 @@ async fn expire_valuation(
     Path((entity_id, valuation_id)): Path<(EntityId, ValuationId)>,
 ) -> Result<Json<Valuation>, AppError> {
     let store = state
-        .open_entity_store(principal.workspace_id, entity_id)
+        .open_entity_store_for_write(principal.workspace_id, entity_id)
         .await?;
     let mut valuation = store.read::<Valuation>(valuation_id, "main").await?;
     valuation
@@ -849,7 +849,7 @@ async fn supersede_valuation(
     Path((entity_id, valuation_id)): Path<(EntityId, ValuationId)>,
 ) -> Result<Json<Valuation>, AppError> {
     let store = state
-        .open_entity_store(principal.workspace_id, entity_id)
+        .open_entity_store_for_write(principal.workspace_id, entity_id)
         .await?;
     let mut valuation = store.read::<Valuation>(valuation_id, "main").await?;
     valuation
@@ -904,7 +904,7 @@ async fn create_transfer(
         ));
     }
     let store = state
-        .open_entity_store(principal.workspace_id, entity_id)
+        .open_entity_store_for_write(principal.workspace_id, entity_id)
         .await?;
 
     // Verify from_holder exists
@@ -965,7 +965,7 @@ async fn approve_transfer(
     Path((entity_id, transfer_id)): Path<(EntityId, TransferId)>,
 ) -> Result<Json<ShareTransfer>, AppError> {
     let store = state
-        .open_entity_store(principal.workspace_id, entity_id)
+        .open_entity_store_for_write(principal.workspace_id, entity_id)
         .await?;
     let mut transfer = store.read::<ShareTransfer>(transfer_id, "main").await?;
     transfer
@@ -983,7 +983,7 @@ async fn execute_transfer(
     Path((entity_id, transfer_id)): Path<(EntityId, TransferId)>,
 ) -> Result<Json<ShareTransfer>, AppError> {
     let store = state
-        .open_entity_store(principal.workspace_id, entity_id)
+        .open_entity_store_for_write(principal.workspace_id, entity_id)
         .await?;
     let mut transfer = store.read::<ShareTransfer>(transfer_id, "main").await?;
     transfer
@@ -1001,7 +1001,7 @@ async fn deny_transfer(
     Path((entity_id, transfer_id)): Path<(EntityId, TransferId)>,
 ) -> Result<Json<ShareTransfer>, AppError> {
     let store = state
-        .open_entity_store(principal.workspace_id, entity_id)
+        .open_entity_store_for_write(principal.workspace_id, entity_id)
         .await?;
     let mut transfer = store.read::<ShareTransfer>(transfer_id, "main").await?;
     transfer
@@ -1019,7 +1019,7 @@ async fn cancel_transfer(
     Path((entity_id, transfer_id)): Path<(EntityId, TransferId)>,
 ) -> Result<Json<ShareTransfer>, AppError> {
     let store = state
-        .open_entity_store(principal.workspace_id, entity_id)
+        .open_entity_store_for_write(principal.workspace_id, entity_id)
         .await?;
     let mut transfer = store.read::<ShareTransfer>(transfer_id, "main").await?;
     transfer
@@ -1069,7 +1069,7 @@ async fn create_round(
         ));
     }
     let store = state
-        .open_entity_store(principal.workspace_id, entity_id)
+        .open_entity_store_for_write(principal.workspace_id, entity_id)
         .await?;
     let round = FundingRound::new(
         entity_id,
@@ -1090,7 +1090,7 @@ async fn close_round(
     Path((entity_id, round_id)): Path<(EntityId, FundingRoundId)>,
 ) -> Result<Json<FundingRound>, AppError> {
     let store = state
-        .open_entity_store(principal.workspace_id, entity_id)
+        .open_entity_store_for_write(principal.workspace_id, entity_id)
         .await?;
     let mut round = store.read::<FundingRound>(round_id, "main").await?;
     round
@@ -1115,7 +1115,7 @@ async fn advance_round(
     Path((entity_id, round_id)): Path<(EntityId, FundingRoundId)>,
 ) -> Result<Json<FundingRound>, AppError> {
     let store = state
-        .open_entity_store(principal.workspace_id, entity_id)
+        .open_entity_store_for_write(principal.workspace_id, entity_id)
         .await?;
     let mut round = store.read::<FundingRound>(round_id, "main").await?;
     round
@@ -1148,7 +1148,7 @@ async fn create_holder(
     Json(body): Json<CreateHolderRequest>,
 ) -> Result<Json<Holder>, AppError> {
     let store = state
-        .open_entity_store(principal.workspace_id, entity_id)
+        .open_entity_store_for_write(principal.workspace_id, entity_id)
         .await?;
     let holder = Holder::new(entity_id, body.contact_id, body.name, body.holder_type);
     store
@@ -1195,7 +1195,7 @@ async fn create_vesting_schedule(
         ));
     }
     let store = state
-        .open_entity_store(principal.workspace_id, entity_id)
+        .open_entity_store_for_write(principal.workspace_id, entity_id)
         .await?;
     let schedule = VestingSchedule::new(
         body.grant_id,
@@ -1238,7 +1238,7 @@ async fn terminate_vesting(
     Path((entity_id, schedule_id)): Path<(EntityId, VestingScheduleId)>,
 ) -> Result<Json<VestingSchedule>, AppError> {
     let store = state
-        .open_entity_store(principal.workspace_id, entity_id)
+        .open_entity_store_for_write(principal.workspace_id, entity_id)
         .await?;
     let mut schedule = store.read::<VestingSchedule>(schedule_id, "main").await?;
     schedule.terminate(chrono::Utc::now().date_naive());
@@ -1254,7 +1254,7 @@ async fn materialize_events(
     Path((entity_id, schedule_id)): Path<(EntityId, VestingScheduleId)>,
 ) -> Result<Json<Vec<VestingEvent>>, AppError> {
     let store = state
-        .open_entity_store(principal.workspace_id, entity_id)
+        .open_entity_store_for_write(principal.workspace_id, entity_id)
         .await?;
     let schedule = store.read::<VestingSchedule>(schedule_id, "main").await?;
     let events = materialize_vesting_events(&schedule);
@@ -1284,7 +1284,7 @@ async fn vest_event(
     Path((entity_id, event_id)): Path<(EntityId, VestingEventId)>,
 ) -> Result<Json<VestingEvent>, AppError> {
     let store = state
-        .open_entity_store(principal.workspace_id, entity_id)
+        .open_entity_store_for_write(principal.workspace_id, entity_id)
         .await?;
     let mut event = store.read::<VestingEvent>(event_id, "main").await?;
     event
@@ -1302,7 +1302,7 @@ async fn forfeit_event(
     Path((entity_id, event_id)): Path<(EntityId, VestingEventId)>,
 ) -> Result<Json<VestingEvent>, AppError> {
     let store = state
-        .open_entity_store(principal.workspace_id, entity_id)
+        .open_entity_store_for_write(principal.workspace_id, entity_id)
         .await?;
     let mut event = store.read::<VestingEvent>(event_id, "main").await?;
     event
@@ -1335,7 +1335,7 @@ async fn create_instrument(
     Json(body): Json<CreateInstrumentRequest>,
 ) -> Result<Json<Instrument>, AppError> {
     let store = state
-        .open_entity_store(principal.workspace_id, entity_id)
+        .open_entity_store_for_write(principal.workspace_id, entity_id)
         .await?;
     let instrument = Instrument::new(
         LegalEntityId::from_uuid(entity_id.as_uuid()),
@@ -1389,7 +1389,7 @@ async fn create_position(
     Json(body): Json<CreatePositionRequest>,
 ) -> Result<Json<Position>, AppError> {
     let store = state
-        .open_entity_store(principal.workspace_id, entity_id)
+        .open_entity_store_for_write(principal.workspace_id, entity_id)
         .await?;
     let position = Position::new(
         LegalEntityId::from_uuid(entity_id.as_uuid()),
@@ -1425,7 +1425,7 @@ async fn apply_position_delta(
     Json(body): Json<ApplyPositionDeltaRequest>,
 ) -> Result<Json<Position>, AppError> {
     let store = state
-        .open_entity_store(principal.workspace_id, entity_id)
+        .open_entity_store_for_write(principal.workspace_id, entity_id)
         .await?;
     let mut position = store.read::<Position>(position_id, "main").await?;
     position
@@ -1462,7 +1462,7 @@ async fn create_ledger_entry(
     Json(body): Json<CreateLedgerEntryRequest>,
 ) -> Result<Json<InvestorLedgerEntry>, AppError> {
     let store = state
-        .open_entity_store(principal.workspace_id, entity_id)
+        .open_entity_store_for_write(principal.workspace_id, entity_id)
         .await?;
     let entry = InvestorLedgerEntry::new(
         entity_id,
@@ -1509,7 +1509,7 @@ async fn create_legal_entity(
     Json(body): Json<CreateLegalEntityRequest>,
 ) -> Result<Json<LegalEntity>, AppError> {
     let store = state
-        .open_entity_store(principal.workspace_id, entity_id)
+        .open_entity_store_for_write(principal.workspace_id, entity_id)
         .await?;
     let legal_entity = LegalEntity::new(
         principal.workspace_id,
@@ -1561,7 +1561,7 @@ async fn create_control_link(
     Json(body): Json<CreateControlLinkRequest>,
 ) -> Result<Json<ControlLink>, AppError> {
     let store = state
-        .open_entity_store(principal.workspace_id, entity_id)
+        .open_entity_store_for_write(principal.workspace_id, entity_id)
         .await?;
     let link = ControlLink::new(
         body.parent_legal_entity_id,
@@ -1607,7 +1607,7 @@ async fn create_repurchase_right(
         ));
     }
     let store = state
-        .open_entity_store(principal.workspace_id, entity_id)
+        .open_entity_store_for_write(principal.workspace_id, entity_id)
         .await?;
     let right = RepurchaseRight::new(
         entity_id,
@@ -1633,7 +1633,7 @@ async fn activate_repurchase(
     Path((entity_id, rr_id)): Path<(EntityId, RepurchaseRightId)>,
 ) -> Result<Json<RepurchaseRight>, AppError> {
     let store = state
-        .open_entity_store(principal.workspace_id, entity_id)
+        .open_entity_store_for_write(principal.workspace_id, entity_id)
         .await?;
     let mut right = store.read::<RepurchaseRight>(rr_id, "main").await?;
     right.activate();
@@ -1649,7 +1649,7 @@ async fn close_repurchase(
     Path((entity_id, rr_id)): Path<(EntityId, RepurchaseRightId)>,
 ) -> Result<Json<RepurchaseRight>, AppError> {
     let store = state
-        .open_entity_store(principal.workspace_id, entity_id)
+        .open_entity_store_for_write(principal.workspace_id, entity_id)
         .await?;
     let mut right = store.read::<RepurchaseRight>(rr_id, "main").await?;
     right.close();
@@ -1665,7 +1665,7 @@ async fn waive_repurchase(
     Path((entity_id, rr_id)): Path<(EntityId, RepurchaseRightId)>,
 ) -> Result<Json<RepurchaseRight>, AppError> {
     let store = state
-        .open_entity_store(principal.workspace_id, entity_id)
+        .open_entity_store_for_write(principal.workspace_id, entity_id)
         .await?;
     let mut right = store.read::<RepurchaseRight>(rr_id, "main").await?;
     right.waive();
