@@ -33,11 +33,11 @@ fn build_spec() -> Value {
             "description": "Corporate governance, cap table, treasury, and execution API.",
             "contact": {
                 "name": "TheCorporation",
-                "url": "https://thecorporation.com"
+                "url": "https://thecorporation.ai"
             }
         },
         "servers": [
-            { "url": "https://api.thecorporation.com", "description": "Production" }
+            { "url": "https://api.thecorporation.ai", "description": "Production" }
         ],
         "components": {
             "securitySchemes": {

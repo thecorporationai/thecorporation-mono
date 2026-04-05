@@ -38,12 +38,12 @@ pub async fn run_setup(ctx: &Context) -> anyhow::Result<()> {
     let current_url = cfg
         .api_url
         .as_deref()
-        .unwrap_or("https://api.thecorporation.com");
+        .unwrap_or("https://api.thecorporation.ai");
     let api_url = prompt(&format!("API URL [{}]: ", current_url))?;
     if !api_url.is_empty() {
         cfg.api_url = Some(api_url);
     } else if cfg.api_url.is_none() {
-        cfg.api_url = Some("https://api.thecorporation.com".to_owned());
+        cfg.api_url = Some("https://api.thecorporation.ai".to_owned());
     }
 
     let api_key = prompt_secret("API key: ")?;

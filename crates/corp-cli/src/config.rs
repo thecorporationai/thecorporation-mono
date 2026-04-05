@@ -25,7 +25,7 @@ pub struct Config {
 
 // ── Default API URL ───────────────────────────────────────────────────────────
 
-const DEFAULT_API_URL: &str = "https://api.thecorporation.com";
+const DEFAULT_API_URL: &str = "https://api.thecorporation.ai";
 
 // ── Config impl ───────────────────────────────────────────────────────────────
 
