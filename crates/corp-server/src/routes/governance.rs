@@ -1381,6 +1381,18 @@ async fn create_written_consent(
         .open_entity_store_for_write(principal.workspace_id, entity_id)
         .await?;
 
+    // Reject if the body is inactive.
+    let governance_body = store
+        .read::<GovernanceBody>(req.body_id, BRANCH)
+        .await
+        .map_err(AppError::Storage)?;
+    if governance_body.status == BodyStatus::Inactive {
+        return Err(AppError::BadRequest(format!(
+            "body {} is inactive; cannot create written consent",
+            req.body_id
+        )));
+    }
+
     let meeting = Meeting::new(
         req.body_id,
         MeetingType::WrittenConsent,
@@ -1457,11 +1469,17 @@ async fn quick_approve(
         .open_entity_store_for_write(principal.workspace_id, entity_id)
         .await?;
 
-    // Verify the body exists and is accessible.
+    // Verify the body exists and is active.
     let body = store
         .read::<GovernanceBody>(req.body_id, BRANCH)
         .await
         .map_err(AppError::Storage)?;
+    if body.status == BodyStatus::Inactive {
+        return Err(AppError::BadRequest(format!(
+            "body {} is inactive; cannot quick-approve",
+            req.body_id
+        )));
+    }
 
     // 1. Create WrittenConsent meeting — auto-convened by Meeting::new.
     let mut meeting = Meeting::new(

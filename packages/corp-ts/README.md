@@ -63,7 +63,7 @@ for (const doc of docs) {
 |------------|------------|
 | `client.entities` | `list()`, `create()`, `get()`, `dissolve()` |
 | `client.formation` | `advance()`, `listDocuments()`, `signDocument()`, `getFiling()`, `confirmFiling()`, `getTaxProfile()`, `confirmEin()` |
-| `client.equity` | `getCapTable()`, `createCapTable()`, `createShareClass()`, `createGrant()`, `issueSafe()`, `convertSafe()`, `createValuation()` |
+| `client.equity` | `getCapTable()`, `createCapTable()`, `createInstrument()`, `createGrant()`, `issueSafe()`, `convertSafe()`, `createValuation()` |
 | `client.governance` | `createBody()`, `createSeat()`, `createMeeting()`, `castVote()`, `quickApprove()`, `writtenConsent()` |
 | `client.treasury` | `createInvoice()`, `sendInvoice()`, `createPayment()`, `createPayrollRun()`, `createBankAccount()` |
 | `client.contacts` | `list()`, `create()`, `get()`, `update()`, `deactivate()` |

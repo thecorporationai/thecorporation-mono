@@ -23,8 +23,8 @@ use corp_core::equity::types::{
 use corp_core::equity::vesting::materialize_vesting_events;
 use corp_core::equity::{
     CapTable, ControlLink, ControlType, EquityGrant, FundingRound, Holder, HolderType, Instrument,
-    InstrumentKind, InvestorLedgerEntry, LegalEntity, LegalEntityRole, Position, RepurchaseRight,
-    SafeNote, ShareTransfer, Valuation, VestingEvent, VestingSchedule,
+    InstrumentKind, InstrumentStatus, InvestorLedgerEntry, LegalEntity, LegalEntityRole, Position,
+    RepurchaseRight, SafeNote, ShareTransfer, Valuation, VestingEvent, VestingSchedule,
 };
 use corp_core::ids::{
     CapTableId, ContactId, EntityId, EquityGrantId, FundingRoundId, HolderId, InstrumentId,
@@ -408,6 +408,35 @@ pub fn routes() -> Router<AppState> {
         )
 }
 
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+/// Verify the given `cap_table_id` belongs to the entity in the URL path.
+async fn verify_cap_table_ownership(
+    store: &corp_storage::entity_store::EntityStore,
+    cap_table_id: CapTableId,
+    entity_id: EntityId,
+) -> Result<(), AppError> {
+    let cap_table = store
+        .read::<CapTable>(cap_table_id, "main")
+        .await
+        .map_err(|e| {
+            use corp_storage::error::StorageError;
+            match e {
+                StorageError::NotFound(_) => {
+                    AppError::BadRequest(format!("cap table {} not found", cap_table_id))
+                }
+                other => AppError::Storage(other),
+            }
+        })?;
+    if cap_table.entity_id != entity_id {
+        return Err(AppError::BadRequest(format!(
+            "cap table {} does not belong to entity {}",
+            cap_table_id, entity_id
+        )));
+    }
+    Ok(())
+}
+
 // ── Cap table handlers ────────────────────────────────────────────────────────
 
 async fn get_cap_table(
@@ -470,6 +499,25 @@ async fn create_instrument(
     let store = state
         .open_entity_store_for_write(principal.workspace_id, entity_id)
         .await?;
+
+    verify_cap_table_ownership(&store, body.cap_table_id, entity_id).await?;
+
+    // Reject duplicate symbols within the same cap table.
+    let existing: Vec<Instrument> = store
+        .read_all::<Instrument>("main")
+        .await
+        .map_err(AppError::Storage)?;
+    if existing.iter().any(|i| {
+        i.cap_table_id == body.cap_table_id
+            && i.symbol == body.symbol
+            && i.status == InstrumentStatus::Active
+    }) {
+        return Err(AppError::Conflict(format!(
+            "an active instrument with symbol '{}' already exists on this cap table",
+            body.symbol
+        )));
+    }
+
     let instrument = Instrument::new(
         entity_id,
         body.cap_table_id,
@@ -532,6 +580,7 @@ async fn create_grant(
     let store = state
         .open_entity_store_for_write(principal.workspace_id, entity_id)
         .await?;
+    verify_cap_table_ownership(&store, body.cap_table_id, entity_id).await?;
     // Verify recipient contact exists
     store
         .read::<Contact>(body.recipient_contact_id, "main")
@@ -670,6 +719,7 @@ async fn issue_safe(
     let store = state
         .open_entity_store_for_write(principal.workspace_id, entity_id)
         .await?;
+    verify_cap_table_ownership(&store, body.cap_table_id, entity_id).await?;
 
     // Verify investor contact exists
     store
@@ -759,6 +809,32 @@ async fn convert_safe(
                 other => AppError::Storage(other),
             }
         })?;
+
+    // Over-issuance check: verify conversion won't exceed authorized units
+    if let Some(authorized) = instrument.authorized_units {
+        let existing_grants: Vec<EquityGrant> = store
+            .read_all::<EquityGrant>("main")
+            .await
+            .map_err(AppError::Storage)?;
+        let issued_shares: i64 = existing_grants
+            .iter()
+            .filter(|g| {
+                g.instrument_id == body.instrument_id
+                    && g.status != GrantStatus::Cancelled
+                    && g.status != GrantStatus::Forfeited
+            })
+            .map(|g| g.shares.raw())
+            .sum();
+        let total_after = issued_shares + body.conversion_shares;
+        if total_after > authorized {
+            return Err(AppError::BadRequest(format!(
+                "SAFE conversion would issue {} shares: {} already issued + {} conversion = {} total, \
+                 exceeds authorized {} for instrument {}",
+                body.conversion_shares, issued_shares, body.conversion_shares, total_after,
+                authorized, instrument.symbol
+            )));
+        }
+    }
 
     // 1. Transition SAFE status
     safe_note
@@ -876,6 +952,7 @@ async fn create_valuation(
     let store = state
         .open_entity_store_for_write(principal.workspace_id, entity_id)
         .await?;
+    verify_cap_table_ownership(&store, body.cap_table_id, entity_id).await?;
     let valuation = Valuation::new(
         entity_id,
         body.cap_table_id,
@@ -1019,6 +1096,7 @@ async fn create_transfer(
     let store = state
         .open_entity_store_for_write(principal.workspace_id, entity_id)
         .await?;
+    verify_cap_table_ownership(&store, body.cap_table_id, entity_id).await?;
 
     // Verify from_holder exists
     store
@@ -1291,6 +1369,7 @@ async fn create_round(
     let store = state
         .open_entity_store_for_write(principal.workspace_id, entity_id)
         .await?;
+    verify_cap_table_ownership(&store, body.cap_table_id, entity_id).await?;
     let round = FundingRound::new(
         entity_id,
         body.cap_table_id,

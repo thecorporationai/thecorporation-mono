@@ -11,7 +11,7 @@ export type ContactId = string;
 export type FilingId = string;
 export type TaxProfileId = string;
 export type CapTableId = string;
-export type ShareClassId = string;
+export type InstrumentId = string;
 export type EquityGrantId = string;
 export type SafeNoteId = string;
 export type ValuationId = string;
@@ -139,13 +139,13 @@ export interface CapTable {
   created_at: string;
 }
 
-export interface ShareClass {
-  share_class_id: ShareClassId;
+export interface Instrument {
+  instrument_id: InstrumentId;
   cap_table_id: CapTableId;
-  class_code: string;
-  stock_type: "common" | "preferred" | "membership_unit";
+  symbol: string;
+  kind: "common_equity" | "preferred_equity" | "membership_unit" | "option_grant" | "safe";
   par_value: string;
-  authorized_shares: number;
+  authorized_units: number;
   liquidation_preference: string | null;
   created_at: string;
 }
@@ -154,7 +154,7 @@ export interface EquityGrant {
   grant_id: EquityGrantId;
   entity_id: EntityId;
   cap_table_id: CapTableId;
-  share_class_id: ShareClassId;
+  instrument_id: InstrumentId;
   recipient_contact_id: ContactId;
   recipient_name: string;
   grant_type: string;

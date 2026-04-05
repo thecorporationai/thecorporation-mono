@@ -20,7 +20,7 @@ import type {
   Filing,
   TaxProfile,
   CapTable,
-  ShareClass,
+  Instrument,
   EquityGrant,
   SafeNote,
   Valuation,
@@ -225,19 +225,19 @@ class EquityApi {
     return this.c.post(`/v1/entities/${entityId}/cap-table`, {});
   }
 
-  listShareClasses(entityId: EntityId): Promise<ShareClass[]> {
-    return this.c.get(`/v1/entities/${entityId}/share-classes`);
+  listInstruments(entityId: EntityId): Promise<Instrument[]> {
+    return this.c.get(`/v1/entities/${entityId}/instruments`);
   }
 
-  createShareClass(entityId: EntityId, opts: {
+  createInstrument(entityId: EntityId, opts: {
     cap_table_id: string;
-    class_code: string;
-    stock_type: string;
+    symbol: string;
+    kind: string;
     par_value: string;
-    authorized_shares: number;
+    authorized_units: number;
     liquidation_preference?: string;
-  }): Promise<ShareClass> {
-    return this.c.post(`/v1/entities/${entityId}/share-classes`, opts);
+  }): Promise<Instrument> {
+    return this.c.post(`/v1/entities/${entityId}/instruments`, opts);
   }
 
   listGrants(entityId: EntityId): Promise<EquityGrant[]> {
