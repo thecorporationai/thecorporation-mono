@@ -16,7 +16,7 @@ use crate::state::AppState;
 use corp_auth::{RequireEquityRead, RequireEquityWrite};
 use corp_core::contacts::Contact;
 use corp_core::equity::types::{
-    GrantType, InvestorLedgerEntryType, SafeType, ShareCount, StockType, TransferType,
+    GrantStatus, GrantType, InvestorLedgerEntryType, SafeType, ShareCount, StockType, TransferType,
     ValuationMethodology, ValuationType,
 };
 use corp_core::equity::vesting::materialize_vesting_events;
@@ -543,10 +543,30 @@ async fn create_grant(
     let share_class = store
         .read::<ShareClass>(body.share_class_id, "main")
         .await?;
-    if body.shares > share_class.authorized_shares.raw() {
+
+    // Cumulative over-issuance check: sum all active grants for this share class.
+    let existing_grants: Vec<EquityGrant> = store
+        .read_all::<EquityGrant>("main")
+        .await
+        .map_err(AppError::Storage)?;
+    let issued_shares: i64 = existing_grants
+        .iter()
+        .filter(|g| {
+            g.share_class_id == body.share_class_id
+                && g.status != GrantStatus::Cancelled
+                && g.status != GrantStatus::Forfeited
+        })
+        .map(|g| g.shares.raw())
+        .sum();
+    let total_after = issued_shares + body.shares;
+    if total_after > share_class.authorized_shares.raw() {
         return Err(AppError::BadRequest(format!(
-            "cannot issue {} shares: exceeds authorized {} for class {}",
+            "cannot issue {} shares: {} already issued + {} requested = {} total, \
+             exceeds authorized {} for class {}",
             body.shares,
+            issued_shares,
+            body.shares,
+            total_after,
             share_class.authorized_shares.raw(),
             share_class.class_code
         )));

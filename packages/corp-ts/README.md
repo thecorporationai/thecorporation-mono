@@ -63,11 +63,11 @@ for (const doc of docs) {
 |------------|------------|
 | `client.entities` | `list()`, `create()`, `get()`, `dissolve()` |
 | `client.formation` | `advance()`, `listDocuments()`, `signDocument()`, `getFiling()`, `confirmFiling()`, `getTaxProfile()`, `confirmEin()` |
-| `client.equity` | `getCapTable()`, `createShareClass()`, `issueGrant()`, `issueSafe()`, `convertSafe()`, `createValuation()` |
-| `client.governance` | `createBody()`, `createSeat()`, `scheduleMeeting()`, `castVote()`, `resolveItem()`, `writtenConsent()` |
-| `client.treasury` | `createInvoice()`, `sendInvoice()`, `submitPayment()`, `runPayroll()`, `openBankAccount()`, `reconcile()` |
-| `client.contacts` | `list()`, `create()`, `get()`, `update()` |
-| `client.agents` | `list()`, `create()`, `get()`, `update()`, `delete()`, `addSkill()` |
+| `client.equity` | `getCapTable()`, `createCapTable()`, `createShareClass()`, `createGrant()`, `issueSafe()`, `convertSafe()`, `createValuation()` |
+| `client.governance` | `createBody()`, `createSeat()`, `createMeeting()`, `castVote()`, `quickApprove()`, `writtenConsent()` |
+| `client.treasury` | `createInvoice()`, `sendInvoice()`, `createPayment()`, `createPayrollRun()`, `createBankAccount()` |
+| `client.contacts` | `list()`, `create()`, `get()`, `update()`, `deactivate()` |
+| `client.agents` | `list()`, `create()`, `get()`, `pause()`, `resume()`, `delete()` |
 | `client.workItems` | `list()`, `create()`, `get()`, `claim()`, `complete()`, `cancel()` |
 | `client.admin` | `listApiKeys()`, `createApiKey()`, `revokeApiKey()` |
 
@@ -97,11 +97,7 @@ import { Corp } from "@thecorporation/corp/cli";
 
 const corp = new Corp({ dataDir: "./corp-data" });
 
-const entity = await corp.entity.create({
-  name: "Acme Corp",
-  entityType: "corporation",
-  jurisdiction: "US-DE",
-});
+const entity = await corp.form.create("Acme Corp", "c_corp", "DE");
 ```
 
 ## Requirements
