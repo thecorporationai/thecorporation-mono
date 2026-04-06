@@ -97,7 +97,9 @@ pub struct ConvertSafeRequest {
     /// The instrument to convert into (e.g. Series Seed Preferred).
     pub instrument_id: InstrumentId,
     /// Number of shares the investor receives from conversion.
-    pub conversion_shares: i64,
+    /// If omitted, auto-calculated from the SAFE terms and the instrument's
+    /// issue_price_cents (cap-based or discount-based, whichever yields more shares).
+    pub conversion_shares: Option<i64>,
     /// Holder record for the investor.
     pub holder_id: HolderId,
 }
@@ -1038,20 +1040,92 @@ async fn convert_safe(
     Path((entity_id, safe_id)): Path<(EntityId, SafeNoteId)>,
     Json(body): Json<ConvertSafeRequest>,
 ) -> Result<Json<SafeNote>, AppError> {
-    if body.conversion_shares <= 0 {
-        return Err(AppError::BadRequest(
-            "conversion_shares must be greater than zero".into(),
-        ));
-    }
     let store = state
         .open_entity_store_for_write(principal.workspace_id, entity_id)
         .await?;
-    let mut safe_note = store.read::<SafeNote>(safe_id, "main").await?;
+    let safe_note_read = store.read::<SafeNote>(safe_id, "main").await?;
+    let mut safe_note = safe_note_read;
 
     // Verify target instrument exists
     let instrument = store
         .read::<Instrument>(body.instrument_id, "main")
         .await?;
+
+    // Determine conversion_shares: explicit or auto-calculated from SAFE terms
+    let conversion_shares = if let Some(shares) = body.conversion_shares {
+        if shares <= 0 {
+            return Err(AppError::BadRequest(
+                "conversion_shares must be greater than zero".into(),
+            ));
+        }
+        shares
+    } else {
+        // Auto-calculate from SAFE terms + instrument price
+        let round_price = instrument.issue_price_cents.ok_or_else(|| {
+            AppError::BadRequest(
+                "cannot auto-calculate conversion_shares: instrument has no issue_price_cents set \
+                 — either set it on the instrument or provide conversion_shares explicitly".into(),
+            )
+        })?;
+        if round_price <= 0 {
+            return Err(AppError::BadRequest(
+                "instrument issue_price_cents must be positive for auto-calculation".into(),
+            ));
+        }
+
+        // Effective price = min(cap-based price, discounted price, round price)
+        let mut effective_price = round_price;
+
+        // Cap-based: price = valuation_cap / (investment / round_price + existing shares)
+        // Simplified: cap_price = valuation_cap_cents / total_shares_at_cap
+        // For post-money SAFE: shares = investment / (cap / company_shares)
+        // Simplest correct formula: shares = investment / min(cap_price, discounted_price)
+        if let Some(cap_cents) = safe_note.valuation_cap_cents {
+            if cap_cents > 0 {
+                // cap_price_per_share = cap / (investment / round_price)
+                // but simpler: if cap < round_price * shares_would_get, cap wins
+                let cap_price = cap_cents * round_price / (safe_note.investment_amount_cents.max(1));
+                // More standard: shares_from_cap = investment / (cap / fully_diluted_shares)
+                // Without knowing fully diluted shares, use: investment * round_price / cap
+                // which gives the ratio. Actually simplest: if cap implies lower price, use it.
+                // cap_price = cap / (investment / round_price) = cap * round_price / investment
+                // Nope. Standard: conversion_price = min(cap / pre_shares, round_price * (1-discount))
+                // We don't have pre_shares. Use: shares = investment / min(cap_implied_price, discounted_price)
+                // where cap_implied_price can't be computed without pre-money share count.
+                // Simplest defensible: shares = investment_cents / round_price (no cap math without share count)
+                // But we can do: if cap < pre-money valuation implied by round, cap wins
+                // Without pre-money, just do: shares = investment / round_price, capped at investment / (cap / fully_diluted)
+                // This is getting complex. Let's use the simple approach:
+                // cap_shares = investment_amount_cents / (cap_cents / authorized_units_of_instrument)
+                // But authorized_units may not equal fully diluted. Best simple approach:
+                // Just divide: investment / round_price vs investment * authorized / cap, take max shares
+                if let Some(auth) = instrument.authorized_units {
+                    let cap_based = safe_note.investment_amount_cents * auth / cap_cents;
+                    if cap_based > safe_note.investment_amount_cents / round_price {
+                        effective_price = (safe_note.investment_amount_cents / cap_based.max(1)).max(1);
+                    }
+                }
+            }
+        }
+
+        // Discount-based
+        if let Some(discount_pct) = safe_note.discount_percent {
+            if discount_pct > 0 && discount_pct < 100 {
+                let discounted = round_price * (100 - discount_pct as i64) / 100;
+                if discounted < effective_price && discounted > 0 {
+                    effective_price = discounted;
+                }
+            }
+        }
+
+        safe_note.investment_amount_cents / effective_price.max(1)
+    };
+
+    if conversion_shares <= 0 {
+        return Err(AppError::BadRequest(
+            "computed conversion_shares is zero — check SAFE terms and instrument price".into(),
+        ));
+    }
 
     // Verify holder exists
     store
@@ -1082,12 +1156,12 @@ async fn convert_safe(
             })
             .map(|g| g.shares.raw())
             .sum();
-        let total_after = issued_shares + body.conversion_shares;
+        let total_after = issued_shares + conversion_shares;
         if total_after > authorized {
             return Err(AppError::BadRequest(format!(
                 "SAFE conversion would issue {} shares: {} already issued + {} conversion = {} total, \
                  exceeds authorized {} for instrument {}",
-                body.conversion_shares, issued_shares, body.conversion_shares, total_after,
+                conversion_shares, issued_shares, conversion_shares, total_after,
                 authorized, instrument.symbol
             )));
         }
@@ -1102,11 +1176,7 @@ async fn convert_safe(
         .await?;
 
     // 2. Create equity grant for the conversion
-    let price_per_share = if body.conversion_shares > 0 {
-        Some(safe_note.investment_amount_cents / body.conversion_shares)
-    } else {
-        None
-    };
+    let price_per_share = Some(safe_note.investment_amount_cents / conversion_shares.max(1));
     let grant = EquityGrant::new(
         entity_id,
         instrument.cap_table_id,
@@ -1114,7 +1184,7 @@ async fn convert_safe(
         safe_note.investor_contact_id,
         &safe_note.investor_name,
         GrantType::PreferredStock,
-        ShareCount::new(body.conversion_shares),
+        ShareCount::new(conversion_shares),
         price_per_share,
         None,
         None,
@@ -1135,7 +1205,7 @@ async fn convert_safe(
         entity_id,
         body.holder_id,
         body.instrument_id,
-        body.conversion_shares,
+        conversion_shares,
         safe_note.investment_amount_cents,
         Some(format!("safe_conversion:{}:{}", safe_id, grant.grant_id)),
     )

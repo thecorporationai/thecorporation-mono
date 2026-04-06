@@ -125,6 +125,8 @@ pub enum CapTableCommand {
     ///
     /// Examples:
     ///   corp cap-table convert-safe <SAFE_ID> \
+    ///     --instrument-id <INSTR_ID> --holder-id <HOLDER_ID>
+    ///   corp cap-table convert-safe <SAFE_ID> \
     ///     --instrument-id <INSTR_ID> --conversion-shares 500000 \
     ///     --holder-id <HOLDER_ID>
     ConvertSafe {
@@ -135,9 +137,9 @@ pub enum CapTableCommand {
         #[arg(long)]
         instrument_id: String,
 
-        /// Number of shares the investor receives
+        /// Number of shares the investor receives (auto-calculated from SAFE terms if omitted)
         #[arg(long)]
-        conversion_shares: i64,
+        conversion_shares: Option<i64>,
 
         /// Holder record for the investor
         #[arg(long)]
