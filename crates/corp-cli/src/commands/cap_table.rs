@@ -295,8 +295,8 @@ pub enum CapTableCommand {
     },
 
     // ── Vesting ───────────────────────────────────────────────────────────────
-    /// List vesting schedules for an entity
-    Vesting { entity_id: String },
+    /// List vesting schedules
+    Vesting,
 
     /// Create a vesting schedule for a grant
     CreateVesting {
@@ -366,9 +366,15 @@ pub enum CapTableCommand {
         liquidation_preference: Option<String>,
     },
 
+    /// Vest all due events for a schedule (bulk vest)
+    VestDue {
+        #[arg(long, help = "Vesting schedule ID")]
+        schedule_id: String,
+    },
+
     // ── Positions ─────────────────────────────────────────────────────────────
     /// List positions (holdings)
-    Positions { entity_id: String },
+    Positions,
 
     /// Create a position (holding)
     CreatePosition {
@@ -832,8 +838,8 @@ pub async fn run(cmd: CapTableCommand, ctx: &Context) -> anyhow::Result<()> {
         }
 
         // ── Vesting ───────────────────────────────────────────────────────────
-        CapTableCommand::Vesting { entity_id: eid } => {
-            let path = format!("/v1/entities/{eid}/vesting-schedules");
+        CapTableCommand::Vesting => {
+            let path = format!("/v1/entities/{entity_id}/vesting-schedules");
             let value = ctx.get(&path).await?;
             output::print_value(&value, mode);
         }
@@ -878,6 +884,14 @@ pub async fn run(cmd: CapTableCommand, ctx: &Context) -> anyhow::Result<()> {
             output::print_success("Vesting event vested.", mode);
         }
 
+        CapTableCommand::VestDue { schedule_id } => {
+            let path =
+                format!("/v1/entities/{entity_id}/vesting-schedules/{schedule_id}/vest-due");
+            let value = ctx.post(&path, &json!({})).await?;
+            output::print_value(&value, mode);
+            output::print_success("All due vesting events vested.", mode);
+        }
+
         // ── Instruments ───────────────────────────────────────────────────────
         CapTableCommand::Instruments => {
             let path = format!("/v1/entities/{entity_id}/instruments");
@@ -910,8 +924,8 @@ pub async fn run(cmd: CapTableCommand, ctx: &Context) -> anyhow::Result<()> {
         }
 
         // ── Positions ─────────────────────────────────────────────────────────
-        CapTableCommand::Positions { entity_id: eid } => {
-            let path = format!("/v1/entities/{eid}/positions");
+        CapTableCommand::Positions => {
+            let path = format!("/v1/entities/{entity_id}/positions");
             let value = ctx.get(&path).await?;
             output::print_value(&value, mode);
         }
@@ -1101,7 +1115,15 @@ pub async fn run(cmd: CapTableCommand, ctx: &Context) -> anyhow::Result<()> {
             });
             let value = ctx.post(&path, &body).await?;
             output::print_value(&value, mode);
-            output::print_success("Options exercised.", mode);
+            if let Some(total) = value.get("total_cost_cents").and_then(|v| v.as_i64()) {
+                let dollars = total as f64 / 100.0;
+                output::print_success(
+                    &format!("Options exercised. Total cost: ${:.2}", dollars),
+                    mode,
+                );
+            } else {
+                output::print_success("Options exercised.", mode);
+            }
         }
     }
 

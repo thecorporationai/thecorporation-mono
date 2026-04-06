@@ -361,6 +361,10 @@ pub fn routes() -> Router<AppState> {
             post(materialize_events),
         )
         .route(
+            "/entities/{entity_id}/vesting-schedules/{schedule_id}/vest-due",
+            post(vest_due_events),
+        )
+        .route(
             "/entities/{entity_id}/vesting-events",
             get(list_vesting_events),
         )
@@ -1813,6 +1817,64 @@ async fn materialize_events(
             .await?;
     }
     Ok(Json(events))
+}
+
+/// Vest all scheduled events for a schedule whose vest_date <= today.
+async fn vest_due_events(
+    RequireEquityWrite(principal): RequireEquityWrite,
+    State(state): State<AppState>,
+    Path((entity_id, schedule_id)): Path<(EntityId, VestingScheduleId)>,
+) -> Result<Json<Vec<VestingEvent>>, AppError> {
+    let store = state
+        .open_entity_store_for_write(principal.workspace_id, entity_id)
+        .await?;
+    let today = chrono::Utc::now().date_naive();
+    let all_events: Vec<VestingEvent> = store.read_all::<VestingEvent>("main").await?;
+    let due: Vec<&VestingEvent> = all_events
+        .iter()
+        .filter(|e| {
+            e.schedule_id == schedule_id
+                && e.status == corp_core::equity::types::VestingEventStatus::Scheduled
+                && e.vest_date <= today
+        })
+        .collect();
+
+    if due.is_empty() {
+        return Err(AppError::BadRequest(
+            "no scheduled events due on or before today".into(),
+        ));
+    }
+
+    let mut vested = Vec::with_capacity(due.len());
+    // Track per-grant vested share deltas for batch update
+    let mut grant_deltas: std::collections::HashMap<corp_core::ids::EquityGrantId, i64> =
+        std::collections::HashMap::new();
+
+    for evt in due {
+        let mut event = evt.clone();
+        event
+            .vest()
+            .map_err(|e| AppError::BadRequest(e.to_string()))?;
+        store
+            .write::<VestingEvent>(&event, event.event_id, "main", "bulk vest event")
+            .await?;
+        *grant_deltas.entry(event.grant_id).or_default() += event.share_count.raw();
+        vested.push(event);
+    }
+
+    // Update grant vested_shares aggregates
+    for (grant_id, delta) in &grant_deltas {
+        let mut grant = store.read::<EquityGrant>(*grant_id, "main").await?;
+        grant.vested_shares = grant
+            .vested_shares
+            .checked_add(ShareCount::new(*delta))
+            .unwrap_or(grant.vested_shares);
+        store
+            .write::<EquityGrant>(&grant, grant.grant_id, "main", "bulk update vested_shares")
+            .await?;
+    }
+
+    Ok(Json(vested))
 }
 
 async fn list_vesting_events(
