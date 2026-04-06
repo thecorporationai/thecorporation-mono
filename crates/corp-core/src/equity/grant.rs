@@ -4,7 +4,7 @@ use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 
 use super::types::{GrantStatus, GrantType, ShareCount};
-use crate::ids::{CapTableId, ContactId, EntityId, EquityGrantId, InstrumentId};
+use crate::ids::{CapTableId, ContactId, EntityId, EquityGrantId, InstrumentId, ResolutionId};
 
 /// An equity grant issued to a recipient — covering common/preferred stock,
 /// ISOs, NSOs, RSAs, and membership units.
@@ -27,6 +27,9 @@ pub struct EquityGrant {
     pub vesting_months: Option<u32>,
     /// Cliff length in months (shares before this date do not vest).
     pub cliff_months: Option<u32>,
+    /// Governance resolution that authorized this grant (e.g. board approval).
+    #[serde(default)]
+    pub resolution_id: Option<ResolutionId>,
     /// Cumulative vested shares — updated by the vest_event handler.
     /// Defaults to zero for grants created before this field existed.
     #[serde(default)]
@@ -50,6 +53,7 @@ impl EquityGrant {
         vesting_start: Option<NaiveDate>,
         vesting_months: Option<u32>,
         cliff_months: Option<u32>,
+        resolution_id: Option<ResolutionId>,
     ) -> Self {
         Self {
             grant_id: EquityGrantId::new(),
@@ -64,6 +68,7 @@ impl EquityGrant {
             vesting_start,
             vesting_months,
             cliff_months,
+            resolution_id,
             vested_shares: ShareCount::ZERO,
             status: GrantStatus::Issued,
             created_at: Utc::now(),
@@ -90,6 +95,7 @@ mod tests {
             None,
             None,
             None,
+            None,
         )
     }
 
@@ -111,6 +117,7 @@ mod tests {
             vesting_start,
             vesting_months,
             cliff_months,
+            None,
         )
     }
 

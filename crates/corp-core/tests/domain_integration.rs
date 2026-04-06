@@ -431,6 +431,7 @@ fn equity_issuance_and_transfer() {
         Some(NaiveDate::from_ymd_opt(2026, 1, 1).unwrap()),
         Some(48),
         Some(12),
+        None,
     );
     assert_eq!(grant.shares, ShareCount::new(1_000_000));
     assert_eq!(grant.recipient_name, "Alice Founder");

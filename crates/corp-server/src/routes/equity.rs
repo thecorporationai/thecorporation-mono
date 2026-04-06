@@ -73,6 +73,8 @@ pub struct CreateGrantRequest {
     /// If omitted, no position is created (useful for option grants that haven't
     /// been exercised yet).
     pub holder_id: Option<HolderId>,
+    /// Governance resolution that authorized this grant (e.g. board approval).
+    pub resolution_id: Option<corp_core::ids::ResolutionId>,
 }
 
 /// Request body for `POST /entities/{entity_id}/safes`.
@@ -654,6 +656,7 @@ async fn create_grant(
         body.vesting_start,
         body.vesting_months,
         body.cliff_months,
+        body.resolution_id,
     );
     store
         .write::<EquityGrant>(&grant, grant.grant_id, "main", "create equity grant")
@@ -1112,6 +1115,7 @@ async fn convert_safe(
         None,
         None,
         None,
+        None, // SAFE conversions don't require a separate resolution
     );
     store
         .write::<EquityGrant>(

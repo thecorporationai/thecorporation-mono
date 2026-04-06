@@ -176,6 +176,7 @@ export interface EquityGrant {
   grant_type: GrantType;
   shares: number;
   price_per_share: number | null;
+  resolution_id: string | null;
   vested_shares: number;
   status: GrantStatus;
   created_at: string;
@@ -193,6 +194,7 @@ export interface CreateGrantOpts {
   vesting_months?: number;
   cliff_months?: number;
   holder_id?: HolderId;
+  resolution_id?: string;
 }
 
 export interface IssueSafeOpts {

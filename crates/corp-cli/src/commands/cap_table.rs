@@ -75,6 +75,10 @@ pub enum CapTableCommand {
         /// Price per share in cents (e.g. $0.001 = 0; optional, omit for grants at no cost)
         #[arg(long)]
         price_per_share_cents: Option<i64>,
+
+        /// Resolution ID linking this grant to a board approval (from `corp governance`)
+        #[arg(long)]
+        resolution_id: Option<String>,
     },
 
     /// List SAFE notes
@@ -608,6 +612,7 @@ pub async fn run(cmd: CapTableCommand, ctx: &Context) -> anyhow::Result<()> {
             grant_type,
             shares,
             price_per_share_cents,
+            resolution_id,
         } => {
             let path = format!("/v1/entities/{entity_id}/grants");
             let body = json!({
@@ -618,6 +623,7 @@ pub async fn run(cmd: CapTableCommand, ctx: &Context) -> anyhow::Result<()> {
                 "grant_type": grant_type,
                 "shares": shares,
                 "price_per_share": price_per_share_cents,
+                "resolution_id": resolution_id,
             });
             let value = ctx.post(&path, &body).await?;
             output::print_value(&value, mode);
