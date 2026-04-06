@@ -1913,7 +1913,7 @@ async fn materialize_events(
     Ok(Json(events))
 }
 
-/// Vest all scheduled events for a schedule whose vest_date <= today.
+/// Vest all scheduled events for a schedule whose vest_date is on or before today.
 async fn vest_due_events(
     RequireEquityWrite(principal): RequireEquityWrite,
     State(state): State<AppState>,
