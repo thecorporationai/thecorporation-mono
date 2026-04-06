@@ -67,6 +67,9 @@ import type {
   VestingEventId,
   OptionExercise,
   OptionExerciseId,
+  CreateGrantOpts,
+  IssueSafeOpts,
+  CreateValuationOpts,
 } from "./types.js";
 
 // ── Error ────────────────────────────────────────────────────────────────────
@@ -280,7 +283,7 @@ class EquityApi {
     return this.c.get(`/v1/entities/${entityId}/grants`);
   }
 
-  createGrant(entityId: EntityId, opts: Record<string, unknown>): Promise<EquityGrant> {
+  createGrant(entityId: EntityId, opts: CreateGrantOpts): Promise<EquityGrant> {
     return this.c.post(`/v1/entities/${entityId}/grants`, opts);
   }
 
@@ -296,7 +299,7 @@ class EquityApi {
     return this.c.get(`/v1/entities/${entityId}/safes`);
   }
 
-  issueSafe(entityId: EntityId, opts: Record<string, unknown>): Promise<SafeNote> {
+  issueSafe(entityId: EntityId, opts: IssueSafeOpts): Promise<SafeNote> {
     return this.c.post(`/v1/entities/${entityId}/safes`, opts);
   }
 
@@ -318,7 +321,7 @@ class EquityApi {
     return this.c.get(`/v1/entities/${entityId}/valuations`);
   }
 
-  createValuation(entityId: EntityId, opts: Record<string, unknown>): Promise<Valuation> {
+  createValuation(entityId: EntityId, opts: CreateValuationOpts): Promise<Valuation> {
     return this.c.post(`/v1/entities/${entityId}/valuations`, opts);
   }
 

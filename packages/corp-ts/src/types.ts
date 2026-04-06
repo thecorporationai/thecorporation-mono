@@ -155,6 +155,17 @@ export interface Instrument {
   created_at: string;
 }
 
+export type GrantType =
+  | "common_stock"
+  | "preferred_stock"
+  | "membership_unit"
+  | "stock_option"
+  | "iso"
+  | "nso"
+  | "rsa";
+
+export type GrantStatus = "issued" | "vested" | "exercised" | "forfeited" | "cancelled";
+
 export interface EquityGrant {
   grant_id: EquityGrantId;
   entity_id: EntityId;
@@ -162,11 +173,45 @@ export interface EquityGrant {
   instrument_id: InstrumentId;
   recipient_contact_id: ContactId;
   recipient_name: string;
-  grant_type: string;
+  grant_type: GrantType;
   shares: number;
+  price_per_share: number | null;
   vested_shares: number;
-  status: string;
+  status: GrantStatus;
   created_at: string;
+}
+
+export interface CreateGrantOpts {
+  cap_table_id: CapTableId;
+  instrument_id: InstrumentId;
+  recipient_contact_id: ContactId;
+  recipient_name: string;
+  grant_type: GrantType;
+  shares: number;
+  price_per_share?: number;
+  vesting_start?: string;
+  vesting_months?: number;
+  cliff_months?: number;
+  holder_id?: HolderId;
+}
+
+export interface IssueSafeOpts {
+  cap_table_id: CapTableId;
+  investor_contact_id: ContactId;
+  investor_name: string;
+  safe_type: "post_money" | "pre_money" | "mfn";
+  investment_amount_cents: number;
+  valuation_cap_cents?: number;
+  discount_percent?: number;
+}
+
+export interface CreateValuationOpts {
+  cap_table_id: CapTableId;
+  valuation_type: "four_oh_nine_a" | "fair_market_value" | "other";
+  methodology: "income" | "market" | "asset" | "backsolve" | "hybrid" | "other";
+  valuation_amount_cents: number;
+  effective_date: string;
+  prepared_by?: string;
 }
 
 export type ExerciseType = "full" | "partial" | "early";
@@ -262,9 +307,6 @@ export interface FundingRound {
   status: FundingRoundStatus;
   created_at: string;
 }
-
-export type VestingScheduleId = string;
-export type VestingEventId = string;
 
 export interface VestingSchedule {
   schedule_id: VestingScheduleId;

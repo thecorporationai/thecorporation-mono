@@ -255,7 +255,14 @@ describe("sub-client URL routing", () => {
   });
 
   it("equity.createGrant", async () => {
-    await client.equity.createGrant("ent-1" as any, { shares: 1000 });
+    await client.equity.createGrant("ent-1" as any, {
+      cap_table_id: "ct-1" as any,
+      instrument_id: "inst-1" as any,
+      recipient_contact_id: "c-1" as any,
+      recipient_name: "Jane",
+      grant_type: "common_stock",
+      shares: 1000,
+    });
     expect(lastUrl()).toBe("http://api.test/v1/entities/ent-1/grants");
     expect(lastMethod()).toBe("POST");
   });
