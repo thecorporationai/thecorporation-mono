@@ -368,6 +368,23 @@ pub enum CapTableCommand {
         liquidation_preference: Option<String>,
     },
 
+    /// Forfeit a scheduled vesting event
+    ForfeitEvent {
+        /// Vesting event ID
+        event_id: String,
+    },
+
+    /// Terminate a vesting schedule (forfeits all remaining scheduled events)
+    TerminateVesting {
+        /// Vesting schedule ID
+        #[arg(long)]
+        schedule_id: String,
+
+        /// Termination date (YYYY-MM-DD)
+        #[arg(long)]
+        termination_date: String,
+    },
+
     /// Vest all due events for a schedule (bulk vest)
     VestDue {
         #[arg(long, help = "Vesting schedule ID")]
@@ -884,6 +901,26 @@ pub async fn run(cmd: CapTableCommand, ctx: &Context) -> anyhow::Result<()> {
             let value = ctx.post(&path, &json!({})).await?;
             output::print_value(&value, mode);
             output::print_success("Vesting event vested.", mode);
+        }
+
+        CapTableCommand::ForfeitEvent { event_id } => {
+            let path = format!("/v1/entities/{entity_id}/vesting-events/{event_id}/forfeit");
+            let value = ctx.post(&path, &json!({})).await?;
+            output::print_value(&value, mode);
+            output::print_success("Vesting event forfeited.", mode);
+        }
+
+        CapTableCommand::TerminateVesting {
+            schedule_id,
+            termination_date,
+        } => {
+            let path =
+                format!("/v1/entities/{entity_id}/vesting-schedules/{schedule_id}/terminate");
+            let value = ctx
+                .post(&path, &json!({ "termination_date": termination_date }))
+                .await?;
+            output::print_value(&value, mode);
+            output::print_success("Vesting schedule terminated.", mode);
         }
 
         CapTableCommand::VestDue { schedule_id } => {

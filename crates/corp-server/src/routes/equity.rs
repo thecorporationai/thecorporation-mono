@@ -917,7 +917,7 @@ async fn exercise_option(
         )
         .await?;
 
-    // 11. If early exercise with unvested shares, create repurchase right
+    // 11. If early exercise with unvested shares, create repurchase right + 83(b) deadline
     if exercise_type == ExerciseType::Early {
         let unvested_exercised = body.shares_to_exercise - (vested_shares - previously_exercised).max(0);
         if unvested_exercised > 0 {
@@ -938,6 +938,30 @@ async fn exercise_option(
                 )
                 .await?;
         }
+
+        // Create 83(b) election deadline work item (30 days from exercise)
+        let deadline_83b = exercise_date + chrono::Duration::days(30);
+        let work_item = corp_core::work_items::WorkItem::new(
+            entity_id,
+            format!("83(b) Election Deadline — {}", grant_id),
+            format!(
+                "File IRS 83(b) election within 30 days of early exercise (by {}). \
+                 Grant: {}, Holder: {}, Shares: {}. \
+                 Failure to file may result in ordinary income tax on vesting.",
+                deadline_83b, grant_id, body.holder_id, body.shares_to_exercise
+            ),
+            "tax_compliance",
+            Some(deadline_83b),
+            true, // asap — this is a hard deadline
+        );
+        store
+            .write::<corp_core::work_items::WorkItem>(
+                &work_item,
+                work_item.work_item_id,
+                "main",
+                "83(b) election deadline for early exercise",
+            )
+            .await?;
     }
 
     Ok(Json(exercise))
