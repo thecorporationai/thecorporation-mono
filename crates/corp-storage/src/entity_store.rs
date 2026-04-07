@@ -445,13 +445,35 @@ impl EntityStore {
         match &self.backend {
             #[cfg(feature = "git")]
             Backend::Git { repo_path } => {
-                let rp = Arc::clone(repo_path);
-                let p = path.to_owned();
-                let b = branch.to_owned();
-                let m = message.to_owned();
-                tokio::task::spawn_blocking(move || crate::git::delete_file(&rp, &b, &p, &m))
-                    .await
-                    .map_err(|e| StorageError::GitError(format!("spawn_blocking: {}", e)))?
+                let mut attempts = 0u32;
+                loop {
+                    attempts += 1;
+                    let rp = Arc::clone(repo_path);
+                    let p = path.to_owned();
+                    let b = branch.to_owned();
+                    let m = message.to_owned();
+                    let result =
+                        tokio::task::spawn_blocking(move || crate::git::delete_file(&rp, &b, &p, &m))
+                            .await
+                            .map_err(|e| StorageError::GitError(format!("spawn_blocking: {}", e)))?;
+                    match result {
+                        Ok(()) => return Ok(()),
+                        Err(StorageError::ConcurrencyConflict(ref msg))
+                            if attempts < Self::GIT_WRITE_MAX_RETRIES =>
+                        {
+                            eprintln!(
+                                "[corp-storage] git CAS conflict on delete {} (attempt {}/{}): {}",
+                                path, attempts, Self::GIT_WRITE_MAX_RETRIES, msg
+                            );
+                            tokio::time::sleep(std::time::Duration::from_millis(
+                                10 * (1 << attempts),
+                            ))
+                            .await;
+                            continue;
+                        }
+                        Err(e) => return Err(e),
+                    }
+                }
             }
 
             #[cfg(feature = "kv")]

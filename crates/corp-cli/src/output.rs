@@ -180,6 +180,7 @@ fn extract_id(value: &Value) -> Option<String> {
     // Primary ID fields in priority order — domain-specific IDs before foreign keys.
     const PRIMARY: &[&str] = &[
         "entity_id",
+        "exercise_id",
         "grant_id",
         "instrument_id",
         "holder_id",
@@ -187,7 +188,9 @@ fn extract_id(value: &Value) -> Option<String> {
         "safe_note_id",
         "valuation_id",
         "position_id",
-        "instrument_id",
+        "schedule_id",
+        "event_id",
+        "repurchase_right_id",
         "funding_round_id",
         "contact_id",
         "meeting_id",
